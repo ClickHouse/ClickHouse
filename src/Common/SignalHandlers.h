@@ -33,6 +33,7 @@ void closeLogsSignalHandler(int sig, siginfo_t *, void *);
 
 void terminateRequestedSignalHandler(int sig, siginfo_t *, void *);
 
+void childSignalHandler(int sig, siginfo_t * info, void *);
 
 /** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */

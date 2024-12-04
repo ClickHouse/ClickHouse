@@ -1660,6 +1660,7 @@ class ClickHouseCluster:
         extra_configs=[],
         extra_args="",
         randomize_settings=True,
+        use_docker_init_flag=False,
     ) -> "ClickHouseInstance":
         """Add an instance to the cluster.
 
@@ -1767,6 +1768,7 @@ class ClickHouseCluster:
             config_root_name=config_root_name,
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
+            use_docker_init_flag=use_docker_init_flag,
         )
 
         docker_compose_yml_dir = get_docker_compose_path()
@@ -3394,6 +3396,7 @@ services:
                 {ipv6_address}
                 {net_aliases}
                     {net_alias1}
+        init: {init_flag}
 """
 
 
@@ -3460,6 +3463,7 @@ class ClickHouseInstance:
         config_root_name="clickhouse",
         extra_configs=[],
         randomize_settings=True,
+        use_docker_init_flag=False,
     ):
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -3586,6 +3590,7 @@ class ClickHouseInstance:
         self.with_installed_binary = with_installed_binary
         self.is_up = False
         self.config_root_name = config_root_name
+        self.docker_init_flag = use_docker_init_flag
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -4884,6 +4889,7 @@ class ClickHouseInstance:
                     ipv6_address=ipv6_address,
                     net_aliases=net_aliases,
                     net_alias1=net_alias1,
+                    init_flag="true" if self.docker_init_flag else "false",
                 )
             )
 

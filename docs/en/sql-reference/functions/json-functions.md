@@ -733,6 +733,18 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
+Referring to a nested values by passing multiple indices_or_keys parameters:
+```
+SELECT JSONExtract('{"a":{"b":"hello","c":{"d":[1,2,3],"e":[1,3,7]}}}','a','c','Map(String, Array(UInt8))') AS val, toTypeName(val), val['d'];
+```
+Result:
+```
+┌─val───────────────────────┬─toTypeName(val)───────────┬─arrayElement(val, 'd')─┐
+│ {'d':[1,2,3],'e':[1,3,7]} │ Map(String, Array(UInt8)) │ [1,2,3]                │
+└───────────────────────────┴───────────────────────────┴────────────────────────┘
+```
+
+
 ### JSONExtractKeysAndValues
 
 Parses key-value pairs from JSON where the values are of the given ClickHouse data type.
