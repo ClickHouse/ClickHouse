@@ -35,11 +35,9 @@
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #    include <boost/algorithm/string/case_conv.hpp>
-#    include <io/Cache.hh>
 #    include <Common/FieldVisitorsAccurateComparison.h>
 #    include <Common/logger_useful.h>
 #    include "ArrowBufferedStreams.h"
-
 #    include <boost/algorithm/string/case_conv.hpp>
 
 
@@ -80,7 +78,7 @@ ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool
 {
     // std::cout << "supports_read_at: " << supports_read_at << std::endl;
     if (supports_read_at)
-        async_runner = threadPoolCallbackRunnerUnsafe<BufferPtr>(getIOThreadPool().get(), "ORCFile");
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ORCFile");
 }
 
 UInt64 ORCInputStream::getLength() const
@@ -113,28 +111,25 @@ void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
     }
 }
 
-std::future<ORCInputStream::BufferPtr> ORCInputStream::readAsync(uint64_t offset, uint64_t length, orc::MemoryPool & pool)
+std::future<void> ORCInputStream::readAsync(void * buf, uint64_t length, uint64_t offset)
 {
     if (supports_read_at)
     {
         return async_runner(
-            [this, offset, length, &pool]
+            [this, buf, length, offset]
             {
-                Stopwatch time;
-                BufferPtr buffer = std::make_shared<Buffer>(pool, length);
-                read(buffer->data(), length, offset);
+                // Stopwatch time;
+                // BufferPtr buffer = std::make_shared<Buffer>(pool, length);
                 // LOG_ERROR(getLogger("TestPrefetch"), "Read {} bytes from {} offset in {} ms", length, offset, time.elapsed() / 1000000);
-                return buffer;
+                read(buf, length, offset);
             },
             Priority{});
     }
     else
     {
-        BufferPtr buffer = std::make_shared<Buffer>(pool, length);
-        read(buffer->data(), length, offset);
-
-        std::promise<BufferPtr> promise;
-        promise.set_value(buffer);
+        read(buf, length, offset);
+        std::promise<void> promise;
+        promise.set_value();
         return promise.get_future();
     }
 }
@@ -801,11 +796,11 @@ static void getFileReader(
     if (is_stopped)
         return;
 
-    auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
-
     orc::ReaderOptions options;
     options.setMemoryPool(pool);
-    auto input_stream = asORCInputStream(in, format_settings, is_stopped);
+    options.setCacheOptions(orc::CacheOptions{});
+
+    auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
     file_reader = orc::createReader(std::move(input_stream), options);
 }
 
@@ -966,10 +961,6 @@ void NativeORCBlockInputFormat::prepareFileReader()
     if (is_stopped)
         return;
 
-    total_stripes = static_cast<int>(file_reader->getNumberOfStripes());
-    current_stripe = -1;
-
-
     std::unique_ptr<orc::StripeInformation> stripe_info;
     if (file_reader->getNumberOfStripes())
         stripe_info = file_reader->getStripe(0);
@@ -995,11 +986,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     include_indices.assign(include_typeids.begin(), include_typeids.end());
 
     if (format_settings.orc.filter_push_down && key_condition && !sargs)
-    {
         sargs = buildORCSearchArgument(*key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
-        sargs_applier = std::make_shared<orc::SargsApplier>(
-            file_reader->getType(), sargs.get(), file_reader->getRowIndexStride(), file_reader->getWriterVersion(), nullptr);
-    }
 
     selected_stripes = calculateSelectedStripes();
     stripes_iterator = 0;
@@ -1017,12 +1004,9 @@ void NativeORCBlockInputFormat::prefetchStripe(size_t stripes_iterator_)
         return;
 
     int stripe = selected_stripes[stripes_iterator_];
-    orc::CacheOptions cache_options;
-    cache_options.hole_size_limit = min_bytes_for_seek;
-    cache_options.range_size_limit = 10 * 1024 * 1024UL;
 
     Stopwatch time;
-    file_reader->preBuffer({stripe}, include_indices, cache_options);
+    file_reader->preBuffer({static_cast<uint32_t>(stripe)}, include_indices);
     // LOG_ERROR(
     //     getLogger("TestPrefetch"),
     //     "Prefetch stripe {} with {} columns takes {} ms",
@@ -1035,42 +1019,13 @@ std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes() const
 {
     int num_stripes = static_cast<int>(file_reader->getNumberOfStripes());
 
-    if (!use_prefetch)
-    {
-        std::vector<int> result;
-        result.reserve(num_stripes - skip_stripes.size());
-        for (int stripe = 0; stripe < num_stripes; ++stripe)
-        {
-            if (skip_stripes.contains(stripe))
-                continue;
-
-            result.push_back(stripe);
-        }
-        return result;
-    }
-
-    // Evaluate file statistics
-    if (sargs_applier && !sargs_applier->evaluateFileStatistics(*file_reader->getFooter(), 0))
-        return {};
-
     std::vector<int> result;
-    int num_stripe_stats = static_cast<int>(file_reader->getNumberOfStripeStatistics());
-    if (num_stripes != num_stripe_stats)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA, "Number of stripes {} and number of stripe statistics {} mismatch", num_stripes, num_stripe_stats);
-
+    result.reserve(num_stripes - skip_stripes.size());
     for (int stripe = 0; stripe < num_stripes; ++stripe)
     {
         if (skip_stripes.contains(stripe))
             continue;
 
-        if (sargs_applier)
-        {
-            const auto * metadata = file_reader->getMetadata();
-            const auto & stripe_stats = metadata->stripestats(stripe);
-            if (!sargs_applier->evaluateStripeStatistics(stripe_stats, 0))
-                continue;
-        }
         result.push_back(stripe);
     }
     return result;
@@ -1175,7 +1130,6 @@ void NativeORCBlockInputFormat::resetParser()
     stripe_reader.reset();
     include_indices.clear();
     sargs.reset();
-    sargs_applier.reset();
     block_missing_values.clear();
 }
 

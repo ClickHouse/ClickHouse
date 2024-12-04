@@ -11,7 +11,6 @@
 #    include <boost/algorithm/string.hpp>
 #    include <orc/MemoryPool.hh>
 #    include <orc/OrcFile.hh>
-#    include <sargs/SargsApplier.hh>
 #    include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
@@ -25,14 +24,14 @@ public:
     uint64_t getLength() const override;
     uint64_t getNaturalReadSize() const override;
     void read(void * buf, uint64_t length, uint64_t offset) override;
-    std::future<BufferPtr> readAsync(uint64_t offset, uint64_t length, orc::MemoryPool & pool) override;
+    std::future<void> readAsync(void * buf, uint64_t length, uint64_t offset) override;
     const std::string & getName() const override { return name; }
 
 protected:
     SeekableReadBuffer & in;
     size_t file_size;
     bool supports_read_at;
-    ThreadPoolCallbackRunnerUnsafe<BufferPtr> async_runner;
+    ThreadPoolCallbackRunnerUnsafe<void> async_runner;
 
     std::string name = "ORCInputStream";
 };
@@ -90,7 +89,6 @@ private:
     std::unique_ptr<ORCColumnToCHColumn> orc_column_to_ch_column;
 
     std::shared_ptr<orc::SearchArgument> sargs;
-    std::shared_ptr<orc::SargsApplier> sargs_applier;
 
     // indices of columns to read from ORC file
     std::list<UInt64> include_indices;
@@ -101,7 +99,7 @@ private:
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;
     bool use_prefetch;
-    size_t min_bytes_for_seek;
+    [[maybe_unused]] size_t min_bytes_for_seek;
 
     // AllocatorToORCMemoryPoolAdapter memory_pool;
 
