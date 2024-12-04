@@ -27,7 +27,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
-#include <Processors/Formats/Impl/Parquet/keyConditionRPNToParquetRPN.h>
+#include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
 
 namespace ProfileEvents
@@ -516,6 +516,43 @@ std::unordered_set<std::size_t> getBloomFilterFilteringColumnKeys(const KeyCondi
     return column_keys;
 }
 
+const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
+    const std::unique_ptr<parquet::RowGroupMetaData> & parquet_rg_metadata,
+    const std::vector<ArrowFieldIndexUtil::ClickHouseIndexToParquetIndex> & clickhouse_column_index_to_parquet_index,
+    std::size_t clickhouse_column_index)
+{
+    if (clickhouse_column_index_to_parquet_index.size() <= clickhouse_column_index)
+    {
+        return nullptr;
+    }
+
+    const auto & parquet_indexes = clickhouse_column_index_to_parquet_index[clickhouse_column_index].parquet_indexes;
+
+    // complex types like structs, tuples and maps will have more than one index.
+    // we don't support those for now
+    if (parquet_indexes.size() > 1)
+    {
+        return nullptr;
+    }
+
+    if (parquet_indexes.empty())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Something bad happened, raise an issue and try the query with `input_format_parquet_bloom_filter_push_down=false`");
+    }
+
+    auto parquet_column_index = parquet_indexes[0];
+
+    const auto * parquet_column_descriptor = parquet_rg_metadata->schema()->Column(parquet_column_index);
+
+    bool column_has_bloom_filter = parquet_rg_metadata->ColumnChunk(parquet_column_index)->bloom_filter_offset().has_value();
+    if (!column_has_bloom_filter)
+    {
+        return nullptr;
+    }
+
+    return parquet_column_descriptor;
+}
+
 ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
     const Block & header_,
@@ -610,21 +647,48 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     };
 
     std::unordered_set<std::size_t> filtering_columns;
-    KeyCondition::RPN parquet_rpn;
+
+    std::unique_ptr<KeyCondition> key_condition_with_bloom_filter_data;
 
     if (key_condition)
     {
-        parquet_rpn = key_condition->getRPN();
+        key_condition_with_bloom_filter_data = std::make_unique<KeyCondition>(*key_condition);
+
         if (format_settings.parquet.bloom_filter_push_down)
         {
             bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
 
-            parquet_rpn = keyConditionRPNToParquetRPN(
-                parquet_rpn,
-                index_mapping,
-                metadata->RowGroup(0));
+            auto hash_one = [&](size_t column_idx, const Field & f) -> std::optional<size_t>
+            {
+                const auto * parquet_column_descriptor
+                    = getColumnDescriptorIfBloomFilterIsPresent(metadata->RowGroup(0), index_mapping, column_idx);
 
-            filtering_columns = getBloomFilterFilteringColumnKeys(parquet_rpn);
+                if (!parquet_column_descriptor)
+                {
+                    return std::nullopt;
+                }
+
+                return tryHash(f, parquet_column_descriptor);
+            };
+
+            auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<std::vector<size_t>>
+            {
+                const auto * parquet_column_descriptor
+                    = getColumnDescriptorIfBloomFilterIsPresent(metadata->RowGroup(0), index_mapping, column_idx);
+
+                auto nested_column = column;
+
+                if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
+                {
+                    nested_column = nullable_column->getNestedColumnPtr();
+                }
+
+                return hash(nested_column.get(), parquet_column_descriptor);
+            };
+
+            key_condition_with_bloom_filter_data->prepareBloomFilterData(hash_one, hash_many);
+
+            filtering_columns = getBloomFilterFilteringColumnKeys(key_condition_with_bloom_filter_data->getRPN());
         }
     }
 
@@ -651,13 +715,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             column_index_to_bloom_filter = buildColumnIndexToBF(*bf_reader, row_group, index_mapping, filtering_columns);
         }
 
-        bool maybe_exists = KeyCondition::checkRPNAgainstHyperrectangle(
-                                parquet_rpn,
-                                hyperrectangle,
-                                key_condition->key_space_filling_curves,
-                                getPort().getHeader().getDataTypes(),
-                                key_condition->isSinglePoint(),
-                                column_index_to_bloom_filter).can_be_true;
+        bool maybe_exists = key_condition_with_bloom_filter_data->checkInHyperrectangle(hyperrectangle, getPort().getHeader().getDataTypes(), column_index_to_bloom_filter).can_be_true;
 
         return !maybe_exists;
     };
@@ -667,7 +725,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (skip_row_groups.contains(row_group))
             continue;
 
-        if (key_condition && skip_row_group_based_on_filters(row_group))
+        if (key_condition_with_bloom_filter_data && skip_row_group_based_on_filters(row_group))
         {
             continue;
         }
