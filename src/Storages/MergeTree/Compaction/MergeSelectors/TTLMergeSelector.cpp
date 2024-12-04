@@ -1,45 +1,62 @@
-#include <Storages/MergeTree/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Parsers/queryToString.h>
 
-#include <algorithm>
-#include <cmath>
-#include <any>
-
+#include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
 {
 
-void registerTTLDeleteMergeSelector(MergeSelectorFactory & factory)
+bool ITTLMergeSelector::canIncludeToRange(Iterator part_it, time_t part_ttl, size_t usable_memory) const
 {
-    factory.registerPrivateSelector("TTLDelete", [](const std::any & params)
+    return 0 < part_ttl && part_ttl < current_time
+        && canConsiderPart(*part_it)
+        && usable_memory >= part_it->size;
+}
+
+ITTLMergeSelector::Iterator ITTLMergeSelector::findLeftRangeBorder(Iterator left, Iterator begin, size_t & usable_memory) const
+{
+    while (left != begin)
     {
-        return std::make_shared<TTLDeleteMergeSelector>(std::any_cast<TTLDeleteMergeSelector::Params>(params));
-    });
+        auto next_to_check = std::prev(left);
+        auto ttl = getTTLForPart(*next_to_check);
+
+        if (!canIncludeToRange(next_to_check, ttl, usable_memory))
+            break;
+
+        left = next_to_check;
+        usable_memory -= left->size;
+    }
+
+    return left;
 }
 
-void registerTTLRecompressMergeSelector(MergeSelectorFactory & factory)
+ITTLMergeSelector::Iterator ITTLMergeSelector::findRightRangeBorder(Iterator right, Iterator end, size_t & usable_memory) const
 {
-    factory.registerPrivateSelector("TTLRecompress", [](const std::any & params)
+    while (right != end)
     {
-        return std::make_shared<TTLRecompressMergeSelector>(std::any_cast<TTLRecompressMergeSelector::Params>(params));
-    });
+        auto ttl = getTTLForPart(*right);
+
+        if (!canIncludeToRange(right, ttl, usable_memory))
+            break;
+
+        usable_memory -= right->size;
+        right = std::next(right);
+    }
+
+    return right;
 }
 
-const String & getPartitionIdForPart(const ITTLMergeSelector::Part & part_info)
+ITTLMergeSelector::ITTLMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_)
+    : current_time(current_time_)
+    , merge_due_times(merge_due_times_)
 {
-    const MergeTreeData::DataPartPtr & part = part_info.getDataPartPtr();
-    return part->info.partition_id;
 }
 
-
-IMergeSelector::PartsRange ITTLMergeSelector::select(
+PartsRange ITTLMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge) const
 {
-    using Iterator = IMergeSelector::PartsRange::const_iterator;
-    Iterator best_begin;
+    Iterator center;
     ssize_t partition_to_merge_index = -1;
     time_t partition_to_merge_min_ttl = 0;
 
@@ -50,20 +67,20 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
         if (mergeable_parts_in_partition.empty())
             continue;
 
-        const auto & partition_id = getPartitionIdForPart(mergeable_parts_in_partition.front());
-        const auto & next_merge_time_for_partition = merge_due_times[partition_id];
-        if (next_merge_time_for_partition > current_time)
+        const auto & partition_id = mergeable_parts_in_partition.front().partition_id;
+
+        if (auto it = merge_due_times.find(partition_id); it != merge_due_times.end() && it->second > current_time)
             continue;
 
         for (Iterator part_it = mergeable_parts_in_partition.cbegin(); part_it != mergeable_parts_in_partition.cend(); ++part_it)
         {
             time_t ttl = getTTLForPart(*part_it);
 
-            if (ttl && !isTTLAlreadySatisfied(*part_it) && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
+            if (ttl && canConsiderPart(*part_it) && (partition_to_merge_index == -1 || ttl < partition_to_merge_min_ttl))
             {
                 partition_to_merge_min_ttl = ttl;
                 partition_to_merge_index = i;
-                best_begin = part_it;
+                center = part_it;
             }
         }
     }
@@ -71,95 +88,79 @@ IMergeSelector::PartsRange ITTLMergeSelector::select(
     if (partition_to_merge_index == -1 || partition_to_merge_min_ttl > current_time)
         return {};
 
+    if (center->size > max_total_size_to_merge)
+        return {};
+
     const auto & best_partition = parts_ranges[partition_to_merge_index];
-    Iterator best_end = best_begin + 1;
-    size_t total_size = 0;
+    size_t usable_memory = [max_total_size_to_merge, center]() {
+        if (max_total_size_to_merge == 0)
+            return std::numeric_limits<size_t>::max();
 
-    /// Find begin of range with most old TTL.
-    while (true)
-    {
-        time_t ttl = getTTLForPart(*best_begin);
+        return max_total_size_to_merge - center->size;
+    }();
 
-        if (!ttl || isTTLAlreadySatisfied(*best_begin) || ttl > current_time
-            || (max_total_size_to_merge && total_size > max_total_size_to_merge))
-        {
-            /// This condition can not be satisfied on first iteration.
-            ++best_begin;
-            break;
-        }
+    Iterator left = findLeftRangeBorder(center, best_partition.begin(), usable_memory);
+    Iterator right = findRightRangeBorder(std::next(center), best_partition.end(), usable_memory);
 
-        total_size += best_begin->size;
-        if (best_begin == best_partition.begin())
-            break;
-
-        --best_begin;
-    }
-
-    /// Find end of range with most old TTL.
-    while (best_end != best_partition.end())
-    {
-        time_t ttl = getTTLForPart(*best_end);
-
-        if (!ttl || isTTLAlreadySatisfied(*best_end) || ttl > current_time
-            || (max_total_size_to_merge && total_size > max_total_size_to_merge))
-            break;
-
-        total_size += best_end->size;
-        ++best_end;
-    }
-
-    if (!dry_run)
-    {
-        const auto & best_partition_id = getPartitionIdForPart(best_partition.front());
-        merge_due_times[best_partition_id] = current_time + merge_cooldown_time;
-    }
-
-    return PartsRange(best_begin, best_end);
+    return PartsRange(left, right);
 }
 
-time_t TTLDeleteMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
+TTLPartDeleteMergeSelector::TTLPartDeleteMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_)
+    : ITTLMergeSelector(merge_due_times_, current_time_)
 {
-    return only_drop_parts ? part.ttl_infos->part_max_ttl : part.ttl_infos->part_min_ttl;
 }
 
-bool TTLDeleteMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
+time_t TTLPartDeleteMergeSelector::getTTLForPart(const PartProperties & part) const
 {
-    /// N.B. Satisfied TTL means that TTL is NOT expired.
-    /// return true -- this part can not be selected
-    /// return false -- this part can be selected
+    return part.ttl_infos->part_max_ttl;
+}
 
-    /// Dropping whole part is an exception to `shall_participate_in_merges` logic.
-    if (only_drop_parts)
-        return false;
+bool TTLPartDeleteMergeSelector::canConsiderPart(const PartProperties &) const
+{
+    return true;
+}
+
+TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_)
+    : ITTLMergeSelector(merge_due_times_, current_time_)
+{
+}
+
+time_t TTLRowDeleteMergeSelector::getTTLForPart(const PartProperties & part) const
+{
+    return part.ttl_infos->part_min_ttl;
+}
+
+bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) const
+{
+    if (part.ttl_infos->hasAnyNonFinishedTTLs())
+        return part.shall_participate_in_merges;
 
     /// All TTL satisfied
-    if (!part.ttl_infos->hasAnyNonFinishedTTLs())
-        return true;
-
-    return !part.shall_participate_in_merges;
+    return false;
 }
 
-time_t TTLRecompressMergeSelector::getTTLForPart(const IMergeSelector::Part & part) const
+TTLRecompressMergeSelector::TTLRecompressMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_, const TTLDescriptions & recompression_ttls_)
+    : ITTLMergeSelector(merge_due_times_, current_time_)
+    , recompression_ttls(recompression_ttls_)
+{
+    chassert(!recompression_ttls.empty());
+}
+
+time_t TTLRecompressMergeSelector::getTTLForPart(const PartProperties & part) const
 {
     return part.ttl_infos->getMinimalMaxRecompressionTTL();
 }
 
-bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Part & part) const
+bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) const
 {
-    /// N.B. Satisfied TTL means that TTL is NOT expired.
-    /// return true -- this part can not be selected
-    /// return false -- this part can be selected
-
     if (!part.shall_participate_in_merges)
-        return true;
-
-    if (recompression_ttls.empty())
         return false;
 
-    auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part.ttl_infos->recompression_ttl, current_time, true);
+    auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part.ttl_infos->recompression_ttl, current_time, /*use_max=*/true);
 
     if (!ttl_description)
-        return true;
+        /// All TTL satisfied
+        return false;
 
     auto ast_to_str = [](ASTPtr query) -> String
     {
@@ -168,7 +169,8 @@ bool TTLRecompressMergeSelector::isTTLAlreadySatisfied(const IMergeSelector::Par
         return queryToString(query);
     };
 
-    return ast_to_str(ttl_description->recompression_codec) == ast_to_str(part.compression_codec_desc);
+    /// Allow to choose part only if recompression changes codec. Otherwise there will be not difference in memory consumption.
+    return ast_to_str(ttl_description->recompression_codec) != ast_to_str(part.compression_codec_desc);
 }
 
 }

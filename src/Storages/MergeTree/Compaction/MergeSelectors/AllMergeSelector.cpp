@@ -1,5 +1,5 @@
-#include <Storages/MergeTree/MergeSelectors/AllMergeSelector.h>
-#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/AllMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
 {
@@ -12,9 +12,9 @@ void registerAllMergeSelector(MergeSelectorFactory & factory)
     });
 }
 
-AllMergeSelector::PartsRange AllMergeSelector::select(
+PartsRange AllMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t /*max_total_size_to_merge*/)
+    size_t /*max_total_size_to_merge*/) const
 {
     size_t min_partition_size = 0;
     PartsRanges::const_iterator best_partition;

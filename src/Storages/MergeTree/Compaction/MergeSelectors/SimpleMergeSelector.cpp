@@ -1,15 +1,13 @@
-#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
-#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
-#include <Core/MergeSelectorAlgorithm.h>
-
-#include <base/interpolate.h>
-#include <Common/thread_local_rng.h>
-
 #include <cmath>
 #include <cassert>
-#include <iostream>
 #include <random>
 
+#include <base/interpolate.h>
+
+#include <Common/thread_local_rng.h>
+
+#include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
 {
@@ -37,7 +35,7 @@ namespace
   */
 struct Estimator
 {
-    using Iterator = SimpleMergeSelector::PartsRange::const_iterator;
+    using Iterator = PartsRange::const_iterator;
 
     void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
@@ -64,9 +62,9 @@ struct Estimator
         }
     }
 
-    SimpleMergeSelector::PartsRange getBest() const
+    PartsRange getBest() const
     {
-        return SimpleMergeSelector::PartsRange(best_begin, best_end);
+        return PartsRange(best_begin, best_end);
     }
 
     static double score(double count, double sum_size, double sum_size_fixed_cost)
@@ -177,7 +175,7 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
 }
 
 void selectWithinPartition(
-    const SimpleMergeSelector::PartsRange & parts,
+    const PartsRange & parts,
     const size_t max_total_size_to_merge,
     Estimator & estimator,
     const SimpleMergeSelector::Settings & settings,
@@ -247,10 +245,9 @@ void selectWithinPartition(
 
 }
 
-
-SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
+PartsRange SimpleMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge) const
 {
     Estimator estimator;
 

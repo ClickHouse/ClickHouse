@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeSelectors/MergeSelector.h>
-
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelector.h>
 
 namespace DB
 {
@@ -15,6 +14,7 @@ namespace DB
 class TrivialMergeSelector : public IMergeSelector
 {
 public:
+    /// TODO: setup somewhere
     struct Settings
     {
         size_t num_parts_to_merge = 10;
@@ -23,7 +23,7 @@ public:
 
     PartsRange select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge) override;
+        size_t max_total_size_to_merge) const override;
 
 private:
     const Settings settings;

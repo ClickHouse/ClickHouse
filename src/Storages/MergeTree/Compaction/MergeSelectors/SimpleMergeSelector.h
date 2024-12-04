@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeSelectors/MergeSelector.h>
-
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelector.h>
 
 /**
 We have a set of data parts that is dynamically changing - new data parts are added and there is background merging process.
@@ -173,7 +172,7 @@ public:
 
     PartsRange select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge) override;
+        size_t max_total_size_to_merge) const override;
 
 private:
     const Settings settings;
