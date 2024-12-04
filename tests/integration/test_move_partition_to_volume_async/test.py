@@ -17,32 +17,41 @@ from helpers.wait_for_helpers import (
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
-cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node",
-    main_configs=[],  # configs/storage_policy.xml is not set here, because broken_s3 has not started yet
-    with_minio=True,
-    stay_alive=True,
-)
+
+@pytest.fixture(scope="module")
+def init_broken_s3(cluster):
+    yield start_s3_mock(cluster, "broken_s3", "8083")
 
 
 @pytest.fixture(scope="function")
-def broken_s3():
-    node.stop_clickhouse()
-    broken_s3 = start_s3_mock(cluster, "broken_s3", "8083")
-    # after broken_s3 started, copy configs/storage_policy.xml to the node
-    node.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "storage_policy.xml"),
-        "/etc/clickhouse-server/config.d/storage_policy.xml",
-    )
-    node.start_clickhouse()
-    yield broken_s3
+def broken_s3(init_broken_s3):
+    init_broken_s3.reset()
+    yield init_broken_s3
 
 
 @pytest.fixture(scope="module")
-def start_cluster():
+def cluster():
     try:
+        cluster = ClickHouseCluster(__file__)
+        cluster.add_instance(
+            "node",
+            main_configs=[],
+            with_minio=True,
+            stay_alive=True,
+        )
+
         cluster.start()
+
+        start_s3_mock(cluster, "broken_s3", "8083")
+
+        for _, node in cluster.instances.items():
+            node.stop_clickhouse()
+            node.copy_file_to_container(
+                os.path.join(CONFIG_DIR, "storage_policy.xml"),
+                "/etc/clickhouse-server/config.d/storage_policy.xml",
+            )
+            node.start_clickhouse()
+
         logging.info("Cluster started")
 
         yield cluster
@@ -50,7 +59,9 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_async_alter_move(start_cluster, broken_s3):
+def test_async_alter_move(cluster, broken_s3):
+    node = cluster.instances["node"]
+
     node.query(
         """
     CREATE TABLE moving_table_async
@@ -93,7 +104,9 @@ def test_async_alter_move(start_cluster, broken_s3):
         assert False, "Cannot find any moving background operation"
 
 
-def test_sync_alter_move(start_cluster, broken_s3):
+def test_sync_alter_move(cluster, broken_s3):
+    node = cluster.instances["node"]
+
     node.query(
         """
     CREATE TABLE moving_table_sync

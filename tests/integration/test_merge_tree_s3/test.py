@@ -15,6 +15,7 @@ from helpers.wait_for_helpers import (
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +26,6 @@ def cluster():
             "node",
             main_configs=[
                 "configs/config.xml",
-                "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
             ],
@@ -39,11 +39,11 @@ def cluster():
         cluster.add_instance(
             "node_with_limited_disk",
             main_configs=[
-                "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
             ],
             with_minio=True,
+            stay_alive=True,
             tmpfs=[
                 "/jbod1:size=2M",
             ],
@@ -54,6 +54,13 @@ def cluster():
         logging.info("Cluster started")
         run_s3_mocks(cluster)
 
+        for _, node in cluster.instances.items():
+            node.stop_clickhouse()
+            node.copy_file_to_container(
+                os.path.join(CONFIG_DIR, "config.d", "storage_conf.xml"),
+                "/etc/clickhouse-server/config.d/storage_conf.xml",
+            )
+            node.start_clickhouse()
         yield cluster
     finally:
         cluster.shutdown()
