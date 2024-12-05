@@ -38,20 +38,17 @@ void GroupConcatDataBase::insert(const IColumn * column, const SerializationPtr 
     insertChar(string.data(), string.size(), arena);
 }
 
-template <bool has_limit>
-UInt64 GroupConcatData<has_limit>::getSize(size_t i) const
+UInt64 GroupConcatData::getSize(size_t i) const
 {
     return offsets[i * 2 + 1] - offsets[i * 2];
 }
 
-template <bool has_limit>
-UInt64 GroupConcatData<has_limit>::getString(size_t i) const
+UInt64 GroupConcatData::getString(size_t i) const
 {
     return offsets[i * 2];
 }
 
-template <bool has_limit>
-void GroupConcatData<has_limit>::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
+void GroupConcatData::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
 {
     WriteBufferFromOwnString buff;
     serialization->serializeText(*column, row_num, buff, {});
@@ -68,7 +65,7 @@ void GroupConcatData<has_limit>::insert(const IColumn * column, const Serializat
 template <bool has_limit>
 GroupConcatImpl<has_limit>::GroupConcatImpl(
     const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_)
-    : IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>(
+    : IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>(
         {data_type_}, parameters_, std::make_shared<DataTypeString>())
     , limit(limit_)
     , delimiter(delimiter_)

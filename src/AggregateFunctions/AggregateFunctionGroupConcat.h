@@ -28,7 +28,6 @@ struct GroupConcatDataBase
     void insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena);
 };
 
-template <bool has_limit>
 struct GroupConcatData : public GroupConcatDataBase
 {
     using Offset = UInt64;
@@ -45,7 +44,7 @@ struct GroupConcatData : public GroupConcatDataBase
 };
 
 template <bool has_limit>
-class GroupConcatImpl : public IAggregateFunctionDataHelper<GroupConcatData<has_limit>, GroupConcatImpl<has_limit>>
+class GroupConcatImpl : public IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>
 {
     static constexpr auto name = "groupConcat";
 
