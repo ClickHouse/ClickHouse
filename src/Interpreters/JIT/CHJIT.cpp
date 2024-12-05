@@ -3,7 +3,6 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
-#include <cmath>
 
 #include <boost/noncopyable.hpp>
 
@@ -218,8 +217,10 @@ private:
 
             return static_cast<char *>(result);
         }
-
-        return nullptr;
+        else
+        {
+            return nullptr;
+        }
     }
 
     void allocateNextPageBlock(size_t size)
@@ -286,7 +287,8 @@ public:
     {
         if (is_read_only)
             return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
-        return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+        else
+            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
     }
 
     bool finalizeMemory(std::string *) override
@@ -371,9 +373,6 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
-
-    double (*fmod_ptr)(double, double) = &fmod;
-    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
 }
 
 CHJIT::~CHJIT() = default;

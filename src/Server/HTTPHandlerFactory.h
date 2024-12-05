@@ -52,7 +52,7 @@ public:
         {
             if (filter_type == "handler")
                 continue;
-            if (filter_type == "url")
+            else if (filter_type == "url")
                 addFilter(urlFilter(config, prefix + ".url"));
             else if (filter_type == "empty_query_string")
                 addFilter(emptyQueryStringFilter());
@@ -90,7 +90,7 @@ public:
     {
         addFilter([](const auto & request)
         {
-            return (request.getURI().contains('?')
+            return (request.getURI().find('?') != std::string::npos
                 && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS

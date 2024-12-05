@@ -2,7 +2,7 @@
 
 #include <Databases/MySQL/MySQLBinlog.h>
 #include <Common/ThreadPool.h>
-#include <Core/Names.h>
+#include <Poco/Logger.h>
 #include <base/unit.h>
 
 namespace DB::MySQLReplication

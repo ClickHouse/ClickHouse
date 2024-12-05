@@ -19,6 +19,9 @@ private:
     const std::string metadata_key_prefix;
     const std::string object_key_prefix;
 
+    bool write_created = false;
+    bool write_finalized = false;
+
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         /// path_ must end with a trailing '/'.
@@ -40,6 +43,7 @@ private:
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
+    bool write_created = false;
     bool write_finalized = false;
 
     std::unique_ptr<WriteBufferFromFileBase>
@@ -69,7 +73,7 @@ private:
     const std::string metadata_key_prefix;
 
     std::string key_prefix;
-    bool remove_attempted = false;
+    bool removed = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
@@ -83,38 +87,4 @@ public:
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
-class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMetadataOperation
-{
-private:
-    std::filesystem::path path;
-    InMemoryDirectoryPathMap & path_map;
-    ObjectStoragePtr object_storage;
-
-    bool written = false;
-
-public:
-    MetadataStorageFromPlainObjectStorageWriteFileOperation(
-        const std::string & path, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
-
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
-};
-
-class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
-{
-private:
-    std::filesystem::path path;
-    std::filesystem::path remote_path;
-    InMemoryDirectoryPathMap & path_map;
-    ObjectStoragePtr object_storage;
-
-    bool unlinked = false;
-
-public:
-    MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
-        std::filesystem::path && path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
-
-    void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
-    void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
-};
 }

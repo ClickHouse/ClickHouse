@@ -73,7 +73,7 @@ public:
     virtual DataTypePtr getStateType() const;
 
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
-    virtual DataTypePtr getNormalizedStateType() const;
+    virtual DataTypePtr getNormalizedStateType() const { return getStateType(); }
 
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.
@@ -175,8 +175,6 @@ public:
 
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
-
-    virtual void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
     /// Deserializes state. This function is called only for empty (just created) states.
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0; /// NOLINT
@@ -473,12 +471,6 @@ public:
         }
     }
 
-    void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const override // NOLINT
-    {
-        for (size_t i = start; i < size; ++i)
-            static_cast<const Derived *>(this)->serialize(data[i], buf, version);
-    }
-
     void addBatchSparse(
         size_t row_begin,
         size_t row_end,
@@ -702,7 +694,7 @@ class IAggregateFunctionDataHelper : public IAggregateFunctionHelper<Derived>
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
 public:

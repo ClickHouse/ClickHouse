@@ -1,8 +1,0 @@
-position: 500
-label: 'Migration'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Migration
-  slug: /ja/cloud/migration

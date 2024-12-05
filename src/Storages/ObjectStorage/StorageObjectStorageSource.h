@@ -14,7 +14,7 @@ namespace DB
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public SourceWithKeyCondition
+class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
     friend class ObjectStorageQueueSource;
 public:
@@ -66,16 +66,10 @@ public:
         const ObjectInfo & object_info,
         bool include_connection_info = true);
 
-    static std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-        ObjectInfo & object_info,
-        const ObjectStoragePtr & object_storage,
-        const ContextPtr & context_,
-        const LoggerPtr & log);
 protected:
     const String name;
     ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
-    const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
@@ -141,6 +135,11 @@ protected:
     ReaderHolder createReader();
 
     std::future<ReaderHolder> createReaderAsync();
+    static std::unique_ptr<ReadBuffer> createReadBuffer(
+        const ObjectInfo & object_info,
+        const ObjectStoragePtr & object_storage,
+        const ContextPtr & context_,
+        const LoggerPtr & log);
 
     void addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows);
     void lazyInitialize();

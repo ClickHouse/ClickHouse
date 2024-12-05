@@ -2,7 +2,6 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
-#include <base/scope_guard.h>
 #include <Common/quoteString.h>
 
 

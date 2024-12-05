@@ -37,8 +37,8 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
-        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_)
-            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_)
+        DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_)
+            : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_)
         {
         }
 
@@ -82,7 +82,6 @@ namespace
         String current_database;
         ContextPtr global_context;
         TableNamesSet dependencies;
-        bool can_throw;
 
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         void visitCreateQuery(const ASTCreateQuery & create)
@@ -484,26 +483,23 @@ namespace
         }
         catch (...)
         {
-            if (data.can_throw)
-                throw;
-            else
-                tryLogCurrentException("DDLDependencyVisitor");
+            tryLogCurrentException("DDLDependencyVisitor");
         }
     }
 }
 
 
-TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
+TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database)
 {
-    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw};
+    DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
     return std::move(data).getDependencies();
 }
 
-TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database, bool can_throw)
+TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database)
 {
-    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database, can_throw};
+    DDLDependencyVisitor::Data data{global_context, table_name, ast, current_database};
     tryVisitNestedSelect(select_query, data);
     return std::move(data).getDependencies();
 }

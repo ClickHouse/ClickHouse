@@ -22,11 +22,11 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
 
-    bool existsFile(const std::string & path) const override;
+    bool exists(const std::string & path) const override;
 
-    bool existsDirectory(const std::string & path) const override;
+    bool isFile(const std::string & path) const override;
 
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool isDirectory(const std::string & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
@@ -35,7 +35,11 @@ public:
 protected:
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
     std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
-    std::unordered_set<std::string> getDirectChildrenOnDisk(const std::filesystem::path & local_path) const;
+    void getDirectChildrenOnDisk(
+        const std::string & storage_key,
+        const RelativePathsWithMetadata & remote_paths,
+        const std::string & local_path,
+        std::unordered_set<std::string> & result) const;
 
 private:
     bool useSeparateLayoutForMetadata() const;

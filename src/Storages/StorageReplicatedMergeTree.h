@@ -404,7 +404,6 @@ private:
     /// for table.
     zkutil::ZooKeeperPtr getZooKeeperIfTableShutDown() const;
     zkutil::ZooKeeperPtr getZooKeeperAndAssertNotReadonly() const;
-    zkutil::ZooKeeperPtr getZooKeeperAndAssertNotStaticStorage() const;
     void setZooKeeper();
     String getEndpointName() const;
 
@@ -842,9 +841,6 @@ private:
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
-
-    /// Throw an exception if the table is readonly because it's a static storage.
-    void assertNotStaticStorage() const;
 
     /// Produce an imaginary part info covering all parts in the specified partition (at the call moment).
     /// Returns false if the partition doesn't exist yet.

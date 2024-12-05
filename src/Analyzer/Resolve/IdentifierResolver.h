@@ -109,9 +109,6 @@ public:
         const QueryTreeNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
-    static bool tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup,
-        const IdentifierResolveScope & scope);
-
     QueryTreeNodePtr tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);

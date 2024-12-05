@@ -282,13 +282,14 @@ public:
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
-    void addMaterializingOutputActions(bool materialize_sparse);
+    void addMaterializingOutputActions();
 
     /// Apply materialize() function to node. Result node has the same name.
-    const Node & materializeNode(const Node & node, bool materialize_sparse = true);
+    const Node & materializeNode(const Node & node);
 
     enum class MatchColumnsMode : uint8_t
     {
+        /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
         /// Find columns in source by their names. Allow excessive columns in source.
         Name,
@@ -298,16 +299,16 @@ public:
     /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
-    /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
-    /// @param new_names - Output parameter for new column names when add_cast_columns is used.
+    /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
+    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false,
-        bool add_cast_columns = false,
-        NameToNameMap * new_names = nullptr,
-        NameSet * columns_contain_compiled_function = nullptr);
+        bool add_casted_columns = false,
+        NameToNameMap * new_names = nullptr);
+
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
 
@@ -485,6 +486,18 @@ class FindOriginalNodeForOutputName
 public:
     explicit FindOriginalNodeForOutputName(const ActionsDAG & actions);
     const ActionsDAG::Node * find(const String & output_name);
+
+private:
+    NameToNodeIndex index;
+};
+
+class FindAliasForInputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindAliasForInputName(const ActionsDAG & actions);
+    const ActionsDAG::Node * find(const String & name);
 
 private:
     NameToNodeIndex index;

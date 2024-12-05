@@ -54,7 +54,7 @@ namespace
             auto semicolon_pos = command_value.find(':', start_parameter_pos);
             if (semicolon_pos == std::string::npos)
                 break;
-            if (semicolon_pos > end_parameter_pos)
+            else if (semicolon_pos > end_parameter_pos)
                 continue;
 
             std::string parameter_name(command_value.data() + start_parameter_pos + 1, command_value.data() + semicolon_pos);

@@ -7,8 +7,6 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/MaterializedView/RefreshSet.h>
-#include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
@@ -419,32 +417,16 @@ QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalo
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
-    TableLockHolder storage_lock;
 
     if (is_temporary_table)
         storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
-    {
-        /// If table is the target of a refreshable materialized view, it needs additional
-        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
-    }
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
-    if (!storage && storage_id.hasUUID())
-    {
-        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
-        // We try to get the table with the database name and the table name.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
-        if (database)
-            storage = database->tryGetTable(table_name, context);
-    }
     if (!storage)
         return {};
 
-    if (!storage_lock)
-        storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
@@ -528,7 +510,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   *
   * Resolve strategy:
   * 1. Try to bind identifier to scope argument name to node map.
-  * 2. If identifier is bound but expression context and node type are incompatible return nullptr.
+  * 2. If identifier is binded but expression context and node type are incompatible return nullptr.
   *
   * It is important to support edge cases, where we lookup for table or function node, but argument has same name.
   * Example: WITH (x -> x + 1) AS func, (func -> func(1) + func) AS lambda SELECT lambda(1);
@@ -552,9 +534,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromExpressionArguments
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
         return {};
-    if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
+    else if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
         return {};
-    if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
+    else if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
         return {};
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
@@ -565,7 +547,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromExpressionArguments
 
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr || scope.aliases.array_join_aliases.contains(identifier_lookup.identifier.front());
 }
 
 /** Resolve identifier from table columns.
@@ -638,9 +620,10 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
 
         if (parts_size == 1 && path_start == table_name)
             return true;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return true;
-        return false;
+        else
+            return false;
     }
 
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
@@ -678,27 +661,6 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
     }
 
     return can_bind_identifier_to_table_expression;
-}
-
-bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
-{
-    bool result = false;
-
-    for (const auto & table_expression : scope.registered_table_expression_nodes)
-    {
-        auto * array_join_node = table_expression->as<ArrayJoinNode>();
-        if (!array_join_node)
-            continue;
-
-        for (const auto & array_join_expression : array_join_node->getJoinExpressions())
-        {
-            auto array_join_expression_alias = array_join_expression->getAlias();
-            if (identifier_lookup.identifier.front() == array_join_expression_alias)
-                return true;
-        }
-    }
-
-    return result;
 }
 
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromStorage(
@@ -930,9 +892,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableExpression(con
 
         if (parts_size == 1 && path_start == table_name)
             return table_expression_node;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return table_expression_node;
-        return {};
+        else
+            return {};
     }
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
@@ -1436,6 +1399,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromArrayJoin(const Ide
 
         IdentifierView identifier_view(identifier_lookup.identifier);
 
+        if (identifier_view.isCompound() && from_array_join_node.hasAlias() && identifier_view.front() == from_array_join_node.getAlias())
+            identifier_view.popFirst();
+
         const auto & alias_or_name = array_join_column_expression_typed.hasAlias()
             ? array_join_column_expression_typed.getAlias()
             : array_join_column_expression_typed.getColumnName();
@@ -1447,16 +1413,18 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromArrayJoin(const Ide
         else
             continue;
 
-        auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-            array_join_column_expression_typed.getColumnSource());
         if (identifier_view.empty())
+        {
+            auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
+                array_join_column_expression_typed.getColumnSource());
             return array_join_column;
+        }
 
         /// Resolve subcolumns. Example : SELECT x.y.z FROM tab ARRAY JOIN arr AS x
         auto compound_expr = tryResolveIdentifierFromCompoundExpression(
             identifier_lookup.identifier,
             identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize() /*identifier_bind_size*/,
-            array_join_column,
+            array_join_column_expression,
             {} /* compound_expression_source */,
             scope,
             true /* can_be_not_found */);

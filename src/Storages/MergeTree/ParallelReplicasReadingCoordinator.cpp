@@ -151,7 +151,6 @@ public:
     {
         String result = "Statistics: ";
         std::vector<String> stats_by_replica;
-        stats_by_replica.reserve(stats.size());
         for (size_t i = 0; i < stats.size(); ++i)
             stats_by_replica.push_back(fmt::format(
                 "replica {}{} - {{requests: {} marks: {} assigned_to_me: {} stolen_by_hash: {} stolen_unassigned: {}}}",
@@ -610,13 +609,13 @@ void DefaultCoordinator::tryToStealFromQueue(
             }
             if (can_take)
             {
-                auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result);
-                if (taken == range.getNumberOfMarks())
+                if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
                 {
                     it = decltype(it)(queue.erase(std::next(it).base()));
                     continue;
                 }
-                range.begin += taken;
+                else
+                    range.begin += taken;
             }
         }
 
@@ -755,12 +754,7 @@ size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, 
 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
 {
-    LOG_TRACE(
-        log,
-        "Handling request from replica {}, minimal marks size is {}, request count {}",
-        request.replica_num,
-        request.min_number_of_marks,
-        stats[request.replica_num].number_of_requests);
+    LOG_TRACE(log, "Handling request from replica {}, minimal marks size is {}", request.replica_num, request.min_number_of_marks);
 
     ParallelReadResponse response;
 

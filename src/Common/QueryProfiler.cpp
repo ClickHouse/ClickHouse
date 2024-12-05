@@ -4,7 +4,6 @@
 #include <base/defines.h>
 #include <base/errnoToString.h>
 #include <base/phdr_cache.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>

@@ -40,6 +40,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 
+#include <pcg_random.hpp>
+
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
 namespace DB
@@ -59,6 +61,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
@@ -311,7 +314,8 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
                 x = true;
                 break;
             }
-            [[fallthrough]];
+            else
+                [[fallthrough]];
         }
         case 'F':
         {
@@ -324,7 +328,8 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
                 x = false;
                 break;
             }
-            [[fallthrough]];
+            else
+                [[fallthrough]];
         }
         default:
         {
@@ -817,7 +822,8 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
         date = LocalDate(year, month, day);
         return ReturnType(true);
     }
-    return readDateTextFallback<ReturnType>(date, buf, allowed_delimiters);
+    else
+        return readDateTextFallback<ReturnType>(date, buf, allowed_delimiters);
 }
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
@@ -929,16 +935,18 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
         uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
         return ReturnType(true);
     }
-
-    s[size] = 0;
-
-    if constexpr (throw_exception)
-    {
-        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
-    }
     else
     {
-        return ReturnType(false);
+        s[size] = 0;
+
+        if constexpr (throw_exception)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
+        }
+        else
+        {
+            return ReturnType(false);
+        }
     }
 }
 
@@ -1090,10 +1098,12 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+        else
+            /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
+            return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    else
+        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
 template <typename ReturnType>
@@ -1417,9 +1427,7 @@ inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, 
 inline bool tryReadText(IPv4 & x, ReadBuffer & buf) { return tryReadIPv4Text(x, buf); }
 inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, buf); }
 
-template <typename T>
-requires is_floating_point<T>
-inline void readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 
@@ -1913,6 +1921,26 @@ bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * &
 /// Skip data until start of the next row or eof (the end of row is determined by two delimiters:
 /// row_after_delimiter and row_between_delimiter).
 void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
+
+struct PcgDeserializer
+{
+    static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
+    {
+        decltype(rng.state_) multiplier, increment, state;
+        readText(multiplier, buf);
+        assertChar(' ', buf);
+        readText(increment, buf);
+        assertChar(' ', buf);
+        readText(state, buf);
+
+        if (multiplier != pcg32_fast::multiplier())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", pcg32_fast::multiplier(), multiplier);
+        if (increment != pcg32_fast::increment())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", pcg32_fast::increment(), increment);
+
+        rng.state_ = state;
+    }
+};
 
 void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func);
 
