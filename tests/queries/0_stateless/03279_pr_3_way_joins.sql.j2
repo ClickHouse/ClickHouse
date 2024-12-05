@@ -37,7 +37,7 @@ INSERT INTO test_table_join_3 VALUES (4, 'Join_3_Value_4');
 -- { echoOn }
 
 {% for first_join_type in ['INNER', 'LEFT', 'RIGHT'] -%}
-{% for second_join_type in ['INNER', 'LEFT'] -%}
+{% for second_join_type in ['INNER', 'LEFT', 'RIGHT'] -%}
 
 SELECT 'First JOIN {{ first_join_type }} second JOIN {{ second_join_type }}';
 
