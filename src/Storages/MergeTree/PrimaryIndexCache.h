@@ -24,9 +24,10 @@ struct PrimaryIndexWeightFunction
 
     size_t operator()(const PrimaryIndex & index) const
     {
-        size_t res = 0;
+        size_t res = PRIMARY_INDEX_CACHE_OVERHEAD;
+        res += index.capacity() * sizeof(PrimaryIndex::value_type);
         for (const auto & column : index)
-            res += column->byteSize();
+            res += column->allocatedBytes();
         return res;
     }
 };

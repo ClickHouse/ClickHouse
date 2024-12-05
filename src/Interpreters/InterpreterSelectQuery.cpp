@@ -131,7 +131,6 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsBool final;
     extern const SettingsBool force_aggregation_in_order;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
@@ -149,14 +148,12 @@ namespace Setting
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
-    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
-    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_move_to_prewhere;
@@ -178,6 +175,16 @@ namespace Setting
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
+    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsUInt64 max_bytes_before_external_group_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
+    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsBool compile_aggregate_expressions;
+    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
+    extern const SettingsBool enable_software_prefetch_in_aggregation;
+    extern const SettingsBool optimize_group_by_constant_keys;
 }
 
 namespace ServerSetting
@@ -549,8 +556,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
+        if (storage->hasExternalDynamicMetadata())
+        {
+            storage->updateExternalDynamicMetadata(context);
+            metadata_snapshot = storage->getInMemoryMetadataPtr();
+        }
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
+
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
@@ -2751,16 +2764,29 @@ static Aggregator::Params getAggregatorParams(
 
     return Aggregator::Params
     {
-        settings,
         keys,
         aggregates,
         overflow_row,
+        settings[Setting::max_rows_to_group_by],
+        settings[Setting::group_by_overflow_mode],
         group_by_two_level_threshold,
         group_by_two_level_threshold_bytes,
-        settings[Setting::empty_result_for_aggregation_by_empty_set] || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty() && query_analyzer.hasConstAggregationKeys()),
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        settings[Setting::empty_result_for_aggregation_by_empty_set]
+            || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
+                && query_analyzer.hasConstAggregationKeys()),
         context.getTempDataOnDisk(),
-        /* only_merge_= */ false,
-        stats_collecting_params};
+        settings[Setting::max_threads],
+        settings[Setting::min_free_disk_space_for_temporary_data],
+        settings[Setting::compile_aggregate_expressions],
+        settings[Setting::min_count_to_compile_aggregate_expression],
+        settings[Setting::max_block_size],
+        settings[Setting::enable_software_prefetch_in_aggregation],
+        /* only_merge */ false,
+        settings[Setting::optimize_group_by_constant_keys],
+        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
+        stats_collecting_params
+    };
 }
 
 void InterpreterSelectQuery::executeAggregation(
