@@ -59,7 +59,8 @@ IcebergMetadata::IcebergMetadata(
     Int32 format_version_,
     String manifest_list_file_,
     Int32 current_schema_id_,
-    DB::NamesAndTypesList schema_)
+    DB::NamesAndTypesList schema_,
+    std::unordered_map<Int32, NameAndTypePair> name_and_type_by_source_id_)
     : WithContext(context_)
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -69,6 +70,7 @@ IcebergMetadata::IcebergMetadata(
     , current_schema_id(current_schema_id_)
     , schema(std::move(schema_))
     , log(getLogger("IcebergMetadata"))
+    , name_and_type_by_source_id(name_and_type_by_source_id_)
 {
 }
 
@@ -469,7 +471,15 @@ IcebergMetadata::create(ObjectStoragePtr object_storage, ConfigurationObserverPt
     }
 
     return std::make_unique<IcebergMetadata>(
-        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, schema_id, schema);
+        object_storage,
+        configuration_ptr,
+        local_context,
+        metadata_version,
+        format_version,
+        manifest_list_file,
+        schema_id,
+        schema,
+        name_and_type_by_source_id);
 }
 
 /**
@@ -705,8 +715,9 @@ Strings IcebergMetadata::getDataFiles() const
             = String(reinterpret_cast<char *>(partition_spec_json_bytes.data()), partition_spec_json_bytes.size());
         Poco::Dynamic::Var partition_spec_json = parser.parse(partition_spec_json_string);
         const Poco::JSON::Array::Ptr & partition_spec = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
+        ColumnPtr status_column = std::move(columns.at(0));
         common_partition_infos.push_back(
-            pruning_processor.getCommonPartitionInfo(partition_spec, big_partition_tuple, data_file_tuple_type));
+            pruning_processor.getCommonPartitionInfo(partition_spec, big_partition_tuple, file_path_column, status_column, manifest_file));
         specific_partition_infos.push_back(
             pruning_processor.getSpecificPartitionInfo(common_partition_infos.back(), current_schema_id, name_and_type_by_source_id));
     }

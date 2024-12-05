@@ -37,19 +37,33 @@
 
 #    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #    include <DataFile.hh>
+
+
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int ILLEGAL_COLUMN;
+}
 
 CommonPartitionInfo PartitionPruningProcessor::getCommonPartitionInfo(
     const Poco::JSON::Array::Ptr & partition_specification,
-    const ColumnTuple * data_file_tuple_column,
-    const DataTypeTuple & data_file_tuple_type) const
+    const ColumnTuple * big_partition_column,
+    ColumnPtr file_path_column,
+    ColumnPtr status_column,
+    const String & manifest_file) const
 {
     CommonPartitionInfo common_info;
-    const ColumnTuple * big_partition_column
-        = assert_cast<const ColumnTuple *>(data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition")).get());
 
-    common_info.file_path_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("file_path"));
+    // LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Partition column index: {}", data_file_tuple_type.getPositionByName("partition"));
+    // LOG_DEBUG(&Poco::Logger::get("File path Spec"), "File path column index: {}", data_file_tuple_type.getPositionByName("file_path"));
+
+    // const auto * big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition")).get();
+
+    // common_info.file_path_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("file_path"));
+    common_info.file_path_column = file_path_column;
+    common_info.status_column = status_column;
+    common_info.manifest_file = manifest_file;
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
@@ -78,14 +92,22 @@ SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionInfo(
 {
     SpecificSchemaPartitionInfo specific_info;
 
+    LOG_DEBUG(&Poco::Logger::get("Form specific info"), "name_and_type_by_source_id size: {}", name_and_type_by_source_id.size());
+
     for (size_t i = 0; i < common_info.partition_columns.size(); ++i)
     {
+        if (common_info.partition_transforms[i] == PartitionTransform::Unsupported
+            || common_info.partition_transforms[i] == PartitionTransform::Void)
+        {
+            continue;
+        }
         Int32 source_id = common_info.partition_source_ids[i];
         auto it = name_and_type_by_source_id.find(source_id);
         if (it == name_and_type_by_source_id.end())
         {
             continue;
         }
+        LOG_DEBUG(&Poco::Logger::get("Form specific info"), "Added source id: {}", source_id);
         size_t column_size = common_info.partition_columns[i]->size();
         if (specific_info.ranges.empty())
         {
@@ -107,9 +129,14 @@ SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionInfo(
 }
 
 std::vector<bool> PartitionPruningProcessor::getPruningMask(
-    const SpecificSchemaPartitionInfo & specific_info, const ActionsDAG * filter_dag, ContextPtr context) const
+    const String & manifest_file,
+    const SpecificSchemaPartitionInfo & specific_info,
+    const ActionsDAG * filter_dag,
+    ContextPtr context) const
 {
-    std::vector<bool> pruning_mask;
+    std::vector<bool> pruning_mask(specific_info.ranges.size(), true);
+    LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Name and types size: {}", specific_info.partition_names_and_types.size());
+
     if (!specific_info.partition_names_and_types.empty())
     {
         ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
@@ -121,13 +148,21 @@ std::vector<bool> PartitionPruningProcessor::getPruningMask(
             if (!partition_key_condition.checkInHyperrectangle(specific_info.ranges[j], specific_info.partition_names_and_types.getTypes())
                      .can_be_true)
             {
-                LOG_DEBUG(&Poco::Logger::get("Partition pruning"), "Partition pruning was successful for file: {}", j);
-                pruning_mask.push_back(false);
+                LOG_DEBUG(
+                    &Poco::Logger::get("Partition pruning"),
+                    "Partition pruning in manifest {} was successful for file number {}",
+                    manifest_file,
+                    j);
+                pruning_mask[j] = false;
             }
             else
             {
-                LOG_DEBUG(&Poco::Logger::get("Partition pruning"), "Partition pruning failed for file: {}", j);
-                pruning_mask.push_back(true);
+                LOG_DEBUG(
+                    &Poco::Logger::get("Partition pruning"),
+                    "Partition pruning in manifest {} failed for file number {}",
+                    manifest_file,
+                    j);
+                pruning_mask[j] = true;
             }
         }
     }
@@ -147,11 +182,15 @@ Strings PartitionPruningProcessor::getDataFiles(
         const auto & manifest_partition_info = manifest_partitions_infos[index];
         const auto & specific_partition_info = specific_infos[index];
         size_t number_of_files_in_manifest = manifest_partition_info.file_path_column->size();
-        LOG_DEBUG(&Poco::Logger::get("Partition pruning"), "Filter dag is null: {}", filter_dag == nullptr);
-        auto pruning_mask = filter_dag ? getPruningMask(specific_partition_info, filter_dag, context) : std::vector<bool>{};
+        LOG_DEBUG(&Poco::Logger::get("Getting prunned files"), "Filter dag is null: {}", filter_dag == nullptr);
+        auto pruning_mask = filter_dag ? getPruningMask(manifest_partition_info.manifest_file, specific_partition_info, filter_dag, context)
+                                       : std::vector<bool>{};
+        LOG_DEBUG(&Poco::Logger::get("Getting prunned files"), "Number of files in manifest: {}", number_of_files_in_manifest);
+        LOG_DEBUG(&Poco::Logger::get("Getting prunned files"), "Number of files in pruning mask: {}", pruning_mask.size());
+        chassert(pruning_mask.empty() || number_of_files_in_manifest == pruning_mask.size());
         for (size_t i = 0; i < number_of_files_in_manifest; ++i)
         {
-            if (!filter_dag || pruning_mask[i])
+            if (!filter_dag || pruning_mask.empty() || pruning_mask[i])
             {
                 const auto status = manifest_partition_info.status_column->getInt(i);
                 const auto data_path = std::string(manifest_partition_info.file_path_column->getDataAt(i).toView());

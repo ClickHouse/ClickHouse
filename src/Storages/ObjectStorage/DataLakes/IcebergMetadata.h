@@ -1,9 +1,13 @@
 #pragma once
 
+#include "Columns/ColumnString.h"
+#include "Columns/ColumnsDateTime.h"
 #include "Columns/IColumn.h"
 #include "Core/NamesAndTypes.h"
 #include "DataTypes/DataTypeNullable.h"
 #include "DataTypes/DataTypeTuple.h"
+#include "Disks/IStoragePolicy.h"
+#include "base/Decimal.h"
 #include "config.h"
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
@@ -72,6 +76,8 @@ enum class PartitionTransform
     Month,
     Day,
     Hour,
+    Identity,
+    Void,
     Unsupported
 };
 
@@ -97,6 +103,7 @@ struct CommonPartitionInfo
     std::vector<Int32> partition_source_ids;
     ColumnPtr file_path_column;
     ColumnPtr status_column;
+    String manifest_file;
 };
 
 struct SpecificSchemaPartitionInfo
@@ -111,15 +118,20 @@ public:
     CommonPartitionInfo getCommonPartitionInfo(
         const Poco::JSON::Array::Ptr & partition_specification,
         const ColumnTuple * data_file_tuple_column,
-        const DataTypeTuple & data_file_tuple_type) const;
+        ColumnPtr file_path_column,
+        ColumnPtr status_column,
+        const String & manifest_file) const;
 
     SpecificSchemaPartitionInfo getSpecificPartitionInfo(
         const CommonPartitionInfo & common_info,
         Int32 schema_version,
         const std::unordered_map<Int32, NameAndTypePair> & name_and_type_by_source_id) const;
 
-    std::vector<bool>
-    getPruningMask(const SpecificSchemaPartitionInfo & specific_info, const ActionsDAG * filter_dag, ContextPtr context) const;
+    std::vector<bool> getPruningMask(
+        const String & manifest_file,
+        const SpecificSchemaPartitionInfo & specific_info,
+        const ActionsDAG * filter_dag,
+        ContextPtr context) const;
 
     Strings getDataFiles(
         const std::vector<CommonPartitionInfo> & manifest_partitions_infos,
@@ -143,6 +155,18 @@ private:
         {
             return PartitionTransform::Day;
         }
+        else if (transform_name == "hour")
+        {
+            return PartitionTransform::Hour;
+        }
+        else if (transform_name == "identity")
+        {
+            return PartitionTransform::Identity;
+        }
+        else if (transform_name == "void")
+        {
+            return PartitionTransform::Void;
+        }
         else
         {
             return PartitionTransform::Unsupported;
@@ -161,7 +185,13 @@ private:
         }
         else if (transform == PartitionTransform::Day)
         {
-            return DateLUT::instance().getValues(static_cast<UInt16>(value));
+            return DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value));
+        }
+        else if (transform == PartitionTransform::Hour)
+        {
+            DateLUTImpl::Values values = DateLUT::instance().getValues(static_cast<UInt16>(value / 24));
+            values.date += (value % 24) * 3600;
+            return values;
         }
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform for get day function: {}", transform);
     }
@@ -169,7 +199,6 @@ private:
     static Int64 getTime(Int32 value, PartitionTransform transform)
     {
         DateLUTImpl::Values values = getValues(value, transform);
-        // LOG_DEBUG(&Poco::Logger::get("Get field"), "Values: {}", values);
         return values.date;
     }
 
@@ -183,38 +212,59 @@ private:
     static Range
     getPartitionRange(PartitionTransform partition_transform, UInt32 index, ColumnPtr partition_column, DataTypePtr column_data_type)
     {
-        if (partition_transform == PartitionTransform::Year || partition_transform == PartitionTransform::Month
-            || partition_transform == PartitionTransform::Day)
+        if (partition_transform == PartitionTransform::Unsupported)
         {
-            auto column = dynamic_cast<const ColumnNullable *>(partition_column.get())->getNestedColumnPtr();
-            const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(column.get());
-            Int32 value = static_cast<Int32>(casted_innner_column->getInt(index));
-            LOG_DEBUG(&Poco::Logger::get("Partition"), "Partition value: {}, transform: {}", value, partition_transform);
-            auto nested_data_type = dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType();
-            if (WhichDataType(nested_data_type).isDate())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform: {}", partition_transform);
+        }
+        auto column = dynamic_cast<const ColumnNullable *>(partition_column.get())->getNestedColumnPtr();
+        if (partition_transform == PartitionTransform::Identity)
+        {
+            Field entry = (*column.get())[index];
+            return Range{entry, true, entry, true};
+        }
+        auto [nested_data_type, value] = [&]() -> std::pair<DataTypePtr, Int32>
+        {
+            if (column->getDataType() == TypeIndex::Int32)
             {
-                const UInt16 begin_range_value = getDay(value, partition_transform);
-                const UInt16 end_range_value = getDay(value + 1, partition_transform);
-                return Range{begin_range_value, true, end_range_value, false};
+                const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(column.get());
+                Int32 value_ = static_cast<Int32>(casted_innner_column->getInt(index));
+                LOG_DEBUG(
+                    &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column_type: int", value_, partition_transform);
+                return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), value_};
             }
-            else if (WhichDataType(nested_data_type).isDateTime64())
+            else if (column->getDataType() == TypeIndex::Date && (partition_transform == PartitionTransform::Day))
             {
-                const UInt64 begin_range_value = getTime(value, partition_transform);
-                const UInt64 end_range_value = getTime(value + 1, partition_transform);
-                return Range{begin_range_value, true, end_range_value, false};
+                const auto * casted_innner_column = assert_cast<const ColumnDate *>(column.get());
+                Int32 value_ = static_cast<Int32>(casted_innner_column->getInt(index));
+                LOG_DEBUG(
+                    &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column type: date", value_, partition_transform);
+                return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), value_};
             }
             else
             {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Partition transform {} is not supported for the type: {}",
-                    partition_transform,
-                    nested_data_type);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition column type: {}", column->getFamilyName());
             }
+        }();
+        if (WhichDataType(nested_data_type).isDate() && (partition_transform != PartitionTransform::Hour))
+        {
+            const UInt16 begin_range_value = getDay(value, partition_transform);
+            const UInt16 end_range_value = getDay(value + 1, partition_transform);
+            LOG_DEBUG(&Poco::Logger::get("Partition"), "Range begin: {}, range end {}", begin_range_value, end_range_value);
+            return Range{begin_range_value, true, end_range_value, false};
+        }
+        else if (WhichDataType(nested_data_type).isDateTime64())
+        {
+            const UInt64 begin_range_value = getTime(value, partition_transform);
+            const UInt64 end_range_value = getTime(value + 1, partition_transform);
+            return Range{begin_range_value, true, end_range_value, false};
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform: {}", partition_transform);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Partition transform {} is not supported for the type: {}",
+                partition_transform,
+                nested_data_type);
         }
     }
 };
@@ -244,7 +294,8 @@ public:
         Int32 format_version_,
         String manifest_list_file_,
         Int32 current_schema_id_,
-        NamesAndTypesList schema_);
+        NamesAndTypesList schema_,
+        std::unordered_map<Int32, NameAndTypePair> name_and_type_by_source_id_);
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
