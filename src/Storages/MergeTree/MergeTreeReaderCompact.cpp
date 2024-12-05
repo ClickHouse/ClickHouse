@@ -188,7 +188,7 @@ void MergeTreeReaderCompact::readData(
                 auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
                 ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
 
-                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], nullptr);
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name_in_storage], nullptr);
                 auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
 
                 /// TODO: Avoid extra copying.
@@ -231,6 +231,9 @@ void MergeTreeReaderCompact::readPrefix(
 {
     try
     {
+        if (deserialize_binary_bulk_state_map.contains(name_and_type.getNameInStorage()))
+            return;
+
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
 
         if (name_level_for_offsets.has_value())
@@ -253,7 +256,7 @@ void MergeTreeReaderCompact::readPrefix(
 
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.object_and_dynamic_read_statistics = true;
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name], nullptr);
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.getNameInStorage()], nullptr);
     }
     catch (Exception & e)
     {
