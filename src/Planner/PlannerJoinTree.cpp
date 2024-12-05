@@ -1486,7 +1486,7 @@ static std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         auto join_step = std::make_unique<JoinStep>(
             left_plan.getCurrentHeader(),
             right_plan.getCurrentHeader(),
-            std::move(join_algorithm),
+            join_algorithm,
             settings[Setting::max_block_size],
             settings[Setting::min_joined_block_size_bytes],
             settings[Setting::max_threads],
