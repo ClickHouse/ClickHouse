@@ -11,15 +11,15 @@
             <form id="param-form" class="p-3 form-inline">
                 <div class="form-group mx-2">
                     <label for="insertPartSize" class="mr-2">Size:</label>
-                    <input type="text" class="form-control form-control-sm" id="insertPartSize" value="10MB" style="width: 80px;">
+                    <input type="text" class="form-control form-control-sm" id="insertPartSize" value="10MB" style="width: 70px;">
                 </div>
                 <div class="form-group mx-2">
                     <label for="parts" class="mr-2">Parts:</label>
-                    <input type="number" class="form-control form-control-sm" id="parts" value="243" style="width: 80px;">
+                    <input type="number" class="form-control form-control-sm" id="parts" value="243" style="width: 70px;">
                 </div>
                 <div class="form-group mx-2">
                     <label for="poolSize" class="mr-2">Workers:</label>
-                    <input type="number" class="form-control form-control-sm" id="poolSize" value="9" style="width: 60px;">
+                    <input type="number" class="form-control form-control-sm" id="poolSize" value="9" style="width: 70px;">
                 </div>
                 <div class="form-group mx-2">
                     <label for="layerBases" class="mr-2">Bases:</label>
@@ -36,7 +36,7 @@
                     <thead>
                         <tr>
                             <th>WA</th>
-                            <th>Objective</th>
+                            <th>Integral in model</th>
                             <th>Bases</th>
                             <th></th>
                         </tr>
@@ -71,6 +71,7 @@
         </div>
 
         <script type="module">
+            import { MergeTree } from './MergeTree.js';
             import { SimulationContainer } from './SimulationContainer.js';
             import { sequenceInserter } from './sequenceInserter.js';
             import { customScenario } from './customScenario.js';
@@ -111,7 +112,9 @@
                 const N = workers;
                 const yBar = Math.log(n / N);
 
-                const B = 1; // insertPartSize * parts - total bytes count, but it cancels out
+                const mt0 = new MergeTree();
+                const realB = mt0.mergeDuration(insertPartSize * n, n);
+                const B = 1;
 
                 const sumVectors = (vectors) => vectors.reduce((acc, vec) => acc.map((val, index) => val + vec[index]), new Array(vectors[0].length).fill(0));
                 const y = (x, i) => x.slice(0, i + 1).reduce((acc, val) => acc + val, 0); // Note that y(x, -1) = 0
@@ -157,11 +160,12 @@
                     console.log("OPTION", {L, x, Fx, bases});
                     d3.select('#options-table tbody')
                         .append('tr')
+                        .attr('data-L', L)
                         .html(`
                             <td>${L + 1}</td>
-                            <td>${Fx.toFixed(2)}</td>
+                            <td>${(Fx * realB).toFixed(2)}</td>
                             <td>${basesStr}</td>
-                            <td><button class="btn btn-primary btn-xs choose-btn" style="padding: 2px 5px; font-size: 0.8rem;">Run</button></td>                        `)
+                            <td><button class="btn btn-primary btn-xs choose-btn" style="padding: 2px 5px; font-size: 0.8rem;">Run</button></td>`)
                         .select('button.choose-btn')
                         .on('click', () => {
                             d3.select('#layerBases').property('value', basesStr);
@@ -174,8 +178,15 @@
                         d3.select('#layerBases').property('value', basesStr);
                     }
                 }
-
+                // Highlight optimal row
                 console.log("OPTIMAL", {Lopt, xopt, Fopt});
+                d3.select('#options-table tbody').selectAll('tr')
+                    .each(function() {
+                        const row = d3.select(this);
+                        if (parseInt(row.attr('data-L')) === Lopt) {
+                            row.style('background-color', '#d4edda');
+                        }
+                    });
                 solveButton.textContent = 'Solve';
                 solveButton.disabled = false;
             });
