@@ -297,6 +297,12 @@ public:
             return;
         }
 
+        if (const auto * /*cross_join_node*/ _ = node->as<CrossJoinNode>())
+        {
+            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
+            return;
+        }
+
         if (const auto * query_node = node->as<QueryNode>())
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())

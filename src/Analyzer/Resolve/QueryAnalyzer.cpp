@@ -4489,7 +4489,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                     join_tree_node_ptrs_to_process_queue.push_back(&expr);
 
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
-                scope.joins_count += join.getTableExpressions().size();
+                scope.joins_count += join.getTableExpressions().size() - 1;
                 break;
             }
             case QueryTreeNodeType::JOIN:

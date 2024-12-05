@@ -411,6 +411,13 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
                 nodes_to_process.push_back(node_to_process->as<ArrayJoinNode>()->getTableExpression());
                 break;
             }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                auto & cross_join_node = node_to_process->as<CrossJoinNode &>();
+                for (const auto & expr : cross_join_node.getTableExpressions())
+                     nodes_to_process.push_back(expr);
+                break;
+            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
