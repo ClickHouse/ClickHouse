@@ -110,7 +110,17 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
-    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
+    /// If the whole value fits in buffer do not call readStrict and copy with
+    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
+    if (buf.position() + sizeof(T) <= buf.buffer().end()) [[likely]]
+    {
+        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), sizeof(T));
+        buf.position() += sizeof(T);
+    }
+    else
+    {
+        buf.readStrict(reinterpret_cast<char *>(&x), sizeof(T)); /// NOLINT
+    }
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)

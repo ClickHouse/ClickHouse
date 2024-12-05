@@ -79,12 +79,15 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     size_t size_of_state = function->sizeOfData();
     size_t align_of_state = function->alignOfData();
 
+    /// Adjust the size of state to make all states aligned in vector.
+    size_t total_size_of_state = (size_of_state + align_of_state - 1) / align_of_state * align_of_state;
+    char * memory = arena.alignedAlloc(total_size_of_state * limit, align_of_state);
+    char * place = memory;
+
     for (size_t i = 0; i < limit; ++i)
     {
         if (istr.eof())
             break;
-
-        AggregateDataPtr place = arena.alignedAlloc(size_of_state, align_of_state);
 
         function->create(place);
 
@@ -99,6 +102,7 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
         }
 
         vec.push_back(place);
+        place += total_size_of_state;
     }
 }
 
