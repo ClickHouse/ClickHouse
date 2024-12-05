@@ -860,8 +860,8 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
         switch (getHandleKafkaErrorMode())
         {
-        case ExtStreamingHandleErrorMode::STREAM:
-        case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            case ExtStreamingHandleErrorMode::STREAM:
+            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -874,7 +874,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 }
                 break;
             }
-        case ExtStreamingHandleErrorMode::DEFAULT:
+            case ExtStreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
                     "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
@@ -980,6 +980,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                     {
 
                         const auto time_now = std::chrono::system_clock::now();
+                        auto storage_id = getStorageID();
 
                         auto dead_letter_queue = getContext()->getDeadLetterQueue();
                         dead_letter_queue->add(
@@ -987,16 +988,15 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                                 .stream_type = DeadLetterQueueElement::StreamType::Kafka,
                                 .event_time = timeInSeconds(time_now),
                                 .event_time_microseconds = timeInMicroseconds(time_now),
-                                .database_name = getStorageID().database_name,
-                                .table_name = getStorageID().table_name,
+                                .database_name = storage_id.database_name,
+                                .table_name = storage_id.table_name,
                                 .raw_message = consumer.currentPayload(),
                                 .error = exception_message.value(),
                                 .details = DeadLetterQueueElement::KafkaDetails{
                                     .topic_name = consumer.currentTopic(),
                                     .partition = consumer.currentPartition(),
-                                    .offset = consumer.currentPartition()
-                                }
-                            });
+                                    .offset = consumer.currentPartition(),
+                                    .key = consumer.currentKey()}});
                     }
 
                 }

@@ -34,9 +34,10 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
         {"raw_message", std::make_shared<DataTypeString>(), "Message body."},
 
         {"kafka_topic_name", std::make_shared<DataTypeString>(), "Kafka topic name."},
-        {"kafka_partition", std::make_shared<DataTypeUInt64>(), "Kafka partition."},
-        {"kafka_offset", std::make_shared<DataTypeUInt64>(), "Kafka offset."},
-        /* 3 */
+        {"kafka_partition", std::make_shared<DataTypeUInt64>(), "Kafka partition of the topic."},
+        {"kafka_offset", std::make_shared<DataTypeUInt64>(), "Kafka offset of the message."},
+        {"kafka_key", std::make_shared<DataTypeString>(), "Kafka key of the message."},
+        /* 4 */
 
         {"rabbitmq_exchange_name", std::make_shared<DataTypeString>(), "RabbitMQ exchange name."},
         {"rabbitmq_message_id", std::make_shared<DataTypeString>(), "RabbitMQ message id."},
@@ -44,7 +45,7 @@ ColumnsDescription DeadLetterQueueElement::getColumnsDescription()
         {"rabbitmq_message_redelivered", std::make_shared<DataTypeUInt8>(), "RabbitMQ redelivered flag."},
         {"rabbitmq_message_delivery_tag", std::make_shared<DataTypeUInt64>(), "RabbitMQ delivery tag."},
         {"rabbitmq_channel_id", std::make_shared<DataTypeString>(), "RabbitMQ channel id."},
-        /* 9 */
+        /* 10 */
 
     };
 }
@@ -70,11 +71,13 @@ struct DetailsVisitor
         columns[i++]->insert(kafka.partition);
         explicitly_set[i] = true;
         columns[i++]->insert(kafka.offset);
+        explicitly_set[i] = true;
+        columns[i++]->insertData(kafka.key.data(), kafka.key.size());
     }
 
     void operator()(const DeadLetterQueueElement::RabbitMQDetails & rabbit_mq) const
     {
-        i += 3; // skip rows specific for previous details
+        i += 4; // skip rows specific for previous details
 
         explicitly_set[i] = true;
         columns[i++]->insertData(rabbit_mq.exchange_name.data(), rabbit_mq.exchange_name.size());

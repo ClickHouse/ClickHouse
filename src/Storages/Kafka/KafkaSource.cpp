@@ -120,7 +120,8 @@ Chunk KafkaSource::generateImpl()
         switch (handle_error_mode)
         {
             case ExtStreamingHandleErrorMode::STREAM:
-            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE: {
+            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
                 {
@@ -132,7 +133,8 @@ Chunk KafkaSource::generateImpl()
                 }
                 break;
             }
-            case ExtStreamingHandleErrorMode::DEFAULT: {
+            case ExtStreamingHandleErrorMode::DEFAULT:
+            {
                 e.addMessage(
                     "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
                     consumer->currentTopic(),
@@ -244,7 +246,8 @@ Chunk KafkaSource::generateImpl()
                             .details = DeadLetterQueueElement::KafkaDetails{
                                 .topic_name = consumer->currentTopic(),
                                 .partition = consumer->currentPartition(),
-                                .offset = consumer->currentPartition()}});
+                                .offset = consumer->currentPartition(),
+                                .key = consumer->currentKey()}});
                     }
                 }
             }
