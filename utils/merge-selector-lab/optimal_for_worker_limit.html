@@ -30,6 +30,22 @@
             </form>
         </div>
 
+        <div class="container-fluid">
+            <div class="p-3" id="options-container">
+                <table class="table table-bordered table-sm" id="options-table">
+                    <thead>
+                        <tr>
+                            <th>WA</th>
+                            <th>Objective</th>
+                            <th>Bases</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="container-fluid bg-primary text-white">
             <div class="p-3" id="metrics-container"></div>
         </div>
@@ -131,20 +147,35 @@
                 let Fopt = Infinity;
                 let Lopt = 1;
                 let xopt = [];
+
+                d3.select('#options-table tbody').html('');
                 for (let L = 1; L <= 1.1 * Math.log(n); L++) {
                     let x = gradientDescent(grad_F, L, n, eta);
                     let Fx = F(x);
+                    const bases = x.map(xi => Math.exp(xi));
+                    const basesStr = '[' + bases.map(base => base.toFixed(2)).join(', ') + ']';
+                    console.log("OPTION", {L, x, Fx, bases});
+                    d3.select('#options-table tbody')
+                        .append('tr')
+                        .html(`
+                            <td>${L + 1}</td>
+                            <td>${Fx.toFixed(2)}</td>
+                            <td>${basesStr}</td>
+                            <td><button class="btn btn-primary btn-xs choose-btn" style="padding: 2px 5px; font-size: 0.8rem;">Run</button></td>                        `)
+                        .select('button.choose-btn')
+                        .on('click', () => {
+                            d3.select('#layerBases').property('value', basesStr);
+                            document.getElementById('runButton').click();
+                        });
                     if (Fx < Fopt) {
                         Fopt = Fx;
                         xopt = x;
                         Lopt = L;
+                        d3.select('#layerBases').property('value', basesStr);
                     }
-                    console.log("OPTION", {L, x, Fx, bases: x.map(xi => Math.exp(xi))});
                 }
 
                 console.log("OPTIMAL", {Lopt, xopt, Fopt});
-                const bases = xopt.map(xi => Math.exp(xi).toFixed(2));
-                document.getElementById('layerBases').value = '[' + bases.toString() + ']';
                 solveButton.textContent = 'Solve';
                 solveButton.disabled = false;
             });
