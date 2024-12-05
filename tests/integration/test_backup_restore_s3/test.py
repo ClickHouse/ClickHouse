@@ -794,9 +794,11 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk():
         query_id=backup_query_id,
     )
     restore_query_id = uuid.uuid4().hex
+    instance.query("DROP TABLE IF EXISTS data_restored SYNC")
     instance.query(
         f"""
         RESTORE TABLE system.query_log AS data_restored FROM {backup_destination};
         """,
         query_id=restore_query_id,
     )
+    instance.query("DROP TABLE data_restored SYNC")
