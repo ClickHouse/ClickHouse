@@ -191,9 +191,9 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             columns[pos] = columns[pos]->replicate(offsets);
 
         block.getSourceBlock().setColumns(columns);
-        block.getSourceBlock().erase(block_columns_to_erase);
         block = ScatteredBlock(std::move(block).getSourceBlock());
     }
+    block.getSourceBlock().erase(block_columns_to_erase);
     return remaining_block;
 }
 

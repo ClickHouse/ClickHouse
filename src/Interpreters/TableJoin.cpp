@@ -7,7 +7,9 @@
 
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Joins.h>
 #include <Core/Settings.h>
+#include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -28,7 +30,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
-#include <Common/logger_useful.h>
 #include <algorithm>
 #include <string>
 #include <type_traits>
@@ -997,7 +998,8 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::PARALLEL_HASH) == join_algorithm.end())
+    if (std::ranges::none_of(
+            join_algorithm, [](auto algo) { return algo == JoinAlgorithm::DEFAULT || algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
     if (!right_storage_name.empty())
         return false;

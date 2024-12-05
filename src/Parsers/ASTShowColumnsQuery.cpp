@@ -15,22 +15,22 @@ ASTPtr ASTShowColumnsQuery::clone() const
     return res;
 }
 
-void ASTShowColumnsQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
+    ostr << (settings.hilite ? hilite_keyword : "")
                   << "SHOW "
                   << (extended ? "EXTENDED " : "")
                   << (full ? "FULL " : "")
                   << "COLUMNS"
                   << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(table);
+    ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(table);
     if (!database.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
+        ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
 
 
     if (!like.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
+        ostr << (settings.hilite ? hilite_keyword : "")
                       << (not_like ? " NOT" : "")
                       << (case_insensitive_like ? " ILIKE " : " LIKE")
                       << (settings.hilite ? hilite_none : "")
@@ -38,14 +38,14 @@ void ASTShowColumnsQuery::formatQueryImpl(const FormatSettings & settings, Forma
 
     if (where_expression)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-        where_expression->formatImpl(settings, state, frame);
+        ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        where_expression->formatImpl(ostr, settings, state, frame);
     }
 
     if (limit_length)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
-        limit_length->formatImpl(settings, state, frame);
+        ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
+        limit_length->formatImpl(ostr, settings, state, frame);
     }
 }
 

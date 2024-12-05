@@ -986,6 +986,8 @@ class MergeTreeSettingsRandomizer:
         "prewarm_mark_cache": lambda: random.randint(0, 1),
         "use_const_adaptive_granularity": lambda: random.randint(0, 1),
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
+        "use_primary_key_cache": lambda: random.randint(0, 1),
+        "prewarm_primary_key_cache": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -2694,7 +2696,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
     if test_suite.sequential_tests:
         run_tests_array(
             (
-                test_suite.sequential_tests,
+                list(test_suite.sequential_tests),
                 len(test_suite.sequential_tests),
                 test_suite,
                 False,
