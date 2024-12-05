@@ -143,7 +143,7 @@ std::optional<uint64_t> tryHashInt(const Field & field, const std::shared_ptr<co
     return std::nullopt;
 }
 
-std::optional<uint64_t> tryHash(const Field & field, const parquet::ColumnDescriptor * parquet_column_descriptor)
+std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
     const auto physical_type = parquet_column_descriptor->physical_type();
     const auto & logical_type = parquet_column_descriptor->logical_type();
@@ -164,7 +164,7 @@ std::optional<uint64_t> tryHash(const Field & field, const parquet::ColumnDescri
     }
 }
 
-std::optional<std::vector<uint64_t>> hash(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
+std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
     std::vector<uint64_t> hashes;
 
@@ -173,7 +173,7 @@ std::optional<std::vector<uint64_t>> hash(const IColumn * data_column, const par
         Field f;
         data_column->get(i, f);
 
-        auto hashed_value = tryHash(f, parquet_column_descriptor);
+        auto hashed_value = parquetTryHashField(f, parquet_column_descriptor);
 
         if (!hashed_value)
         {
