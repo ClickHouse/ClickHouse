@@ -174,7 +174,8 @@ Chunk RabbitMQSource::generateImpl()
         switch (handle_error_mode)
         {
             case ExtStreamingHandleErrorMode::STREAM:
-            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE: {
+            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
                 {
