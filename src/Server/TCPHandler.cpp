@@ -116,6 +116,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsBool send_settings_to_client;
 }
 }
 
@@ -525,6 +526,7 @@ void TCPHandler::runImpl()
                 query_state->logs_queue->setSourceRegexp(query_state->query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
             }
+
             if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
             {
                 query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -1153,6 +1155,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
             /// Reset pipeline because it may hold write lock for some storages.
+            state.io.pipeline.cancel();
             state.io.pipeline.reset();
             if (settings[Setting::wait_for_async_insert])
             {
@@ -1843,6 +1846,15 @@ void TCPHandler::sendHello()
         nonce.emplace(thread_local_rng());
         writeIntBinary(nonce.value(), *out);
     }
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
+    {
+        if (is_interserver_mode || !Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::send_settings_to_client])
+            Settings::writeEmpty(*out); // send empty list of setting changes
+        else
+            session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
+
     out->next();
 }
 
