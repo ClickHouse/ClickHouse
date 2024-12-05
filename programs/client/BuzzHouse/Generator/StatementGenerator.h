@@ -258,6 +258,7 @@ private:
     int generateAttach(RandomGenerator & rg, Attach * att);
     int generateDetach(RandomGenerator & rg, Detach * det);
     int generateNextCreateFunction(RandomGenerator & rg, CreateFunction * cf);
+    int generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc);
 
     int addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     int addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
@@ -346,6 +347,18 @@ private:
             pexpr->set_tuple(true);
         }
         return 0;
+    }
+
+    template <typename T>
+    void setTableSystemStatement(RandomGenerator & rg, const std::function<bool(const T &)> & f, ExprSchemaTable * est)
+    {
+        const T & t = rg.pickRandomlyFromVector(filterCollection<T>(f));
+
+        if (t.db)
+        {
+            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
+        }
+        est->mutable_table()->set_table("t" + std::to_string(t.tname));
     }
 
 public:

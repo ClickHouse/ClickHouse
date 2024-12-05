@@ -1697,6 +1697,589 @@ int StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     return 0;
 }
 
+const auto has_merge_tree_func = [](const SQLTable & t)
+{ return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily(); };
+
+const auto has_replicated_merge_tree_func = [](const SQLTable & t)
+{ return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isReplicatedMergeTree(); };
+
+const auto has_refreshable_view_func = [](const SQLView & v)
+{ return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED && v.is_refreshable; };
+
+int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc)
+{
+    const uint32_t has_merge_tree
+        = static_cast<uint32_t>(collectionHas<SQLTable>(has_merge_tree_func)),
+        has_replicated_merge_tree = has_merge_tree * static_cast<uint32_t>(collectionHas<SQLTable>(has_replicated_merge_tree_func)),
+        has_replicated_database = static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(
+            [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED && d->isReplicatedDatabase(); })),
+        has_refreshable_view = static_cast<uint32_t>(collectionHas<SQLView>(has_refreshable_view_func)), reload_embedded_dictionaries = 1,
+        reload_dictionaries = 1, reload_models = 1, reload_functions = 1, reload_function = 5 * static_cast<uint32_t>(!functions.empty()),
+        reload_asynchronous_metrics = 1, drop_dns_cache = 1, drop_mark_cache = 1, drop_uncompressed_cache = 9,
+        drop_compiled_expression_cache = 1, drop_query_cache = 1, drop_format_schema_cache = 1, flush_logs = 1, reload_config = 1,
+        reload_users = 1,
+        //for merge trees
+        stop_merges = 5 * has_merge_tree, start_merges = 5 * has_merge_tree, stop_ttl_merges = 5 * has_merge_tree,
+        start_ttl_merges = 5 * has_merge_tree, stop_moves = 5 * has_merge_tree, start_moves = 5 * has_merge_tree,
+        wait_loading_parts = 5 * has_merge_tree,
+        //for replicated merge trees
+        stop_fetches = 5 * has_replicated_merge_tree, start_fetches = 5 * has_replicated_merge_tree,
+        stop_replicated_sends = 5 * has_replicated_merge_tree, start_replicated_sends = 5 * has_replicated_merge_tree,
+        stop_replication_queues = 5 * has_replicated_merge_tree, start_replication_queues = 5 * has_replicated_merge_tree,
+        stop_pulling_replication_log = 5 * has_replicated_merge_tree, start_pulling_replication_log = 5 * has_replicated_merge_tree,
+        sync_replica = 5 * has_replicated_merge_tree, sync_replicated_database = 5 * has_replicated_database,
+        restart_replica = 5 * has_replicated_merge_tree, restore_replica = 5 * has_replicated_merge_tree,
+        restart_replicas = 1, drop_filesystem_cache = 1, sync_file_cache = 1,
+        //for merge trees
+        load_pks = 1, load_pk = 5 * has_merge_tree, unload_pks = 1, unload_pk = 5 * has_merge_tree,
+        //for refreshable views
+        refresh_views = 1, refresh_view = 5 * has_refreshable_view, stop_views = 1, stop_view = 5 * has_refreshable_view, start_views = 1,
+        start_view = 5 * has_refreshable_view, cancel_view = 5 * has_refreshable_view, wait_view = 5 * has_refreshable_view,
+        prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+        + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+        + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+        + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+        + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues + stop_pulling_replication_log
+        + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica + restore_replica + restart_replicas
+        + drop_filesystem_cache + sync_file_cache + load_pks + load_pk + unload_pks + unload_pk + refresh_views + refresh_view + stop_views
+        + stop_view + start_views + start_view + cancel_view + wait_view;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+
+    if (reload_embedded_dictionaries && nopt < (reload_embedded_dictionaries + 1))
+    {
+        sc->set_reload_embedded_dictionaries(true);
+    }
+    else if (reload_dictionaries && nopt < (reload_embedded_dictionaries + reload_dictionaries + 1))
+    {
+        sc->set_reload_dictionaries(true);
+    }
+    else if (reload_models && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + 1))
+    {
+        sc->set_reload_models(true);
+    }
+    else if (reload_functions && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + 1))
+    {
+        sc->set_reload_functions(true);
+    }
+    else if (
+        reload_function
+        && nopt < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function + 1))
+    {
+        const uint32_t & fname = rg.pickKeyRandomlyFromMap(this->functions);
+
+        sc->mutable_reload_function()->set_function("f" + std::to_string(fname));
+    }
+    else if (
+        reload_asynchronous_metrics
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + 1))
+    {
+        sc->set_reload_asynchronous_metrics(true);
+    }
+    else if (
+        drop_dns_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + 1))
+    {
+        sc->set_drop_dns_cache(true);
+    }
+    else if (
+        drop_mark_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + 1))
+    {
+        sc->set_drop_mark_cache(true);
+    }
+    else if (
+        drop_uncompressed_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + 1))
+    {
+        sc->set_drop_uncompressed_cache(true);
+    }
+    else if (
+        drop_compiled_expression_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + 1))
+    {
+        sc->set_drop_compiled_expression_cache(true);
+    }
+    else if (
+        drop_query_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + 1))
+    {
+        sc->set_drop_query_cache(true);
+    }
+    else if (
+        drop_format_schema_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + 1))
+    {
+        sc->set_drop_format_schema_cache(rg.nextBool());
+    }
+    else if (
+        flush_logs
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + 1))
+    {
+        sc->set_flush_logs(true);
+    }
+    else if (
+        reload_config
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + 1))
+    {
+        sc->set_reload_config(true);
+    }
+    else if (
+        reload_users
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + 1))
+    {
+        sc->set_reload_users(true);
+    }
+    else if (
+        stop_merges
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_merges());
+    }
+    else if (
+        start_merges
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_merges());
+    }
+    else if (
+        stop_ttl_merges
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_ttl_merges());
+    }
+    else if (
+        start_ttl_merges
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_ttl_merges());
+    }
+    else if (
+        stop_moves
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_moves());
+    }
+    else if (
+        start_moves
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_moves());
+    }
+    else if (
+        wait_loading_parts
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_wait_loading_parts());
+    }
+    else if (
+        stop_fetches
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_stop_fetches());
+    }
+    else if (
+        start_fetches
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_start_fetches());
+    }
+    else if (
+        stop_replicated_sends
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_stop_replicated_sends());
+    }
+    else if (
+        start_replicated_sends
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_start_replicated_sends());
+    }
+    else if (
+        stop_replication_queues
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_stop_replication_queues());
+    }
+    else if (
+        start_replication_queues
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_start_replication_queues());
+    }
+    else if (
+        stop_pulling_replication_log
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_stop_pulling_replication_log());
+    }
+    else if (
+        start_pulling_replication_log
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_start_pulling_replication_log());
+    }
+    else if (
+        sync_replica
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + 1))
+    {
+        SyncReplica * srep = sc->mutable_sync_replica();
+
+        srep->set_policy(
+            static_cast<SyncReplica_SyncPolicy>((rg.nextRandomUInt32() % static_cast<uint32_t>(SyncReplica::SyncPolicy_MAX)) + 1));
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, srep->mutable_est());
+    }
+    else if (
+        sync_replicated_database
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + 1))
+    {
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(
+            [](const std::shared_ptr<SQLDatabase> & dd) { return dd->attached == DetachStatus::ATTACHED && dd->isReplicatedDatabase(); }));
+
+        sc->mutable_sync_replicated_database()->set_database("d" + std::to_string(d->dname));
+    }
+    else if (
+        restart_replica
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_restart_replica());
+    }
+    else if (
+        restore_replica
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_replicated_merge_tree_func, sc->mutable_restore_replica());
+    }
+    else if (
+        restart_replicas
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + 1))
+    {
+        sc->set_restart_replicas(true);
+    }
+    else if (
+        drop_filesystem_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + drop_filesystem_cache + 1))
+    {
+        sc->set_drop_filesystem_cache(true);
+    }
+    else if (
+        sync_file_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + 1))
+    {
+        sc->set_sync_file_cache(true);
+    }
+    else if (
+        load_pks
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + 1))
+    {
+        sc->set_load_pks(true);
+    }
+    else if (
+        load_pk
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_load_pk());
+    }
+    else if (
+        unload_pks
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + 1))
+    {
+        sc->set_unload_pks(true);
+    }
+    else if (
+        unload_pk
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_unload_pk());
+    }
+    else if (
+        refresh_views
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + 1))
+    {
+        sc->set_refresh_views(true);
+    }
+    else if (
+        refresh_view
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + 1))
+    {
+        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_refresh_view());
+    }
+    else if (
+        stop_views
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + 1))
+    {
+        sc->set_stop_views(true);
+    }
+    else if (
+        stop_view
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + 1))
+    {
+        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_stop_view());
+    }
+    else if (
+        start_views
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + 1))
+    {
+        sc->set_start_views(true);
+    }
+    else if (
+        start_view
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + 1))
+    {
+        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_start_view());
+    }
+    else if (
+        cancel_view
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + 1))
+    {
+        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_cancel_view());
+    }
+    else if (
+        wait_view
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + 1))
+    {
+        setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_wait_view());
+    }
+    else
+    {
+        assert(0);
+    }
+    return 0;
+}
+
 int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq)
 {
     const uint32_t create_table = 6
@@ -1748,9 +2331,10 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                                 || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
                    create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases),
                    create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions),
-                   select_query = 800,
+                   system_stmt = 1, select_query = 800,
                    prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
-        + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + select_query;
+        + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
+        + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -1849,6 +2433,14 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
                + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + 1))
     {
         return generateNextCreateFunction(rg, sq->mutable_create_function());
+    }
+    else if (
+        system_stmt
+        && nopt
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
+               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt + 1))
+    {
+        return generateNextSystemStatement(rg, sq->mutable_system_cmd());
     }
     return generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
 }

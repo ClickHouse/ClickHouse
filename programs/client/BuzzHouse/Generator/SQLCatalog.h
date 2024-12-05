@@ -84,6 +84,8 @@ public:
     DetachStatus attached = ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
+
+    bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 };
 
 struct SQLBase
@@ -98,6 +100,13 @@ public:
     bool isMergeTreeFamily() const
     {
         return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    }
+
+    bool isSharedMergeTree() const { return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TShared; }
+
+    bool isReplicatedMergeTree() const
+    {
+        return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
     }
 
     bool isFileEngine() const { return teng == TableEngineValues::File; }
