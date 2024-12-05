@@ -443,6 +443,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifierFromData
     if (!storage)
         return {};
 
+    if (storage->hasExternalDynamicMetadata())
+    {
+        storage->updateExternalDynamicMetadata(context);
+    }
+
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);

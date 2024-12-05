@@ -12,12 +12,22 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Common/logger_useful.h>
+#include "Storages/ColumnsDescription.h"
 
 #include <memory>
+#include <string>
+#include <unordered_map>
+
+#include <Common/ErrorCodes.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int FORMAT_VERSION_TOO_OLD;
+}
 
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorage::Configuration>;
@@ -36,12 +46,22 @@ public:
     {
         BaseStorageConfiguration::update(object_storage, local_context);
         auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
-        if (current_metadata && *current_metadata == *new_metadata)
-            return;
 
-        current_metadata = std::move(new_metadata);
-        BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
-        BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+        if (!current_metadata || (*current_metadata != *new_metadata))
+        {
+            if (hasExternalDynamicMetadata())
+            {
+                throw Exception(
+                    ErrorCodes::FORMAT_VERSION_TOO_OLD,
+                    "Metadata is not consinsent with the one which was used to infer table schema. Please, retry the query.");
+            }
+            else
+            {
+                current_metadata = std::move(new_metadata);
+                BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
+                BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+            }
+        }
     }
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
@@ -55,6 +75,41 @@ public:
         }
         return std::nullopt;
     }
+
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getInitialSchemaByPath(data_path);
+    }
+
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
+    {
+        if (!current_metadata)
+            return {};
+        return current_metadata->getSchemaTransformer(data_path);
+    }
+
+    bool hasExternalDynamicMetadata() override
+    {
+        return StorageObjectStorage::Configuration::allow_dynamic_metadata_for_data_lakes && current_metadata
+            && current_metadata->supportsExternalMetadataChange();
+    }
+
+    ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr object_storage, ContextPtr context) override
+    {
+        BaseStorageConfiguration::update(object_storage, context);
+        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+
+        if (!current_metadata || (*current_metadata != *new_metadata))
+        {
+            current_metadata = std::move(new_metadata);
+            BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
+            BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
+        }
+        return ColumnsDescription{current_metadata->getTableSchema()};
+    }
+
 
 private:
     DataLakeMetadataPtr current_metadata;

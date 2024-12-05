@@ -24,7 +24,9 @@
 #include <Storages/VirtualColumnUtils.h>
 #include "Databases/LoadingStrictnessLevel.h"
 #include "Storages/ColumnsDescription.h"
+#include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
 
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -40,6 +42,11 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace StorageObjectStorageSetting
+{
+extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -95,7 +102,10 @@ StorageObjectStorage::StorageObjectStorage(
 {
     try
     {
-        configuration->update(object_storage, context);
+        if (configuration->hasExternalDynamicMetadata())
+            configuration->updateAndGetCurrentSchema(object_storage, context);
+        else
+            configuration->update(object_storage, context);
     }
     catch (...)
     {
@@ -152,6 +162,19 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
+
+bool StorageObjectStorage::hasExternalDynamicMetadata() const
+{
+    return configuration->hasExternalDynamicMetadata();
+}
+
+void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
+{
+    StorageInMemoryMetadata metadata;
+    metadata.setColumns(configuration->updateAndGetCurrentSchema(object_storage, context_ptr));
+    setInMemoryMetadata(metadata);
+}
+
 namespace
 {
 class ReadFromObjectStorageStep : public SourceStepWithFilter
@@ -365,8 +388,7 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, settings, paths.front(), paths.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front(), paths.size()))
     {
         paths.push_back(*new_key);
     }
@@ -439,7 +461,10 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
 {
     if (configuration->isDataLakeConfiguration())
     {
-        configuration->update(object_storage, context);
+        if (configuration->hasExternalDynamicMetadata())
+            configuration->updateAndGetCurrentSchema(object_storage, context);
+        else
+            configuration->update(object_storage, context);
         auto table_structure = configuration->tryGetTableStructureFromMetadata();
         if (table_structure)
         {
@@ -518,7 +543,8 @@ void StorageObjectStorage::Configuration::initialize(
     Configuration & configuration,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure)
+    bool with_table_structure,
+    std::unique_ptr<StorageObjectStorageSettings> settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration.fromNamedCollection(*named_collection, local_context);
@@ -542,6 +568,9 @@ void StorageObjectStorage::Configuration::initialize(
     else
         FormatFactory::instance().checkFormatName(configuration.format);
 
+    if (settings)
+        configuration.allow_dynamic_metadata_for_data_lakes
+            = (*settings)[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes];
     configuration.initialized = true;
 }
 
