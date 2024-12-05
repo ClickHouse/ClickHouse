@@ -755,7 +755,7 @@ void executeQueryWithParallelReplicasCustomKey(
     }
 
     ColumnsDescriptionByShardNum columns_object;
-    if (hasDynamicSubcolumns(columns))
+    if (hasDynamicSubcolumnsDeprecated(columns))
         columns_object = getExtendedObjectsOfRemoteTables(*query_info.cluster, storage_id, columns, context);
 
     ClusterProxy::SelectStreamFactory select_stream_factory
