@@ -156,7 +156,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
     }
 
-    /// If column stores native numeric type, it returns n-th element casted to Float64
+    /// If column stores native numeric type, it returns n-th element cast to Float64
     /// Is used in regression methods to cast each features into uniform type
     [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
     {
@@ -168,7 +168,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
     }
 
-    /** If column is numeric, return value of n-th element, casted to UInt64.
+    /** If column is numeric, return value of n-th element, cast to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
@@ -185,7 +185,7 @@ public:
     [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
     [[nodiscard]] virtual bool isNullAt(size_t /*n*/) const { return false; }
 
-    /** If column is numeric, return value of n-th element, casted to bool.
+    /** If column is numeric, return value of n-th element, cast to bool.
       * For NULL values of Nullable column returns false.
       * Otherwise throw an exception.
       */
@@ -601,7 +601,8 @@ public:
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    [[nodiscard]] virtual Ptr compress() const
+    /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
+    [[nodiscard]] virtual Ptr compress([[maybe_unused]] bool force_compression) const
     {
         /// No compression by default.
         return getPtr();
@@ -815,6 +816,15 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 template <typename Derived, typename Parent = IColumn>
 class IColumnHelper : public Parent
 {
+private:
+    using Self = IColumnHelper<Derived, Parent>;
+
+    friend Derived;
+    friend class COWHelper<Self, Derived>;
+
+    IColumnHelper() = default;
+    IColumnHelper(const IColumnHelper &) = default;
+
     /// Devirtualize insertFrom.
     MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override;
 

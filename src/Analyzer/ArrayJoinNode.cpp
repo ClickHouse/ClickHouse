@@ -66,10 +66,7 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
         auto * column_node = array_join_expression->as<ColumnNode>();
         if (column_node && column_node->getExpression())
         {
-            if (const auto * function_node = column_node->getExpression()->as<FunctionNode>(); function_node && function_node->getFunctionName() == "nested")
-                array_join_expression_ast = array_join_expression->toAST(options);
-            else
-                array_join_expression_ast = column_node->getExpression()->toAST(options);
+            array_join_expression_ast = column_node->getExpression()->toAST(options);
         }
         else
             array_join_expression_ast = array_join_expression->toAST(options);

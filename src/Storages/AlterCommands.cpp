@@ -1450,9 +1450,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
 
                 bool new_type_has_deprecated_object = command.data_type->hasDynamicSubcolumnsDeprecated();
-                bool old_type_has_deprecated_object = old_data_type->hasDynamicSubcolumnsDeprecated();
 
-                if (new_type_has_deprecated_object || old_type_has_deprecated_object)
+                if (new_type_has_deprecated_object)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The change of data type {} of column {} to {} is not allowed. It has known bugs",

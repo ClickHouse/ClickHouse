@@ -140,9 +140,9 @@ DatabaseReplicated::DatabaseReplicated(
 {
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path, shard and replica names must be non-empty");
-    if (shard_name.find('/') != std::string::npos || replica_name.find('/') != std::string::npos)
+    if (shard_name.contains('/') || replica_name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '/'");
-    if (shard_name.find('|') != std::string::npos || replica_name.find('|') != std::string::npos)
+    if (shard_name.contains('|') || replica_name.contains('|'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
     if (zookeeper_path.back() == '/')
@@ -1105,9 +1105,9 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 
 static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context)
 {
-    bool looks_like_replicated = metadata.find("Replicated") != std::string::npos;
-    bool looks_like_shared = metadata.find("Shared") != std::string::npos;
-    bool looks_like_merge_tree = metadata.find("MergeTree") != std::string::npos;
+    bool looks_like_replicated = metadata.contains("Replicated");
+    bool looks_like_shared = metadata.contains("Shared");
+    bool looks_like_merge_tree = metadata.contains("MergeTree");
     if (!(looks_like_replicated || looks_like_shared) || !looks_like_merge_tree)
         return UUIDHelpers::Nil;
 
@@ -1225,6 +1225,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
         query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+
+        /// We apply the flatten_nested setting after writing the CREATE query to the DDL log,
+        /// but before writing metadata to ZooKeeper. So we have to apply the setting on secondary replicas, but not in recovery mode.
+        /// Set it to false, so it will do nothing on recovery. The metadata in ZooKeeper should be used as is.
+        /// Same for data_type_default_nullable.
+        query_context->setSetting("flatten_nested", false);
+        query_context->setSetting("data_type_default_nullable", false);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
@@ -1539,7 +1546,7 @@ void DatabaseReplicated::dropReplica(
 
     String full_replica_name = shard.empty() ? replica : getFullReplicaName(shard, replica);
 
-    if (full_replica_name.find('/') != std::string::npos)
+    if (full_replica_name.contains('/'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid replica name, '/' is not allowed: {}", full_replica_name);
 
     auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();

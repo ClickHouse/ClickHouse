@@ -618,6 +618,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
+            has_limit_below_one_block,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -667,7 +668,7 @@ Pipe ReadFromMergeTree::readInOrder(
             part_with_ranges.ranges.size(),
             read_type == ReadType::InReverseOrder ? " reverse " : " ",
             part_with_ranges.data_part->name, total_rows,
-            part_with_ranges.data_part->index_granularity.getMarkStartingRow(part_with_ranges.ranges.front().begin));
+            part_with_ranges.data_part->index_granularity->getMarkStartingRow(part_with_ranges.ranges.front().begin));
 
         MergeTreeSelectAlgorithmPtr algorithm;
         if (read_type == ReadType::InReverseOrder)
@@ -1759,7 +1760,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             return std::make_shared<AnalysisResult>(std::move(result));
 
         for (const auto & part : parts)
-            total_marks_pk += part->index_granularity.getMarksCountWithoutFinal();
+            total_marks_pk += part->index_granularity->getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
         auto reader_settings = getMergeTreeReaderSettings(context_, query_info_);
@@ -1959,9 +1960,10 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     if (context->getSettingsRef()[Setting::parallel_replicas_count] > 1 && data.supportsSampling())
         return true;
 
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (query_info.table_expression_modifiers)
         return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
     return select.sampleSize() != nullptr;
 }
 
