@@ -38,7 +38,7 @@ public:
             }
             case QueryTreeNodeType::CROSS_JOIN:
             {
-                /// All childs of CROSS_JOIN are table expressions.
+                /// All children of CROSS_JOIN are table expressions.
                 return true;
             }
             case QueryTreeNodeType::JOIN:

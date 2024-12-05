@@ -1324,10 +1324,12 @@ std::optional<ActionsDAG> createStepToDropColumns(
     return drop_unused_columns_after_join_actions_dag;
 }
 
-static std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
+std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     QueryPlan left_plan,
     QueryPlan right_plan,
     std::shared_ptr<TableJoin> & table_join,
+    JoinClausesAndActions & join_clauses_and_actions,
+    UsefulSets & left_useful_sets,
     const QueryTreeNodePtr & right_table_expression,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context,
@@ -1518,7 +1520,7 @@ static std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         for (const auto * input_node : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
             join_clauses_and_actions.residual_join_expressions_actions->addOrReplaceInOutputs(*input_node);
 
-        appendSetsFromActionsDAG(*join_clauses_and_actions.residual_join_expressions_actions, left_join_tree_query_plan.useful_sets);
+        appendSetsFromActionsDAG(*join_clauses_and_actions.residual_join_expressions_actions, left_useful_sets);
         auto filter_step = std::make_unique<FilterStep>(result_plan.getCurrentHeader(),
             std::move(*join_clauses_and_actions.residual_join_expressions_actions),
             outputs[0]->result_name,
@@ -1581,6 +1583,8 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
             std::move(left_plan),
             std::move(right_plan),
             table_join,
+            join_clauses_and_actions,
+            left_join_tree_query_plan.useful_sets,
             cross_join_node.getTableExpressions()[i],
             outer_scope_columns,
             planner_context,
@@ -1934,6 +1938,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         std::move(left_plan),
         std::move(right_plan),
         table_join,
+        join_clauses_and_actions,
+        left_join_tree_query_plan.useful_sets,
         join_node.getRightTableExpression(),
         outer_scope_columns,
         planner_context,
