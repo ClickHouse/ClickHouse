@@ -499,6 +499,8 @@ public:
 
         KitchenSink & operator=(const KitchenSink & rhs)
         {
+            if (&rhs == this)
+                return *this;
             analyze_counter = rhs.analyze_counter.load();
             return *this;
         }

@@ -13,9 +13,11 @@
 #include <mysqlxx/Connection.h>
 
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_POOL_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL 1
+/// NOLINTEND(modernize-macro-to-enum)
 
 
 namespace mysqlxx

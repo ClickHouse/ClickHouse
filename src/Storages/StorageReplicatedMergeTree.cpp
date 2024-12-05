@@ -2308,7 +2308,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     Coordination::Stat quorum_stat;
                     const String quorum_unparallel_path = fs::path(zookeeper_path) / "quorum" / "status";
                     const String quorum_parallel_path = fs::path(zookeeper_path) / "quorum" / "parallel" / entry.new_part_name;
-                    String quorum_str, quorum_path;
+                    String quorum_str;
+                    String quorum_path;
                     ReplicatedMergeTreeQuorumEntry quorum_entry;
 
                     if (zookeeper->tryGet(quorum_unparallel_path, quorum_str, &quorum_stat))

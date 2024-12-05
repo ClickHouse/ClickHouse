@@ -6213,6 +6213,8 @@ Settings::~Settings() = default;
 
 Settings & Settings::operator=(const Settings & other)
 {
+    if (&other == this)
+        return *this;
     *impl = *other.impl;
     return *this;
 }
@@ -6328,7 +6330,8 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         res_columns[3]->insert(doc);
 
-        Field min, max;
+        Field min;
+        Field max;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         params.constraints.get(*this, setting_name, min, max, writability);
 

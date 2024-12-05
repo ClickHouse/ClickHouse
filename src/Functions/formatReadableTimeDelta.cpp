@@ -109,7 +109,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::string_view maximum_unit_str, minimum_unit_str;
+        std::string_view maximum_unit_str;
+        std::string_view minimum_unit_str;
         if (arguments.size() >= 2)
         {
             const ColumnPtr & maximum_unit_column = arguments[1].column;

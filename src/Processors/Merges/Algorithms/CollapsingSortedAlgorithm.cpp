@@ -10,7 +10,7 @@
 
 
 /// Maximum number of messages about incorrect data in the log.
-#define MAX_ERROR_MESSAGES 10
+constexpr size_t MAX_ERROR_MESSAGES = 10;
 
 namespace DB
 {

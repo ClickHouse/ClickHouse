@@ -646,7 +646,9 @@ namespace MySQLReplication
                                 break;
                             }
                         }
-                        Int64 hh, mm, ss;
+                        Int64 hh;
+                        Int64 mm;
+                        Int64 ss;
                         bool negative = false;
                         if (intpart == 0)
                         {
@@ -699,7 +701,8 @@ namespace MySQLReplication
                     }
                     case MYSQL_TYPE_TIMESTAMP2:
                     {
-                        UInt32 sec = 0, fsp = 0;
+                        UInt32 sec = 0;
+                        UInt32 fsp = 0;
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&sec), 4);
                         readTimeFractionalPart(payload, fsp, meta);
 

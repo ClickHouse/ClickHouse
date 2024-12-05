@@ -121,7 +121,8 @@ Collator::~Collator() // NOLINT
 int Collator::compare(const char * str1, size_t length1, const char * str2, size_t length2) const
 {
 #if USE_ICU
-    UCharIterator iter1, iter2;
+    UCharIterator iter1;
+    UCharIterator iter2;
     uiter_setUTF8(&iter1, str1, length1);
     uiter_setUTF8(&iter2, str2, length2);
 

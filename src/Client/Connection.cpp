@@ -547,7 +547,8 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 
             for (size_t i = 0; i < rules_size; ++i)
             {
-                String original_pattern, exception_message;
+                String original_pattern;
+                String exception_message;
                 readStringBinary(original_pattern, *in);
                 readStringBinary(exception_message, *in);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});

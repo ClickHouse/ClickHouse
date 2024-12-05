@@ -163,7 +163,8 @@ struct TranslateUTF8Impl
         {
             size_t len_from = UTF8::seqLength(*map_from_ptr);
 
-            std::optional<UInt32> res_from, res_to;
+            std::optional<UInt32> res_from;
+            std::optional<UInt32> res_to;
 
             if (map_from_ptr + len_from <= map_from_end)
                 res_from = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_from);
