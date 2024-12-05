@@ -60,13 +60,15 @@ public:
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
+        ColumnsWithTypeAndName * additional_columns_samples = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
+        ColumnsWithTypeAndName * additional_columns_samples = nullptr);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
