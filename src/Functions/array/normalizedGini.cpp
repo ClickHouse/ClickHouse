@@ -193,9 +193,17 @@ class FunctionNormalizedGini : public IFunction
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
-        return castTypeToEither<DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
-            DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, 
-            DataTypeFloat32, DataTypeFloat64>(type, std::forward<F>(f));
+        return castTypeToEither<
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeFloat32,
+            DataTypeFloat64>(type, std::forward<F>(f));
     }
 
     template <typename F>
