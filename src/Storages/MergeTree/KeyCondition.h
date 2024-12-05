@@ -59,7 +59,6 @@ public:
     {
         virtual ~BloomFilter() = default;
 
-        virtual bool findHash(uint64_t hash) = 0;
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
