@@ -27,7 +27,7 @@ struct ModuloByConstantImpl
     static const constexpr bool allow_string_integer = false;
 
     template <OpCase op_case>
-    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap)
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap, NullMap * res_nullmap [[maybe_unused]] = nullptr)
     {
         if constexpr (op_case == OpCase::RightConstant)
         {
@@ -51,12 +51,21 @@ struct ModuloByConstantImpl
         }
     }
 
-    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
+    static ResultType process(A a, B b, NullMap::value_type * res_nullmap [[maybe_unused]] = nullptr) { return Op::template apply<ResultType>(a, b); }
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
         /// Modulo with too small divisor.
-        if (unlikely((std::is_signed_v<B> && b == -1) || b == 1))
+        if constexpr (std::is_signed_v<B>)
+        {
+            if (unlikely((b == -1)))
+            {
+                for (size_t i = 0; i < size; ++i)
+                    dst[i] = 0;
+                return;
+            }
+        }
+        if (b == 1)
         {
             for (size_t i = 0; i < size; ++i)
                 dst[i] = 0;

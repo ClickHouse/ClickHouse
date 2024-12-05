@@ -457,6 +457,41 @@ Result:
 └─────────────────────────────┘
 ```
 
+## tupleDivideOrNull
+
+Like [tupleDivide](#tupleDivide), but division by zero will return `NULL`.
+
+**Syntax**
+
+```sql
+tupleDivideOrNull(tuple1, tuple2)
+```
+
+**Arguments**
+
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
+
+**Returned value**
+
+- Tuple with the result of division. [Tuple](../data-types/tuple.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT tupleDivideOrNull((1, 2, 3), (2, 3, 0));
+```
+
+Result:
+
+```text
+┌─tupleDivideOrNull((1, 2, 3), (2, 3, 0))─┐
+│ (0.5,0.6666666666666666,NULL)           │
+└─────────────────────────────────────────┘
+```
+
 ## tupleNegate
 
 Calculates the negation of the tuple values.
@@ -561,6 +596,41 @@ Result:
 └──────────────────────────────────┘
 ```
 
+## tupleDivideByNumberOrNull
+
+Like [tupleDivideByNumber](#tupleDivideByNumber), but division by zero will return `NULL`.
+
+**Syntax**
+
+```sql
+tupleDivideByNumberOrNull(tuple, number)
+```
+
+**Arguments**
+
+- `tuple` — [Tuple](../data-types/tuple.md).
+- `number` — Divider. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
+
+**Returned value**
+
+- Tuple with divided values. [Tuple](../data-types/tuple.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT tupleDivideByNumberOrNull((1, 2), 0.0);
+```
+
+Result:
+
+```text
+┌─tupleDivideByNumberOrNull((1, 2), 0.)─┐
+│ (NULL,NULL)                           │
+└───────────────────────────────────────┘
+```
+
 ## tupleConcat
 
 Combines tuples passed as arguments.
@@ -607,7 +677,7 @@ tupleIntDiv(tuple_num, tuple_div)
 **Implementation details**
 
 - If either `tuple_num` or `tuple_div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
-- An error will be thrown for division by 0. 
+- An error will be thrown for division by 0.
 
 **Examples**
 
@@ -641,7 +711,7 @@ Result:
 
 ## tupleIntDivOrZero
 
-Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0. 
+Like [tupleIntDiv](#tupleIntDiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0.
 
 **Syntax**
 
@@ -699,7 +769,7 @@ tupleIntDivByNumber(tuple_num, div)
 **Implementation details**
 
 - If either `tuple_num` or `div` contain non-integer values then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
-- An error will be thrown for division by 0. 
+- An error will be thrown for division by 0.
 
 **Examples**
 
@@ -821,6 +891,42 @@ Result:
 └─────────────────────────────────────┘
 ```
 
+## tupleModuloOrNull
+
+Like [tupleModulo](#tuplemodulo) it returns a tuple of the moduli (remainders) of division operations of two tuples. It does not throw an error for division by zero, but rather returns `NULL`.
+
+**Syntax**
+
+```sql
+tupleModuloOrNull(tuple_num, tuple_mod)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `tuple_div`: Tuple of modulus values. [Tuple](../data-types/tuple) of numeric type.
+
+**Returned value**
+
+- Tuple of the remainders of division of `tuple_num` and `tuple_div`. [Tuple](../data-types/tuple) of non-zero integer values.
+- NULL is returned for division by zero.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleModuloOrNull((15, 10, 5), (0, 3, 2));
+```
+
+Result:
+
+``` text
+┌─tupleModuloOrNull((15, 10, 5), (0, 3, 2))─┐
+│ (NULL,1,1)                                │
+└───────────────────────────────────────────┘
+```
+
 ## tupleModuloByNumber
 
 Returns a tuple of the moduli (remainders) of division operations of a tuple and a given divisor.
@@ -855,6 +961,42 @@ Result:
 ┌─tupleModuloByNumber((15, 10, 5), 2)─┐
 │ (1,0,1)                             │
 └─────────────────────────────────────┘
+```
+
+## tupleModuloByNumberOrNull
+
+Like [tupleModuloByNumber](#tuplemodulobynumber) it returns a tuple of the moduli (remainders) of division operations of a tuple and a given divisor. It does not throw an error for division by zero, but rather returns `NULL`.
+
+**Syntax**
+
+```sql
+tupleModuloByNumberOrNull(tuple_num, div)
+```
+
+**Parameters**
+
+- `tuple_num`: Tuple of numerator values. [Tuple](../data-types/tuple) of numeric type.
+- `div`: The divisor value. [Numeric](../data-types/int-uint.md) type.
+
+**Returned value**
+
+- Tuple of the remainders of division of `tuple_num` and `div`. [Tuple](../data-types/tuple) of non-zero integer values.
+- NULL is thrown for division by zero.
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleModuloByNumberOrNull((15, 10, 5), 0);
+```
+
+Result:
+
+``` text
+┌─tupleModuloByNumberOrNull((15, 10, 5), 0)─┐
+│ (NULL,NULL,NULL)                          │
+└───────────────────────────────────────────┘
 ```
 
 ## flattenTuple

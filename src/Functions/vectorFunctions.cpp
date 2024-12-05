@@ -54,7 +54,9 @@ struct PlusName { static constexpr auto name = "plus"; };
 struct MinusName { static constexpr auto name = "minus"; };
 struct MultiplyName { static constexpr auto name = "multiply"; };
 struct DivideName { static constexpr auto name = "divide"; };
+struct DivideOrNullName { static constexpr auto name = "divideOrNull"; };
 struct ModuloName { static constexpr auto name = "modulo"; };
+struct ModuloOrNullName { static constexpr auto name = "moduloOrNull"; };
 struct IntDivName { static constexpr auto name = "intDiv"; };
 struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
@@ -69,6 +71,16 @@ constexpr std::string makeFirstLetterUppercase(const std::string & str)
     std::string res(str);
     res[0] += 'A' - 'a';
     return res;
+}
+
+constexpr bool endWith(const std::string & str, const std::string & needle)
+{
+    return str.size() >= needle.size() && str.compare(str.size() - needle.size(), needle.size(), needle) == 0;
+}
+
+constexpr std::string dropNeedle(const std::string & str, const std::string & needle)
+{
+    return endWith(str, needle) ? str.substr(0, str.size() - needle.size()) : str;
 }
 
 template <class FuncName>
@@ -152,7 +164,11 @@ using FunctionTupleMultiply = FunctionTupleOperator<MultiplyName>;
 
 using FunctionTupleDivide = FunctionTupleOperator<DivideName>;
 
+using FunctionTupleDivideOrNull = FunctionTupleOperator<DivideOrNullName>;
+
 using FunctionTupleModulo = FunctionTupleOperator<ModuloName>;
+
+using FunctionTupleModuloOrNull = FunctionTupleOperator<ModuloOrNullName>;
 
 using FunctionTupleIntDiv = FunctionTupleOperator<IntDivName>;
 
@@ -234,7 +250,7 @@ class FunctionTupleOperatorByNumber : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = "tuple" + makeFirstLetterUppercase(FuncName::name) + "ByNumber";
+    static inline auto name = "tuple" + makeFirstLetterUppercase(dropNeedle(FuncName::name, "OrNull")) + "ByNumber" + (endWith(FuncName::name, "OrNull") ? "OrNull" : "");
 
     explicit FunctionTupleOperatorByNumber(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperatorByNumber>(context_); }
@@ -307,11 +323,15 @@ using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MultiplyName
 
 using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DivideName>;
 
+using FunctionTupleDivideOrNullByNumber = FunctionTupleOperatorByNumber<DivideOrNullName>;
+
 using FunctionTupleModuloByNumber = FunctionTupleOperatorByNumber<ModuloName>;
 
 using FunctionTupleIntDivByNumber = FunctionTupleOperatorByNumber<IntDivName>;
 
 using FunctionTupleIntDivOrZeroByNumber = FunctionTupleOperatorByNumber<IntDivOrZeroName>;
+
+using FunctionTupleModuloOrNullByNumber = FunctionTupleOperatorByNumber<ModuloOrNullName>;
 
 class FunctionDotProduct : public ITupleFunction
 {
@@ -1581,7 +1601,9 @@ REGISTER_FUNCTION(VectorFunctions)
     factory.registerAlias("vectorDifference", FunctionTupleMinus::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionTupleMultiply>();
     factory.registerFunction<FunctionTupleDivide>();
+    factory.registerFunction<FunctionTupleDivideOrNull>();
     factory.registerFunction<FunctionTupleModulo>();
+    factory.registerFunction<FunctionTupleModuloOrNull>();
     factory.registerFunction<FunctionTupleIntDiv>();
     factory.registerFunction<FunctionTupleIntDivOrZero>();
     factory.registerFunction<FunctionTupleNegate>();
@@ -1647,7 +1669,9 @@ If the types of the first interval (or the interval in the tuple) and the second
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();
     factory.registerFunction<FunctionTupleDivideByNumber>();
+    factory.registerFunction<FunctionTupleDivideOrNullByNumber>();
     factory.registerFunction<FunctionTupleModuloByNumber>();
+    factory.registerFunction<FunctionTupleModuloOrNullByNumber>();
     factory.registerFunction<FunctionTupleIntDivByNumber>();
     factory.registerFunction<FunctionTupleIntDivOrZeroByNumber>();
 

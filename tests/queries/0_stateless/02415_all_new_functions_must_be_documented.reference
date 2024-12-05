@@ -241,6 +241,7 @@ defaultValueOfTypeName
 degrees
 demangle
 divide
+divideOrNull
 dotProduct
 dumpColumnStructure
 e
@@ -435,6 +436,7 @@ minSampleSizeConversion
 minus
 modulo
 moduloLegacy
+moduloOrNull
 moduloOrZero
 monthName
 multiFuzzyMatchAllIndices
@@ -884,6 +886,8 @@ tumbleStart
 tupleConcat
 tupleDivide
 tupleDivideByNumber
+tupleDivideByNumberOrNull
+tupleDivideOrNull
 tupleElement
 tupleHammingDistance
 tupleIntDiv
@@ -893,6 +897,8 @@ tupleIntDivOrZeroByNumber
 tupleMinus
 tupleModulo
 tupleModuloByNumber
+tupleModuloByNumberOrNull
+tupleModuloOrNull
 tupleMultiply
 tupleMultiplyByNumber
 tupleNegate
