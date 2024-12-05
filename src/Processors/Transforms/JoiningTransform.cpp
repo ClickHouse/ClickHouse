@@ -4,6 +4,15 @@
 
 #include <Common/logger_useful.h>
 
+
+
+namespace ProfileEvents
+{
+    extern const Event JoinBuildTableRowCount;
+    extern const Event JoinProbeTableRowCount;
+    extern const Event JoinResultRowCount;
+}
+
 namespace DB
 {
 
@@ -157,6 +166,7 @@ void JoiningTransform::work()
 
         if (block.rows())
         {
+            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
             output_chunks.emplace_back(block.getColumns(), block.rows());
             has_output = true;
         }
@@ -200,7 +210,10 @@ void JoiningTransform::transform(Chunk & chunk)
     for (const auto & block : res)
     {
         if (block.rows())
+        {
+            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
             output_chunks.emplace_back(block.getColumns(), block.rows());
+        }
     }
 }
 
@@ -211,6 +224,7 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
 
     auto join_block = [&]()
     {
+        ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
         if (join->isScatteredJoin())
         {
             join->joinBlock(block, remaining_blocks, res);
@@ -334,7 +348,10 @@ void FillingRightJoinSideTransform::work()
     if (for_totals)
         join->setTotals(block);
     else
+    {
+        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, block.rows());
         stop_reading = !join->addBlockToJoin(block);
+    }
 
     if (input.isFinished())
         join->tryRerangeRightTableData();
