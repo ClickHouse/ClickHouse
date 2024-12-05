@@ -96,21 +96,13 @@ result=$(${CLICKHOUSE_CLIENT} -q "
     echo "$result_json"
 }
 
-# Function to URL-encode the query string
-function url_encode()
-{
-    local raw_str="$1"
-    printf "%s" "$raw_str" | xxd -p | tr -d '\n' | sed 's/\(..\)/%\1/g'
-}
-
 # Function to execute HTTP query
 function execute_query_HTTP()
 {
     query_id="$1"
     query="$2"
-    HTTP_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}"
-    generated_url="${HTTP_URL}&opentelemetry_start_trace_probability=1&query_id=$(url_encode "$query_id")&query=$(url_encode "$query")"
-    ${CLICKHOUSE_CURL} -sS "$generated_url"
+    HTTP_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}&query_id=${query_id}"
+    ${CLICKHOUSE_CURL} -X GET -d "${query}" "${HTTP_URL}" 2>/dev/null
 }
 
 # Function to check if specific HTTP attributes are present in the result
