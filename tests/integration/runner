@@ -15,7 +15,7 @@ import sys
 from integration_test_images import get_docker_env
 
 
-def random_str(length=6):
+def random_str(length: int = 6) -> str:
     alphabet = string.ascii_lowercase + string.digits
     return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
 
@@ -31,6 +31,15 @@ INTEGRATION_DIR_IN_REPO = "tests/integration"
 UTILS_DIR_IN_REPO = "utils"
 
 DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
+
+
+def physical_memory() -> int:
+    try:
+        # for linux
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except ValueError:
+        # for MacOS
+        return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
 
 
 def check_args_and_update_paths(args):
@@ -469,6 +478,7 @@ if __name__ == "__main__":
     cmd_base = (
         f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
         "--privileged --dns-search='.' "  # since recent dns search leaks from host
+        f"--memory={physical_memory() - 2 * 1024**3} "
         f"--volume={args.odbc_bridge_binary}:/clickhouse-odbc-bridge "
         f"--volume={args.binary}:/clickhouse "
         f"--volume={args.library_bridge_binary}:/clickhouse-library-bridge "
