@@ -677,7 +677,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                     return std::nullopt;
                 }
 
-                return tryHash(f, parquet_column_descriptor);
+                return parquetTryHashField(f, parquet_column_descriptor);
             };
 
             auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<std::vector<size_t>>
@@ -692,7 +692,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                     nested_column = nullable_column->getNestedColumnPtr();
                 }
 
-                return hash(nested_column.get(), parquet_column_descriptor);
+                return parquetTryHashColumn(nested_column.get(), parquet_column_descriptor);
             };
 
             key_condition_with_bloom_filter_data->prepareBloomFilterData(hash_one, hash_many);
