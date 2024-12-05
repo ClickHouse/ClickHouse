@@ -116,6 +116,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsBool send_settings_to_client;
 }
 }
 
@@ -1845,6 +1846,15 @@ void TCPHandler::sendHello()
         nonce.emplace(thread_local_rng());
         writeIntBinary(nonce.value(), *out);
     }
+
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
+    {
+        if (is_interserver_mode || !Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::send_settings_to_client])
+            Settings::writeEmpty(*out); // send empty list of setting changes
+        else
+            session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
+
     out->next();
 }
 

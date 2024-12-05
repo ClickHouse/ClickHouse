@@ -11,6 +11,7 @@
 #include <azure/storage/blobs/blob_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+#include <filesystem>
 
 namespace ProfileEvents
 {
@@ -108,7 +109,7 @@ ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions 
     new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
 
     auto response = client.ListBlobs(new_options);
-    auto blob_prefix_str = blob_prefix.empty() ? "" : blob_prefix.string() + "/";
+    String blob_prefix_str = blob_prefix / "";
 
     for (auto & blob : response.Blobs)
     {

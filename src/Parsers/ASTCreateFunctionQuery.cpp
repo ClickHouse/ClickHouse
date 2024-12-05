@@ -21,26 +21,26 @@ ASTPtr ASTCreateFunctionQuery::clone() const
     return res;
 }
 
-void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
+void ASTCreateFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
-        settings.ostr << "OR REPLACE ";
+        ostr << "OR REPLACE ";
 
-    settings.ostr << "FUNCTION ";
+    ostr << "FUNCTION ";
 
     if (if_not_exists)
-        settings.ostr << "IF NOT EXISTS ";
+        ostr << "IF NOT EXISTS ";
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getFunctionName()) << (settings.hilite ? hilite_none : "");
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
-    function_core->formatImpl(settings, state, frame);
+    ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+    function_core->formatImpl(ostr, settings, state, frame);
 }
 
 String ASTCreateFunctionQuery::getFunctionName() const
