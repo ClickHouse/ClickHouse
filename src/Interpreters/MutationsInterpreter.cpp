@@ -760,6 +760,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 if (condition && settings.return_mutated_rows)
                     stages.back().filters.push_back(condition);
+
+                if (type == RowExistsColumn::type)
+                    update_where_condition = condition;
             }
 
             if (!affected_materialized.empty())

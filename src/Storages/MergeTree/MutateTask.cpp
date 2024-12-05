@@ -2383,40 +2383,50 @@ bool MutateTask::prepare()
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
 
-        const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
-        auto projections_name_and_part_iterator = projections_name_and_part.begin();
-        for (const auto & proj_desc : ctx->metadata_snapshot->getProjections())
+        if (ctx->updated_header.has(RowExistsColumn::name))
         {
-            ctx->projection_mutation_contexts.emplace_back(std::make_shared<ProjectionMutationContext>());
-            auto mutation_context = ctx->projection_mutation_contexts.back();
+            ASTPtr update_where_condition = ctx->interpreter->getUpdateWhereCondition();
+            IdentifierNameSet columns;
+            update_where_condition->collectIdentifierNames(columns);
 
-            mutation_context->name = proj_desc.name;
-            mutation_context->metadata_snapshot = proj_desc.metadata;
+            // std::cout<<serializeAST(*condition)<<std::endl;
+            // std::cout<<condition->dumpTree()<<std::endl;
 
-            mutation_context->source_part = projections_name_and_part_iterator->second;
-            ++projections_name_and_part_iterator;
+            const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
+            auto projections_name_and_part_iterator = projections_name_and_part.begin();
+            for (const auto & proj_desc : ctx->metadata_snapshot->getProjections())
+            {
+                ctx->projection_mutation_contexts.emplace_back(std::make_shared<ProjectionMutationContext>());
+                auto mutation_context = ctx->projection_mutation_contexts.back();
 
-            projection_commands.emplace_back(MutationCommands{});
-            auto & commands= projection_commands.back();
+                mutation_context->name = proj_desc.name;
+                mutation_context->metadata_snapshot = proj_desc.metadata;
 
-            MutationHelpers::splitAndModifyMutationCommands(
-                mutation_context->source_part,
-                proj_desc.metadata,
-                alter_conversions,
-                ctx->commands_for_part,
-                commands,
-                ctx->for_file_renames,
-                ctx->log);
+                mutation_context->source_part = projections_name_and_part_iterator->second;
+                ++projections_name_and_part_iterator;
 
-            chassert(!commands.empty());
+                projection_commands.emplace_back(MutationCommands{});
+                auto & commands= projection_commands.back();
 
-            auto projection_interpreter = std::make_unique<MutationsInterpreter>(
-                *ctx->data, mutation_context->source_part, alter_conversions,
-                proj_desc.metadata, commands,
-                proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+                MutationHelpers::splitAndModifyMutationCommands(
+                    mutation_context->source_part,
+                    proj_desc.metadata,
+                    alter_conversions,
+                    ctx->commands_for_part,
+                    commands,
+                    ctx->for_file_renames,
+                    ctx->log);
 
-            mutation_context->mutating_pipeline_builder = projection_interpreter->execute();
-            mutation_context->updated_header = projection_interpreter->getUpdatedHeader();
+                chassert(!commands.empty());
+
+                auto projection_interpreter = std::make_unique<MutationsInterpreter>(
+                    *ctx->data, mutation_context->source_part, alter_conversions,
+                    proj_desc.metadata, commands,
+                    proj_desc.metadata->getColumns().getNamesOfPhysical(), context_for_reading, settings);
+
+                mutation_context->mutating_pipeline_builder = projection_interpreter->execute();
+                mutation_context->updated_header = projection_interpreter->getUpdatedHeader();
+            }
         }
 
         lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
