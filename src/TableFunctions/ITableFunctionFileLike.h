@@ -41,7 +41,7 @@ public:
 
     static size_t getMaxNumberOfArguments() { return max_number_of_arguments; }
 
-    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr &, bool with_structure)
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context, bool with_structure)
     {
         if (args.empty() || args.size() > getMaxNumberOfArguments())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
