@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DataTypes/DataTypesDecimal.h"
 #include "config.h"
 
 #if USE_EMBEDDED_COMPILER
@@ -32,18 +33,14 @@ bool canBeNativeType(const DataTypePtr & type);
 template <typename Type>
 static inline bool canBeNativeType()
 {
-    if constexpr (std::is_same_v<Type, Int8> || std::is_same_v<Type, UInt8>)
+    if constexpr (std::is_same_v<Type, Float32> || std::is_same_v<Type, Float64>)
         return true;
-    else if constexpr (std::is_same_v<Type, Int16> || std::is_same_v<Type, UInt16>)
+    else if constexpr (is_integer<Type>)
         return true;
-    else if constexpr (std::is_same_v<Type, Int32> || std::is_same_v<Type, UInt32>)
+    else if constexpr (is_decimal<Type>)
         return true;
-    else if constexpr (std::is_same_v<Type, Int64> || std::is_same_v<Type, UInt64>)
-        return true;
-    else if constexpr (std::is_same_v<Type, Float32> || std::is_same_v<Type, Float64>)
-        return true;
-
-    return false;
+    else
+        return false;
 }
 
 /// Cast type to native LLVM type
@@ -59,14 +56,21 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
         return builder.getInt8Ty();
     else if constexpr (std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16>)
         return builder.getInt16Ty();
-    else if constexpr (std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32>)
+    else if constexpr (std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32> || std::is_same_v<ToType, Decimal32>)
         return builder.getInt32Ty();
-    else if constexpr (std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64>)
+    else if constexpr (
+        std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64> || std::is_same_v<ToType, DateTime64>
+        || std::is_same_v<ToType, Decimal64>)
         return builder.getInt64Ty();
     else if constexpr (std::is_same_v<ToType, Float32>)
         return builder.getFloatTy();
     else if constexpr (std::is_same_v<ToType, Float64>)
         return builder.getDoubleTy();
+    else if constexpr (std::is_same_v<ToType, Int128> || std::is_same_v<ToType, UInt128> ||
+        std::is_same_v<ToType, Decimal128>)
+        return builder.getInt128Ty();
+    else if constexpr (std::is_same_v<ToType, Int256> || std::is_same_v<ToType, UInt256> || std::is_same_v<ToType, Decimal256>)
+        return builder.getIntNTy(256);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native type");
 }
@@ -78,8 +82,20 @@ static inline DataTypePtr toNativeDataType()
         std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16> ||
         std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32> ||
         std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64> ||
+        std::is_same_v<ToType, Int128> || std::is_same_v<ToType, UInt128> ||
+        std::is_same_v<ToType, Int256> || std::is_same_v<ToType, UInt256> ||
         std::is_same_v<ToType, Float32> || std::is_same_v<ToType, Float64>)
         return std::make_shared<DataTypeNumber<ToType>>();
+    else if constexpr (std::is_same_v<ToType, DateTime64>)
+        return std::make_shared<DataTypeDateTime64>(0);
+    else if constexpr (std::is_same_v<ToType, Decimal32>)
+        return createDecimalMaxPrecision<Decimal32>(0);
+    else if constexpr (std::is_same_v<ToType, Decimal64>)
+        return createDecimalMaxPrecision<Decimal64>(0);
+    else if constexpr (std::is_same_v<ToType, Decimal128>)
+        return createDecimalMaxPrecision<Decimal128>(0);
+    else if constexpr (std::is_same_v<ToType, Decimal256>)
+        return createDecimalMaxPrecision<Decimal256>(0);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native data type");
 }
