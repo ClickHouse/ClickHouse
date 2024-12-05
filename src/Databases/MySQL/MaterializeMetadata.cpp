@@ -151,7 +151,8 @@ static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & conne
         {std::make_shared<DataTypeString>(), "current_user_grants"}
     };
 
-    String grants_query, sub_privs;
+    String grants_query;
+    String sub_privs;
     StreamSettings mysql_input_stream_settings(global_settings);
     auto input = std::make_unique<MySQLSource>(connection, "SHOW GRANTS FOR CURRENT_USER();", sync_user_privs_header, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(input));

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#define CLICKHOUSE_DICTIONARY_LIBRARY_API 1
+constexpr int CLICKHOUSE_DICTIONARY_LIBRARY_API = 1;
 
 struct ExternalDictionaryLibraryAPI
 {

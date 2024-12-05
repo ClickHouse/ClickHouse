@@ -26,6 +26,8 @@
 #pragma GCC diagnostic ignored "-Wunused-macros"
 #include <cstring>
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
+
 #define TOTAL_KEYWORDS 5045
 #define MIN_WORD_LENGTH 4
 #define MAX_WORD_LENGTH 34
@@ -110735,4 +110737,6 @@ const char * TopLevelDomainLookupHash::isValid(const char * str, size_t len)
     }
     return nullptr;
 }
+/// NOLINTEND(modernize-macro-to-enum)
+
 #line 5060 "tldLookup.gperf"
