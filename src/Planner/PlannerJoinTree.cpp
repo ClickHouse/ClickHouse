@@ -671,8 +671,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     bool is_single_table_expression,
     bool wrap_read_columns_in_subquery)
 {
-    // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
-
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
@@ -697,9 +695,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
     if (table_node || table_function_node)
     {
-        // if (table_node)
-        //     LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "table_expression={} parent={}\n{}", table_node->getStorageID().getTableName(), parent_join_tree->getNodeTypeName(), parent_join_tree->dumpTree());
-
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
@@ -921,7 +916,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// It is just a safety check needed until we have a proper sending plan to replicas.
                 /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                 /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
-                // chassert(planner_context->getGlobalPlannerContext()->parallel_replicas_table == nullptr);
                 const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                     = query_context->canUseParallelReplicasOnFollower()
                     && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
@@ -966,7 +960,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & table_expression_node)
+                    auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & /*table_expression_node*/)
                     {
                         const JoinNode * join_node = join_tree_node->as<JoinNode>();
                         if (!join_node)
@@ -974,30 +968,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
-                        if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
-                        {
-                            // Current implementation is rely on choosing left table for inner join (1).
-                            // Without the check below right table can be selected for PR execution in a query
-                            // which will lead to incorrect result
-                            // Example: SELECT * FROM t1 FULL JOIN t2 INNER JOIN t3
-                            // Here, joins done in the following order (t1 FULL JOIN t2) INNER JOIN t3
-                            // J1 i.e. (t1 FULL JOIN t2) can't be chosen because FULL JOIN can't be executed with PR
-                            // J1 INNER JOIN t3 shouldn't be parallelized since (1) and t3 is on right side
-                            // To parallelize INNER JOIN, the query it can be rewritten to following one:
-                            // SELECT * FROM t3 INNER JOIN (SELECT * FROM t1 FULL JOIN t2) as j1
-                            // if (join_node->getLeftTableExpression() == table_expression_node)
-                                return true;
-                        }
-                        if (join_kind == JoinKind::Right)
-                        {
-                            LOG_DEBUG(
-                                getLogger(__PRETTY_FUNCTION__),
-                                "right table in join:\n{}\ntable expression:\n{}",
-                                join_node->getRightTableExpression()->dumpTree(),
-                                table_expression_node->dumpTree());
-                            // chassert(join_node->getRightTableExpression() == table_expression_node);
+                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right)
                             return true;
-                        }
+
+                        if (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All)
+                            // return join_node->getLeftTableExpression() == table_expression_node;
+                            return true;
 
                         return false;
                     };
@@ -1204,8 +1180,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
             auto subquery_options = select_query_options.subquery();
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "subquery_planner");
-
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
@@ -1364,18 +1338,16 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 {
     auto & join_node = join_table_expression->as<JoinNode &>();
     if (left_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
-        // && left_join_tree_query_plan.from_stage != QueryProcessingStage::WithMergeableState)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "JOIN {} left table expression expected to process query to fetch columns or mergeable stage. Actual {}",
+            "JOIN {} left table expression expected to process query to fetch columns stage. Actual {}",
             join_node.formatASTForErrorMessage(),
             QueryProcessingStage::toString(left_join_tree_query_plan.from_stage));
 
     auto left_plan = std::move(left_join_tree_query_plan.query_plan);
     auto left_plan_output_columns = left_plan.getCurrentHeader().getColumnsWithTypeAndName();
     if (right_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
-        // && right_join_tree_query_plan.from_stage != QueryProcessingStage::WithMergeableState)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "JOIN {} right table expression expected to process query to fetch columns or mergeable stage. Actual {}",
+            "JOIN {} right table expression expected to process query to fetch columns stage. Actual {}",
             join_node.formatASTForErrorMessage(),
             QueryProcessingStage::toString(right_join_tree_query_plan.from_stage));
 
@@ -1890,8 +1862,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     auto & r_mapping = right_join_tree_query_plan.query_node_to_plan_step_mapping;
     mapping.insert(r_mapping.begin(), r_mapping.end());
 
-    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", dumpQueryPlan(result_plan));
-
     return JoinTreeQueryPlan{
         .query_plan = std::move(result_plan),
         .from_stage = QueryProcessingStage::FetchColumns,
@@ -2001,8 +1971,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", StackTrace().toString());
-
     const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTree();
     auto table_expressions_stack = buildTableExpressionsStack(join_tree_node);
     size_t table_expressions_stack_size = table_expressions_stack.size();
@@ -2038,7 +2006,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       *
       * Examples: Distributed, LiveView, Merge storages.
       */
-    auto left_table_expression = table_expressions_stack.front();
     // find parent node in the table expressions stack
     QueryTreeNodePtr parent_join_tree = join_tree_node;
     for (const auto & node : table_expressions_stack)
@@ -2048,6 +2015,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             break;
         }
 
+    auto left_table_expression = table_expressions_stack.front();
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
         left_table_expression,
         parent_join_tree,
@@ -2139,7 +2107,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
             query_plans_stack.push_back(buildQueryPlanForTableExpression(
                 table_expression,
-                parent_join_tree,
+                join_tree_node,
                 select_query_info,
                 select_query_options,
                 planner_context,
