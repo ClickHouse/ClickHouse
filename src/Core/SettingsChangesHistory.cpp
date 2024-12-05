@@ -64,6 +64,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
+            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
