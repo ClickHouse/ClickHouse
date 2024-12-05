@@ -30,6 +30,7 @@ public:
     MergeTreeData::DataPart::Checksums
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
+    const Block & getColumnsSample() const { return writer->getColumnsSample(); }
     void finish(bool sync);
 };
 
