@@ -1,26 +1,30 @@
 #include "StorageObjectStorageSource.h"
-#include <Storages/VirtualColumnUtils.h>
+#include <optional>
+#include <Core/Settings.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/Sources/ConstChunkGenerator.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/ReadSchemaUtils.h>
+#include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <IO/Archives/createArchiveReader.h>
-#include <Formats/FormatFactory.h>
-#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
-#include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
-#include <Core/Settings.h>
+#include "Disks/IO/CachedOnDiskReadBufferFromFile.h"
+#include "Interpreters/Cache/FileCache.h"
+#include "Interpreters/Cache/FileCacheKey.h"
+
 
 namespace fs = std::filesystem;
-
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
@@ -380,16 +384,29 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
         }
 
+        Block initial_header = read_from_format_info.format_header;
+
+        if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
+        {
+            Block sample_header;
+            for (const auto & [name, type] : *initial_schema)
+            {
+                sample_header.insert({type->createColumn(), type, name});
+            }
+            initial_header = sample_header;
+        }
+
+
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
             *read_buf,
-            read_from_format_info.format_header,
+            initial_header,
             context_,
             max_block_size,
             format_settings,
             need_only_count ? 1 : max_parsing_threads,
             std::nullopt,
-            true/* is_remote_fs */,
+            true /* is_remote_fs */,
             compression_method,
             need_only_count);
 
@@ -402,6 +419,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             input_format->needOnlyCount();
 
         builder.init(Pipe(input_format));
+
+        if (auto transformer = configuration->getSchemaTransformer(object_info->getPath()))
+        {
+            auto schema_modifying_actions = std::make_shared<ExpressionActions>(transformer->clone());
+            builder.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, schema_modifying_actions);
+            });
+        }
+
 
         if (read_from_format_info.columns_description.hasDefaults())
         {

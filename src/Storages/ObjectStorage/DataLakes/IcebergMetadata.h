@@ -8,6 +8,10 @@
 #include "DataTypes/DataTypeTuple.h"
 #include "Disks/IStoragePolicy.h"
 #include "base/Decimal.h"
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <unordered_map>
 #include "config.h"
 
 #if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
@@ -18,8 +22,96 @@
 #    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #    include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+/**
+ * Iceberg supports the next data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
+ * - Primitive types:
+ *   - boolean
+ *   - int
+ *   - long
+ *   - float
+ *   - double
+ *   - decimal(P, S)
+ *   - date
+ *   - time (time of day in microseconds since midnight)
+ *   - timestamp (in microseconds since 1970-01-01)
+ *   - timestamptz (timestamp with timezone, stores values in UTC timezone)
+ *   - string
+ *   - uuid
+ *   - fixed(L) (fixed-length byte array of length L)
+ *   - binary
+ * - Complex types:
+ *   - struct(field1: Type1, field2: Type2, ...) (tuple of typed values)
+ *   - list(nested_type)
+ *   - map(Key, Value)
+ *
+ * Example of table schema in metadata:
+ * {
+ *     "type" : "struct",
+ *     "schema-id" : 0,
+ *     "fields" : [
+ *     {
+ *         "id" : 1,
+ *         "name" : "id",
+ *         "required" : false,
+ *         "type" : "long"
+ *     },
+ *     {
+ *         "id" : 2,
+ *         "name" : "array",
+ *         "required" : false,
+ *         "type" : {
+ *             "type" : "list",
+ *             "element-id" : 5,
+ *             "element" : "int",
+ *             "element-required" : false
+ *     },
+ *     {
+ *         "id" : 3,
+ *         "name" : "data",
+ *         "required" : false,
+ *         "type" : "binary"
+ *     }
+ * }
+ */
+class IcebergSchemaProcessor
+{
+    using Node = ActionsDAG::Node;
+
+public:
+    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
+    std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
+    std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
+
+private:
+    std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
+    std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
+    std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
+
+    NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
+    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type);
+    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool required);
+    DataTypePtr getSimpleType(const String & type_name);
+
+    bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
+    const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);
+
+    std::shared_ptr<ActionsDAG> getSchemaTransformationDag(
+        const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id);
+
+    std::mutex mutex;
+};
 
 
 /**
@@ -227,18 +319,18 @@ private:
             if (column->getDataType() == TypeIndex::Int32)
             {
                 const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(column.get());
-                Int32 value_ = static_cast<Int32>(casted_innner_column->getInt(index));
+                Int32 begin_value = static_cast<Int32>(casted_innner_column->getInt(index));
                 LOG_DEBUG(
-                    &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column_type: int", value_, partition_transform);
-                return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), value_};
+                    &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column_type: int", begin_value, partition_transform);
+                return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), begin_value};
             }
             else if (column->getDataType() == TypeIndex::Date && (partition_transform == PartitionTransform::Day))
             {
                 const auto * casted_innner_column = assert_cast<const ColumnDate *>(column.get());
-                Int32 value_ = static_cast<Int32>(casted_innner_column->getInt(index));
+                Int32 begin_value = static_cast<Int32>(casted_innner_column->getInt(index));
                 LOG_DEBUG(
-                    &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column type: date", value_, partition_transform);
-                return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), value_};
+                    &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column type: date", begin_value, partition_transform);
+                return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), begin_value};
             }
             else
             {
@@ -289,13 +381,11 @@ public:
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         ConfigurationObserverPtr configuration_,
-        ContextPtr context_,
+        const DB::ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
         String manifest_list_file_,
-        Int32 current_schema_id_,
-        NamesAndTypesList schema_,
-        std::unordered_map<Int32, NameAndTypePair> name_and_type_by_source_id_);
+        const Poco::JSON::Object::Ptr& object);
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
@@ -314,7 +404,26 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context);
+    static DataLakeMetadataPtr
+    create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
+
+    size_t getVersion() const { return metadata_version; }
+
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
+    {
+        auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
+        return version_if_outdated.has_value() ? schema_processor.getClickhouseTableSchemaById(version_if_outdated.value()) : nullptr;
+    }
+
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
+    {
+        auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
+        return version_if_outdated.has_value()
+            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
+            : nullptr;
+    }
+
+    bool supportsExternalMetadataChange() const override { return true; }
 
     Strings makePartitionPruning(const ActionsDAG & filter_dag) override
     {
@@ -330,7 +439,7 @@ public:
     bool supportsPartitionPruning() override { return true; }
 
 private:
-    size_t getVersion() const { return metadata_version; }
+    mutable std::unordered_map<String, Int32> schema_id_by_data_file;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
@@ -339,21 +448,35 @@ private:
     String manifest_list_file;
     Int32 current_schema_id;
     NamesAndTypesList schema;
+    mutable Strings data_files;
     std::unordered_map<String, String> column_name_to_physical_name;
     DataLakePartitionColumns partition_columns;
+    mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
     std::unordered_map<Int32, NameAndTypePair> name_and_type_by_source_id;
 
     std::vector<std::pair<String, Int32>> manifest_files_with_start_index;
 
-    mutable Strings data_files;
     std::vector<CommonPartitionInfo> partition_infos;
     mutable Strings manifest_files;
 
     PartitionPruningProcessor pruning_processor;
     mutable std::vector<CommonPartitionInfo> common_partition_infos;
     mutable std::vector<SpecificSchemaPartitionInfo> specific_partition_infos;
+    mutable std::mutex get_data_files_mutex;
+
+    std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const
+    {
+        auto schema_id = schema_id_by_data_file.find(data_path);
+        if (schema_id == schema_id_by_data_file.end())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find schema version for data file: {}", data_path);
+        }
+        if (schema_id->second == current_schema_id)
+            return std::nullopt;
+        return std::optional{schema_id->second};
+    }
 };
 
 }
