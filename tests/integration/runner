@@ -287,6 +287,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--memory",
+        # Default is host memory - 2GiB
+        default=physical_memory() - 2 * 1024**3,
+        help="Set the memory limit for the docker container, "
+        "accepts the same argument as `docker run --memory`",
+    )
+
+    parser.add_argument(
         "--docker-image-version",
         default="latest",
         help="Version of docker image which runner will use to run tests",
@@ -479,7 +487,7 @@ if __name__ == "__main__":
     cmd_base = (
         f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
         "--privileged --dns-search='.' "  # since recent dns search leaks from host
-        f"--memory={physical_memory() - 2 * 1024**3} "
+        f"--memory={args.memory} "
         f"--volume={args.odbc_bridge_binary}:/clickhouse-odbc-bridge "
         f"--volume={args.binary}:/clickhouse "
         f"--volume={args.library_bridge_binary}:/clickhouse-library-bridge "
