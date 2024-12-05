@@ -1714,27 +1714,27 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
         has_replicated_database = static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(
             [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED && d->isReplicatedDatabase(); })),
         has_refreshable_view = static_cast<uint32_t>(collectionHas<SQLView>(has_refreshable_view_func)), reload_embedded_dictionaries = 1,
-        reload_dictionaries = 1, reload_models = 1, reload_functions = 1, reload_function = 5 * static_cast<uint32_t>(!functions.empty()),
-        reload_asynchronous_metrics = 1, drop_dns_cache = 1, drop_mark_cache = 1, drop_uncompressed_cache = 9,
-        drop_compiled_expression_cache = 1, drop_query_cache = 1, drop_format_schema_cache = 1, flush_logs = 1, reload_config = 1,
-        reload_users = 1,
+        reload_dictionaries = 3, reload_models = 3, reload_functions = 3, reload_function = 8 * static_cast<uint32_t>(!functions.empty()),
+        reload_asynchronous_metrics = 3, drop_dns_cache = 3, drop_mark_cache = 3, drop_uncompressed_cache = 9,
+        drop_compiled_expression_cache = 3, drop_query_cache = 3, drop_format_schema_cache = 3, flush_logs = 3, reload_config = 3,
+        reload_users = 3,
         //for merge trees
-        stop_merges = 5 * has_merge_tree, start_merges = 5 * has_merge_tree, stop_ttl_merges = 5 * has_merge_tree,
-        start_ttl_merges = 5 * has_merge_tree, stop_moves = 5 * has_merge_tree, start_moves = 5 * has_merge_tree,
-        wait_loading_parts = 5 * has_merge_tree,
+        stop_merges = 8 * has_merge_tree, start_merges = 8 * has_merge_tree, stop_ttl_merges = 8 * has_merge_tree,
+        start_ttl_merges = 8 * has_merge_tree, stop_moves = 8 * has_merge_tree, start_moves = 8 * has_merge_tree,
+        wait_loading_parts = 8 * has_merge_tree,
         //for replicated merge trees
-        stop_fetches = 5 * has_replicated_merge_tree, start_fetches = 5 * has_replicated_merge_tree,
-        stop_replicated_sends = 5 * has_replicated_merge_tree, start_replicated_sends = 5 * has_replicated_merge_tree,
-        stop_replication_queues = 5 * has_replicated_merge_tree, start_replication_queues = 5 * has_replicated_merge_tree,
-        stop_pulling_replication_log = 5 * has_replicated_merge_tree, start_pulling_replication_log = 5 * has_replicated_merge_tree,
-        sync_replica = 5 * has_replicated_merge_tree, sync_replicated_database = 5 * has_replicated_database,
-        restart_replica = 5 * has_replicated_merge_tree, restore_replica = 5 * has_replicated_merge_tree,
-        restart_replicas = 1, drop_filesystem_cache = 1, sync_file_cache = 1,
+        stop_fetches = 8 * has_replicated_merge_tree, start_fetches = 8 * has_replicated_merge_tree,
+        stop_replicated_sends = 8 * has_replicated_merge_tree, start_replicated_sends = 8 * has_replicated_merge_tree,
+        stop_replication_queues = 0 * has_replicated_merge_tree, start_replication_queues = 0 * has_replicated_merge_tree,
+        stop_pulling_replication_log = 8 * has_replicated_merge_tree, start_pulling_replication_log = 8 * has_replicated_merge_tree,
+        sync_replica = 8 * has_replicated_merge_tree, sync_replicated_database = 8 * has_replicated_database,
+        restart_replica = 8 * has_replicated_merge_tree, restore_replica = 8 * has_replicated_merge_tree, restart_replicas = 3,
+        drop_filesystem_cache = 3, sync_file_cache = 1,
         //for merge trees
-        load_pks = 1, load_pk = 5 * has_merge_tree, unload_pks = 1, unload_pk = 5 * has_merge_tree,
+        load_pks = 3, load_pk = 8 * has_merge_tree, unload_pks = 3, unload_pk = 8 * has_merge_tree,
         //for refreshable views
-        refresh_views = 1, refresh_view = 5 * has_refreshable_view, stop_views = 1, stop_view = 5 * has_refreshable_view, start_views = 1,
-        start_view = 5 * has_refreshable_view, cancel_view = 5 * has_refreshable_view, wait_view = 5 * has_refreshable_view,
+        refresh_views = 3, refresh_view = 8 * has_refreshable_view, stop_views = 3, stop_view = 8 * has_refreshable_view, start_views = 3,
+        start_view = 8 * has_refreshable_view, cancel_view = 8 * has_refreshable_view, wait_view = 8 * has_refreshable_view,
         prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
         + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
         + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges

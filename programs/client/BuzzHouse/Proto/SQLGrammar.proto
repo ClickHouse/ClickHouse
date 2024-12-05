@@ -3329,7 +3329,8 @@ message Detach {
 message SyncReplica {
     enum SyncPolicy {
         STRICT = 1;
-        PULL = 2;
+        LIGHTWEIGHT = 2;
+        PULL = 3;
     }
     required ExprSchemaTable est = 1;
     required SyncPolicy policy = 2;
