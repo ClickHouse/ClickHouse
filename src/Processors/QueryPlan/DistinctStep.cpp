@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
@@ -13,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 static ITransformingStep::Traits getTraits(bool pre_distinct)
@@ -46,6 +50,16 @@ DistinctStep::DistinctStep(
     , columns(columns_)
     , pre_distinct(pre_distinct_)
 {
+}
+
+void DistinctStep::updateLimitHint(UInt64 hint)
+{
+    if (hint && limit_hint)
+        /// Both limits are set - take the min
+        limit_hint = std::min(hint, limit_hint);
+    else
+        /// Some limit is not set - take the other one
+        limit_hint = std::max(hint, limit_hint);
 }
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -156,6 +170,60 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
 void DistinctStep::updateOutputHeader()
 {
     output_header = input_headers.front();
+}
+
+void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings.max_rows_in_distinct = set_size_limits.max_rows;
+    settings.max_bytes_in_distinct = set_size_limits.max_bytes;
+    settings.distinct_overflow_mode = set_size_limits.overflow_mode;
+}
+
+void DistinctStep::serialize(Serialization & ctx) const
+{
+    /// Let's not serialize limit_hint.
+    /// Ideally, we can get if from a query plan optimization on the follower.
+
+    writeVarUInt(columns.size(), ctx.out);
+    for (const auto & column : columns)
+        writeStringBinary(column, ctx.out);
+}
+
+std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
+
+    size_t columns_size;
+    readVarUInt(columns_size, ctx.in);
+    Names column_names(columns_size);
+    for (size_t i = 0; i < columns_size; ++i)
+        readStringBinary(column_names[i], ctx.in);
+
+    SizeLimits size_limits;
+    size_limits.max_rows = ctx.settings.max_rows_in_distinct;
+    size_limits.max_bytes = ctx.settings.max_bytes_in_distinct;
+    size_limits.overflow_mode = ctx.settings.distinct_overflow_mode;
+
+    return std::make_unique<DistinctStep>(
+        ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
+}
+
+std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(Deserialization & ctx)
+{
+    return DistinctStep::deserialize(ctx, false);
+}
+std::unique_ptr<IQueryPlanStep> DistinctStep::deserializePre(Deserialization & ctx)
+{
+    return DistinctStep::deserialize(ctx, true);
+}
+
+void registerDistinctStep(QueryPlanStepRegistry & registry)
+{
+    /// Preliminary distinct probably can be a query plan optimization.
+    /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
+    registry.registerStep("Distinct", DistinctStep::deserializeNormal);
+    registry.registerStep("PreDistinct", DistinctStep::deserializePre);
 }
 
 }

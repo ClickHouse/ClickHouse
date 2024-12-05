@@ -55,9 +55,9 @@ source /repo/tests/docker_scripts/utils.lib
 # install test configs
 /repo/tests/config/install.sh
 
-/repo/tests/docker_scripts/setup_minio.sh stateless
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
 
-/repo/tests/docker_scripts/setup_hdfs_minicluster.sh
+/repo/tests/docker_scripts/setup_minio.sh stateless
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
