@@ -11,6 +11,7 @@ import signal
 import string
 import subprocess
 import sys
+from typing import Any
 
 from integration_test_images import get_docker_env
 
@@ -42,7 +43,7 @@ def physical_memory() -> int:
         return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
 
 
-def check_args_and_update_paths(args):
+def check_args_and_update_paths(args: argparse.Namespace) -> None:
     if args.clickhouse_root:
         if not os.path.isabs(args.clickhouse_root):
             CLICKHOUSE_ROOT = os.path.abspath(args.clickhouse_root)
@@ -145,7 +146,7 @@ def check_args_and_update_paths(args):
         )
 
 
-def check_iptables_legacy():
+def check_iptables_legacy() -> None:
     iptables_path = shutil.which("iptables")
     ip6tables_path = shutil.which("ip6tables")
 
@@ -192,7 +193,7 @@ def check_iptables_legacy():
         sys.exit(1)
 
 
-def docker_kill_handler_handler(signum, frame):
+def docker_kill_handler_handler(signum: Any, frame: Any) -> None:
     _, _ = signum, frame
     subprocess.check_call(
         f"docker ps --all --quiet --filter name={CONTAINER_NAME}",
