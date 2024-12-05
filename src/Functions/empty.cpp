@@ -29,11 +29,11 @@ struct NameNotEmpty
 };
 
 /// Implements the empty function for JSON type.
-template <bool negative>
+template <bool negative, class Name>
 class ExecutableFunctionJSONEmpty : public IExecutableFunction
 {
 public:
-    std::string getName() const override { return negative ? NameNotEmpty::name : NameEmpty::name; }
+    std::string getName() const override { return Name::name; }
 
 private:
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -87,13 +87,13 @@ private:
     }
 };
 
-template <bool negative>
+template <bool negative, class Name>
 class FunctionEmptyJSON final : public IFunctionBase
 {
 public:
     FunctionEmptyJSON(const DataTypes & argument_types_, const DataTypePtr & return_type_) : argument_types(argument_types_), return_type(return_type_) {}
 
-    String getName() const override { return negative ? NameNotEmpty::name : NameEmpty::name; }
+    String getName() const override { return Name::name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -102,7 +102,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSONEmpty<negative>>();
+        return std::make_unique<ExecutableFunctionJSONEmpty<negative, Name>>();
     }
 
 private:
@@ -110,11 +110,11 @@ private:
     DataTypePtr return_type;
 };
 
-template <bool negative>
+template <bool negative, class Name>
 class FunctionEmptyOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
-    static constexpr auto name = negative ? NameNotEmpty::name : NameEmpty::name;
+    static constexpr auto name = Name::name;
 
     static FunctionOverloadResolverPtr create(ContextPtr)
     {
@@ -132,9 +132,9 @@ public:
             argument_types.push_back(arg.type);
 
         if (argument_types.size() == 1 && isObject(argument_types[0]))
-            return std::make_shared<FunctionEmptyJSON<negative>>(argument_types, return_type);
+            return std::make_shared<FunctionEmptyJSON<negative, Name>>(argument_types, return_type);
 
-        return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<negative>, NameEmpty, UInt8, false>>(), argument_types, return_type);
+        return std::make_shared<FunctionToFunctionBaseAdaptor>(std::make_shared<FunctionStringOrArrayToT<EmptyImpl<negative>, Name, UInt8, false>>(), argument_types, return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -161,8 +161,8 @@ public:
 
 REGISTER_FUNCTION(Empty)
 {
-    factory.registerFunction<FunctionEmptyOverloadResolver<true>>();
-    factory.registerFunction<FunctionEmptyOverloadResolver<false>>();
+    factory.registerFunction<FunctionEmptyOverloadResolver<true, NameNotEmpty>>();
+    factory.registerFunction<FunctionEmptyOverloadResolver<false, NameEmpty>>();
 
 }
 
