@@ -110,16 +110,18 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
+    static constexpr size_t size = sizeof(T); /// NOLINT
+
     /// If the whole value fits in buffer do not call readStrict and copy with
     /// __builtin_memcpy since it is faster than generic memcpy for small copies.
-    if (buf.position() + sizeof(T) <= buf.buffer().end()) [[likely]]
+    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
     {
-        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), sizeof(T));
-        buf.position() += sizeof(T);
+        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), size);
+        buf.position() += size;
     }
     else
     {
-        buf.readStrict(reinterpret_cast<char *>(&x), sizeof(T)); /// NOLINT
+        buf.readStrict(reinterpret_cast<char *>(&x), size);
     }
 }
 
