@@ -3351,7 +3351,7 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<size_t>(si
                 continue;
             }
 
-            std::vector<uint64_t> hashes_for_column;
+            KeyCondition::BloomFilterData::HashesForColumns::value_type hashes_for_column;
             hashes_for_column.emplace_back(*hashed_value);
 
             hashes.emplace_back(std::move(hashes_for_column));
