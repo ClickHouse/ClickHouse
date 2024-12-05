@@ -1513,8 +1513,7 @@ void WindowTransform::work()
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
     updateFirstRequiredRow();
     assert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min(next_output_block_number,
-        std::min(first_required_row.block, current_row.block));
+    const auto first_used_block = std::min({next_output_block_number, first_required_row.block, current_row.block});
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
