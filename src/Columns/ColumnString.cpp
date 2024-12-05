@@ -7,6 +7,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/memcmpSmall.h>
@@ -693,6 +694,21 @@ void ColumnString::validate() const
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
                         last_offset, chars.size());
+}
+
+void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    hash.update(reinterpret_cast<const char *>(&string_size), sizeof(string_size));
+    hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+}
+
+void ColumnString::updateHashFast(SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
+    hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
 }
 
 }
