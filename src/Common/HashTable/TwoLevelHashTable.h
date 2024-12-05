@@ -345,4 +345,19 @@ public:
 
         return res;
     }
+
+    size_t getBufferSizeInCells() const
+    {
+        size_t res = 0;
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+            res += impls[i].getBufferSizeInCells();
+
+        return res;
+    }
+
+    size_t offsetInternal(ConstLookupResult ptr) const
+    {
+        size_t buck = getBucketFromHash(ptr.getHash());
+        return impls[buck].offsetInternal(ptr);
+    }
 };

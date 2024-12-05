@@ -23,6 +23,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
+#include "Common/HashTable/TwoLevelHashMap.h"
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
@@ -247,8 +248,8 @@ public:
         std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
         std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>   key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_fixed_string;
+        std::unique_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_string;
+        std::unique_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_fixed_string;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>   keys128;
         std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>   keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
@@ -267,20 +268,20 @@ public:
             }
         }
 
-        void reserve(Type which, size_t num)
+        void reserve(Type, size_t)
         {
-            switch (which)
-            {
-                case Type::EMPTY:            break;
-                case Type::CROSS:            break;
-                case Type::key8:             break;
-                case Type::key16:            break;
-
-            #define M(NAME) \
-                case Type::NAME: NAME->reserve(num); break;
-                APPLY_FOR_HASH_JOIN_VARIANTS(M)
-            #undef M
-            }
+            // switch (which)
+            // {
+            //     case Type::EMPTY:            break;
+            //     case Type::CROSS:            break;
+            //     case Type::key8:             break;
+            //     case Type::key16:            break;
+            //
+            // #define M(NAME) \
+            //     case Type::NAME: NAME->reserve(num); break;
+            //     APPLY_FOR_HASH_JOIN_VARIANTS(M)
+            // #undef M
+            // }
         }
 
         size_t getTotalRowCount(Type which) const
