@@ -222,7 +222,10 @@ if __name__ == "__main__":
         format="%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)",
     )
 
-    parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
+    parser = argparse.ArgumentParser(
+        description="ClickHouse integration tests runner",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
 
     parser.add_argument(
         "--binary",
