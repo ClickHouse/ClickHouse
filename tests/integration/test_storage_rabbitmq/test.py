@@ -3887,7 +3887,10 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
 def test_attach_broken_table(rabbitmq_cluster):
     instance.query(
-        f"ATTACH TABLE rabbit_queue UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'"
+        f"""
+        DROP TABLE rabbit_queue IF EXISTS;
+        ATTACH TABLE rabbit_queue UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'
+        """
     )
 
     error = instance.query_and_get_error("SELECT * FROM rabbit_queue")
@@ -3943,11 +3946,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
     )
 
-    instance3.replace_in_config(
-        "/etc/clickhouse-server/config.d/mergetree.xml",
-        "parts_to_throw_insert>0",
-        "parts_to_throw_insert>10",
-    )
+    instance3.query("ALTER TABLE test.view MODIFY SETTING parts_to_throw_insert=10")
     instance3.restart_clickhouse()
 
     count = [0]
