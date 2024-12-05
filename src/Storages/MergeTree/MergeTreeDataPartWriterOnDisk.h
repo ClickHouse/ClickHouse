@@ -122,8 +122,6 @@ public:
         written_offset_columns = written_offset_columns_;
     }
 
-    void cancel() noexcept override;
-
     const Block & getColumnsSample() const override { return block_sample; }
 
 protected:
