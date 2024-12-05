@@ -190,7 +190,7 @@ public:
         }
 
         const Cell & operator* () const { return *current_it; }
-        const Cell * operator->() const { return current_it->getPtr(); }
+        const Cell * operator->() const { return current_it.getPtr(); }
 
         const Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
@@ -351,13 +351,12 @@ public:
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             res += impls[i].getBufferSizeInCells();
-
         return res;
     }
 
     size_t offsetInternal(ConstLookupResult ptr) const
     {
-        size_t buck = getBucketFromHash(ptr.getHash());
+        const size_t buck = getBucketFromHash(ptr->getHash(*this));
         return impls[buck].offsetInternal(ptr);
     }
 };
