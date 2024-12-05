@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
 #include <ranges>
