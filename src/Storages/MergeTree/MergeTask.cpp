@@ -117,7 +117,10 @@ namespace ErrorCodes
 }
 
 
-static ColumnsStatistics getStatisticsForColumns(
+namespace
+{
+
+ColumnsStatistics getStatisticsForColumns(
     const NamesAndTypesList & columns_to_read,
     const StorageMetadataPtr & metadata_snapshot)
 {
@@ -136,6 +139,30 @@ static ColumnsStatistics getStatisticsForColumns(
     return all_statistics;
 }
 
+NamesAndTypesList getSubcolumnsUsedInExpression(const Block & header, const ExpressionActionsPtr & expr)
+{
+    NamesAndTypesList subcolumns;
+    for (const auto & name : expr->getRequiredColumns())
+    {
+        if (!header.has(name))
+        {
+            auto [column_name, subcolumn_name] = Nested::splitName(name);
+            const auto * column = header.findByName(column_name);
+            if (!column)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} from sorting key/index expression is not found in block {}", column_name, header.dumpStructure());
+
+            auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
+            if (!subcolumn_type)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Subcolumn {} from sorting key/index expression is not found in block {}", name, header.dumpStructure());
+
+            subcolumns.emplace_back(column_name, subcolumn_name, column->type, subcolumn_type);
+        }
+    }
+
+    return subcolumns;
+}
+
+}
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
 class RowsSourcesTemporaryFile : public ITemporaryFileLookup
@@ -284,7 +311,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         if (index_columns.size() == 1)
         {
             const auto & column_name = index_columns.front();
-            global_ctx->skip_indexes_by_column[column_name].push_back(index);
+            if (storage_columns.contains(column_name))
+                global_ctx->skip_indexes_by_column[column_name].push_back(index);
+            else
+                global_ctx->skip_indexes_by_column[Nested::splitName(column_name).first].push_back(index);
         }
         else
         {
@@ -1086,7 +1116,19 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             indexes_to_recalc_description = indexes_it->second;
             indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
 
-            auto indices_expression_dag = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext())->getActionsDAG().clone();
+            auto indices_expression = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+            auto subcolumns = getSubcolumnsUsedInExpression(merge_column_query_plan.getCurrentHeader(), indices_expression);
+            /// If index expressions contain subcolumns, we need to add additional step
+            /// that will extract these subcolumns and add them to the block.
+            if (!subcolumns.empty())
+            {
+                NamesAndTypesList required_columns = merge_column_query_plan.getCurrentHeader().getNamesAndTypesList();
+                required_columns.splice(required_columns.end(), subcolumns);
+                auto extract_columns_step = std::make_unique<ExtractColumnsStep>(merge_column_query_plan.getCurrentHeader(), required_columns);
+                merge_column_query_plan.addStep(std::move(extract_columns_step));
+            }
+
+            auto indices_expression_dag = indices_expression->getActionsDAG().clone();
             indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
             auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
                 merge_column_query_plan.getCurrentHeader(),
@@ -1692,35 +1734,6 @@ private:
     std::shared_ptr<TTLTransform> transform;
     PreparedSets::Subqueries subqueries_for_sets;
 };
-
-namespace
-{
-
-NamesAndTypesList getSubcolumnsUsedInExpression(const Block & header, const ExpressionActionsPtr & expr)
-{
-    NamesAndTypesList subcolumns;
-    for (const auto & name : expr->getRequiredColumns())
-    {
-        if (!header.has(name))
-        {
-            auto [column_name, subcolumn_name] = Nested::splitName(name);
-            const auto * column = header.findByName(column_name);
-            if (!column)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} from sorting key/index expression is not found in block {}", column_name, header.dumpStructure());
-
-            auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
-            if (!subcolumn_type)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Subcolumn {} from sorting key/index expression is not found in block {}", name, header.dumpStructure());
-
-            subcolumns.emplace_back(column_name, subcolumn_name, column->type, subcolumn_type);
-        }
-    }
-
-    return subcolumns;
-}
-
-}
-
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 {
