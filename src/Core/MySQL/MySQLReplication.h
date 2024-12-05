@@ -34,7 +34,8 @@ namespace MySQLReplication
     {
         payload.readStrict(to, n);
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        char *start = to, *end = to + n;
+        char *start = to;
+        char *end = to + n;
         std::reverse(start, end);
 #endif
     }

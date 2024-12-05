@@ -145,7 +145,7 @@ void TraceCollector::run()
                 // time and time_in_microseconds are both being constructed from the same timespec so that the
                 // times will be equal up to the precision of a second.
                 struct timespec ts;
-                clock_gettime(CLOCK_REALTIME, &ts);
+                clock_gettime(CLOCK_REALTIME, &ts); /// NOLINT(cert-err33-c)
 
                 UInt64 time = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
                 UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));

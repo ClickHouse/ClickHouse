@@ -1334,7 +1334,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
-    NameSet modified_columns, renamed_columns;
+    NameSet modified_columns;
+    NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];

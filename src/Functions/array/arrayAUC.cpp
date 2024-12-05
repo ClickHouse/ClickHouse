@@ -112,8 +112,10 @@ private:
 
         Float64 area = 0.0;
         Float64 prev_score = sorted_labels[0].score;
-        size_t prev_fp = 0, prev_tp = 0;
-        size_t curr_fp = 0, curr_tp = 0;
+        size_t prev_fp = 0;
+        size_t prev_tp = 0;
+        size_t curr_fp = 0;
+        size_t curr_tp = 0;
         for (size_t i = 0; i < size; ++i)
         {
             /// Only increment the area when the score changes

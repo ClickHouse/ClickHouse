@@ -533,7 +533,8 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Get key and nonce for encryption
     UInt64 current_key_id;
-    String current_key, nonce;
+    String current_key;
+    String nonce;
     Configuration::instance().getCurrentKeyAndNonce(encryption_method, current_key_id, current_key, nonce);
 
     /// Write current key id to support multiple keys.

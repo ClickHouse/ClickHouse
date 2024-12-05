@@ -48,7 +48,9 @@ void registerBackupEngineS3(BackupFactory & factory)
         const String & id_arg = params.backup_info.id_arg;
         const auto & args = params.backup_info.args;
 
-        String s3_uri, access_key_id, secret_access_key;
+        String s3_uri;
+        String access_key_id;
+        String secret_access_key;
 
         if (!id_arg.empty())
         {

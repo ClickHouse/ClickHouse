@@ -929,7 +929,10 @@ String RefreshTask::CoordinationZnode::toString() const
 void RefreshTask::CoordinationZnode::parse(const String & data)
 {
     ReadBufferFromString in(data);
-    Int64 last_completed_timeslot_int, last_success_time_int, last_success_duration_int, last_attempt_time_int;
+    Int64 last_completed_timeslot_int;
+    Int64 last_success_time_int;
+    Int64 last_success_duration_int;
+    Int64 last_attempt_time_int;
     in >> "format version: 1\n"
        >> "last_completed_timeslot: " >> last_completed_timeslot_int >> "\n"
        >> "last_success_time: " >> last_success_time_int >> "\n"

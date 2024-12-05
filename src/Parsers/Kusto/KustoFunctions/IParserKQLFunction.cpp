@@ -144,7 +144,8 @@ std::vector<std::string> IParserKQLFunction::getArguments(
 
 String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
 {
-    int32_t round_bracket_count = 0, square_bracket_count = 0;
+    int32_t round_bracket_count = 0;
+    int32_t square_bracket_count = 0;
     if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
         return {};
 

@@ -54,7 +54,8 @@ public:
         IColumn::Offsets & out_offsets_2 = col_res_inner_offsets->getData();
         IColumn::Offsets & out_offsets_1 = col_res_outer_offsets->getData();
 
-        size_t pos1 = 0, pos2 = 0;
+        size_t pos1 = 0;
+        size_t pos2 = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const Int64 shingle_length = col_length->getInt(row);
