@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Merge Selector Lab</title>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+    </head>
+    <body>
+        <div class="container-fluid">
+            <form id="param-form" class="p-3 form-inline">
+                <div class="form-group mx-2">
+                    <label for="insertPartSize" class="mr-2">Size:</label>
+                    <input type="text" class="form-control form-control-sm" id="insertPartSize" value="10MB" style="width: 80px;">
+                </div>
+                <div class="form-group mx-2">
+                    <label for="parts" class="mr-2">Parts:</label>
+                    <input type="number" class="form-control form-control-sm" id="parts" value="243" style="width: 80px;">
+                </div>
+                <div class="form-group mx-2">
+                    <label for="poolSize" class="mr-2">Workers:</label>
+                    <input type="number" class="form-control form-control-sm" id="poolSize" value="9" style="width: 60px;">
+                </div>
+                <div class="form-group mx-2">
+                    <label for="layerBases" class="mr-2">Bases:</label>
+                    <input type="text" class="form-control form-control-sm" id="layerBases" value="[3,3,3,3,3]" style="width: 200px;">
+                </div>
+                <button type="button" class="btn btn-primary mx-2" id="solveButton">Solve</button>
+                <button type="button" class="btn btn-primary mx-2" id="runButton">Run</button>
+            </form>
+        </div>
+
+        <div class="container-fluid bg-primary text-white">
+            <div class="p-3" id="metrics-container"></div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-12" id="util-container"></div>
+            </div>
+        </div>
+
+        <div class="container-fluid bg-primary text-white">
+            <div class="p-3" id="rewind-container"></div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-12" id="time-container"></div>
+            </div>
+        </div>
+
+        <div class="container-fluid">
+            <div class="p-3" id="var-container"></div>
+        </div>
+
+        <script type="module">
+            import { SimulationContainer } from './SimulationContainer.js';
+            import { sequenceInserter } from './sequenceInserter.js';
+            import { customScenario } from './customScenario.js';
+            import { floatLayerMerges } from './floatLayerMerges.js';
+            import { gradientDescent } from './gradientDescent.js';
+            import * as util from './util.js';
+
+            function readPartSize() {
+                const sizeInput = document.getElementById('insertPartSize').value.trim().toUpperCase();
+                let value;
+                if (sizeInput.endsWith('KB')) {
+                    value = parseFloat(sizeInput) * 1024;
+                } else if (sizeInput.endsWith('MB')) {
+                    value = parseFloat(sizeInput) * 1024 * 1024;
+                } else {
+                    value = parseInt(sizeInput);
+                }
+                return value;
+            }
+
+            function readParams() {
+                return {
+                    insertPartSize: readPartSize(),
+                    layerBases: JSON.parse(document.getElementById('layerBases').value),
+                    parts: parseInt(document.getElementById('parts').value),
+                    workers: parseInt(document.getElementById('poolSize').value),
+                };
+            }
+
+            document.getElementById('solveButton').addEventListener('click', async () => {
+                const solveButton = document.getElementById('solveButton');
+                solveButton.textContent = '⏳';
+                solveButton.disabled = true;
+                await util.delayMs(32);
+                const {insertPartSize, parts, workers, layerBases} = readParams();
+
+                const n = parts;
+                const N = workers;
+                const yBar = Math.log(n / N);
+
+                const B = 1; // insertPartSize * parts - total bytes count, but it cancels out
+
+                const sumVectors = (vectors) => vectors.reduce((acc, vec) => acc.map((val, index) => val + vec[index]), new Array(vectors[0].length).fill(0));
+                const y = (x, i) => x.slice(0, i + 1).reduce((acc, val) => acc + val, 0); // Note that y(x, -1) = 0
+                const Iplus  = (x, i) => B * Math.exp(x[i]);
+                const Iminus = (x, i) => B/2 * (
+                    + Math.exp(yBar - y(x, i - 1))
+                    + Math.exp(yBar - y(x, i))
+                    + Math.exp(x[i])
+                    - 1
+                );
+                const I = (x, i) => (y(x, i) >= yBar ? Iplus(x, i) : Iminus(x, i));
+                const F = (x) => x.reduce((a, xi, i) => a + I(x, i), 0);
+                /*
+                const grad_x(x, i) => x.map((xj, j) => (j == i ? 1 : 0));
+                const grad_y(x, i) => x.map((xj, j) => (j <= i ? 1 : 0));
+                const prod = (scalar, vector) => vector.map(val => scalar * val);
+                */
+                const grad_Iplus  = (x, i) => x.map(
+                    (xj, j) => (i == j ? B * Math.exp(xj) : 0)
+                );
+                const grad_Iminus = (x, i) => x.map(
+                    (xj, j) => B/2 * (
+                        /* grad y[i-1] term */ - (j <  i ? Math.exp(yBar - y(x, i - 1)) : 0)
+                        /* grad y[i] term */   - (j <= i ? Math.exp(yBar - y(x, i)) : 0)
+                        /* grad x[i] term */   + (j == i ? Math.exp(xj) : 0)
+                    )
+                );
+                const grad_I = (x, i) => (y(x, i) >= yBar ? grad_Iplus(x, i) : grad_Iminus(x, i));
+                const grad_F = (x) => sumVectors(x.map((xi, i) => grad_I(x, i)));
+
+                // TODO: determine step size according to inverse of maximum grad_F
+                let eta = 1e-3; // Step size
+                let Fopt = Infinity;
+                let Lopt = 1;
+                let xopt = [];
+                for (let L = 1; L <= 1.1 * Math.log(n); L++) {
+                    let x = gradientDescent(grad_F, L, n, eta);
+                    let Fx = F(x);
+                    if (Fx < Fopt) {
+                        Fopt = Fx;
+                        xopt = x;
+                        Lopt = L;
+                    }
+                    console.log("OPTION", {L, x, Fx, bases: x.map(xi => Math.exp(xi))});
+                }
+
+                console.log("OPTIMAL", {Lopt, xopt, Fopt});
+                const bases = xopt.map(xi => Math.exp(xi).toFixed(2));
+                document.getElementById('layerBases').value = '[' + bases.toString() + ']';
+                solveButton.textContent = 'Solve';
+                solveButton.disabled = false;
+            });
+
+            document.getElementById('runButton').addEventListener('click', async () => {
+                const {insertPartSize, parts, workers, layerBases} = readParams();
+
+                const scenario = {
+                    inserts: [
+                        sequenceInserter({
+                            start_time: 0,
+                            interval: 0.0,
+                            parts,
+                            bytes: insertPartSize,
+                        }),
+                    ],
+                    selector: floatLayerMerges({insertPartSize, layerBases}),
+                    pool_size: workers,
+                }
+
+                const simContainer = new SimulationContainer();
+
+                async function updateMergeTree({mt}) {
+                    simContainer.update({mt}, true);
+                    await util.delayMs(1);
+                }
+
+                const signals = {
+                    on_every_frame: updateMergeTree,
+                };
+
+                const mt = await customScenario(scenario, signals);
+                simContainer.update({mt}, true);
+                simContainer.setTime(mt.time);
+                console.log(mt);
+            });
+        </script>
+    </body>
+</html>
