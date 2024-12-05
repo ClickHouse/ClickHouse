@@ -978,6 +978,7 @@ try
         if (chunk.getNumRows() == 0)
         {
             finish_entries(/*num_rows=*/ 0, /*num_bytes=*/ 0);
+            pipeline.cancel();
             return;
         }
 
