@@ -11,7 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -19,7 +18,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 
 /** The function takes two arrays: scores and labels.
-  * Label can be one of two values: positive and negative.
+  * Label can be one of two values: positive (> 0) and negative (<= 0).
   * Score can be arbitrary number.
   *
   * These values are considered as the output of classifier. We have some true labels for objects.
@@ -102,8 +101,8 @@ private:
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
         size_t prev_tp = 0;
-        size_t curr_tp = 0;
-        size_t curr_p = 0;
+        size_t curr_tp = 0; /// True positives predictions (positive label and score > threshold)
+        size_t curr_p = 0; /// Total positive predictions (score > threshold)
 
         Float64 prev_score = sorted_labels[0].score;
         Float64 curr_precision;
@@ -125,8 +124,8 @@ private:
                  *
                  * This can be done because (TP + FN) is constant and equal to total positive labels.
                  */
-                curr_precision = static_cast<Float64>(curr_tp) / curr_p; /// curr_p should never be 0 because first element is not executed in this if statement
-                                                                         /// and it is always positive because it has the biggest prediction value.
+                curr_precision = static_cast<Float64>(curr_tp) / curr_p; /// curr_p should never be 0 because this if statement isn't executed on the first iteration and the
+                                                                         /// following iterations will have already counted (curr_p += 1) at least one positive prediction
                 area += curr_precision * (curr_tp - prev_tp);
                 prev_tp = curr_tp;
                 prev_score = sorted_labels[i].score;
@@ -177,26 +176,28 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments < 2 || number_of_arguments > 2)
+        if (arguments.size() != 2)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 2.",
                 getName(),
-                number_of_arguments);
+                arguments.size());
 
         for (size_t i = 0; i < 2; ++i)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
             if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The two first arguments for function {} must be of type Array.", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both arguments for function {} must be of type Array", getName());
 
             const auto & nested_type = array_type->getNestedType();
-            if (!isNativeNumber(nested_type) && !isEnum(nested_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}", getName(), nested_type->getName());
+
+            /// The first argument (scores) must be an array of numbers
+            if (i == 0 && !isNativeNumber(nested_type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot process values of type {} in its first argument", getName(), nested_type->getName());
+
+            /// The second argument (labels) must be an array of numbers or enums
+            if (i == 1 && !isNativeNumber(nested_type) && !isEnum(nested_type))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot process values of type {} in its second argument", getName(), nested_type->getName());
         }
 
         return std::make_shared<DataTypeFloat64>();
@@ -213,7 +214,7 @@ public:
         if (!col_array1)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
+                "Illegal column {} of first argument of function {}, should be an Array",
                 arguments[0].column->getName(),
                 getName());
 
@@ -221,7 +222,7 @@ public:
         if (!col_array2)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of second argument of function {}",
+                "Illegal column {} of second argument of function {}, should be an Array",
                 arguments[1].column->getName(),
                 getName());
 
