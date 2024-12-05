@@ -431,7 +431,7 @@ REGISTER_FUNCTION(NormalizedGini)
     FunctionDocumentation::Categories doc_categories = {"Array"};
 
     factory.registerFunction<FunctionNormalizedGini>(
-        {doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::Case::Insensitive);
+        {doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::Case::Sensitive);
 }
 
 }
