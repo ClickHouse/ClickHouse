@@ -98,8 +98,9 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 Using CAST from deprecated `Object('json')`:
 
 ```sql
- SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
- ```
+SET allow_experimental_object_type = 1;
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
+```
 
 ```text
 ┌─json───────────────────────────────────────────┐
