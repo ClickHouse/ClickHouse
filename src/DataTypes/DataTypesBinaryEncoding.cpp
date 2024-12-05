@@ -96,6 +96,7 @@ enum class BinaryTypeIndex : uint8_t
     SimpleAggregateFunction = 0x2E,
     Nested = 0x2F,
     JSON = 0x30,
+    BFloat16 = 0x31,
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.
@@ -151,6 +152,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::Int128;
         case TypeIndex::Int256:
             return BinaryTypeIndex::Int256;
+        case TypeIndex::BFloat16:
+            return BinaryTypeIndex::BFloat16;
         case TypeIndex::Float32:
             return BinaryTypeIndex::Float32;
         case TypeIndex::Float64:
@@ -565,6 +568,8 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             return std::make_shared<DataTypeInt128>();
         case BinaryTypeIndex::Int256:
             return std::make_shared<DataTypeInt256>();
+        case BinaryTypeIndex::BFloat16:
+            return std::make_shared<DataTypeBFloat16>();
         case BinaryTypeIndex::Float32:
             return std::make_shared<DataTypeFloat32>();
         case BinaryTypeIndex::Float64:

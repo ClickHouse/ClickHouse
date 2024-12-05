@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -380,9 +381,10 @@ void ColumnObject::insert(const Field & x)
         {
             shared_data_paths->insertData(path.data(), path.size());
             auto & shared_data_values_chars = shared_data_values->getChars();
-            WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
-            getDynamicSerialization()->serializeBinary(value_field, value_buf, getFormatSettings());
-            value_buf.finalize();
+            {
+                WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+                getDynamicSerialization()->serializeBinary(value_field, value_buf, getFormatSettings());
+            }
             shared_data_values_chars.push_back(0);
             shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
         }
@@ -439,7 +441,7 @@ bool ColumnObject::tryInsert(const Field & x)
                 column->popBack(column->size() - prev_size);
         }
 
-        if (shared_data_paths->size() != prev_paths_size)
+        if (shared_data_paths->size() != prev_paths_size)  /// NOLINT(clang-analyzer-core.NullDereference)
             shared_data_paths->popBack(shared_data_paths->size() - prev_paths_size);
         if (shared_data_values->size() != prev_values_size)
             shared_data_values->popBack(shared_data_values->size() - prev_values_size);
@@ -674,9 +676,10 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
 
     shared_data_paths->insertData(path.data(), path.size());
     auto & shared_data_values_chars = shared_data_values->getChars();
-    WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
-    getDynamicSerialization()->serializeBinary(column, n, value_buf, getFormatSettings());
-    value_buf.finalize();
+    {
+        WriteBufferFromVector<ColumnString::Chars> value_buf(shared_data_values_chars, AppendModeTag());
+        getDynamicSerialization()->serializeBinary(column, n, value_buf, getFormatSettings());
+    }
     shared_data_values_chars.push_back(0);
     shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
 }

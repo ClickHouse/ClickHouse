@@ -49,6 +49,7 @@
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
+    M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(RemoteRead, "Number of read with remote reader in fly") \
@@ -255,6 +256,7 @@
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(AttachedDatabase, "Active databases.") \
     M(AttachedTable, "Active tables.") \
+    M(AttachedReplicatedTable, "Active replicated tables.") \
     M(AttachedView, "Active views.") \
     M(AttachedDictionary, "Active dictionaries.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
@@ -352,6 +354,10 @@
     M(SharedCatalogDropZooKeeperThreadsScheduled, "Number of queued or active jobs in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
     \
     M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
+    \
+    M(MergeTreeIndexGranularityInternalArraysTotalSize, "The total size of all internal arrays in Merge Tree index granularity objects in bytes.") \
+    \
+    M(StartupScriptsExecutionState, "State of startup scripts execution: 0 = not finished, 1 = success, 2 = failure.") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

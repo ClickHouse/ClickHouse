@@ -195,7 +195,7 @@ makeDateTime64(year, month, day, hour, minute, second[, precision])
 
 **Returned value**
 
-- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).  
+- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 
@@ -4489,9 +4489,9 @@ Using replacement fields, you can define a pattern for the resulting string.
 | k           | clockhour of day (1~24)                  | number        | 24                                 |
 | m           | minute of hour                           | number        | 30                                 |
 | s           | second of minute                         | number        | 55                                 |
-| S           | fraction of second (not supported yet)   | number        | 978                                |
-| z           | time zone (short name not supported yet) | text          | Pacific Standard Time; PST         |
-| Z           | time zone offset/id (not supported yet)  | zone          | -0800; -08:00; America/Los_Angeles |
+| S           | fraction of second                       | number        | 978                                |
+| z           | time zone                                | text          | Eastern Standard Time; EST         |
+| Z           | time zone offset                         | zone          | -0800; -0812                       |
 | '           | escape for text                          | delimiter     |                                    |
 | ''          | single quote                             | literal       | '                                  |
 
@@ -4773,7 +4773,7 @@ Result:
 
 ## toUTCTimestamp
 
-Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp
+Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp. This function is mainly included for compatibility with Apache Spark and similar frameworks.
 
 **Syntax**
 
@@ -4799,14 +4799,14 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai');
 Result:
 
 ``` text
-┌─toUTCTimestamp(toDateTime('2023-03-16'),'Asia/Shanghai')┐
+┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')┐
 │                                     2023-03-15 16:00:00 │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## fromUTCTimestamp
 
-Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp
+Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp.  This function is mainly included for compatibility with Apache Spark and similar frameworks.
 
 **Syntax**
 
@@ -4832,7 +4832,7 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 Result:
 
 ``` text
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
 │                                                 2023-03-16 18:00:00.000 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

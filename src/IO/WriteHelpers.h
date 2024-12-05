@@ -4,11 +4,7 @@
 #include <cstdio>
 #include <limits>
 #include <algorithm>
-#include <iterator>
-#include <concepts>
 #include <bit>
-
-#include <pcg-random/pcg_random.hpp>
 
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
@@ -18,19 +14,14 @@
 #include <Common/transformEndianness.h>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
-#include <base/DecomposedFloat.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/NaNUtils.h>
-#include <Common/typeid_cast.h>
 
-#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
 #include <IO/VarInt.h>
@@ -38,23 +29,10 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#pragma clang diagnostic ignored "-Wsign-compare"
-#include <dragonbox/dragonbox_to_chars.h>
-#pragma clang diagnostic pop
-
 #include <Formats/FormatSettings.h>
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-}
-
 
 /// Helper functions for formatted and binary output.
 
@@ -150,38 +128,17 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 
 template <typename T>
-inline size_t writeFloatTextFastPath(T x, char * buffer)
-{
-    Int64 result = 0;
+requires is_floating_point<T>
+size_t writeFloatTextFastPath(T x, char * buffer);
 
-    if constexpr (std::is_same_v<T, double>)
-    {
-        /// The library Ryu has low performance on integers.
-        /// This workaround improves performance 6..10 times.
-
-        if (DecomposedFloat64(x).isIntegerInRepresentableRange())
-            result = itoa(Int64(x), buffer) - buffer;
-        else
-            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-    }
-    else
-    {
-        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
-            result = itoa(Int32(x), buffer) - buffer;
-        else
-            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-    }
-
-    if (result <= 0)
-        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print floating point number");
-    return result;
-}
+extern template size_t writeFloatTextFastPath(Float64 x, char * buffer);
+extern template size_t writeFloatTextFastPath(Float32 x, char * buffer);
+extern template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
 
 template <typename T>
+requires is_floating_point<T>
 inline void writeFloatText(T x, WriteBuffer & buf)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
-
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
@@ -540,9 +497,9 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
         writeCString("null", ostr);
     else
     {
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point<T>)
         {
-            if (std::signbit(x))
+            if (signBit(x))
             {
                 if (isNaN(x))
                     writeCString("-nan", ostr);
@@ -798,7 +755,6 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
 }
 
 /// @brief Serialize `uuid` into an array of characters in big-endian byte order.
-/// @param uuid UUID to serialize.
 /// @return Array of characters in big-endian byte order.
 std::array<char, 36> formatUUID(const UUID & uuid);
 
@@ -1099,7 +1055,9 @@ inline void writeText(is_integer auto x, WriteBuffer & buf)
         writeIntText(x, buf);
 }
 
-inline void writeText(is_floating_point auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
+template <typename T>
+requires is_floating_point<T>
+inline void writeText(T x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 
@@ -1422,26 +1380,13 @@ inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
     writeBinaryEndian<std::endian::big>(x, buf);
 }
 
-
-struct PcgSerializer
-{
-    static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
-    {
-        writeText(pcg32_fast::multiplier(), buf);
-        writeChar(' ', buf);
-        writeText(pcg32_fast::increment(), buf);
-        writeChar(' ', buf);
-        writeText(rng.state_, buf);
-    }
-};
-
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 String fourSpaceIndent(size_t indent);
 
 bool inline isWritingToTerminal(const WriteBuffer & buf)
 {
-    const auto * write_buffer_to_descriptor = typeid_cast<const WriteBufferFromFileDescriptor *>(&buf);
+    const auto * write_buffer_to_descriptor = dynamic_cast<const WriteBufferFromFileDescriptor *>(&buf);
     return write_buffer_to_descriptor && write_buffer_to_descriptor->getFD() == STDOUT_FILENO && isatty(STDOUT_FILENO);
 }
 

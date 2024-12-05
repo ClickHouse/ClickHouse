@@ -36,6 +36,7 @@
 #    include <Common/Allocator.h>
 #    include <Common/FieldVisitorsAccurateComparison.h>
 #    include <Common/MemorySanitizer.h>
+#    include <Common/quoteString.h>
 #    include <orc/Vector.hh>
 
 #    include "ArrowBufferedStreams.h"
@@ -119,9 +120,10 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     if (bytes_read < magic_size || file_data != ORC_MAGIC_BYTES)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not an ORC file");
 
-    WriteBufferFromString file_buffer(file_data, AppendModeTag{});
-    copyData(in, file_buffer, is_cancelled);
-    file_buffer.finalize();
+    {
+        WriteBufferFromString file_buffer(file_data, AppendModeTag{});
+        copyData(in, file_buffer, is_cancelled);
+    }
 
     size_t file_size = file_data.size();
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
@@ -1534,15 +1536,23 @@ static ColumnWithTypeAndName readColumnWithDateData(
 
     for (size_t i = 0; i < orc_int_column->numElements; ++i)
     {
-        Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
-        if (check_date_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
-            throw Exception(
-                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                "Input value {} of a column \"{}\" exceeds the range of type Date32",
-                days_num,
-                column_name);
+        if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
+        {
+            Int32 days_num = static_cast<Int32>(orc_int_column->data[i]);
+            if (check_date_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < -DAYNUM_OFFSET_EPOCH))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Input value {} of a column \"{}\" exceeds the range of type Date32",
+                    days_num,
+                    column_name);
 
-        column_data.push_back(days_num);
+            column_data.push_back(days_num);
+        }
+        else
+        {
+            /// ORC library doesn't guarantee that orc_int_column->data[i] is initialized to zero when orc_int_column->notNull[i] is false since https://github.com/ClickHouse/ClickHouse/pull/69473
+            column_data.push_back(0);
+        }
     }
 
     return {std::move(internal_column), internal_type, column_name};

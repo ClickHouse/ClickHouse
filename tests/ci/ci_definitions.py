@@ -92,6 +92,7 @@ class WorkFlowNames(metaclass=WithIter):
 
     JEPSEN = "JepsenWorkflow"
     CreateRelease = "CreateRelease"
+    NIGHTLY = "NightlyBuilds"
 
 
 class BuildNames(metaclass=WithIter):
@@ -570,6 +571,7 @@ class CommonJobConfigs:
                 "tests/ci/docker_server.py",
                 "tests/ci/docker_images_helper.py",
                 "./docker/server",
+                "./docker/keeper",
             ]
         ),
         runner_type=Runners.STYLE_CHECKER,
@@ -610,6 +612,7 @@ class CommonJobConfigs:
                 "./docker/packager/packager",
                 "./rust",
                 "./tests/ci/version_helper.py",
+                "./tests/ci/build_check.py",
                 # FIXME: This is a WA to rebuild the CH and recreate the Performance.tar.zst artifact
                 # when there are changes in performance test scripts.
                 # Due to the current design of the perf test we need to rebuild CH when the performance test changes,
