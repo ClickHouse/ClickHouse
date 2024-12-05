@@ -3157,6 +3157,43 @@ Result:
 └─────────┘
 ```
 
+## normalizedGini
+
+Function `normalizedGini` is used to calculate the normalized Gini coefficient.
+
+**Syntax**
+
+```sql
+normalizedGini(pltv, ltv)
+```
+
+**Arguments**
+
+- `pltv` — Predicted lifetime value ([Array(T)](../data-types/array.md))
+- `ltv` — Actual lifetime value ([Array(T)](../data-types/array.md))
+
+**Returned Value**
+
+- A tuple contains Gini coefficient for the predicted LTV, Gini coefficient for the actual  LTV and the normalized Gini coefficient.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT normalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2]);
+```
+
+Result:
+
+```
+┌─normalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
+│ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- For more details, check https://arxiv.org/abs/1912.07753
+
 ## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
