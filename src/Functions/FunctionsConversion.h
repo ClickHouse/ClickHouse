@@ -4354,6 +4354,7 @@ private:
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
                 auto serialization = arguments[0].type->getDefaultSerialization();
+                format_settings.json.quote_64bit_integers = false;
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
