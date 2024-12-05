@@ -172,4 +172,17 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
     setVersion(version);
 }
 
+std::string HTTPServerRequest::toStringForLogging() const
+{
+    return fmt::format(
+        "Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
+        getMethod(),
+        clientAddress().toString(),
+        get("User-Agent", "(none)"),
+        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ("")),
+        getContentType(),
+        getTransferEncoding(),
+        get("X-Forwarded-For", "(none)"));
+}
+
 }
