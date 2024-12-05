@@ -1,25 +1,36 @@
-export function gradientDescent(gradF, L, n, eta, maxIterations = 100000, tolerance = 1e-8) {
+export function gradientDescent(gradF, L, n, xMax, eta, maxIterations = 100000, tolerance = 1e-8) {
     // Initialize variables
     const log_n = Math.log(n);
 
-    function projection(x) {
-        // Project onto the feasible set (all x[i] >= 0 and sum(x) = ln(n))
-        let sumX = x.reduce((a, b) => a + b, 0);
-        let correction = (log_n - sumX) / L;
-        let projectedX = x.map(xi => xi + correction);
-        let sumProjected = projectedX.reduce((a, b) => a + b, 0);
+    function projection(x_input) {
+        // Project onto the feasible set:
+        // 1) sum(x) = ln(n)
+        // 2) all x[i] >= 0
+        // 3) all x[i] <= xMax
 
-        // Ensure all x[i] >= 0 and re-adjust if necessary
-        if (sumProjected <= log_n) {
-            return projectedX.map(xi => Math.max(0, xi));
+        if (L == 1)
+            return [log_n]; // The only feasible point
+
+        // Project onto `sum(x) = ln(n)` plane (1)
+        let delta = (x_input.reduce((a, xi) => a + xi, 0) - log_n) / L;
+        let x = x_input.map((xi) => xi - delta);
+
+        // Take (2) and (3) into account, while staying in plane (1)
+        let correction = 0;
+        let i = 0;
+        for (; i < 100; i++) {
+            let correction_sum = 0;
+            for (let i = 0; i < L; i++) {
+                let value = x[i] + correction; // projects onto (1)
+                let new_value = Math.max(0, Math.min(xMax, value));
+                correction_sum += value - new_value;
+                x[i] = new_value;
+            }
+            correction = correction_sum / L;
+            if (correction < 1e-10)
+                break;
         }
-
-        // If negative values exist, set them to zero and re-scale to maintain the sum
-        let positiveX = projectedX.map(xi => Math.max(0, xi));
-        let positiveSum = positiveX.reduce((a, b) => a + b, 0);
-        let scale = log_n / positiveSum;
-
-        return positiveX.map(xi => xi * scale);
+        return x;
     }
 
     // let x = Array(L).fill(log_n / L); // Start with an equal distribution

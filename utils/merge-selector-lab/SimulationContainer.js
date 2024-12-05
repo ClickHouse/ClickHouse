@@ -16,8 +16,9 @@ export class SimulationContainer {
                 Total: ${mt.written_bytes / 1024 / 1024} MB,
                 Inserted: ${mt.inserted_bytes / 1024 / 1024} MB,
                 WA: ${mt.writeAmplification().toFixed(2)},
-                AvgPartCount: ${mt.avgActivePartCount().toFixed(2)}
-                Time: ${(mt.time).toFixed(2)}s
+                AvgPartCount: ${mt.avgActivePartCount().toFixed(2)},
+                Time: ${(mt.time).toFixed(2)}s,
+                Integral: ${mt.integral_active_part_count.toFixed(2)}
             `);
     }
 

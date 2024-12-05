@@ -67,7 +67,7 @@ export function* floatLayerMerges({insertPartSize, layerBases})
     const mt = yield {type: 'getMergeTree'};
 
     const settings = {
-        max_parts_to_merge_at_once: 100,
+        max_parts_to_merge_at_once: 0,
     };
 
     while (true)

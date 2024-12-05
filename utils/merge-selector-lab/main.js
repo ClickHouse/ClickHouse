@@ -14,7 +14,7 @@ import { factorizeNumber, allFactorPermutations } from './factorization.js';
 import { clickHousePartsInserter } from './clickHousePartsInserter.js';
 import { getOptimalBases } from './getOptimalBases.js';
 import { gradientDescent } from './gradientDescent.js';
-import * as util from './util.js';
+import { delayMs } from './util.js';
 
 async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
 {
@@ -37,7 +37,7 @@ async function iterateAnalyticalSolution(series, parts, total_time = 1.0)
             best_base = base;
         }
 
-        await util.delayMs(1);
+        await delayMs(1);
     }
     return {y: min_y, base: best_base};
 }
@@ -64,7 +64,7 @@ async function iterateBaseLinear(selector, series, parts, total_time = 1.0)
             best = mt;
         }
 
-        await util.delayMs(1);
+        await delayMs(1);
     }
     return {y: min_y, mt: best};
 }
@@ -95,7 +95,7 @@ async function iteratePartsFactors(selector, series, parts, total_time = 1.0)
             best = mt;
         }
 
-        await util.delayMs(1);
+        await delayMs(1);
     }
     return {y: min_y, mt: best};
 }
@@ -205,11 +205,11 @@ export async function compareAvgPartCount()
                 series[name] = optimal_chart.addSeries(name, showSimulation);
             series[name].addPoint({x: parts, ...results[name]});
         }
-        await util.delayMs(10);
+        await delayMs(10);
 
         // Show what simple selector is doing
         // showSimulation(simple, true);
-        //await util.delayMs(100);
+        //await delayMs(100);
 
         // analytical_series.addPoint({x: parts, y: analytical.y});
         // analytical_series.addPoint({x: parts, y: analytical.base});
@@ -255,7 +255,7 @@ async function custom()
             show_postponed = true;
             sim.postpone("show", async () => {
                 //show_postponed = false;
-                await util.delayMs(10);
+                await delayMs(10);
             });
         }
     }
@@ -269,12 +269,12 @@ async function custom()
 
     async function updateMergeTree({mt}) {
         simContainer.update({mt}, true);
-        await util.delayMs(100);
+        await delayMs(100);
     }
 
     async function everySecond({mt}) {
         updateMergeTree({mt}, true);
-        await util.delayMs(1);
+        await delayMs(1);
     }
 
     const signals = {
@@ -341,7 +341,7 @@ async function periodicArrivals()
 
     async function updateMergeTree({mt}) {
         simContainer.update({mt}, true);
-        await util.delayMs(1);
+        await delayMs(1);
     }
 
     const signals = {

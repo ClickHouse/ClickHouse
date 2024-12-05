@@ -8,27 +8,40 @@
     </head>
     <body>
         <div class="container-fluid">
-            <form id="param-form" class="p-3 form-inline">
-                <div class="form-group mx-2">
-                    <label for="insertPartSize" class="mr-2">Size:</label>
-                    <input type="text" class="form-control form-control-sm" id="insertPartSize" value="10MB" style="width: 70px;">
+            <form id="param-form" class="p-3">
+                <div class="row">
+                    <div class="form-group col-md-4">
+                        <label for="insertPartSize">Initial part size:</label>
+                        <input type="text" class="form-control form-control-sm" id="insertPartSize" value="10MB">
+                    </div>
+                    <div class="form-group col-md-4">
+                        <label for="parts">Initial parts count:</label>
+                        <input type="number" class="form-control form-control-sm" id="parts" value="243">
+                    </div>
+                    <div class="form-group col-md-4">
+                        <label for="poolSize">Workers in merge pool:</label>
+                        <input type="number" class="form-control form-control-sm" id="poolSize" value="9">
+                    </div>
                 </div>
-                <div class="form-group mx-2">
-                    <label for="parts" class="mr-2">Parts:</label>
-                    <input type="number" class="form-control form-control-sm" id="parts" value="243" style="width: 70px;">
+                <div class="row">
+                    <div class="form-group col-md-4">
+                        <label for="maxSourceParts">Max parts to merge:</label>
+                        <input type="number" class="form-control form-control-sm" id="maxSourceParts" value="100">
+                    </div>
+                    <div class="form-group col-md-8">
+                        <label for="layerBases">Bases (number of parts to merge on every level):</label>
+                        <input type="text" class="form-control form-control-sm" id="layerBases" value="[3,3,3,3,3]">
+                    </div>
                 </div>
-                <div class="form-group mx-2">
-                    <label for="poolSize" class="mr-2">Workers:</label>
-                    <input type="number" class="form-control form-control-sm" id="poolSize" value="9" style="width: 70px;">
+                <div class="row mt-3">
+                    <div class="col">
+                        <button type="button" class="btn btn-primary" id="solveButton">Solve</button>
+                        <button type="button" class="btn btn-primary mx-2" id="runButton">Run</button>
+                    </div>
                 </div>
-                <div class="form-group mx-2">
-                    <label for="layerBases" class="mr-2">Bases:</label>
-                    <input type="text" class="form-control form-control-sm" id="layerBases" value="[3,3,3,3,3]" style="width: 200px;">
-                </div>
-                <button type="button" class="btn btn-primary mx-2" id="solveButton">Solve</button>
-                <button type="button" class="btn btn-primary mx-2" id="runButton">Run</button>
             </form>
         </div>
+
 
         <div class="container-fluid">
             <div class="p-3" id="options-container">
@@ -36,8 +49,8 @@
                     <thead>
                         <tr>
                             <th>WA</th>
-                            <th>Integral in model</th>
-                            <th>Bases</th>
+                            <th>Integral, parts&times;sec</th>
+                            <th>Bases, parts</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -77,7 +90,7 @@
             import { customScenario } from './customScenario.js';
             import { floatLayerMerges } from './floatLayerMerges.js';
             import { gradientDescent } from './gradientDescent.js';
-            import * as util from './util.js';
+            import { delayMs } from './util.js';
 
             function readPartSize() {
                 const sizeInput = document.getElementById('insertPartSize').value.trim().toUpperCase();
@@ -98,6 +111,7 @@
                     layerBases: JSON.parse(document.getElementById('layerBases').value),
                     parts: parseInt(document.getElementById('parts').value),
                     workers: parseInt(document.getElementById('poolSize').value),
+                    maxSourceParts: parseInt(document.getElementById('maxSourceParts').value),
                 };
             }
 
@@ -105,12 +119,13 @@
                 const solveButton = document.getElementById('solveButton');
                 solveButton.textContent = '⏳';
                 solveButton.disabled = true;
-                await util.delayMs(32);
-                const {insertPartSize, parts, workers, layerBases} = readParams();
+                await delayMs(32);
+                const {insertPartSize, parts, workers, layerBases, maxSourceParts} = readParams();
 
                 const n = parts;
                 const N = workers;
                 const yBar = Math.log(n / N);
+                const xMax = Math.log(maxSourceParts);
 
                 const mt0 = new MergeTree();
                 const realB = mt0.mergeDuration(insertPartSize * n, n);
@@ -153,7 +168,7 @@
 
                 d3.select('#options-table tbody').html('');
                 for (let L = 1; L <= 1.1 * Math.log(n); L++) {
-                    let x = gradientDescent(grad_F, L, n, eta);
+                    let x = gradientDescent(grad_F, L, n, xMax, eta);
                     let Fx = F(x);
                     const bases = x.map(xi => Math.exp(xi));
                     const basesStr = '[' + bases.map(base => base.toFixed(2)).join(', ') + ']';
@@ -211,7 +226,7 @@
 
                 async function updateMergeTree({mt}) {
                     simContainer.update({mt}, true);
-                    await util.delayMs(1);
+                    await delayMs(1);
                 }
 
                 const signals = {
