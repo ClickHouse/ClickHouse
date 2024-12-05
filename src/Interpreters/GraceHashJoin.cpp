@@ -763,7 +763,7 @@ size_t GraceHashJoin::getNumBuckets() const
 bool GraceHashJoin::rightTableCanBeReranged() const
 {
     if (hash_join && buckets.size() <= 1)
-        return hash_join->rightTableCanbeReranged();
+        return hash_join->rightTableCanBeReranged();
     return false;
 }
 
