@@ -348,7 +348,7 @@ public:
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
     {
-        if constexpr(canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
+        if constexpr (canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
             compileAddImpl(builder, aggregate_data_ptr, arguments);
     }
 

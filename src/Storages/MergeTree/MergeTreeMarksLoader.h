@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Common/ThreadPool_fwd.h>
 
+#include <future>
 
 namespace DB
 {
