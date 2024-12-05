@@ -1176,6 +1176,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("allow_create_index_without_type", 1);
         query_context->setSetting("allow_experimental_s3queue", 1);
 
+        /// We apply the flatten_nested setting after writing the CREATE query to the DDL log,
+        /// but before writing metadata to ZooKeeper. So we have to apply the setting on secondary replicas, but not in recovery mode.
+        /// Set it to false, so it will do nothing on recovery. The metadata in ZooKeeper should be used as is.
+        /// Same for data_type_default_nullable.
+        query_context->setSetting("flatten_nested", false);
+        query_context->setSetting("data_type_default_nullable", false);
+
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
         return query_context;
