@@ -13,56 +13,56 @@ namespace DB
 
 namespace
 {
-    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
                       << quoteString(new_name);
     }
 
-    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const std::vector<std::shared_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         // safe because this method is only called if authentication_methods.size > 1
         // if the first type is present, include the `WITH` keyword
         if (authentication_methods[0]->type)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH" << (settings.hilite ? IAST::hilite_none : "");
         }
 
         for (std::size_t i = 0; i < authentication_methods.size(); i++)
         {
-            authentication_methods[i]->format(settings);
+            authentication_methods[i]->format(ostr, settings);
 
             bool is_last = i < authentication_methods.size() - 1;
             if (is_last)
             {
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : ",");
+                ostr << (settings.hilite ? IAST::hilite_keyword : ",");
             }
         }
     }
 
-    void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
-        valid_until.format(settings);
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        valid_until.format(ostr, settings);
     }
 
-    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormatSettings & settings)
+    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
         if (prefix)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << " HOST "
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << " HOST "
                           << (settings.hilite ? IAST::hilite_none : "");
         else
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " HOST " << (settings.hilite ? IAST::hilite_none : "");
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << " HOST " << (settings.hilite ? IAST::hilite_none : "");
 
         if (hosts.empty())
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
             return;
         }
 
         if (hosts.containsAnyHost())
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ANY" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ANY" << (settings.hilite ? IAST::hilite_none : "");
             return;
         }
 
@@ -70,8 +70,8 @@ namespace
         if (hosts.containsLocalHost())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "LOCAL" << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "LOCAL" << (settings.hilite ? IAST::hilite_none : "");
         }
 
         const auto & addresses = hosts.getAddresses();
@@ -79,20 +79,20 @@ namespace
         if (!addresses.empty() || !subnets.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "IP " << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "IP " << (settings.hilite ? IAST::hilite_none : "");
             bool need_comma2 = false;
             for (const auto & address : addresses)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(address.toString());
+                    ostr << ", ";
+                ostr << quoteString(address.toString());
             }
             for (const auto & subnet : subnets)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(subnet.toString());
+                    ostr << ", ";
+                ostr << quoteString(subnet.toString());
             }
         }
 
@@ -100,14 +100,14 @@ namespace
         if (!names.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NAME " << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NAME " << (settings.hilite ? IAST::hilite_none : "");
             bool need_comma2 = false;
             for (const auto & name : names)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(name);
+                    ostr << ", ";
+                ostr << quoteString(name);
             }
         }
 
@@ -115,14 +115,14 @@ namespace
         if (!name_regexps.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "REGEXP " << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "REGEXP " << (settings.hilite ? IAST::hilite_none : "");
             bool need_comma2 = false;
             for (const auto & host_regexp : name_regexps)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(host_regexp);
+                    ostr << ", ";
+                ostr << quoteString(host_regexp);
             }
         }
 
@@ -130,43 +130,43 @@ namespace
         if (!like_patterns.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "LIKE " << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << (settings.hilite ? IAST::hilite_keyword : "") << "LIKE " << (settings.hilite ? IAST::hilite_none : "");
             bool need_comma2 = false;
             for (const auto & like_pattern : like_patterns)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(like_pattern);
+                    ostr << ", ";
+                ostr << quoteString(like_pattern);
             }
         }
     }
 
 
-    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, const IAST::FormatSettings & settings)
+    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
-        default_roles.format(settings);
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
+        default_roles.format(ostr, settings);
     }
 
 
-    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
+    void formatSettings(const ASTSettingsProfileElements & settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
-        settings.format(format);
+        ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        settings.format(ostr, format);
     }
 
 
-    void formatGrantees(const ASTRolesOrUsersSet & grantees, const IAST::FormatSettings & settings)
+    void formatGrantees(const ASTRolesOrUsersSet & grantees, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " GRANTEES " << (settings.hilite ? IAST::hilite_none : "");
-        grantees.format(settings);
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " GRANTEES " << (settings.hilite ? IAST::hilite_none : "");
+        grantees.format(ostr, settings);
     }
 
-    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, const IAST::FormatSettings & settings)
+    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT DATABASE " << (settings.hilite ? IAST::hilite_none : "");
-        default_database.format(settings);
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT DATABASE " << (settings.hilite ? IAST::hilite_none : "");
+        default_database.format(ostr, settings);
     }
 }
 
@@ -209,83 +209,83 @@ ASTPtr ASTCreateUserQuery::clone() const
 }
 
 
-void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH USER" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << "ATTACH USER" << (format.hilite ? hilite_none : "");
     }
     else
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER USER" : "CREATE USER")
+        ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER USER" : "CREATE USER")
                     << (format.hilite ? hilite_none : "");
     }
 
     if (if_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
     else if (if_not_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
     else if (or_replace)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    format.ostr << " ";
-    names->format(format);
+    ostr << " ";
+    names->format(ostr, format);
 
     if (!storage_name.empty())
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "")
+        ostr << (format.hilite ? IAST::hilite_keyword : "")
                     << " IN " << (format.hilite ? IAST::hilite_none : "")
                     << backQuoteIfNeed(storage_name);
 
-    formatOnCluster(format);
+    formatOnCluster(ostr, format);
 
     if (new_name)
-        formatRenameTo(*new_name, format);
+        formatRenameTo(*new_name, ostr, format);
 
     if (authentication_methods.empty())
     {
         // If identification (auth method) is missing from query, we should serialize it in the form of `NO_PASSWORD` unless it is alter query
         if (!alter)
         {
-            format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH no_password" << (format.hilite ? IAST::hilite_none : "");
+            ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH no_password" << (format.hilite ? IAST::hilite_none : "");
         }
     }
     else
     {
         if (add_identified_with)
         {
-            format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " ADD" << (format.hilite ? IAST::hilite_none : "");
+            ostr << (format.hilite ? IAST::hilite_keyword : "") << " ADD" << (format.hilite ? IAST::hilite_none : "");
         }
 
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (format.hilite ? IAST::hilite_none : "");
-        formatAuthenticationData(authentication_methods, format);
+        ostr << (format.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (format.hilite ? IAST::hilite_none : "");
+        formatAuthenticationData(authentication_methods, ostr, format);
     }
 
     if (global_valid_until)
     {
-        formatValidUntil(*global_valid_until, format);
+        formatValidUntil(*global_valid_until, ostr, format);
     }
 
     if (hosts)
-        formatHosts(nullptr, *hosts, format);
+        formatHosts(nullptr, *hosts, ostr, format);
     if (add_hosts)
-        formatHosts("ADD", *add_hosts, format);
+        formatHosts("ADD", *add_hosts, ostr, format);
     if (remove_hosts)
-        formatHosts("DROP", *remove_hosts, format);
+        formatHosts("DROP", *remove_hosts, ostr, format);
 
     if (default_database)
-        formatDefaultDatabase(*default_database, format);
+        formatDefaultDatabase(*default_database, ostr, format);
 
     if (default_roles)
-        formatDefaultRoles(*default_roles, format);
+        formatDefaultRoles(*default_roles, ostr, format);
 
     if (settings && (!settings->empty() || alter))
-        formatSettings(*settings, format);
+        formatSettings(*settings, ostr, format);
 
     if (grantees)
-        formatGrantees(*grantees, format);
+        formatGrantees(*grantees, ostr, format);
 
     if (reset_authentication_methods_to_new)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " RESET AUTHENTICATION METHODS TO NEW" << (format.hilite ? hilite_none : "");
+        ostr << (format.hilite ? hilite_keyword : "") << " RESET AUTHENTICATION METHODS TO NEW" << (format.hilite ? hilite_none : "");
 }
 
 }

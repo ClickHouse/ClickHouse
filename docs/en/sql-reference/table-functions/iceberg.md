@@ -65,6 +65,14 @@ SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
 
+**Schema Evolution**
+At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
+* int -> long
+* float -> double
+* decimal(P, S) -> decimal(P', S) where P' > P. 
+
+Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
+
 **Aliases**
 
 Table function `iceberg` is an alias to `icebergS3` now.
