@@ -4,8 +4,6 @@
 
 #include <Common/logger_useful.h>
 
-
-
 namespace ProfileEvents
 {
     extern const Event JoinBuildTableRowCount;
