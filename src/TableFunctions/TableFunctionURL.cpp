@@ -140,9 +140,11 @@ StoragePtr TableFunctionURL::getStorage(
         && !parallel_replicas_cluster_name.empty()
         && !global_context->isDistributed();
 
+    auto is_secondary_query = global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
     // TODO Context::canUseParallelReplicas
 
-    if (can_use_parallel_replicas)
+    if (can_use_parallel_replicas && !is_secondary_query)
     {
         return std::make_shared<StorageURLCluster>(
             global_context,
