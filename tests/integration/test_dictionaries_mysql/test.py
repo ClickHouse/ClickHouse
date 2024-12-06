@@ -7,9 +7,14 @@ import pymysql.cursors
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
-CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]
+CONFIG_FILES = [
+    "configs/remote_servers.xml",
+    "configs/named_collections.xml",
+    "configs/bg_reconnect.xml",
+]
 USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -436,3 +441,78 @@ def execute_mysql_query(connection, query):
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(create_table_mysql_template.format(table_name))
+
+
+def test_background_dictionary_reconnect(started_cluster):
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict;")
+    execute_mysql_query(
+        mysql_connection,
+        "CREATE TABLE test.dict (id Integer, value Text);",
+    )
+    execute_mysql_query(
+        mysql_connection, "INSERT INTO test.dict VALUES (1, 'Value_1');"
+    )
+
+    query = instance.query
+    query(
+        f"""
+    DROP DICTIONARY IF EXISTS dict;
+    CREATE DICTIONARY dict
+    (
+        id UInt64,
+        value String
+    )
+    PRIMARY KEY id
+    LAYOUT(DIRECT())
+    SOURCE(MYSQL(
+        USER 'root'
+        PASSWORD 'clickhouse'
+        DB 'test'
+        QUERY $doc$SELECT * FROM test.dict;$doc$
+        BACKGROUND_RECONNECT 'true'
+        REPLICA(HOST 'mysql80' PORT 3306 PRIORITY 1)))
+    """
+    )
+
+    result = query("SELECT value FROM dict WHERE id = 1")
+    assert result == "Value_1\n"
+
+    class MySQL_Instance:
+        pass
+
+    mysql_instance = MySQL_Instance()
+    mysql_instance.ip_address = started_cluster.mysql8_ip
+
+    with PartitionManager() as pm:
+        # Break connection to mysql server
+        pm.partition_instances(
+            instance, mysql_instance, action="REJECT --reject-with tcp-reset"
+        )
+
+        # Exhaust possible connection pool and initiate reconnection attempts
+        for _ in range(5):
+            try:
+                result = query("SELECT value FROM dict WHERE id = 1")
+            except Exception as e:
+                pass
+
+    counter = 0
+    # Based on bg_reconnect_mysql_dict_interval = 7000 in "configs/bg_reconnect.xml":
+    # connection should not be available for about 5-7 seconds
+    while counter <= 8:
+        try:
+            counter += 1
+            time.sleep(1)
+            result = query("SELECT value FROM dict WHERE id = 1")
+            break
+        except Exception as e:
+            pass
+
+    query("DROP DICTIONARY IF EXISTS dict;")
+    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict;")
+
+    assert (
+        counter >= 4 and counter <= 8
+    ), f"Connection reistablisher didn't meet anticipated time interval [4..8]: {counter}"
