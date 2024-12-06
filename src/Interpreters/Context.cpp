@@ -2713,7 +2713,7 @@ bool Context::isBackgroundOperationContext() const
 void Context::killCurrentQuery() const
 {
     if (auto elem = getProcessListElement())
-        elem->cancelQuery(true);
+        elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 bool Context::isCurrentQueryKilled() const

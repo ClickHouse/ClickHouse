@@ -179,8 +179,6 @@ ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl()
     if (!delayed_chunk)
         return;
 
-    chassert(isCancelled() || std::uncaught_exceptions());
-
     for (auto & partition : delayed_chunk->partitions)
     {
         partition.temp_part.cancel();
