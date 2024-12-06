@@ -168,7 +168,7 @@ check_http_attributes $query_id
 
 # Test 7: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
-execute_query_HTTP "$query_id" 'select * from opentelemetry_test FORMAT Null'
+execute_query_HTTP "$query_id" 'select * from opentelemetry_test SETTINGS opentelemetry_start_trace_probability=1 FORMAT Null'
 check_http_attributes "$query_id"
 #
 # Tear down
