@@ -64,6 +64,8 @@ public:
     /// Add transform with simple input and simple output for each port.
     void addSimpleTransform(const Pipe::ProcessorGetter & getter);
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
+    void addSimpleTransform(const Pipe::ProcessorGetterSharedHeader & getter);
+    void addSimpleTransform(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
@@ -107,9 +109,9 @@ public:
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipelineBuilder unitePipelines(
-            std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
-            size_t max_threads_limit = 0,
-            Processors * collected_processors = nullptr);
+        std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+        size_t max_threads_limit = 0,
+        Processors * collected_processors = nullptr);
 
     static QueryPipelineBuilderPtr mergePipelines(
         QueryPipelineBuilderPtr left,
