@@ -2908,8 +2908,8 @@ message CreateTable {
         CreateTableAs table_as = 6;
     }
     required TableEngine engine = 7;
-    optional Select as_select_stmt = 9;
-    optional string comment = 10;
+    optional Select as_select_stmt = 8;
+    optional string comment = 9;
 }
 
 enum SQLObject {
