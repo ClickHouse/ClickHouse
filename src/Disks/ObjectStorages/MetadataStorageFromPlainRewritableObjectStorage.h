@@ -4,10 +4,30 @@
 
 #include <memory>
 #include <unordered_set>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
 {
+
+class MetadataStorageFromPlainRewritableObjectStorageTransaction final : public MetadataStorageFromPlainObjectStorageTransaction
+{
+public:
+    explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(
+        MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_)
+        : DB::MetadataStorageFromPlainObjectStorageTransaction(metadata_storage_, object_storage_)
+    {
+    }
+
+    void createEmptyFile(const std::string & path) override
+    {
+        const auto key = object_storage->generateObjectKeyForPath(path, std::nullopt);
+        StoredObject object(key.serialize(), "", /* file_size */0);
+        auto buf = object_storage->writeObject(object, WriteMode::Rewrite);
+        buf->finalize();
+    }
+};
+
 
 class MetadataStorageFromPlainRewritableObjectStorage final : public MetadataStorageFromPlainObjectStorage
 {
@@ -21,6 +41,11 @@ public:
     ~MetadataStorageFromPlainRewritableObjectStorage() override;
 
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
+
+    MetadataTransactionPtr createTransaction() override
+    {
+        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorageTransaction>(*this, object_storage);
+    }
 
     bool existsFile(const std::string & path) const override;
 
