@@ -2318,10 +2318,10 @@ def test_registry(started_cluster):
     node2.query(f"DROP DATABASE IF EXISTS {db_name}")
 
     node1.query(
-        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb2', 'shard1', 'node1')"
     )
     node2.query(
-        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb2', 'shard1', 'node2')"
     )
 
     create_table(

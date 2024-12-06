@@ -22,7 +22,13 @@ public:
     std::unordered_map<std::string, FilesMetadataPtr> getAll();
 
 private:
-    using MetadataByPath = std::unordered_map<std::string, std::shared_ptr<ObjectStorageQueueMetadata>>;
+    struct MetadataWithRefCount
+    {
+        explicit MetadataWithRefCount(std::shared_ptr<ObjectStorageQueueMetadata> metadata_) : metadata(metadata_) {}
+        std::shared_ptr<ObjectStorageQueueMetadata> metadata;
+        size_t ref_count = 0;
+    };
+    using MetadataByPath = std::unordered_map<std::string, MetadataWithRefCount>;
 
     MetadataByPath metadata_by_path;
     std::mutex mutex;

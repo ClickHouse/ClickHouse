@@ -494,8 +494,7 @@ void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id)
         std::string registry_str;
         auto zk_client = getZooKeeper();
 
-        bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
-        if (node_exists)
+        if (zk_client->tryGet(registry_path, registry_str, &stat))
         {
             Strings registered;
             splitInto<','>(registered, registry_str);
@@ -512,22 +511,18 @@ void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id)
                     return;
                 }
             }
-        }
 
-        LOG_TRACE(log, "Adding {} to registry", self.table_id);
-
-        if (node_exists)
-        {
             auto new_registry_str = registry_str + "," + self.serialize();
             code = zk_client->trySet(registry_path, new_registry_str, stat.version);
         }
         else
-        {
             code = zk_client->tryCreate(registry_path, self.serialize(), zkutil::CreateMode::Persistent);
-        }
 
         if (code == Coordination::Error::ZOK)
+        {
+            LOG_TRACE(log, "Added {} to registry", self.table_id);
             return;
+        }
 
         if (code == Coordination::Error::ZBADVERSION
             || code == Coordination::Error::ZSESSIONEXPIRED)
@@ -543,7 +538,7 @@ size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id)
     const auto registry_path = zookeeper_path / "registry";
     const auto self = Info::create(storage_id);
 
-    Coordination::Error code;
+    Coordination::Error code = Coordination::Error::ZOK;
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Stat stat;
@@ -588,13 +583,17 @@ size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id)
         if (code == Coordination::Error::ZOK)
             return count;
 
-        if (code == Coordination::Error::ZBADVERSION
-            || code == Coordination::Error::ZSESSIONEXPIRED)
+        if (Coordination::isHardwareError(code)
+            || code == Coordination::Error::ZBADVERSION)
             continue;
 
         throw zkutil::KeeperException(code);
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister in keeper. Last error: {}", code);
+
+    if (Coordination::isHardwareError(code))
+        throw zkutil::KeeperException(code);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister in keeper. Last error: {}", code);
 }
 
 void ObjectStorageQueueMetadata::cleanupThreadFunc()
