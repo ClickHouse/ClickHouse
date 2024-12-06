@@ -1901,6 +1901,17 @@ private:
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
+                /// For projection to mask, new files (checksums, columns...) are needed.
+                NameSet files_to_skip;
+                for (auto mutation_context : ctx->projection_mutation_contexts)
+                {
+                    if (it->name() != mutation_context->name + ".proj")
+                        continue;
+
+                    files_to_skip = mutation_context->files_to_skip;
+                    break;
+                }
+
                 // it's a projection part directory
                 ctx->new_data_part->getDataPartStorage().createProjection(destination);
 
@@ -1909,6 +1920,9 @@ private:
 
                 for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
                 {
+                    if (files_to_skip.contains(p_it->name()))
+                        continue;
+
                     if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
                     {
                         projection_data_part_storage_dst->copyFileFrom(
