@@ -1,6 +1,7 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
+#include "Interpreters/ClusterProxy/executeQuery.h"
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,6 +26,7 @@
 #include <Storages/StorageDictionary.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace DB
@@ -157,19 +159,32 @@ void IStorageCluster::read(
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
-    auto reading = std::make_unique<ReadFromCluster>(
-        column_names,
-        query_info,
-        storage_snapshot,
-        context,
-        sample_block,
-        std::move(this_ptr),
-        std::move(query_to_send),
-        processed_stage,
-        cluster,
-        log);
+    // auto reading = std::make_unique<ReadFromCluster>(
+    //     column_names,
+    //     query_info,
+    //     storage_snapshot,
+    //     context,
+    //     sample_block,
+    //     std::move(this_ptr),
+    //     std::move(query_to_send),
+    //     processed_stage,
+    //     cluster,
+    //     log);
+    //
+    // query_plan.addStep(std::move(reading));
 
-    query_plan.addStep(std::move(reading));
+    auto extension = getTaskIteratorExtension(nullptr, context);
+    ClusterProxy::executeQueryWithParallelReplicas(
+        query_plan,
+        getStorageID(),
+        sample_block,
+        processed_stage,
+        query_to_send,
+        context,
+        query_info.storage_limits,
+        nullptr,
+        std::make_optional(extension)
+    );
 }
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
