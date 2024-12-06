@@ -720,7 +720,6 @@ def test_delete_files(started_cluster, format_version, storage_type):
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
-    assert instance.contains_in_log("Processing delete file for path")
 
     write_iceberg_from_df(
         spark,

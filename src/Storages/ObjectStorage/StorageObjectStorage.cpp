@@ -1,4 +1,4 @@
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+    #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Settings.h>

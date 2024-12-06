@@ -506,6 +506,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     std::unique_ptr<ReadBufferFromFileBase> impl;
     if (use_cache)
     {
+        chassert(object_info.metadata.has_value());
         if (object_info.metadata->etag.empty())
         {
             LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
@@ -540,9 +541,13 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
                 /* read_until_position */std::nullopt,
                 context_->getFilesystemCacheLog());
 
-            LOG_TEST(log, "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
-                     filesystem_cache_name, object_info.getPath(),
-                     object_info.metadata->etag, toString(hash.get128()));
+            LOG_TEST(
+                log,
+                "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                filesystem_cache_name,
+                object_info.getPath(),
+                object_info.metadata->etag,
+                toString(hash.get128()));
         }
     }
 
