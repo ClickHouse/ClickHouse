@@ -3,6 +3,8 @@
 namespace DB
 {
 
+/// In the names below, "REVISION" and "PROTOCOL_VERSION" are synonyms.
+
 static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_INFO = 54032;
 static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE = 54058;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO = 54060;
@@ -95,6 +97,8 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRAN
 
 static constexpr auto DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION = 54473;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_SETTINGS = 54474;
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
@@ -102,6 +106,6 @@ static constexpr auto DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION =
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54473;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54474;
 
 }
