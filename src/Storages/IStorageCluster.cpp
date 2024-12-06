@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsString cluster_for_parallel_replicas;
 }
 
@@ -150,6 +151,8 @@ void IStorageCluster::read(
 
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
+
+    new_settings[Setting::parallel_replicas_local_plan] = false;
 
     if (new_settings[Setting::cluster_for_parallel_replicas].toString().empty())
         new_settings[Setting::cluster_for_parallel_replicas] = cluster->getName();
