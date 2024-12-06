@@ -100,9 +100,9 @@ private:
 
     void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
-    void processFiles(const SettingsChanges & settings_changes = {});
+    void processFiles(const SettingsChanges & settings_changes = {}, bool force = false);
     void processFile(std::string & file_path, const SettingsChanges & settings_changes);
-    void processFilesWithBatching(const SettingsChanges & settings_changes);
+    void processFilesWithBatching(const SettingsChanges & settings_changes, bool force);
 
     void markAsBroken(const std::string & file_path);
     void markAsSend(const std::string & file_path);
