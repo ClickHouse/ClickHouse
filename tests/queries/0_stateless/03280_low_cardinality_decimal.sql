@@ -16,17 +16,17 @@ INSERT INTO test_low_cardinality_decimal VALUES
 (5, 123.45);
 
 -- Select all values to ensure they are inserted correctly
-SELECT * FROM test_low_cardinality_decimal;
+SELECT * FROM test_low_cardinality_decimal ORDER BY id;
 
 -- Test aggregation on LowCardinality Decimal column
 SELECT value, COUNT(*)
 FROM test_low_cardinality_decimal
-GROUP BY value;
+GROUP BY value ORDER BY value;
 
 -- Test filtering on LowCardinality Decimal column
 SELECT *
 FROM test_low_cardinality_decimal
-WHERE value = 123.45;
+WHERE value = 123.45 ORDER BY id;
 
 -- Drop the table after tests
 DROP TABLE test_low_cardinality_decimal;
@@ -48,17 +48,17 @@ INSERT INTO test_low_cardinality_datetime64 VALUES
 (5, '2023-01-01 12:00:00.123');
 
 -- Select all values to ensure they are inserted correctly
-SELECT * FROM test_low_cardinality_datetime64;
+SELECT * FROM test_low_cardinality_datetime64 ORDER BY id;
 
 -- Test aggregation on LowCardinality DateTime64 column
 SELECT event_time, COUNT(*)
 FROM test_low_cardinality_datetime64
-GROUP BY event_time;
+GROUP BY event_time ORDER BY event_time;
 
 -- Test filtering on LowCardinality DateTime64 column
 SELECT *
 FROM test_low_cardinality_datetime64
-WHERE event_time = '2023-01-01 12:00:00.123';
+WHERE event_time = '2023-01-01 12:00:00.123' ORDER BY id;
 
 -- Drop the table after tests
 DROP TABLE test_low_cardinality_datetime64;
@@ -80,17 +80,17 @@ INSERT INTO test_low_cardinality_decimal32 VALUES
 (5, 123.45);
 
 -- Select all values to ensure they are inserted correctly
-SELECT * FROM test_low_cardinality_decimal32;
+SELECT * FROM test_low_cardinality_decimal32 ORDER BY id;
 
 -- Test aggregation on LowCardinality Decimal32 column
 SELECT value, COUNT(*)
 FROM test_low_cardinality_decimal32
-GROUP BY value;
+GROUP BY value ORDER BY value;
 
 -- Test filtering on LowCardinality Decimal32 column
 SELECT *
 FROM test_low_cardinality_decimal32
-WHERE value = 123.45;
+WHERE value = 123.45 ORDER BY id;
 
 -- Drop the table after tests
 DROP TABLE test_low_cardinality_decimal32;
@@ -112,17 +112,17 @@ INSERT INTO test_low_cardinality_decimal64 VALUES
 (5, 123.45);
 
 -- Select all values to ensure they are inserted correctly
-SELECT * FROM test_low_cardinality_decimal64;
+SELECT * FROM test_low_cardinality_decimal64 ORDER BY id;
 
 -- Test aggregation on LowCardinality Decimal64 column
 SELECT value, COUNT(*)
 FROM test_low_cardinality_decimal64
-GROUP BY value;
+GROUP BY value ORDER BY value;
 
 -- Test filtering on LowCardinality Decimal64 column
 SELECT *
 FROM test_low_cardinality_decimal64
-WHERE value = 123.45;
+WHERE value = 123.45 ORDER BY id;
 
 -- Drop the table after tests
 DROP TABLE test_low_cardinality_decimal64;
@@ -144,17 +144,17 @@ INSERT INTO test_low_cardinality_decimal128 VALUES
 (5, 123.45);
 
 -- Select all values to ensure they are inserted correctly
-SELECT * FROM test_low_cardinality_decimal128;
+SELECT * FROM test_low_cardinality_decimal128 ORDER BY id;
 
 -- Test aggregation on LowCardinality Decimal128 column
 SELECT value, COUNT(*)
 FROM test_low_cardinality_decimal128
-GROUP BY value;
+GROUP BY value ORDER BY value;
 
 -- Test filtering on LowCardinality Decimal128 column
 SELECT *
 FROM test_low_cardinality_decimal128
-WHERE value = 123.45;
+WHERE value = 123.45 ORDER BY id;
 
 -- Drop the table after tests
 DROP TABLE test_low_cardinality_decimal128;
@@ -176,17 +176,17 @@ INSERT INTO test_low_cardinality_decimal256 VALUES
 (5, 123.45);
 
 -- Select all values to ensure they are inserted correctly
-SELECT * FROM test_low_cardinality_decimal256;
+SELECT * FROM test_low_cardinality_decimal256 ORDER BY id;
 
 -- Test aggregation on LowCardinality Decimal256 column
 SELECT value, COUNT(*)
 FROM test_low_cardinality_decimal256
-GROUP BY value;
+GROUP BY value ORDER BY value;
 
 -- Test filtering on LowCardinality Decimal256 column
 SELECT *
 FROM test_low_cardinality_decimal256
-WHERE value = 123.45;
+WHERE value = 123.45 ORDER BY id;
 
 -- Drop the table after tests
 DROP TABLE test_low_cardinality_decimal256;
