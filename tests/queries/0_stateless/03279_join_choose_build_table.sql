@@ -9,7 +9,8 @@ CREATE TABLE sales (
     date Date,
     amount Decimal(10, 2),
     product_id Int32
-) ENGINE = MergeTree ORDER BY id;
+) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO sales SELECT number, '2024-05-05' + INTERVAL intDiv(number, 1000) DAY , (number + 1) % 100, number % 100_000 FROM numbers(1_000_000);
 
