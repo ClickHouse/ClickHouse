@@ -25,7 +25,7 @@ public:
 
     String getID(char) const override { return "SettingsProfileElement"; }
     ASTPtr clone() const override { return std::make_shared<ASTSettingsProfileElement>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 
@@ -44,7 +44,7 @@ public:
 
     String getID(char) const override { return "SettingsProfileElements"; }
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     void setUseInheritKeyword(bool use_inherit_keyword_);
 
@@ -71,7 +71,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 
     void add(ASTAlterSettingsProfileElements && other);
 };

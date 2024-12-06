@@ -560,6 +560,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
     auto names_ref = names->names;
 
+    auto pos_after_parsing_names = pos;
+
     std::optional<String> new_name;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -698,6 +700,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
     else if (alter)
         names->concatParts();
+
+    bool alter_query_with_no_changes = alter && pos_after_parsing_names == pos;
+
+    if (alter_query_with_no_changes)
+    {
+        return false;
+    }
 
     auto query = std::make_shared<ASTCreateUserQuery>();
     node = query;

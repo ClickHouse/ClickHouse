@@ -421,13 +421,13 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
             if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
                 return Checker(
                     PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allowed_feature_tier')",
+                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allow_feature_tier')",
                         setting_name),
                     ErrorCodes::READONLY);
             if (setting_tier == SettingsTierType::BETA && !allowed_beta)
                 return Checker(
                     PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allowed_feature_tier')",
+                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
                         setting_name),
                     ErrorCodes::READONLY);
         }

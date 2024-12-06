@@ -34,12 +34,14 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/S3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
@@ -408,6 +410,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable ResourceManagerPtr resource_manager;
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
+    mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
@@ -539,9 +542,6 @@ struct ContextSharedPart : boost::noncopyable
 
     /// No lock required for application_type modified only during initialization
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
-
-    /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
-    std::vector<std::unique_ptr<ShellCommand>> bridge_commands TSA_GUARDED_BY(mutex);
 
     /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
     Context::ConfigReloadCallback config_reload_callback;
@@ -3174,10 +3174,11 @@ UncompressedCachePtr Context::getUncompressedCache() const
 
 void Context::clearUncompressedCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    UncompressedCachePtr cache = getUncompressedCache();
 
-    if (shared->uncompressed_cache)
-        shared->uncompressed_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
@@ -3236,10 +3237,12 @@ MarkCachePtr Context::getMarkCache() const
 
 void Context::clearMarkCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    /// Get local shared pointer to the cache
+    MarkCachePtr cache = getMarkCache();
 
-    if (shared->mark_cache)
-        shared->mark_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -3252,6 +3255,42 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     });
 
     return *shared->load_marks_threadpool;
+}
+
+void Context::setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->primary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache has been already created.");
+
+    shared->primary_index_cache = std::make_shared<PrimaryIndexCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+}
+
+void Context::updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->primary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("primary_index_cache_size", DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE);
+    shared->primary_index_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->primary_index_cache;
+}
+
+void Context::clearPrimaryIndexCache() const
+{
+    PrimaryIndexCachePtr cache = getPrimaryIndexCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
@@ -3283,10 +3322,11 @@ UncompressedCachePtr Context::getIndexUncompressedCache() const
 
 void Context::clearIndexUncompressedCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    UncompressedCachePtr cache = getIndexUncompressedCache();
 
-    if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3318,10 +3358,11 @@ MarkCachePtr Context::getIndexMarkCache() const
 
 void Context::clearIndexMarkCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    MarkCachePtr cache = getIndexMarkCache();
 
-    if (shared->index_mark_cache)
-        shared->index_mark_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
@@ -3353,10 +3394,11 @@ MMappedFileCachePtr Context::getMMappedFileCache() const
 
 void Context::clearMMappedFileCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    MMappedFileCachePtr cache = getMMappedFileCache();
 
-    if (shared->mmap_cache)
-        shared->mmap_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
@@ -3391,10 +3433,11 @@ QueryCachePtr Context::getQueryCache() const
 
 void Context::clearQueryCache(const std::optional<String> & tag) const
 {
-    std::lock_guard lock(shared->mutex);
+    QueryCachePtr cache = getQueryCache();
 
-    if (shared->query_cache)
-        shared->query_cache->clear(tag);
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear(tag);
 }
 
 void Context::clearCaches() const
@@ -3408,6 +3451,10 @@ void Context::clearCaches() const
     if (!shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
     shared->mark_cache->clear();
+
+    if (!shared->primary_index_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
+    shared->primary_index_cache->clear();
 
     if (!shared->index_uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
@@ -3896,7 +3943,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
-        if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
+        if (name.contains(':') || name.contains('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
 
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
@@ -4994,7 +5041,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     /// Don't check for constraints on first load. This makes the default profile consistent with other users, where
     /// the default value set in the config might be outside of the constraints range
-    /// It makes it possible to change the value of experimental settings with `allowed_feature_tier` != 2
+    /// It makes it possible to change the value of experimental settings with `allow_feature_tier` != 2
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
@@ -5065,12 +5112,6 @@ void Context::addQueryParameters(const NameToNameMap & parameters)
 {
     for (const auto & [name, value] : parameters)
         query_parameters.insert_or_assign(name, value);
-}
-
-void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->bridge_commands.emplace_back(std::move(cmd));
 }
 
 

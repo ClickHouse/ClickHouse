@@ -180,7 +180,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
 
-    if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
+    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
     auto object_columns = getConcreteObjectColumns(
@@ -561,7 +561,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             temp_data_file.emplace(temporary_disk);
             auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
             copyData(*in, *out);
-            out.reset();
+            out->finalize();
             in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
         }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
