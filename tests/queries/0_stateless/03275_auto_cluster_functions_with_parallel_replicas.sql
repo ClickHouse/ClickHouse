@@ -2,7 +2,7 @@
 -- Tag no-fasttest: Depends on AWS
 
 SET enable_parallel_replicas=1;
-SET cluster_for_parallel_replicas='default';
+SET cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas';
 SET parallel_replicas_for_cluster_engines=true;
 
 EXPLAIN SELECT * FROM url('http://localhost:8123');
