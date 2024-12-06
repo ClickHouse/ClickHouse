@@ -26,7 +26,7 @@ public:
     explicit ASTUserNameWithHost(const String & name_) : base_name(name_) {}
     String getID(char) const override { return "UserNameWithHost"; }
     ASTPtr clone() const override { return std::make_shared<ASTUserNameWithHost>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const override;
     void replace(String name_);
 };
 
@@ -48,7 +48,7 @@ public:
 
     String getID(char) const override { return "UserNamesWithHost"; }
     ASTPtr clone() const override { return std::make_shared<ASTUserNamesWithHost>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

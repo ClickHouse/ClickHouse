@@ -12,6 +12,7 @@
 #include <Common/assert_cast.h>
 
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
 
 #include <Common/logger_useful.h>
 

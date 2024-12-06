@@ -27,6 +27,7 @@
 #include <Core/Settings.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/SingleDiskVolume.h>
 
 #include <base/sort.h>
 
@@ -319,6 +320,13 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotReadonl
     /// before using new ZooKeeper session to write something (except maybe GET_PART) into replication log.
     auto res = getZooKeeper();
     assertNotReadonly();
+    return res;
+}
+
+zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotStaticStorage() const
+{
+    auto res = getZooKeeper();
+    assertNotStaticStorage();
     return res;
 }
 
@@ -1851,9 +1859,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     /// detached all unexpected data parts after sanity check.
     for (auto & part_state : unexpected_data_parts)
-    {
-        part_state.part->renameToDetached("ignored");
-    }
+        part_state.part->renameToDetached("ignored", /* ignore_error= */ true);
     unexpected_data_parts.clear();
 
     return true;
@@ -3655,9 +3661,20 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         last_queue_update_start_time.store(time(nullptr));
         queue_update_in_progress = true;
     }
+
     try
     {
-        queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
+        auto zookeeper = getZooKeeperAndAssertNotStaticStorage();
+        if (is_readonly)
+        {
+            /// Note that we need to check shutdown_prepared_called, not shutdown_called, since the table will be marked as readonly
+            /// after calling StorageReplicatedMergeTree::flushAndPrepareForShutdown().
+            if (shutdown_prepared_called)
+                return;
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {}), cannot update queue", replica_path);
+        }
+
+        queue.pullLogsToQueue(zookeeper, queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
     }
@@ -3889,7 +3906,15 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// (OPTIMIZE queries) can assign new merges.
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
 
-        auto zookeeper = getZooKeeperAndAssertNotReadonly();
+        auto zookeeper = getZooKeeperAndAssertNotStaticStorage();
+        if (is_readonly)
+        {
+            /// Note that we need to check shutdown_prepared_called, not shutdown_called, since the table will be marked as readonly
+            /// after calling StorageReplicatedMergeTree::flushAndPrepareForShutdown().
+            if (shutdown_prepared_called)
+                return AttemptStatus::CannotSelect;
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {}), cannot assign new merges", replica_path);
+        }
 
         std::optional<ReplicatedMergeTreeMergePredicate> merge_pred;
 
@@ -4043,7 +4068,17 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
 
     try
     {
-        needs_reschedule = queue.tryFinalizeMutations(getZooKeeperAndAssertNotReadonly());
+        auto zookeeper = getZooKeeperAndAssertNotStaticStorage();
+        if (is_readonly)
+        {
+            /// Note that we need to check shutdown_prepared_called, not shutdown_called, since the table will be marked as readonly
+            /// after calling StorageReplicatedMergeTree::flushAndPrepareForShutdown().
+            if (shutdown_prepared_called)
+                return;
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {}), cannot finalize mutations", replica_path);
+        }
+
+        needs_reschedule = queue.tryFinalizeMutations(zookeeper);
     }
     catch (...)
     {
@@ -5726,6 +5761,11 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 {
     if (is_readonly)
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {})", replica_path);
+    assertNotStaticStorage();
+}
+
+void StorageReplicatedMergeTree::assertNotStaticStorage() const
+{
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
 }
@@ -5791,8 +5831,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        query.IAST::format(ast_format_settings);
+            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        query.IAST::format(buf, ast_format_settings);
         query_str = buf.str();
     }
 
