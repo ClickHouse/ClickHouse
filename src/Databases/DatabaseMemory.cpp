@@ -1,5 +1,8 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
+#include <base/scope_guard.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
