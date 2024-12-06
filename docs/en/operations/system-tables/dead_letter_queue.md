@@ -17,13 +17,14 @@ Columns:
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) - Message consuming date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Message consuming date and time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) - Message consuming time with microseconds precision.
-- `database_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse database the streaming table belongs to.
+- `database_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse database the table belongs to.
 - `table_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse table name.
 - `error` ([String](../../sql-reference/data-types/string.md)) - Error text.
 - `raw_message` ([String](../../sql-reference/data-types/string.md)) - Message body.
 - `kafka_topic_name` ([String](../../sql-reference/data-types/string.md)) - Kafka topic name.
 - `kafka_partition` ([UInt64](../../sql-reference/data-types/int-uint.md)) - Kafka partition of the topic.
 - `kafka_offset` ([UInt64](../../sql-reference/data-types/int-uint.md)) - Kafka offset of the message.
+- `kafka_key` ([String](../../sql-reference/data-types/string.md)) - Kafka key of the message.
 - `rabbitmq_exchange_name` ([String](../../sql-reference/data-types/string.md)) - RabbitMQ exchange name.
 - `rabbitmq_message_id` ([String](../../sql-reference/data-types/string.md)) - RabbitMQ message id.
 - `rabbitmq_message_timestamp` ([DateTime](../../sql-reference/data-types/datetime.md)) - RabbitMQ message timestamp.

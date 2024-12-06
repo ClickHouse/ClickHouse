@@ -246,7 +246,8 @@ Chunk KafkaSource::generateImpl()
                             .details = DeadLetterQueueElement::KafkaDetails{
                                 .topic_name = consumer->currentTopic(),
                                 .partition = consumer->currentPartition(),
-                                .offset = consumer->currentPartition()}});
+                                .offset = consumer->currentPartition(),
+                                .key = consumer->currentKey()}});
                     }
                 }
             }

@@ -3888,7 +3888,7 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 def test_attach_broken_table(rabbitmq_cluster):
     instance.query(
         f"""
-        DROP TABLE IF EXISTS rabbit_queue;
+        DROP TABLE rabbit_queue IF EXISTS;
         ATTACH TABLE rabbit_queue UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'
         """
     )
