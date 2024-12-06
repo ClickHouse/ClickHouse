@@ -23,6 +23,15 @@ select floor(arrayPrAUC([0, 3, 5, 6, 7.5, 8], [1, 0, 1, 0, 0, 0]), 10);
 select floor(arrayPrAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
 select floor(arrayPrAUC([0, 1, 1, 2, 2, 2, 3, 3, 3, 3], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
 
+-- optional argument shouldn't affect the result when passing [0, 0, 0]
+select floor(arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, 0, 0]), 10);
+select floor(arrayPrAUC([0.1, 0.4, 0.4, 0.35, 0.8], [0, 0, 1, 1, 1], [0, 0, 0]), 10);
+select floor(arrayPrAUC([0.1, 0.35, 0.4, 0.8], [1, 0, 1, 0], [0, 0, 0]), 10);
+select floor(arrayPrAUC([0.1, 0.35, 0.4, 0.4, 0.8], [1, 0, 1, 0, 0], [0, 0, 0]), 10);
+select floor(arrayPrAUC([0, 3, 5, 6, 7.5, 8], [1, 0, 1, 0, 0, 0], [0, 0, 0]), 10);
+select floor(arrayPrAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1], [0, 0, 0]), 10);
+select floor(arrayPrAUC([0, 1, 1, 2, 2, 2, 3, 3, 3, 3], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1], [0, 0, 0]), 10);
+
 -- edge cases
 SELECT floor(arrayPrAUC([1], [1]), 10);
 SELECT floor(arrayPrAUC([1], [0]), 10);
@@ -37,13 +46,28 @@ SELECT floor(arrayPrAUC([0, 0, 1], [0, 1, 1]), 10);
 SELECT floor(arrayPrAUC([0, 1, 1], [0, 1, 1]), 10);
 SELECT floor(arrayPrAUC([0, 1, 1], [0, 0, 1]), 10);
 
--- negative tests
+-- general negative tests
 select arrayPrAUC([], []); -- { serverError BAD_ARGUMENTS }
 select arrayPrAUC([0, 0, 1, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select arrayPrAUC([0.1, 0.35], [0, 0, 1, 1]); -- { serverError BAD_ARGUMENTS }
 select arrayPrAUC([0.1, 0.4, 0.35, 0.8], []); -- { serverError BAD_ARGUMENTS }
-select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [1, 1, 0, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, 0, 0], [1, 0, 0, 0]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select arrayPrAUC(cast(['false', 'true'] as Array(Enum8('false' = -1, 'true' = 1))), [1, 0]); -- { serverError BAD_ARGUMENTS }
 select arrayPrAUC(['a', 'b', 'c', 'd'], [1, 0, 1, 1]); -- { serverError BAD_ARGUMENTS }
 select arrayPrAUC([0.1, 0.4, NULL, 0.8], [0, 0, 1, 1]); -- { serverError BAD_ARGUMENTS }
 select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, NULL, 1, 1]); -- { serverError BAD_ARGUMENTS }
+
+-- negative tests for optional argument
+select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, 0, 0, 0]); -- { serverError BAD_ARGUMENTS }
+select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, 0, NULL]); -- { serverError BAD_ARGUMENTS }
+select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], ['a', 'b', 'c']); -- { serverError BAD_ARGUMENTS }
+select arrayPrAUC(x, y, z) from (
+  select [1] as x, [0] as y, [0, 0, 0, 0, 0, 0] as z
+  UNION ALL
+  select [1] as x, [0] as y, [] as z
+); -- { serverError BAD_ARGUMENTS }
+select arrayPrAUC(x, y, z) from (
+  select [1] as x, [0] as y, [0, 0] as z
+  UNION ALL
+  select [1] as x, [1] as y, [0, 0, 0, 0] as z
+); -- { serverError BAD_ARGUMENTS }
