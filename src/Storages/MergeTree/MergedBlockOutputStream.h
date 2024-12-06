@@ -55,7 +55,7 @@ public:
         ~Finalizer();
 
         void finish();
-        void cancel() noexcept;
+        void cancel();
     };
 
     /// Finalize writing part and fill inner structures
