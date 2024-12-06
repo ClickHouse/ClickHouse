@@ -169,7 +169,7 @@ void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & 
     std::lock_guard lock{mutex};
     if (!hasPendingFiles())
         return;
-    processFiles(settings_changes, /*force=*/true);
+    processFiles(/*force=*/true, settings_changes);
 }
 
 void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
@@ -212,7 +212,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
         {
             try
             {
-                processFiles();
+                processFiles(/*force=*/false);
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
@@ -380,11 +380,11 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
-void DistributedAsyncInsertDirectoryQueue::processFiles(const SettingsChanges & settings_changes, bool force)
+void DistributedAsyncInsertDirectoryQueue::processFiles(bool force, const SettingsChanges & settings_changes)
 try
 {
     if (should_batch_inserts)
-        processFilesWithBatching(settings_changes, force);
+        processFilesWithBatching(force, settings_changes);
     else
     {
         /// Process unprocessed file.
@@ -539,7 +539,7 @@ DistributedAsyncInsertDirectoryQueue::Status DistributedAsyncInsertDirectoryQueu
     return current_status;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const SettingsChanges & settings_changes, bool force)
+void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, const SettingsChanges & settings_changes)
 {
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
     if (fs::exists(current_batch_file_path))
