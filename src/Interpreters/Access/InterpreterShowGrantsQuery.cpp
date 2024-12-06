@@ -30,7 +30,7 @@ namespace ErrorCodes
 namespace
 {
     void getGrantsFromAccess(
-        const ContextPtr context,
+        ContextPtr context,
         ASTs & res,
         const AccessRights & access,
         const std::shared_ptr<ASTRolesOrUsersSet> grantees,
@@ -91,7 +91,7 @@ namespace
 
     template <typename T>
     ASTs getGrantQueriesImpl(
-        const ContextPtr context,
+        ContextPtr context,
         const T & grantee,
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode = false,
@@ -132,7 +132,7 @@ namespace
     }
 
     ASTs getGrantQueriesImpl(
-        const ContextPtr context,
+        ContextPtr context,
         const IAccessEntity & entity,
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode = false,
@@ -237,7 +237,7 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries() const
 }
 
 
-ASTs InterpreterShowGrantsQuery::getGrantQueries(const ContextPtr context_, const IAccessEntity & user_or_role, const AccessControl & access_control, bool with_implicit, bool final)
+ASTs InterpreterShowGrantsQuery::getGrantQueries(ContextPtr context_, const IAccessEntity & user_or_role, const AccessControl & access_control, bool with_implicit, bool final)
 {
     return getGrantQueriesImpl(context_, user_or_role, &access_control, false, with_implicit, final);
 }
