@@ -35,37 +35,37 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
     }
 }
 
-void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    formatQueryImpl(s, state, frame);
+    formatQueryImpl(ostr, s, state, frame);
 
     std::string indent_str = s.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     if (out_file)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
-        out_file->formatImpl(s, state, frame);
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
+        out_file->formatImpl(ostr, s, state, frame);
 
-        s.ostr << (s.hilite ? hilite_keyword : "");
+        ostr << (s.hilite ? hilite_keyword : "");
         if (is_outfile_append)
-            s.ostr << " APPEND";
+            ostr << " APPEND";
         if (is_outfile_truncate)
-            s.ostr << " TRUNCATE";
+            ostr << " TRUNCATE";
         if (is_into_outfile_with_stdout)
-            s.ostr << " AND STDOUT";
-        s.ostr << (s.hilite ? hilite_none : "");
+            ostr << " AND STDOUT";
+        ostr << (s.hilite ? hilite_none : "");
     }
 
     if (format)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
-        format->formatImpl(s, state, frame);
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
+        format->formatImpl(ostr, s, state, frame);
     }
 
     if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
-        settings_ast->formatImpl(s, state, frame);
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
+        settings_ast->formatImpl(ostr, s, state, frame);
     }
 }
 

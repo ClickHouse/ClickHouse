@@ -28,7 +28,7 @@ public:
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const override;
 
 protected:
     void forEachPointerToChild(std::function<void(void **)> f) override;
