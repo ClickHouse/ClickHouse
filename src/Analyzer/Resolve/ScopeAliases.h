@@ -27,10 +27,6 @@ struct ScopeAliases
     std::unordered_set<QueryTreeNodePtr> nodes_with_duplicated_aliases;
     std::vector<QueryTreeNodePtr> cloned_nodes_with_duplicated_aliases;
 
-    /// Names which are aliases from ARRAY JOIN.
-    /// This is needed to properly qualify columns from matchers and avoid name collision.
-    std::unordered_set<std::string> array_join_aliases;
-
     std::unordered_map<std::string, QueryTreeNodePtr> & getAliasMap(IdentifierLookupContext lookup_context)
     {
         switch (lookup_context)
