@@ -1,6 +1,7 @@
 #include <Disks/DiskFomAST.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/SipHash.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Parsers/formatAST.h>
