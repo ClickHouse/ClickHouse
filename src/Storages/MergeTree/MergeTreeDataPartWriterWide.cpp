@@ -6,6 +6,7 @@
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MarkCache.h>
 #include <Storages/ColumnsDescription.h>

@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnSet.h>

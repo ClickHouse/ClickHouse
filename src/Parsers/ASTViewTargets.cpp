@@ -1,5 +1,6 @@
 #include <Parsers/ASTViewTargets.h>
 
+#include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <IO/WriteHelpers.h>

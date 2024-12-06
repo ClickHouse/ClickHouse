@@ -13,11 +13,11 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/TwoLevelStringHashMap.h>
 
+#include <Core/ColumnNumbers.h>
+#include <Common/ColumnsHashingImpl.h>
 #include <Common/ThreadPool.h>
-#include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Core/ColumnNumbers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 

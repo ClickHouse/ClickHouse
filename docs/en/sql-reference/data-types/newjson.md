@@ -73,6 +73,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 Using CAST from `Tuple`:
 
 ```sql
+SET enable_named_columns_in_function_tuple = 1;
 SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
 ```
 
@@ -97,8 +98,9 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 Using CAST from deprecated `Object('json')`:
 
 ```sql
- SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
- ```
+SET allow_experimental_object_type = 1;
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
+```
 
 ```text
 ┌─json───────────────────────────────────────────┐
