@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 IStorageCluster::IStorageCluster(
@@ -145,14 +146,25 @@ void IStorageCluster::read(
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
+    Settings new_settings{context->getSettingsRef()};
+
+    /// Cluster table functions should always skip unavailable shards.
+    new_settings[Setting::skip_unavailable_shards] = true;
+
+    if (new_settings[Setting::cluster_for_parallel_replicas].toString().empty())
+        new_settings[Setting::cluster_for_parallel_replicas] = cluster->getName();
+
+    auto new_context = Context::createCopy(context);
+    new_context->setSettings(new_settings);
+
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, new_context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
-    data.remote_table.database = context->getCurrentDatabase();
+    data.remote_table.database = new_context->getCurrentDatabase();
     data.remote_table.table = getName();
     RestoreQualifiedNamesVisitor(data).visit(query_to_send);
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+    AddDefaultDatabaseVisitor visitor(new_context, new_context->getCurrentDatabase(),
                                       /* only_replace_current_database_function_= */false,
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
@@ -173,14 +185,14 @@ void IStorageCluster::read(
     //
     // query_plan.addStep(std::move(reading));
 
-    auto extension = getTaskIteratorExtension(nullptr, context);
+    auto extension = getTaskIteratorExtension(nullptr, new_context);
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
         getStorageID(),
         sample_block,
         processed_stage,
         query_to_send,
-        context,
+        new_context,
         query_info.storage_limits,
         nullptr,
         std::make_optional(extension)
@@ -251,6 +263,9 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
+
+    if (new_settings[Setting::cluster_for_parallel_replicas].toString().empty())
+        new_settings[Setting::cluster_for_parallel_replicas] = cluster->getName();
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
