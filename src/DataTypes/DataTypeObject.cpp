@@ -10,6 +10,7 @@
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <Columns/ColumnObject.h>
 #include <Common/CurrentThread.h>
+#include <Common/quoteString.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>

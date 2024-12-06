@@ -612,6 +612,7 @@ class CommonJobConfigs:
                 "./docker/packager/packager",
                 "./rust",
                 "./tests/ci/version_helper.py",
+                "./tests/ci/build_check.py",
                 # FIXME: This is a WA to rebuild the CH and recreate the Performance.tar.zst artifact
                 # when there are changes in performance test scripts.
                 # Due to the current design of the perf test we need to rebuild CH when the performance test changes,

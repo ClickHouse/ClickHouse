@@ -39,7 +39,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateSettingsProfileQuery>(clone()); }
     QueryKind getQueryKind() const override { return QueryKind::Create; }
