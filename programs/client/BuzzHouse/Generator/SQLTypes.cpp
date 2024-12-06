@@ -652,7 +652,8 @@ StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_
         std::vector<SQLType *> subtypes;
         TupleWithOutColumnNames * twocn = tp ? tp->mutable_variant() : nullptr;
         const uint32_t ncols
-            = this->width >= this->fc.max_width ? 0 : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width));
+            = (this->width >= this->fc.max_width ? 0 : (rg.nextMediumNumber() % std::min<uint32_t>(5, this->fc.max_width - this->width)))
+            + UINT32_C(1);
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)

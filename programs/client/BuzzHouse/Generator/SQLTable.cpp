@@ -366,6 +366,8 @@ const std::vector<std::string> & s3_compress = {"none", "gzip", "gz", "brotli", 
 
 int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
+    SettingValues * svs = nullptr;
+
     if (b.isMergeTreeFamily())
     {
         if (rg.nextSmallNumber() < 4)
@@ -535,6 +537,63 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
     if ((b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
     {
         insertEntryRef(rg.pickRandomlyFromVector(entries), te->mutable_primary_key()->add_exprs());
+    }
+    const auto & tsettings = allTableSettings.at(b.teng);
+    if (!tsettings.empty() && rg.nextSmallNumber() < 5)
+    {
+        svs = te->mutable_settings();
+        generateSettingValues(rg, tsettings, svs);
+    }
+    if (b.isMergeTreeFamily() || b.isAnyS3Engine() || b.toption.has_value())
+    {
+        if (!svs)
+        {
+            svs = te->mutable_settings();
+        }
+        if (b.isMergeTreeFamily())
+        {
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+            sv->set_property("allow_nullable_key");
+            sv->set_value("1");
+        }
+        else if (b.isAnyS3Engine())
+        {
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+            sv->set_property("input_format_with_names_use_header");
+            sv->set_value("0");
+            if (b.isS3QueueEngine())
+            {
+                SetValue * sv2 = svs->add_other_values();
+
+                sv2->set_property("mode");
+                sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
+            }
+        }
+        if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
+        {
+            //requires keeper storage
+            bool found = false;
+            auto & ovals = const_cast<decltype(svs->other_values()) &>(svs->other_values());
+
+            for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
+            {
+                if (it->property() == "storage_policy")
+                {
+                    auto & prop = const_cast<SetValue &>(*it);
+                    prop.set_value("'s3_with_keeper'");
+                    found = true;
+                }
+            }
+            if (!found)
+            {
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+                sv->set_property("storage_policy");
+                sv->set_value("'s3_with_keeper'");
+            }
+        }
     }
     return 0;
 }
@@ -1001,7 +1060,6 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
     const NestedType * ntp = nullptr;
     TableEngine * te = ct->mutable_engine();
     ExprSchemaTable * est = ct->mutable_est();
-    SettingValues * svs = nullptr;
     const bool replace = collectionCount<SQLTable>(
                              [](const SQLTable & tt)
                              {
@@ -1202,64 +1260,6 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         }
     }
     generateEngineDetails(rg, next, !added_pkey, te);
-
-    const auto & tsettings = allTableSettings.at(next.teng);
-    if (!tsettings.empty() && rg.nextSmallNumber() < 5)
-    {
-        svs = ct->mutable_settings();
-        generateSettingValues(rg, tsettings, svs);
-    }
-    if (next.isMergeTreeFamily() || next.isAnyS3Engine() || next.toption.has_value())
-    {
-        if (!svs)
-        {
-            svs = ct->mutable_settings();
-        }
-        if (next.isMergeTreeFamily())
-        {
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-            sv->set_property("allow_nullable_key");
-            sv->set_value("1");
-        }
-        else if (next.isAnyS3Engine())
-        {
-            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-            sv->set_property("input_format_with_names_use_header");
-            sv->set_value("0");
-            if (next.isS3QueueEngine())
-            {
-                SetValue * sv2 = svs->add_other_values();
-
-                sv2->set_property("mode");
-                sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
-            }
-        }
-        if (next.toption.has_value() && next.toption.value() == TableEngineOption::TShared)
-        {
-            //requires keeper storage
-            bool found = false;
-            auto & ovals = const_cast<decltype(svs->other_values()) &>(svs->other_values());
-
-            for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
-            {
-                if (it->property() == "storage_policy")
-                {
-                    auto & prop = const_cast<SetValue &>(*it);
-                    prop.set_value("'s3_with_keeper'");
-                    found = true;
-                }
-            }
-            if (!found)
-            {
-                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-                sv->set_property("storage_policy");
-                sv->set_value("'s3_with_keeper'");
-            }
-        }
-    }
     if (rg.nextSmallNumber() < 3)
     {
         buf.resize(0);

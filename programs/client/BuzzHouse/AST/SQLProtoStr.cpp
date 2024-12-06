@@ -2520,6 +2520,11 @@ CONV_FN(TableEngine, te)
         ret += " SAMPLE BY ";
         TableKeyToString(ret, te.sample_by());
     }
+    if (te.has_settings())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, te.settings());
+    }
 }
 
 CONV_FN(CreateTableAs, create_table)
@@ -2558,11 +2563,6 @@ CONV_FN(CreateTable, create_table)
         CreateTableAsToString(ret, create_table.table_as());
     }
     TableEngineToString(ret, create_table.engine());
-    if (create_table.has_settings())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, create_table.settings());
-    }
     if (create_table.has_table_def() && create_table.has_as_select_stmt())
     {
         ret += " AS (";
