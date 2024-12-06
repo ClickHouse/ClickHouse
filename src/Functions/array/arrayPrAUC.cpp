@@ -68,6 +68,18 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   *
   * This implementation is not interpolated and is different from computing the AUC with the trapezoidal rule,
   *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
+  *
+  * 
+  * A third argument is optional and is used to calculate the PR AUC distributedly.
+  *
+  * The PR AUC can be calculated distributedly as long as the data is partitioned by scores.
+  *  The same score should not appear in different partitions. Also, each partition must know 
+  *  how many true positives and total labels are there on higher scores partitions.
+  * 
+  * The needed information is passed as the third argument, which is an Array of three integers:
+  * - higher_partitions_tp: how many positive labels are there on higher scores partitions
+  * - higher_partitions_total: how many labels are there on higher scores partitions
+  * - total_positives: how many positive labels are there in the whole dataset
   */
 
 class FunctionArrayPrAUC : public IFunction
@@ -77,7 +89,14 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayPrAUC>(); }
 
 private:
-    static Float64 apply(const IColumn & scores, const IColumn & labels, ColumnArray::Offset current_offset, ColumnArray::Offset next_offset)
+    static Float64 apply(
+        const IColumn & scores,
+        const IColumn & labels,
+        ColumnArray::Offset current_offset,
+        ColumnArray::Offset next_offset,
+        size_t higher_partitions_tp = 0,
+        size_t higher_partitions_total = 0,
+        size_t total_positives = 0)
     {
         size_t size = next_offset - current_offset;
         if (size == 0)
@@ -100,9 +119,15 @@ private:
         /// Sorting scores in descending order to traverse the Precision Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
-        size_t prev_tp = 0;
-        size_t curr_tp = 0; /// True positives predictions (positive label and score > threshold)
-        size_t curr_p = 0; /// Total positive predictions (score > threshold)
+        /* If the PR AUC is calculated distributedly, we need to account for positive labels and total labels from partitions with higher scores 
+         * A higher score partition will have all its labels predicted as positive when considering thresholds equal to current partition's scores
+         * For that reason, we consider the following offsets:
+         * - higher_partitions_tp: the number of positive labels on higher scores partitions offsets the true positives count
+         * - higher_partitions_total: the number of labels on higher scores partitions offsets the total positive predictions count
+         */
+        size_t prev_tp = higher_partitions_tp;
+        size_t curr_tp = higher_partitions_tp; /// True positives predictions (positive label and score > threshold)
+        size_t curr_p = higher_partitions_total; /// Total positive predictions (score > threshold)
 
         Float64 prev_score = sorted_labels[0].score;
         Float64 curr_precision;
@@ -124,8 +149,9 @@ private:
                  *
                  * This can be done because (TP + FN) is constant and equal to total positive labels.
                  */
-                curr_precision = static_cast<Float64>(curr_tp) / curr_p; /// curr_p should never be 0 because this if statement isn't executed on the first iteration and the
-                                                                         /// following iterations will have already counted (curr_p += 1) at least one positive prediction
+                curr_precision = static_cast<Float64>(curr_tp)
+                    / curr_p; /// curr_p should never be 0 because this if statement isn't executed on the first iteration and the
+                /// following iterations will have already counted (curr_p += 1) at least one positive prediction
                 area += curr_precision * (curr_tp - prev_tp);
                 prev_tp = curr_tp;
                 prev_score = sorted_labels[i].score;
@@ -136,15 +162,18 @@ private:
             curr_p += 1;
         }
 
-        /// If there were no positive labels, Recall did not change and the area is 0
-        if (curr_tp == 0)
+        /// If there were no new positive labels, Recall did not change and the area is 0
+        if (curr_tp == higher_partitions_tp)
             return 0.0;
 
         curr_precision = curr_p > 0 ? static_cast<Float64>(curr_tp) / curr_p : 1.0;
         area += curr_precision * (curr_tp - prev_tp);
 
         /// Finally, we divide by (TP + FN) to obtain the Recall
-        /// At this point we've traversed the whole curve and curr_tp = total positive labels (TP + FN)
+        /// If the PR AUC is calculated distributedly, the total positive labels is passed as an argument
+        if (total_positives > 0)
+            return area / total_positives;
+        /// Else, this partition has all the positive labels, which means that the final curr_tp is equal to total positives
         return area / curr_tp;
     }
 
@@ -193,11 +222,19 @@ public:
 
             /// The first argument (scores) must be an array of numbers
             if (i == 0 && !isNativeNumber(nested_type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot process values of type {} in its first argument", getName(), nested_type->getName());
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} cannot process values of type {} in its first argument",
+                    getName(),
+                    nested_type->getName());
 
             /// The second argument (labels) must be an array of numbers or enums
             if (i == 1 && !isNativeNumber(nested_type) && !isEnum(nested_type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot process values of type {} in its second argument", getName(), nested_type->getName());
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} cannot process values of type {} in its second argument",
+                    getName(),
+                    nested_type->getName());
         }
 
         return std::make_shared<DataTypeFloat64>();
