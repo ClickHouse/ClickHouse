@@ -187,6 +187,7 @@ private:
     void executeWithFill(QueryPlan & query_plan);
     void executeMergeSorted(QueryPlan & query_plan, const std::string & description);
     void executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset);
+    void executeLimitInRange(QueryPlan & query_plan, bool remove_filter_column);
     void executeLimitBy(QueryPlan & query_plan);
     void executeLimit(QueryPlan & query_plan);
     void executeOffset(QueryPlan & query_plan);

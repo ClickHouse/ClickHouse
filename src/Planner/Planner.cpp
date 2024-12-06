@@ -34,6 +34,7 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitInRangeStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
@@ -411,6 +412,30 @@ void addFilterStep(QueryPlan & query_plan,
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
+}
+
+void addLimitInRangeStep(
+    QueryPlan & query_plan,
+    const LimitInRangeAnalysisResult & limit_inrange_analysis_result,
+    const std::string & step_description,
+    const QueryNode & query_node,
+    const PlannerContextPtr & planner_context)
+{
+    UInt64 limit_inrange_window = 0;
+    if (query_node.hasInrangeWindow())
+        limit_inrange_window = query_node.getInrangeWindow()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+
+    const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
+    limit_inrange_window = std::min<UInt64>(limit_inrange_window, settings[Setting::max_block_size]);
+
+    auto limit_inrange_step = std::make_unique<LimitInRangeStep>(
+        query_plan.getCurrentHeader(),
+        limit_inrange_analysis_result.from_filter_column_name,
+        limit_inrange_analysis_result.to_filter_column_name,
+        limit_inrange_window,
+        limit_inrange_analysis_result.remove_filter_column);
+    limit_inrange_step->setStepDescription(step_description);
+    query_plan.addStep(std::move(limit_inrange_step));
 }
 
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
@@ -938,6 +963,7 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
         && !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree
         && !query_analysis_result.query_has_array_join_in_join_tree && !query_node.isDistinct() && !query_node.hasLimitBy()
+        && !query_node.hasLimitInrangeFrom() && !query_node.hasLimitInrangeTo()
         && !settings[Setting::extremes] && !has_withfill;
     bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
     if (apply_prelimit)
@@ -1793,6 +1819,17 @@ void Planner::buildPlanForQueryNode()
 
         if (query_node.hasOrderBy())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
+
+        if (query_node.hasLimitInrangeFrom() || query_node.hasLimitInrangeTo())
+        {
+            auto & limit_inrange_analysis_result = expression_analysis_result.getLimitInRange();
+            addExpressionStep(
+                query_plan,
+                limit_inrange_analysis_result.combined_limit_inrange_actions,
+                "LIMIT INRANGE expressions",
+                useful_sets);
+            addLimitInRangeStep(query_plan, limit_inrange_analysis_result, "LIMIT INRANGE", query_node, planner_context);
+        }
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
         const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;

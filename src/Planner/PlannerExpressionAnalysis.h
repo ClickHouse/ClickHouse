@@ -57,6 +57,14 @@ struct LimitByAnalysisResult
     Names limit_by_column_names;
 };
 
+struct LimitInRangeAnalysisResult
+{
+    ActionsAndProjectInputsFlagPtr combined_limit_inrange_actions;
+    std::string from_filter_column_name;
+    std::string to_filter_column_name;
+    bool remove_filter_column = true; // need to configure
+};
+
 class PlannerExpressionsAnalysisResult
 {
 public:
@@ -174,6 +182,21 @@ public:
         limit_by_analysis_result = std::move(limit_by_analysis_result_);
     }
 
+    bool hasLimitInRange() const
+    {
+        return limit_inrange_analysis_result.combined_limit_inrange_actions != nullptr;
+    }
+
+    LimitInRangeAnalysisResult & getLimitInRange()
+    {
+        return limit_inrange_analysis_result;
+    }
+
+    void addLimitLimitInRange(LimitInRangeAnalysisResult limit_inrange_analysis_result_)
+    {
+        limit_inrange_analysis_result = std::move(limit_inrange_analysis_result_);
+    }
+
 private:
     ProjectionAnalysisResult projection_analysis_result;
     FilterAnalysisResult where_analysis_result;
@@ -183,6 +206,7 @@ private:
     FilterAnalysisResult qualify_analysis_result;
     SortAnalysisResult sort_analysis_result;
     LimitByAnalysisResult limit_by_analysis_result;
+    LimitInRangeAnalysisResult limit_inrange_analysis_result;
 };
 
 /// Build expression analysis result for query tree, join tree input columns and planner context
