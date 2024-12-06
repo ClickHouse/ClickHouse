@@ -1211,14 +1211,6 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         {
             sv->set_property("allow_nullable_key");
             sv->set_value("1");
-
-            if (next.toption.has_value() && next.toption.value() == TableEngineOption::TShared)
-            {
-                SetValue * sv2 = svs->add_other_values();
-
-                sv2->set_property("storage_policy");
-                sv2->set_value("'s3_with_keeper'");
-            }
         }
         else
         {

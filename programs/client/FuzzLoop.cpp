@@ -470,8 +470,9 @@ bool Client::buzzHouse()
             "1;");
         processQueryAndLog(outf, rg.nextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
 
-        //Load collations
-        fc.loadCollations();
+        //Load server configurations for the fuzzer
+        fc.loadServerConfigurations();
+        loadFuzzerSettings(fc);
 
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(fc, ei, has_cloud_features);

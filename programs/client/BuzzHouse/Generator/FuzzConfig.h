@@ -5,13 +5,13 @@
 #include <optional>
 #include <string>
 
-#if USE_SIMDJSON
+#if defined USE_SIMDJSON && USE_SIMDJSON
 #    include <Common/JSONParsers/SimdJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::SimdJSONParser;
 }
-#elif USE_RAPIDJSON
+#elif defined USE_RAPIDJSON && USE_RAPIDJSON
 #    include <Common/JSONParsers/RapidJSONParser.h>
 namespace BuzzHouse
 {
@@ -116,7 +116,7 @@ private:
     DB::ClientBase * cb = nullptr;
 
 public:
-    std::vector<std::string> collations;
+    std::vector<std::string> collations, storage_policies;
     std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
                                      minio_server = std::nullopt;
@@ -248,22 +248,34 @@ public:
         return true;
     }
 
-    void loadCollations()
+private:
+    void loadServerSettings(std::vector<std::string> & out, const std::string & table, const std::string & col)
     {
         buf.resize(0);
-        buf += "SELECT \"name\" FROM system.collations INTO OUTFILE '";
+        buf += "SELECT \"";
+        buf += col;
+        buf += "\" FROM \"system\".\"";
+        buf += table;
+        buf += "\" INTO OUTFILE '";
         buf += fuzz_out.generic_string();
         buf += "' TRUNCATE FORMAT TabSeparated;";
         this->processServerQuery(buf);
 
         std::ifstream infile(fuzz_out);
         buf.resize(0);
-        collations.clear();
+        out.clear();
         while (std::getline(infile, buf))
         {
-            collations.push_back(buf);
+            out.push_back(buf);
             buf.resize(0);
         }
+    }
+
+public:
+    void loadServerConfigurations()
+    {
+        loadServerSettings(this->collations, "collations", "name");
+        loadServerSettings(this->storage_policies, "storage_policies", "policy_name");
     }
 
     template <bool IsDetached>

@@ -2519,9 +2519,9 @@ int StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery *
 
 int StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
 {
-    const uint32_t start_transaction = 2 * static_cast<uint32_t>(supports_cloud_features && !this->in_transaction),
-                   commit = 50 * static_cast<uint32_t>(supports_cloud_features && this->in_transaction), explain_query = 10,
-                   run_query = 120, prob_space = start_transaction + commit + explain_query + run_query;
+    const uint32_t start_transaction = 2 * static_cast<uint32_t>(!this->in_transaction),
+                   commit = 50 * static_cast<uint32_t>(this->in_transaction), explain_query = 10, run_query = 120,
+                   prob_space = start_transaction + commit + explain_query + run_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
