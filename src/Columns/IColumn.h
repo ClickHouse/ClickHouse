@@ -601,8 +601,7 @@ public:
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
-    [[nodiscard]] virtual Ptr compress([[maybe_unused]] bool force_compression) const
+    [[nodiscard]] virtual Ptr compress() const
     {
         /// No compression by default.
         return getPtr();
