@@ -978,7 +978,6 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 {
                     if (exception_message)
                     {
-
                         const auto time_now = std::chrono::system_clock::now();
                         auto storage_id = getStorageID();
 
@@ -995,8 +994,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                                 .details = DeadLetterQueueElement::KafkaDetails{
                                     .topic_name = consumer.currentTopic(),
                                     .partition = consumer.currentPartition(),
-                                    .offset = consumer.currentPartition(),
-                                    .key = consumer.currentKey()}});
+                                    .offset = consumer.currentPartition()}});
                     }
 
                 }

@@ -31,7 +31,6 @@ struct DeadLetterQueueElement
         String topic_name;
         Int64 partition;
         Int64 offset;
-        String key;
     };
     struct RabbitMQDetails
     {
