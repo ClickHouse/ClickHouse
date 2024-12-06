@@ -109,11 +109,17 @@ def kafka_produce(
     for message in messages:
         kafka_produce.counter += 1
         producer.send(
-            topic=topic, value=message, timestamp_ms=timestamp, partition=partition, key=str.encode(f"{topic}_key_{kafka_produce.counter}")
+            topic=topic,
+            value=message,
+            timestamp_ms=timestamp,
+            partition=partition,
+            key=str.encode(f"{topic}_key_{kafka_produce.counter}"),
         )
         producer.flush()
 
+
 kafka_produce.counter = 0
+
 
 @pytest.fixture(scope="module")
 def kafka_cluster():
