@@ -97,11 +97,6 @@ const std::unordered_set<std::string_view> optional_configuration_keys = {
     "storage_account_url",
 };
 
-bool isConnectionString(const std::string & candidate)
-{
-    return !candidate.starts_with("http");
-}
-
 }
 
 void StorageAzureBlob::processNamedCollectionResult(StorageAzureBlob::Configuration & configuration, const NamedCollection & collection)
@@ -159,96 +154,8 @@ std::variant<StorageAzureBlob::Configuration, String> StorageAzureBlob::getConfi
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection `{}` doesn't exist", *collection_name);
             return *collection_name;
         }
-    } else 
-    {
-        /// Supported signatures:
-        ///
-        /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
-        ///
-        if (engine_args.size() < 3 || engine_args.size() > 7)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage AzureBlobStorage requires 3 to 7 arguments: "
-                            "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])");
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
-
-        std::unordered_map<std::string_view, size_t> engine_args_to_idx;
-
-        configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
-        configuration.is_connection_string = isConnectionString(configuration.connection_url);
-
-        configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
-        configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
-
-        auto is_format_arg = [] (const std::string & s) -> bool
-        {
-            return s == "auto" || FormatFactory::instance().exists(s);
-        };
-
-        if (engine_args.size() == 4)
-        {
-            //'c1 UInt64, c2 UInt64
-            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-            if (is_format_arg(fourth_arg))
-            {
-                configuration.format = fourth_arg;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format or account name specified without account key");
-            }
-        }
-        else if (engine_args.size() == 5)
-        {
-            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-            if (is_format_arg(fourth_arg))
-            {
-                configuration.format = fourth_arg;
-                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
-            }
-            else
-            {
-                configuration.account_name = fourth_arg;
-                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            }
-        }
-        else if (engine_args.size() == 6)
-        {
-            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
-            }
-            else
-            {
-                configuration.account_name = fourth_arg;
-
-                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-                if (!is_format_arg(sixth_arg))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-                configuration.format = sixth_arg;
-            }
-        }
-        else if (engine_args.size() == 7)
-        {
-            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
-            }
-            else
-            {
-                configuration.account_name = fourth_arg;
-                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-                if (!is_format_arg(sixth_arg))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-                configuration.format = sixth_arg;
-                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
-            }
-        }
+    } else {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AzureBlob storage supports only named collection.");
     }
 
     configuration.blobs_paths = {configuration.blob_path};
@@ -520,7 +427,7 @@ StorageAzureBlob::StorageAzureBlob(
     , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
-
+    
     if(configuration.has_value()) {
         if (configuration->format != "auto") {
             FormatFactory::instance().checkFormatName(configuration->format);
