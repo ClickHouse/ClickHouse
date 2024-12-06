@@ -33,6 +33,7 @@
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include "Interpreters/HashJoin/KeyGetter.h"
+#include "Interpreters/NullableUtils.h"
 #include "base/defines.h"
 #include "base/scope_guard.h"
 #include "base/types.h"
@@ -384,24 +385,33 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     /// 4. Use joinDispatch
     /// 5. Make sure we cannot get different hashes for the same key because of difference in LowCardinality or Const columns
 
+    std::vector<ColumnPtr> keys;
     ColumnRawPtrs key_columns;
     key_columns.reserve(key_columns_names.size());
     for (const auto & key_name : key_columns_names)
-        key_columns.push_back(from_block.getByName(key_name).column.get());
+    {
+        const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
+        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
+        keys.push_back(key_col_no_lc);
+        key_columns.push_back(key_col_no_lc.get());
+    }
+    ConstNullMapPtr null_map{};
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
     /// CHJ supports only one join clause for now
     if (join.getJoinedData()->maps.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}", join.getJoinedData()->maps.size());
 
-    auto & maps = std::get<HashJoin::MapsAll>(join.getJoinedData()->maps[0]);
     std::vector<UInt64> hash;
 
-    switch (join.getJoinedData()->type)
+    auto calculate_selector = [&](auto & maps)
     {
-        case HashJoin::Type::EMPTY:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::EMPTY");
-        case HashJoin::Type::CROSS:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::CROSS");
+        switch (join.getJoinedData()->type)
+        {
+            case HashJoin::Type::EMPTY:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::EMPTY");
+            case HashJoin::Type::CROSS:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::CROSS");
 
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
@@ -409,11 +419,27 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
             *maps.TYPE, key_columns, join.key_sizes[0]); \
         return hashToSelector(*maps.TYPE, hash, num_shards);
 
-            APPLY_FOR_JOIN_VARIANTS(M)
+                APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
-    }
+        }
 
-    UNREACHABLE();
+        UNREACHABLE();
+    };
+
+    return std::visit(
+        [&](auto & maps)
+        {
+            using T = std::decay_t<decltype(maps)>;
+            if constexpr (std::is_same_v<T, HashJoin::MapsOne>)
+                return calculate_selector(maps);
+            else if constexpr (std::is_same_v<T, HashJoin::MapsAll>)
+                return calculate_selector(maps);
+            else if constexpr (std::is_same_v<T, HashJoin::MapsAsof>)
+                return calculate_selector(maps);
+
+            UNREACHABLE();
+        },
+        join.getJoinedData()->maps[0]);
 }
 
 ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
