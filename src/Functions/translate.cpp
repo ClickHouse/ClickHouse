@@ -44,11 +44,12 @@ struct TranslateImpl
             map[static_cast<unsigned char>(map_from[i])] = static_cast<UInt8>(map_to[i]);
         }
 
-        // Validate any extra characters in map_to to ensure they are ASCII
-        for (size_t i = min_size; i < map_to.size(); ++i)
+        // Handle any remaining characters in map_from by assigning a default value
+        for (size_t i = min_size; i < map_from.size(); ++i)
         {
-            if (!isASCII(map_to[i]))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be ASCII strings");
+            if (!isASCII(map_from[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be ASCII strings");
+            map[static_cast<unsigned char>(map_from[i])] = ascii_upper_bound + 1;
         }
     }
 
@@ -359,7 +360,10 @@ public:
         String map_from = c1_const->getValue<String>();
         String map_to = c2_const->getValue<String>();
 
-        if (map_from.size() < map_to.size())
+        auto map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
+        auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
+
+        if (map_from_size < map_to_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
