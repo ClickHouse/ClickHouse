@@ -29,6 +29,8 @@ public:
     using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
 
+    static constexpr size_t min_size_to_compress = 4096;
+
 private:
     friend class COWHelper<IColumnHelper<ColumnString>, ColumnString>;
 

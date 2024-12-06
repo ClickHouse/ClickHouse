@@ -70,7 +70,7 @@ public:
 
     /// Helper methods for compression.
 
-    /// If data is not worth to be compressed and not 'always_compress' - returns nullptr.
+    /// If data is not worth to be compressed and not `force_compression` - returns nullptr.
     /// Note: shared_ptr is to allow to be captured by std::function.
     static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool force_compression);
 
