@@ -546,14 +546,19 @@ void HTTPHandler::processQuery(
                 used_output.exception_writer = [&, format_name, header, context_, format_settings](WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
+                    {
+                        chassert(buf.isCanceled());
                         return;
+                    }
 
                     drainRequestIfNeeded(request, response);
                     used_output.out_holder->setExceptionCode(code);
+
                     auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
                     output_format->setException(message);
                     output_format->finalize();
                     used_output.finalize();
+                    used_output.exception_is_written = true;
                 };
             }
             else
