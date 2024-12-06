@@ -1009,7 +1009,6 @@ void TCPHandler::readData(QueryState & state)
 
     while (receivePacketsExpectData(state))
     {
-        sendProgress(state);
         sendLogs(state);
         sendInsertProfileEvents(state);
     }
@@ -1114,7 +1113,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
             {
                 executor.push(std::move(state.block_for_insert));
 
-                sendProgress(state);
                 sendLogs(state);
                 sendInsertProfileEvents(state);
             }
