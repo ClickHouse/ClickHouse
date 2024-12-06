@@ -92,6 +92,8 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
+    std::map<Int64, size_t> dispatch_time;
+
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 

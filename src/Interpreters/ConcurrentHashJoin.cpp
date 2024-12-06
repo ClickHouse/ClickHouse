@@ -20,6 +20,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/SelectQueryInfo.h>
+#include "Common/BitHelpers.h"
+#include "Common/Stopwatch.h"
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -29,8 +31,13 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include "base/scope_guard.h"
+#include "base/types.h"
+
 #include <algorithm>
 #include <numeric>
+#include <thread>
 #include <vector>
 
 using namespace DB;
@@ -38,6 +45,7 @@ using namespace DB;
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
+extern const Event HashJoinScatteringBlocksMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -143,6 +151,11 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
 ConcurrentHashJoin::~ConcurrentHashJoin()
 {
+    // for (const auto & [key, value] : dispatch_time)
+    // {
+    //     LOG_DEBUG(&Poco::Logger::get("debug"), "key={}, value={}", key, value);
+    // }
+
     try
     {
         updateStatistics(hash_joins, stats_collecting_params);
@@ -241,8 +254,11 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     else
     {
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
+        // dispatched_blocks.emplace_back(std::move(block));
         dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
+    // if (dispatched_blocks.size() != 1)
+    //     throw Exception(ErrorCodes::LOGICAL_ERROR, "dispatched_blocks.size() != 1");
 
     block = {};
 
@@ -333,7 +349,7 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
                     table_join->kind(), table_join->strictness());
 }
 
-static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
+static IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
 {
     assert(num_shards > 0 && (num_shards & (num_shards - 1)) == 0);
     const auto & data = hash.getData();
@@ -347,16 +363,32 @@ static ALWAYS_INLINE IColumn::Selector hashToSelector(const WeakHash32 & hash, s
     return selector;
 }
 
-IColumn::Selector selectDispatchBlock(size_t num_shards, const Strings & key_columns_names, const Block & from_block)
+IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
-    size_t num_rows = from_block.rows();
+    const size_t num_rows = from_block.rows();
+
+    /// TODO:
+    /// 1. HashMethod (could be obtained using KeyGetterForType it seems) -> key holder
+    /// 2. HT::hash(key_holder)
+    /// 3. Use 64-bit hash
+    /// 4. Use joinDispatch
 
     WeakHash32 hash(num_rows);
     for (const auto & key_name : key_columns_names)
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        hash.update(key_col_no_lc->getWeakHash32());
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            /// CHJ supports only one join clause for now
+            if (join.getJoinedData()->maps.size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}", join.getJoinedData()->maps.size());
+
+            hash.getData()[i] = static_cast<UInt32>(
+                std::get<HashJoin::MapsAll>(join.getJoinedData()->maps[0]).key_string->hash(key_col_no_lc->getDataAt(i)));
+        }
+        /// static_cast<UInt32>(intHashCRC32(other.data[i], data[i]))
     }
     return hashToSelector(hash, num_shards);
 }
@@ -406,7 +438,15 @@ ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Sele
 
 ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
 {
-    size_t num_shards = hash_joins.size();
+    // Stopwatch watch;
+    // SCOPE_EXIT({
+    //     std::thread::id thread_id = std::this_thread::get_id();
+    //     std::hash<std::thread::id> hasher;
+    //     std::size_t thread_id_numeric = hasher(thread_id);
+    //     dispatch_time[thread_id_numeric] += watch.elapsed();
+    // });
+
+    const size_t num_shards = hash_joins.size();
     if (num_shards == 1)
     {
         ScatteredBlocks res;
@@ -414,7 +454,10 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
         return res;
     }
 
-    IColumn::Selector selector = selectDispatchBlock(num_shards, key_columns_names, from_block);
+    if (!isPowerOf2(num_shards))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards should be power of 2");
+
+    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
 
     /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
     /// This is not beneficial when the whole set of columns is e.g. a single small column.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <Common/HashTable/HashTable.h>
 
 
@@ -357,6 +358,11 @@ public:
     size_t offsetInternal(ConstLookupResult ptr) const
     {
         const size_t buck = getBucketFromHash(ptr->getHash(*this));
-        return impls[buck].offsetInternal(ptr);
+        if (ptr->isZero(impls[buck]))
+            return 0;
+        size_t res = 0;
+        for (UInt32 i = 0; i < buck; ++i)
+            res += impls[i].getBufferSizeInCells();
+        return res + (ptr - impls[buck].buf);
     }
 };

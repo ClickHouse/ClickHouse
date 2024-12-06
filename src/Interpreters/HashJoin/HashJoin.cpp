@@ -1318,6 +1318,7 @@ private:
             for (; it != end; ++it)
             {
                 const Mapped & mapped = it->getMapped();
+                // const Mapped & mapped = it.getPtr()->getMapped();
 
                 size_t offset = map.offsetInternal(it.getPtr());
                 if (parent.isUsed(offset))
