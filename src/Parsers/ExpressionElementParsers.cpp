@@ -2164,6 +2164,39 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
+bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserExpression elem_p;
+    ParserKeyword ascending(Keyword::ASCENDING);
+    ParserKeyword descending(Keyword::DESCENDING);
+    ParserKeyword asc(Keyword::ASC);
+    ParserKeyword desc(Keyword::DESC);
+
+    ASTPtr expr_elem;
+    if (!elem_p.parse(pos, expr_elem, expected))
+        return false;
+
+    if (!allow_order)
+    {
+        node = std::move(expr_elem);
+        return true;
+    }
+
+    int direction = 1;
+
+    if (descending.ignore(pos, expected) || desc.ignore(pos, expected))
+        direction = -1;
+    else
+        ascending.ignore(pos, expected) || asc.ignore(pos, expected);
+
+    auto storage_elem = std::make_shared<ASTStorageOrderByElement>();
+    storage_elem->children.push_back(std::move(expr_elem));
+    storage_elem->direction = direction;
+
+    node = std::move(storage_elem);
+    return true;
+}
+
 
 bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
