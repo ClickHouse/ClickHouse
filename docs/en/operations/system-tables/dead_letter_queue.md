@@ -17,7 +17,7 @@ Columns:
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) - Message consuming date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Message consuming date and time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) - Message consuming time with microseconds precision.
-- `database_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse database the table belongs to.
+- `database_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse database the streaming table belongs to.
 - `table_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - ClickHouse table name.
 - `error` ([String](../../sql-reference/data-types/string.md)) - Error text.
 - `raw_message` ([String](../../sql-reference/data-types/string.md)) - Message body.
@@ -55,9 +55,10 @@ table_name:                    kafka
 error:                         Message has too many segments. Most likely, data was corrupted: (at row 1)
 
 raw_message:                   qwertyuiop
-kafka_topic_name:              CapnProto_dead_letter_queue_err
+kafka_topic_name:              CapnProto_dead_letter_queue_err_1733481607
 kafka_partition:               0
 kafka_offset:                  0
+kafka_key:                     CapnProto_dead_letter_queue_err_1733481607_key_72
 rabbitmq_exchange_name:
 rabbitmq_message_id:
 rabbitmq_message_timestamp:    1970-01-01 00:00:00
