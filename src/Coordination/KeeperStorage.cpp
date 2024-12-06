@@ -3622,6 +3622,14 @@ bool KeeperStorageBase::checkDigest(const Digest & first, const Digest & second)
     return first.value == second.value;
 }
 
+UInt64 KeeperStorageBase::WatchInfoHash::operator()(WatchInfo info) const
+{
+    SipHash hash;
+    hash.update(info.path);
+    hash.update(info.is_list_watch);
+    return hash.get64();
+}
+
 template<typename Container>
 String KeeperStorage<Container>::generateDigest(const String & userdata)
 {
