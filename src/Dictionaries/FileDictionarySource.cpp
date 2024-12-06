@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -81,7 +82,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `file` does not support attribute expressions");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary source of type `file` does not support attribute expressions");
 
         const auto filepath = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");
