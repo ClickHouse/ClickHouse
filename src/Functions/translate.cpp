@@ -360,7 +360,7 @@ public:
         String map_to = c2_const->getValue<String>();
 
         if (map_from.size() < map_to.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the thrid argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
