@@ -426,6 +426,16 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         {
             insertEntryRefCP(entries[i], te->add_params()->mutable_cols());
         }
+        if (supports_cloud_features && rg.nextSmallNumber() < 5)
+        {
+            b.toption = TableEngineOption::TShared;
+            te->set_toption(b.toption.value());
+        }
+    }
+    else if (b.isSetEngine() && supports_cloud_features && rg.nextSmallNumber() < 5)
+    {
+        b.toption = TableEngineOption::TShared;
+        te->set_toption(b.toption.value());
     }
     else if (b.isBufferEngine())
     {
@@ -1199,45 +1209,23 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         svs = ct->mutable_settings();
         generateSettingValues(rg, tsettings, svs);
     }
-    if (next.isMergeTreeFamily() || next.isAnyS3Engine())
+    if (next.isMergeTreeFamily() || next.isAnyS3Engine() || next.toption.has_value())
     {
         if (!svs)
         {
             svs = ct->mutable_settings();
         }
-        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
         if (next.isMergeTreeFamily())
         {
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
             sv->set_property("allow_nullable_key");
             sv->set_value("1");
-
-            if (next.toption.has_value() && next.toption.value() == TableEngineOption::TShared)
-            {
-                //requires keeper storage
-                bool found = false;
-                auto & ovals = const_cast<decltype(svs->other_values())&>(svs->other_values());
-
-                for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
-                {
-                    if (it->property() == "storage_policy")
-                    {
-                        auto & prop = const_cast<SetValue&>(*it);
-                        prop.set_value("'s3_with_keeper'");
-                        found = true;
-                    }
-                }
-                if (!found)
-                {
-                    SetValue * sv2 = svs->add_other_values();
-
-                    sv2->set_property("storage_policy");
-                    sv2->set_value("'s3_with_keeper'");
-                }
-            }
         }
-        else
+        else if (next.isAnyS3Engine())
         {
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
             sv->set_property("input_format_with_names_use_header");
             sv->set_value("0");
             if (next.isS3QueueEngine())
@@ -1246,6 +1234,29 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
 
                 sv2->set_property("mode");
                 sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
+            }
+        }
+        if (next.toption.has_value() && next.toption.value() == TableEngineOption::TShared)
+        {
+            //requires keeper storage
+            bool found = false;
+            auto & ovals = const_cast<decltype(svs->other_values()) &>(svs->other_values());
+
+            for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
+            {
+                if (it->property() == "storage_policy")
+                {
+                    auto & prop = const_cast<SetValue &>(*it);
+                    prop.set_value("'s3_with_keeper'");
+                    found = true;
+                }
+            }
+            if (!found)
+            {
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+                sv->set_property("storage_policy");
+                sv->set_value("'s3_with_keeper'");
             }
         }
     }
@@ -1260,7 +1271,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
     }
     entries.clear();
-    assert(!next.toption.has_value() || next.isMergeTreeFamily());
+    assert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
     this->staged_tables[tname] = std::move(next);
     return 0;
 }
