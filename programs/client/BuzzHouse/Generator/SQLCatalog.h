@@ -68,7 +68,7 @@ public:
 
     bool CanBeInserted() const
     {
-        return !dmod.has_value() || (dmod.value() != DModifier::DEF_MATERIALIZED && dmod.value() != DModifier::DEF_ALIAS);
+        return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT;
     }
 };
 

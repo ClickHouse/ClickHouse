@@ -731,7 +731,7 @@ int StatementGenerator::generateGroupByExpr(
         addColNestedAccess(rg, ecol, 31);
         gcols.push_back(GroupCol(rel_col, expr));
     }
-    else if (next_option < 10)
+    else if (ncols && next_option < 10)
     {
         LiteralValue * lv = expr->mutable_lit_val();
 
@@ -1019,7 +1019,7 @@ int StatementGenerator::generateLimit(RandomGenerator & rg, const bool has_order
         generateLimitExpr(rg, ls->mutable_offset());
     }
     ls->set_with_ties(has_order_by && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7));
-    if (rg.nextSmallNumber() < 4)
+    if (ncols && rg.nextSmallNumber() < 4)
     {
         Expr * expr = ls->mutable_limit_by();
 
