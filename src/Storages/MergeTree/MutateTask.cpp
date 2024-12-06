@@ -188,6 +188,7 @@ struct MutationContext
     bool count_lightweight_deleted_rows;
     UInt64 execute_elapsed_ns = 0;
 
+    /// For projection masks, used in lightweight delete.
     std::vector<ProjectionMutationContextPtr> projection_mutation_contexts;
 };
 
@@ -1255,7 +1256,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     UInt64 step_time_ms = (*ctx->data->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
 
-    ctx->projections_to_build.clear();
+    // ctx->projections_to_build.clear();
 
     do
     {
@@ -2383,27 +2384,79 @@ bool MutateTask::prepare()
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
 
-        if (ctx->updated_header.has(RowExistsColumn::name))
+        lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
+        if (lightweight_delete_mode)
         {
             ASTPtr update_where_condition = ctx->interpreter->getUpdateWhereCondition();
-            IdentifierNameSet columns;
-            update_where_condition->collectIdentifierNames(columns);
+            IdentifierNameSet update_where_columns;
+            update_where_condition->collectIdentifierNames(update_where_columns);
 
             // std::cout<<serializeAST(*condition)<<std::endl;
             // std::cout<<condition->dumpTree()<<std::endl;
 
             const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
-            auto projections_name_and_part_iterator = projections_name_and_part.begin();
             for (const auto & proj_desc : ctx->metadata_snapshot->getProjections())
             {
+                if (!ctx->source_part->hasProjection(proj_desc.name))
+                    continue;
+
+                if (ctx->source_part->hasBrokenProjection(proj_desc.name))
+                {
+                    if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                        == LightweightMutationProjectionMode::REBUILD)
+                        ctx->materialized_projections.insert(proj_desc.name);
+
+                    continue;
+                }
+
+                if (proj_desc.type == ProjectionDescription::Type::Aggregate)
+                {
+                    const auto & sort_columns = proj_desc.metadata->sorting_key.column_names;
+                    NameSet groupby_columns(sort_columns.begin(), sort_columns.end());
+                    bool is_subset_of_groupby = std::all_of(
+                        update_where_columns.begin(),
+                        update_where_columns.end(),
+                        [&](const auto & col) { return groupby_columns.contains(col); });
+
+                    if (!is_subset_of_groupby)
+                    {
+                        if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                            == LightweightMutationProjectionMode::REBUILD)
+                            ctx->materialized_projections.insert(proj_desc.name);
+
+                        continue;
+                    }
+                }
+                else if (proj_desc.type == ProjectionDescription::Type::Normal)
+                {
+                    NameSet stored_columns(proj_desc.required_columns.begin(), proj_desc.required_columns.end());
+                    bool is_subset_of_groupby = std::all_of(
+                        update_where_columns.begin(),
+                        update_where_columns.end(),
+                        [&](const auto & col) { return stored_columns.contains(col); });
+
+                    if (!is_subset_of_groupby)
+                    {
+                        if ((*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode]
+                            == LightweightMutationProjectionMode::REBUILD)
+                            ctx->materialized_projections.insert(proj_desc.name);
+
+                        continue;
+                    }
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown projection type");
+                }
+
+                ctx->materialized_projections.erase(proj_desc.name);
+
                 ctx->projection_mutation_contexts.emplace_back(std::make_shared<ProjectionMutationContext>());
                 auto mutation_context = ctx->projection_mutation_contexts.back();
 
                 mutation_context->name = proj_desc.name;
                 mutation_context->metadata_snapshot = proj_desc.metadata;
-
-                mutation_context->source_part = projections_name_and_part_iterator->second;
-                ++projections_name_and_part_iterator;
+                mutation_context->source_part = projections_name_and_part.find(proj_desc.name)->second;
 
                 projection_commands.emplace_back(MutationCommands{});
                 auto & commands= projection_commands.back();
@@ -2426,21 +2479,6 @@ bool MutateTask::prepare()
 
                 mutation_context->mutating_pipeline_builder = projection_interpreter->execute();
                 mutation_context->updated_header = projection_interpreter->getUpdatedHeader();
-            }
-        }
-
-        lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
-        /// If under the condition of lightweight delete mode with rebuild option, add projections again here as we can only know
-        /// the condition as early as from here.
-        if (lightweight_delete_mode
-            && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::REBUILD)
-        {
-            for (const auto & projection : ctx->metadata_snapshot->getProjections())
-            {
-                if (!ctx->source_part->hasProjection(projection.name))
-                    continue;
-
-                ctx->materialized_projections.insert(projection.name);
             }
         }
     }
@@ -2477,15 +2515,10 @@ bool MutateTask::prepare()
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
 
-    const auto & projections_name_and_part = ctx->source_part->getProjectionParts();
-    auto proj_name_and_part_iterator = projections_name_and_part.begin();
-    int proj_cmds_idx = 0;
+    size_t proj_cmds_idx = 0;
     for (auto mutation_context : ctx->projection_mutation_contexts)
     {
-        auto part_name = proj_name_and_part_iterator->first;
-        ++proj_name_and_part_iterator;
-
-        mutation_context->new_part = ctx->new_data_part->getProjectionPartBuilder(part_name, false).withPartType(mutation_context->source_part->getType()).build();
+        mutation_context->new_part = ctx->new_data_part->getProjectionPartBuilder(mutation_context->name, false).withPartType(mutation_context->source_part->getType()).build();
 
         auto [projection_new_columns, projection_new_infos] = MutationHelpers::getColumnsForNewDataPart(
             mutation_context->source_part, mutation_context->updated_header, mutation_context->metadata_snapshot->getColumns().getAllPhysical(),
