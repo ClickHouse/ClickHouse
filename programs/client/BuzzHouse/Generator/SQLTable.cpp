@@ -1211,6 +1211,30 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         {
             sv->set_property("allow_nullable_key");
             sv->set_value("1");
+
+            if (next.toption.has_value() && next.toption.value() == TableEngineOption::TShared)
+            {
+                //requires keeper storage
+                bool found = false;
+                auto & ovals = const_cast<decltype(svs->other_values())&>(svs->other_values());
+
+                for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
+                {
+                    if (it->property() == "storage_policy")
+                    {
+                        auto & prop = const_cast<SetValue&>(*it);
+                        prop.set_value("'s3_with_keeper'");
+                        found = true;
+                    }
+                }
+                if (!found)
+                {
+                    SetValue * sv2 = svs->add_other_values();
+
+                    sv2->set_property("storage_policy");
+                    sv2->set_value("'s3_with_keeper'");
+                }
+            }
         }
         else
         {
