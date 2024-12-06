@@ -50,7 +50,7 @@ public:
 
     struct BloomFilterData
     {
-        using HashesForColumns = std::vector<std::vector<uint64_t>>;
+        using HashesForColumns = std::vector<std::vector<std::size_t>>;
         HashesForColumns hashes_per_column;
         std::vector<std::size_t> key_columns;
     };
