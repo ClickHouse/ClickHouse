@@ -786,6 +786,24 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 Elements set to `NULL` are handled as normal values.
 
+## indexOfAssumeSorted(arr, x)
+
+Returns the index of the first ‘x’ element (starting from 1) if it is in the array, or 0 if it is not.
+The function should be used for an array sorted not in descending order since binary search is used for the search.
+If the internal array type is Nullable, the ‘indexOf‘ function will be used.
+
+Example:
+
+``` sql
+SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
+```
+
+``` text
+┌─indexOf([1, 3, 3, 3, 4, 4, 5], NULL)─┐
+│                                 5    │
+└──────────────────────────────────--─-┘
+```
+
 ## arrayCount(\[func,\] arr1, ...)
 
 Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns something other than 0. If `func` is not specified, it returns the number of non-zero elements in the array.
