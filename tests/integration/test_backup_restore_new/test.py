@@ -1900,7 +1900,9 @@ def test_required_privileges_with_partial_revokes():
 
     instance.query("REVOKE SELECT ON f* FROM u2")
     # To restore the backup we should have the SELECT permission on any table except system.zookeeper* and foo.*, but now we don't have it on f*.
-    assert "Not enough privileges" in instance.query_and_get_error(f"RESTORE ALL FROM {backup_name}", user="u2")
+    assert "Not enough privileges" in instance.query_and_get_error(
+        f"RESTORE ALL FROM {backup_name}", user="u2"
+    )
 
 
 # Test for the "clickhouse_backupview" utility.
