@@ -52,11 +52,10 @@ struct NormalizedGiniImpl
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function normalizedGini should have same size");
             }
 
-            PODArrayWithStackMemory<T1, 1024> array1(array_datas1.data() + offsets1[i - 1], array_datas1.data() + offsets1[i]);
             // Why we need to create a new array here every loop, because array2 will be sorted in normalizedGiniImpl.
             PODArrayWithStackMemory<T2, 1024> array2(const_array.begin(), const_array.end());
 
-            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(array1, array2, array_size);
+            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(array_datas1, offsets1[i - 1], array2, array_size);
 
             pred_gini_col[i] = pred_gini;
             label_gini_col[i] = label_gini;
@@ -90,10 +89,9 @@ struct NormalizedGiniImpl
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function normalizedGini should have same size");
             }
 
-            PODArrayWithStackMemory<T1, 1024> array1(array_datas1.data() + offsets1[i - 1], array_datas1.data() + offsets1[i]);
             PODArrayWithStackMemory<T2, 1024> array2(array_datas2.data() + offsets2[i - 1], array_datas2.data() + offsets2[i]);
 
-            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(array1, array2, array_size);
+            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(array_datas1, offsets1[i - 1], array2, array_size);
 
             pred_gini_col[i] = pred_gini;
             label_gini_col[i] = label_gini;
@@ -117,7 +115,6 @@ struct NormalizedGiniImpl
             throw Exception(
                 ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in normalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
-        PODArrayWithStackMemory<T1, 1024> array1(const_array.begin(), const_array.end());
         for (size_t i = 0; i < size; ++i)
         {
             size_t array1_size = offsets1[i] - offsets1[i - 1];
@@ -128,7 +125,7 @@ struct NormalizedGiniImpl
 
             PODArrayWithStackMemory<T2, 1024> array2(array_datas1.data() + offsets1[i - 1], array_datas1.data() + offsets1[i]);
 
-            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(array1, array2, array_size);
+            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(const_array, 0, array2, array_size);
 
             pred_gini_col[i] = pred_gini;
             label_gini_col[i] = label_gini;
@@ -139,9 +136,9 @@ struct NormalizedGiniImpl
 private:
     template <typename T1, typename T2>
     static std::tuple<Float64, Float64, Float64>
-    normalizedGiniImpl(const PODArrayWithStackMemory<T1, 1024> & array1, PODArrayWithStackMemory<T2, 1024> & array2, size_t array_size)
+    normalizedGiniImpl(const PaddedPODArray<T1> & array1, size_t offset, PODArrayWithStackMemory<T2, 1024> & array2, size_t array_size)
     {
-        auto sort_idx = sortIndexes(array1);
+        auto sort_idx = sortIndexes(array1, offset, array_size);
 
         PODArrayWithStackMemory<T2, 1024> sorted_array2(array_size);
         for (size_t i = 0; i < array_size; ++i)
@@ -181,12 +178,12 @@ private:
     }
 
     template <typename T>
-    static PODArrayWithStackMemory<size_t, 1024> sortIndexes(const PODArrayWithStackMemory<T, 1024> & array)
+    static PODArrayWithStackMemory<size_t, 1024> sortIndexes(const PaddedPODArray<T> & array, size_t offset, size_t array_size)
     {
-        PODArrayWithStackMemory<size_t, 1024> idx(array.size());
+        PODArrayWithStackMemory<size_t, 1024> idx(array_size);
         std::iota(idx.begin(), idx.end(), 0);
 
-        pdqsort(idx.begin(), idx.end(), [&array](size_t i1, size_t i2) { return array[i1] < array[i2]; });
+        pdqsort(idx.begin(), idx.end(), [&array, offset](size_t i1, size_t i2) { return array[i1 + offset] < array[i2 + offset]; });
         return idx;
     }
 };
