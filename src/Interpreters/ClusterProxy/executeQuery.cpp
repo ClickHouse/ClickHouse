@@ -474,7 +474,8 @@ void executeQueryWithParallelReplicas(
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr analyzed_read_from_merge_tree)
+    QueryPlanStepPtr analyzed_read_from_merge_tree,
+    std::optional<RemoteQueryExecutor::Extension> extension)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
@@ -688,7 +689,9 @@ void executeQueryWithParallelReplicas(
             std::move(external_tables),
             getLogger("ReadFromParallelRemoteReplicasStep"),
             std::move(storage_limits),
-            std::move(pools_to_use));
+            std::move(pools_to_use),
+            std::nullopt,
+            extension);
 
         query_plan.addStep(std::move(read_from_remote));
     }
@@ -713,7 +716,7 @@ void executeQueryWithParallelReplicas(
     auto modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
     executeQueryWithParallelReplicas(
-        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree));
+        query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, std::move(analyzed_read_from_merge_tree), std::nullopt);
 }
 
 void executeQueryWithParallelReplicas(

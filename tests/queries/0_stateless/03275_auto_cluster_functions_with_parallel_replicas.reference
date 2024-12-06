@@ -1,7 +1,7 @@
 Expression (Project names)
-  ReadFromCluster
+  ReadFromRemoteParallelReplicas (Query: SELECT `__table1`.`c1` AS `c1` FROM url(\'http://localhost:8123\') AS `__table1` Replicas: localhost:9000)
 Expression (Project names)
-  ReadFromCluster
+  ReadFromRemoteParallelReplicas (Query: SELECT `__table1`.`c1` AS `c1`, `__table1`.`c2` AS `c2`, `__table1`.`c3` AS `c3` FROM s3(\'http://localhost:11111/test/a.tsv\', \'TSV\', \'`c1` Nullable(Int64), `c2` Nullable(Int64), `c3` Nullable(Int64)\') AS `__table1` Replicas: localhost:9000)
 Expression ((Project names + (Projection + Change column names to column identifiers)))
   ReadFromURL
 Expression ((Project names + (Projection + Change column names to column identifiers)))

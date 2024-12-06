@@ -132,7 +132,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         && !parallel_replicas_cluster_name.empty()
         && !context->isDistributed();
 
-    if (can_use_parallel_replicas)
+    auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
+    if (can_use_parallel_replicas && !is_secondary_query)
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
