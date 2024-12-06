@@ -707,8 +707,8 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     /// GRANT SELECT ON *.*
     /// REVOKE SELECT FROM systems.*
     const auto & required_access_rights = AccessRights{required_access};
-    const auto & access_rights = context->getAccess()->getAccessRights();
-    if (access_rights->contains(required_access_rights))
+    const auto & current_user_access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    if (current_user_access_rights->contains(required_access_rights))
         return;
 
     context->checkAccess(required_access);
