@@ -188,7 +188,7 @@ void MergeTreeReaderCompact::readData(
                 auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
                 ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
 
-                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name_in_storage], nullptr);
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], nullptr);
                 auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
 
                 /// TODO: Avoid extra copying.
@@ -231,9 +231,6 @@ void MergeTreeReaderCompact::readPrefix(
 {
     try
     {
-        if (deserialize_binary_bulk_state_map.contains(name_and_type.getNameInStorage()))
-            return;
-
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
 
         if (name_level_for_offsets.has_value())
@@ -248,15 +245,23 @@ void MergeTreeReaderCompact::readPrefix(
             serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix, nullptr);
         }
 
-        SerializationPtr serialization;
-        if (name_and_type.isSubcolumn())
-            serialization = getSerializationInPart({name_and_type.getNameInStorage(), name_and_type.getTypeInStorage()});
-        else
-            serialization = getSerializationInPart(name_and_type);
-
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.object_and_dynamic_read_statistics = true;
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.getNameInStorage()], nullptr);
+
+        if (name_and_type.isSubcolumn())
+        {
+            /// For subcolumns of the same column we need to deserialize prefix only once.
+            if (deserialize_binary_bulk_state_map_for_subcolumns.contains(name_and_type.getNameInStorage()))
+                return;
+
+            auto serialization = getSerializationInPart({name_and_type.getNameInStorage(), name_and_type.getTypeInStorage()});
+            serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_and_type.getNameInStorage()], nullptr);
+        }
+        else
+        {
+            auto serialization = getSerializationInPart(name_and_type);
+            serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.getNameInStorage()], nullptr);
+        }
     }
     catch (Exception & e)
     {

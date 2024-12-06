@@ -26,6 +26,7 @@ try
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
         deserialize_binary_bulk_state_map.clear();
+        deserialize_binary_bulk_state_map_for_subcolumns.clear();
 
         /// Use cache to avoid reading the column with the same name twice.
         /// It may happen if there are empty array Nested in the part.
