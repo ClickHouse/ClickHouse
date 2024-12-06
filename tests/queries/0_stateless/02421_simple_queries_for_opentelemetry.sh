@@ -101,7 +101,7 @@ function execute_query_HTTP()
 {
     query_id="$1"
     query="$2"
-    HTTP_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}&query_id=${query_id}"
+    HTTP_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}&query_id=${query_id} --data-binary @-"
     ${CLICKHOUSE_CURL} -X GET -d "${query}" "${HTTP_URL}" 2>/dev/null
 }
 
