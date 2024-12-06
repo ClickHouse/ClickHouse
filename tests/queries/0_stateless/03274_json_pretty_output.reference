@@ -22,19 +22,19 @@
 	"data":
 	[
 		{
-			"a":  {
+			"a": {
 				"b": 1,
 				"c": 2
 			},
-			"d":  {
+			"d": {
 				"e": 3,
 				"f": 4
 			},
-			"g":  [
+			"g": [
 				5,
 				6
 			],
-			"h":  {
+			"h": {
 				"l": {
 					"i": [
 						{
@@ -52,7 +52,7 @@
 
 	"statistics":
 	{
-		"elapsed": 0.003190043,
+		"elapsed": 0.002643793,
 		"rows_read": 0,
 		"bytes_read": 0
 	}
@@ -92,7 +92,7 @@
 
 	"statistics":
 	{
-		"elapsed": 0.001094511,
+		"elapsed": 0.001038611,
 		"rows_read": 0,
 		"bytes_read": 0
 	}
