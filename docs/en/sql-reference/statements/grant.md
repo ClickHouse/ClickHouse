@@ -606,7 +606,7 @@ Allows using a specified table engine when creating a table. Applies to [table e
 Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
-The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximium permissions to a user by granting the `default_role`. See [here](/docs/en/cloud/security/cloud-access-management#initial-settings) for further details.
+The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/en/cloud/security/cloud-access-management#initial-settings) for further details.
 :::
 
 ### NONE
