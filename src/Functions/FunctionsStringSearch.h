@@ -7,10 +7,10 @@
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
@@ -179,8 +179,10 @@ public:
     {
         const auto * col = argument.column.get();
         const auto * type = argument.type.get();
+
         auto res = ColumnString::create();
         res->reserve(col->size());
+
         if constexpr (std::is_same_v<DataTypeEnum8, EnumType>)
         {
             const auto * enum_col = typeid_cast<const ColumnInt8 *>(col);
@@ -212,17 +214,10 @@ public:
         ColumnPtr column_haystack = haystack_argument.column;
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
 
-        bool is_enum8 = isEnum8(haystack_argument.type);
-        bool is_enum16 = isEnum16(haystack_argument.type);
-
-        if (is_enum8)
-        {
+        if (isEnum8(haystack_argument.type))
             column_haystack = genStringColumnFromEnumColumn<DataTypeEnum8>(haystack_argument);
-        }
-        if (is_enum16)
-        {
+        if (isEnum16(haystack_argument.type))
             column_haystack = genStringColumnFromEnumColumn<DataTypeEnum16>(haystack_argument);
-        }
 
         ColumnPtr column_start_pos = nullptr;
         if (arguments.size() >= 3)
