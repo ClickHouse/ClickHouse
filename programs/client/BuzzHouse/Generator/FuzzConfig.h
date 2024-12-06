@@ -116,7 +116,7 @@ private:
     DB::ClientBase * cb = nullptr;
 
 public:
-    std::vector<std::string> collations, storage_policies;
+    std::vector<std::string> collations, storage_policies, timezones;
     std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
                                      minio_server = std::nullopt;
@@ -276,6 +276,7 @@ public:
     {
         loadServerSettings(this->collations, "collations", "name");
         loadServerSettings(this->storage_policies, "storage_policies", "policy_name");
+        loadServerSettings(this->timezones, "time_zones", "time_zone");
     }
 
     template <bool IsDetached>

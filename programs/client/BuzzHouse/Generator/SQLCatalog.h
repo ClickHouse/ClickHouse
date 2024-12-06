@@ -66,10 +66,7 @@ public:
     }
     ~SQLColumn() { delete tp; }
 
-    bool CanBeInserted() const
-    {
-        return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT;
-    }
+    bool CanBeInserted() const { return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT; }
 };
 
 struct SQLIndex

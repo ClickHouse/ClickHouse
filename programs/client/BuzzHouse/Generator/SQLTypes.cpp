@@ -234,9 +234,9 @@ const SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, con
             dt->set_precision(precision.value());
         }
     }
-    if ((!use64 || has_precision) && rg.nextSmallNumber() < 5)
+    if ((!use64 || has_precision) && !fc.timezones.empty() && rg.nextSmallNumber() < 5)
     {
-        timezone = std::optional<std::string>(rg.pickRandomlyFromVector(timezones));
+        timezone = std::optional<std::string>(rg.pickRandomlyFromVector(fc.timezones));
         if (dt)
         {
             dt->set_timezone(timezone.value());
