@@ -21,7 +21,7 @@ void setRandomSetting(
 
 static std::vector<std::string> merge_storage_policies;
 
-std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MergeTreeTableSettings
+std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mergeTreeTableSettings
     = {{"adaptive_write_buffer_initial_size",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(1, 32 * 1024 * 1024)); }},
        {"allow_experimental_block_number_column", trueOrFalse},
@@ -194,12 +194,12 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> Mer
        {"vertical_merge_remote_filesystem_prefetch", trueOrFalse}};
 
 std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> allTableSettings
-    = {{MergeTree, MergeTreeTableSettings},
-       {ReplacingMergeTree, MergeTreeTableSettings},
-       {SummingMergeTree, MergeTreeTableSettings},
-       {AggregatingMergeTree, MergeTreeTableSettings},
-       {CollapsingMergeTree, MergeTreeTableSettings},
-       {VersionedCollapsingMergeTree, MergeTreeTableSettings},
+    = {{MergeTree, mergeTreeTableSettings},
+       {ReplacingMergeTree, mergeTreeTableSettings},
+       {SummingMergeTree, mergeTreeTableSettings},
+       {AggregatingMergeTree, mergeTreeTableSettings},
+       {CollapsingMergeTree, mergeTreeTableSettings},
+       {VersionedCollapsingMergeTree, mergeTreeTableSettings},
        {File, fileTableSettings},
        {Null, {}},
        {Set, setTableSettings},
@@ -215,8 +215,8 @@ std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGener
        {SQLite, {}},
        {MongoDB, {}},
        {Redis, {}},
-       {S3, S3TableSettings},
-       {S3Queue, S3QueueTableSettings},
+       {S3, s3TableSettings},
+       {S3Queue, s3QueueTableSettings},
        {Hudi, {}},
        {DeltaLake, {}},
        {IcebergS3, {}}};
@@ -226,7 +226,7 @@ void loadFuzzerSettings(const FuzzConfig & fc)
     if (!fc.storage_policies.empty())
     {
         merge_storage_policies.insert(merge_storage_policies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
-        MergeTreeTableSettings.insert(
+        mergeTreeTableSettings.insert(
             {{"storage_policy",
               [&](RandomGenerator & rg, std::string & ret)
               {

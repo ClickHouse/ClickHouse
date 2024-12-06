@@ -656,7 +656,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
     {"use_with_fill_by_sorting_prefix", trueOrFalse},
     {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalse}};
 
-extern std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> MergeTreeTableSettings;
+extern std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mergeTreeTableSettings;
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> memoryTableSettings
     = {{"min_bytes_to_keep",
@@ -698,7 +698,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
             ret += "'";
         }}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3TableSettings
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> s3TableSettings
     = {{"enable_filesystem_cache", trueOrFalse},
        {"filesystem_cache_name",
         [](RandomGenerator & rg, std::string & ret)
@@ -712,7 +712,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"s3_skip_empty_files", trueOrFalse},
        {"s3_truncate_on_insert", trueOrFalse}};
 
-const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> S3QueueTableSettings
+const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> s3QueueTableSettings
     = {{"after_processing",
         [](RandomGenerator & rg, std::string & ret)
         {
