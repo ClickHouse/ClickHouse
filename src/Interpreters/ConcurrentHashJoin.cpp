@@ -32,6 +32,8 @@
 #include <Common/typeid_cast.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include "Interpreters/HashJoin/KeyGetter.h"
+#include "base/defines.h"
 #include "base/scope_guard.h"
 #include "base/types.h"
 
@@ -349,48 +351,69 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
                     table_join->kind(), table_join->strictness());
 }
 
-static IColumn::Selector hashToSelector(const WeakHash32 & hash, size_t num_shards)
+template <typename HashTable>
+static IColumn::Selector hashToSelector(const HashTable & hash_table, const std::vector<UInt64> & data, size_t num_shards)
 {
     assert(num_shards > 0 && (num_shards & (num_shards - 1)) == 0);
-    const auto & data = hash.getData();
     size_t num_rows = data.size();
 
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        /// Apply intHash64 to mix bits in data.
-        /// HashTable internally uses WeakHash32, and we need to get different lower bits not to cause collisions.
-        selector[i] = intHash64(data[i]) & (num_shards - 1);
+        selector[i] = hash_table.getBucketFromHash(data[i]) & (num_shards - 1);
     return selector;
+}
+
+template <typename KeyGetter, typename HashTable>
+std::vector<UInt64> calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
+{
+    const size_t num_rows = key_columns[0]->size();
+    std::vector<UInt64> hash(num_rows);
+    auto key_getter = KeyGetter(key_columns, key_sizes, nullptr);
+    Arena pool;
+    for (size_t i = 0; i < num_rows; ++i)
+        hash[i] = key_getter.getHash(hash_table, i, pool);
+    return hash;
 }
 
 IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
-    const size_t num_rows = from_block.rows();
-
     /// TODO:
     /// 1. HashMethod (could be obtained using KeyGetterForType it seems) -> key holder
     /// 2. HT::hash(key_holder)
     /// 3. Use 64-bit hash
     /// 4. Use joinDispatch
+    /// 5. Make sure we cannot get different hashes for the same key because of difference in LowCardinality or Const columns
 
-    WeakHash32 hash(num_rows);
+    ColumnRawPtrs key_columns;
+    key_columns.reserve(key_columns_names.size());
     for (const auto & key_name : key_columns_names)
-    {
-        const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
-        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            /// CHJ supports only one join clause for now
-            if (join.getJoinedData()->maps.size() != 1)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}", join.getJoinedData()->maps.size());
+        key_columns.push_back(from_block.getByName(key_name).column.get());
 
-            hash.getData()[i] = static_cast<UInt32>(
-                std::get<HashJoin::MapsAll>(join.getJoinedData()->maps[0]).key_string->hash(key_col_no_lc->getDataAt(i)));
-        }
-        /// static_cast<UInt32>(intHashCRC32(other.data[i], data[i]))
+    /// CHJ supports only one join clause for now
+    if (join.getJoinedData()->maps.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}", join.getJoinedData()->maps.size());
+
+    auto & maps = std::get<HashJoin::MapsAll>(join.getJoinedData()->maps[0]);
+    std::vector<UInt64> hash;
+
+    switch (join.getJoinedData()->type)
+    {
+        case HashJoin::Type::EMPTY:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::EMPTY");
+        case HashJoin::Type::CROSS:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::CROSS");
+
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
+        hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+            *maps.TYPE, key_columns, join.key_sizes[0]); \
+        return hashToSelector(*maps.TYPE, hash, num_shards);
+
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
     }
-    return hashToSelector(hash, num_shards);
+
+    UNREACHABLE();
 }
 
 ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
