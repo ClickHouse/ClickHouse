@@ -978,7 +978,6 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 {
                     if (exception_message)
                     {
-
                         const auto time_now = std::chrono::system_clock::now();
                         auto storage_id = getStorageID();
 
