@@ -3246,8 +3246,13 @@ message ClearIndexInPartition {
 }
 
 message MovePartition {
+    enum MovePartitionStorage {
+        DISK = 1;
+        VOLUME = 2;
+    }
     required PartitionExpr partition = 1;
-    required uint32 vname = 2;
+    required MovePartitionStorage storage = 2;
+    required string dname = 3;
 }
 
 message AlterTableItem {

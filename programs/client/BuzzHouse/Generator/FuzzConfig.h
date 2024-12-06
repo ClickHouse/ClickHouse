@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <optional>
@@ -116,7 +117,7 @@ private:
     DB::ClientBase * cb = nullptr;
 
 public:
-    std::vector<std::string> collations, storage_policies, timezones;
+    std::vector<std::string> collations, storage_policies, timezones, disks;
     std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
                                      minio_server = std::nullopt;
@@ -251,6 +252,8 @@ public:
 private:
     void loadServerSettings(std::vector<std::string> & out, const std::string & table, const std::string & col)
     {
+        uint64_t found = 0;
+
         buf.resize(0);
         buf += "SELECT \"";
         buf += col;
@@ -268,7 +271,9 @@ private:
         {
             out.push_back(buf);
             buf.resize(0);
+            found++;
         }
+        std::cout << "Found " << found << " entries from " << table << " table" << std::endl;
     }
 
 public:
@@ -276,6 +281,7 @@ public:
     {
         loadServerSettings(this->collations, "collations", "name");
         loadServerSettings(this->storage_policies, "storage_policies", "policy_name");
+        loadServerSettings(this->disks, "disks", "name");
         loadServerSettings(this->timezones, "time_zones", "time_zone");
     }
 

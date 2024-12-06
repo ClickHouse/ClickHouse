@@ -3327,13 +3327,18 @@ CONV_FN(AlterTableItem, alter)
             ret += std::to_string(alter.unfreeze_partition().fname());
             ret += "'";
             break;
-        case AlterType::kMovePartition:
+        case AlterType::kMovePartition: {
+            const MovePartition & mp = alter.move_partition();
+
             ret += "MOVE ";
-            PartitionExprToString(ret, alter.move_partition().partition());
-            ret += " TO VOLUME 'v";
-            ret += std::to_string(alter.move_partition().vname());
+            PartitionExprToString(ret, mp.partition());
+            ret += " TO ";
+            ret += MovePartition_MovePartitionStorage_Name(mp.storage());
+            ret += " '";
+            ret += mp.dname();
             ret += "'";
-            break;
+        }
+        break;
         case AlterType::kClearIndexPartition:
             ret += "CLEAR INDEX ";
             IndexToString(ret, alter.clear_index_partition().idx());
