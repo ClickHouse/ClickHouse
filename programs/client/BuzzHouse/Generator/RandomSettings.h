@@ -726,33 +726,7 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
         [](RandomGenerator & rg, std::string & ret)
         { ret += std::to_string(rg.RandomInt<uint32_t>(1, std::thread::hardware_concurrency())); }}};
 
-const std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> allTableSettings
-    = {{MergeTree, MergeTreeTableSettings},
-       {ReplacingMergeTree, MergeTreeTableSettings},
-       {SummingMergeTree, MergeTreeTableSettings},
-       {AggregatingMergeTree, MergeTreeTableSettings},
-       {CollapsingMergeTree, MergeTreeTableSettings},
-       {VersionedCollapsingMergeTree, MergeTreeTableSettings},
-       {File, fileTableSettings},
-       {Null, {}},
-       {Set, setTableSettings},
-       {Join, joinTableSettings},
-       {Memory, memoryTableSettings},
-       {StripeLog, {}},
-       {Log, {}},
-       {TinyLog, {}},
-       {EmbeddedRocksDB, embeddedRocksDBTableSettings},
-       {Buffer, {}},
-       {MySQL, mySQLTableSettings},
-       {PostgreSQL, {}},
-       {SQLite, {}},
-       {MongoDB, {}},
-       {Redis, {}},
-       {S3, S3TableSettings},
-       {S3Queue, S3QueueTableSettings},
-       {Hudi, {}},
-       {DeltaLake, {}},
-       {IcebergS3, {}}};
+extern std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> allTableSettings;
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mergeTreeColumnSettings
     = {{"min_compress_block_size",

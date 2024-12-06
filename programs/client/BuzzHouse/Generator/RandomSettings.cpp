@@ -193,6 +193,34 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> Mer
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }},
        {"vertical_merge_remote_filesystem_prefetch", trueOrFalse}};
 
+std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGenerator &, std::string &)>>> allTableSettings
+    = {{MergeTree, MergeTreeTableSettings},
+       {ReplacingMergeTree, MergeTreeTableSettings},
+       {SummingMergeTree, MergeTreeTableSettings},
+       {AggregatingMergeTree, MergeTreeTableSettings},
+       {CollapsingMergeTree, MergeTreeTableSettings},
+       {VersionedCollapsingMergeTree, MergeTreeTableSettings},
+       {File, fileTableSettings},
+       {Null, {}},
+       {Set, setTableSettings},
+       {Join, joinTableSettings},
+       {Memory, memoryTableSettings},
+       {StripeLog, {}},
+       {Log, {}},
+       {TinyLog, {}},
+       {EmbeddedRocksDB, embeddedRocksDBTableSettings},
+       {Buffer, {}},
+       {MySQL, mySQLTableSettings},
+       {PostgreSQL, {}},
+       {SQLite, {}},
+       {MongoDB, {}},
+       {Redis, {}},
+       {S3, S3TableSettings},
+       {S3Queue, S3QueueTableSettings},
+       {Hudi, {}},
+       {DeltaLake, {}},
+       {IcebergS3, {}}};
+
 void loadFuzzerSettings(const FuzzConfig & fc)
 {
     if (!fc.storage_policies.empty())
