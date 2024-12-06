@@ -1,3 +1,6 @@
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
@@ -160,6 +163,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
+    extern const SettingsMap http_response_headers;
 }
 
 namespace ErrorCodes
@@ -172,9 +176,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -721,7 +727,9 @@ void logExceptionBeforeStart(
 
     if (settings[Setting::calculate_text_stack_trace])
         setExceptionStackTrace(elem);
-    logException(context, elem);
+
+    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
+    logException(context, elem, log_error);
 
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
@@ -868,56 +876,65 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
 #ifndef NDEBUG
-            /// Verify that AST formatting is consistent:
-            /// If you format AST, parse it back, and format it again, you get the same string.
-
-            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
-                /*max_length=*/0,
-                /*one_line=*/true,
-                /*show_secrets=*/true,
-                /*print_pretty_type_names=*/false,
-                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-
-            /// The query can become more verbose after formatting, so:
-            size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
-
-            ASTPtr ast2;
             try
             {
-                ast2 = parseQuery(
-                    parser,
-                    formatted1.data(),
-                    formatted1.data() + formatted1.size(),
-                    "",
-                    new_max_query_size,
-                    settings[Setting::max_parser_depth],
-                    settings[Setting::max_parser_backtracks]);
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                /// Verify that AST formatting is consistent:
+                /// If you format AST, parse it back, and format it again, you get the same string.
+
+                String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
+                    /*max_length=*/0,
+                    /*one_line=*/true,
+                    /*show_secrets=*/true,
+                    /*print_pretty_type_names=*/false,
+                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+
+                /// The query can become more verbose after formatting, so:
+                size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
+
+                ASTPtr ast2;
+                try
+                {
+                    ast2 = parseQuery(
+                        parser,
+                        formatted1.data(),
+                        formatted1.data() + formatted1.size(),
+                        "",
+                        new_max_query_size,
+                        settings[Setting::max_parser_depth],
+                        settings[Setting::max_parser_backtracks]);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                            formatted1, std::string_view(begin, end-begin));
+                    else
+                        throw;
+                }
+
+                chassert(ast2);
+
+                String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
+                    /*max_length=*/0,
+                    /*one_line=*/true,
+                    /*show_secrets=*/true,
+                    /*print_pretty_type_names=*/false,
+                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+
+                if (formatted1 != formatted2)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
-                        formatted1, std::string_view(begin, end-begin));
-
-                throw;
+                        "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
+                        formatted1, formatted2);
             }
-
-            chassert(ast2);
-
-            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
-                /*max_length=*/0,
-                /*one_line=*/true,
-                /*show_secrets=*/true,
-                /*print_pretty_type_names=*/false,
-                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-
-            if (formatted1 != formatted2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
-                    formatted1, formatted2);
+            catch (Exception & e)
+            {
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
+                if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                    throw;
+            }
 #endif
         }
 
@@ -1523,7 +1540,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context->getDefaultFormat();
 
-        if (format_name == "Null")
+        if (boost::iequals(format_name, "Null"))
             res.null_format = true;
     }
 
@@ -1570,7 +1587,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(istr, max_query_size + 1, /* trow_exception */ false, /* exact_limit */ {});
+        LimitReadBuffer limit(istr, {.read_no_more = max_query_size + 1});
         copyData(limit, out);
         out.finalize();
 
@@ -1666,6 +1683,33 @@ void executeQuery(
     /// The timezone was already set before query was processed,
     /// But `session_timezone` setting could be modified in the query itself, so we update the value.
     result_details.timezone = DateLUT::instance().getTimeZone();
+
+    const Map & additional_http_headers = context->getSettingsRef()[Setting::http_response_headers].value;
+    if (!additional_http_headers.empty())
+    {
+        for (const auto & key_value : additional_http_headers)
+        {
+            if (key_value.getType() != Field::Types::Tuple
+                || key_value.safeGet<Tuple>().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the `additional_http_headers` setting must be a Map");
+
+            if (key_value.safeGet<Tuple>().at(0).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys of the `additional_http_headers` setting must be Strings");
+
+            if (key_value.safeGet<Tuple>().at(1).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` setting must be Strings");
+
+            String key = key_value.safeGet<Tuple>().at(0).safeGet<String>();
+            String value = key_value.safeGet<Tuple>().at(1).safeGet<String>();
+
+            if (std::find_if(key.begin(), key.end(), isControlASCII) != key.end()
+                || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` cannot contain ASCII control characters");
+
+            if (!result_details.additional_headers.emplace(key, value).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `additional_http_headers` setting");
+        }
+    }
 
     auto & pipeline = streams.pipeline;
 

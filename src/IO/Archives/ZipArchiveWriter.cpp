@@ -310,6 +310,25 @@ void ZipArchiveWriter::finalize()
     finalized = true;
 }
 
+void ZipArchiveWriter::cancel() noexcept
+{
+    std::lock_guard lock{mutex};
+    if (finalized)
+        return;
+
+    if (zip_handle)
+    {
+        zipClose(zip_handle, /* global_comment= */ nullptr);
+        zip_handle = nullptr;
+    }
+
+    if (stream_info)
+    {
+        stream_info->getWriteBuffer().cancel();
+        stream_info.reset();
+    }
+}
+
 void ZipArchiveWriter::setCompression(const String & compression_method_, int compression_level_)
 {
     std::lock_guard lock{mutex};
