@@ -12,6 +12,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <numeric>
+#include <pdqsort.h>
 
 namespace DB
 {
@@ -152,16 +153,21 @@ private:
 
         PODArrayWithStackMemory<Float64, 1024> pred_cumsum_ratio(array_size);
 
+        Float64 pred_cumsum = 0;
         for (size_t i = 0; i < array_size; ++i)
         {
-            pred_cumsum_ratio[i] = pred_cumsum_ratio[i - 1] + sorted_array2[i] / total_sum;
+            pred_cumsum += sorted_array2[i] / total_sum;
+            pred_cumsum_ratio[i] = pred_cumsum;
         }
 
-        std::stable_sort(array2.begin(), array2.end());
+        pdqsort(array2.begin(), array2.end());
         PODArrayWithStackMemory<Float64, 1024> ltv_cumsum_ratio(array_size);
+
+        Float64 ltv_cumsum = 0;
         for (size_t i = 0; i < array_size; ++i)
         {
-            ltv_cumsum_ratio[i] = ltv_cumsum_ratio[i - 1] + array2[i] / total_sum;
+            ltv_cumsum += array2[i] / total_sum;
+            ltv_cumsum_ratio[i] = ltv_cumsum;
         }
 
         Float64 random_gain_cumsum_ratio = 0.5 * (array_size + 1);
@@ -180,7 +186,7 @@ private:
         PODArrayWithStackMemory<size_t, 1024> idx(array.size());
         std::iota(idx.begin(), idx.end(), 0);
 
-        std::stable_sort(idx.begin(), idx.end(), [&array](size_t i1, size_t i2) { return array[i1] < array[i2]; });
+        pdqsort(idx.begin(), idx.end(), [&array](size_t i1, size_t i2) { return array[i1] < array[i2]; });
         return idx;
     }
 };
