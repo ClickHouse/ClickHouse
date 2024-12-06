@@ -1726,7 +1726,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
         stop_fetches = 8 * has_replicated_merge_tree, start_fetches = 8 * has_replicated_merge_tree,
         stop_replicated_sends = 8 * has_replicated_merge_tree, start_replicated_sends = 8 * has_replicated_merge_tree,
         stop_replication_queues = 0 * has_replicated_merge_tree, start_replication_queues = 0 * has_replicated_merge_tree,
-        stop_pulling_replication_log = 8 * has_replicated_merge_tree, start_pulling_replication_log = 8 * has_replicated_merge_tree,
+        stop_pulling_replication_log = 0 * has_replicated_merge_tree, start_pulling_replication_log = 0 * has_replicated_merge_tree,
         sync_replica = 8 * has_replicated_merge_tree, sync_replicated_database = 8 * has_replicated_database,
         restart_replica = 8 * has_replicated_merge_tree, restore_replica = 8 * has_replicated_merge_tree, restart_replicas = 3,
         drop_filesystem_cache = 3, sync_file_cache = 1,
