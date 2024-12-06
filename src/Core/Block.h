@@ -68,8 +68,8 @@ public:
     }
 
     const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
-    const std::optional<ColumnWithTypeAndName> findSubcolumnByName(const std::string & name) const;
-    const std::optional<ColumnWithTypeAndName> findColumnOrSubcolumnByName(const std::string & name) const;
+    std::optional<ColumnWithTypeAndName> findSubcolumnByName(const std::string & name) const;
+    std::optional<ColumnWithTypeAndName> findColumnOrSubcolumnByName(const std::string & name) const;
 
     ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false)
     {

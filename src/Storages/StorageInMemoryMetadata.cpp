@@ -455,6 +455,16 @@ Block StorageInMemoryMetadata::getSampleBlock() const
     return res;
 }
 
+Block StorageInMemoryMetadata::getSampleBlockWithSubcolumns() const
+{
+    Block res;
+
+    for (const auto & column : getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
+
 const KeyDescription & StorageInMemoryMetadata::getPartitionKey() const
 {
     return partition_key;

@@ -1215,10 +1215,13 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     }
 
     /// Check for subcolumns in unknown required columns.
-    if (!unknown_required_source_columns.empty())
+    if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
     {
         for (const NameAndTypePair & pair : source_columns_ordinary)
         {
+            if (!pair.type->hasDynamicSubcolumns())
+                continue;
+
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {
                 auto [column_name, dynamic_subcolumn_name] = Nested::splitName(*it);
