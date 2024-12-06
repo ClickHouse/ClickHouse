@@ -33,6 +33,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
@@ -939,6 +940,13 @@ void Connection::sendQuery(
     }
 }
 
+
+void Connection::sendQueryPlan(const QueryPlan & query_plan)
+{
+    writeVarUInt(Protocol::Client::QueryPlan, *out);
+    query_plan.serialize(*out);
+    LOG_DEBUG(log_wrapper.get(), "Sent query plan");
+}
 
 void Connection::sendCancel()
 {

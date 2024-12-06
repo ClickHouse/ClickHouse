@@ -166,7 +166,10 @@ namespace Protocol
 
             SSHChallengeRequest = 11,       /// Request SSH signature challenge
             SSHChallengeResponse = 12,      /// Reply to SSH signature challenge
-            MAX = SSHChallengeResponse,
+
+            QueryPlan = 13,                 /// Query plan
+
+            MAX = QueryPlan,
         };
 
         inline const char * toString(UInt64 packet)

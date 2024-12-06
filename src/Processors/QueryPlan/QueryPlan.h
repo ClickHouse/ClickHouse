@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <list>
 #include <memory>
@@ -21,6 +23,7 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+class ReadBuffer;
 class WriteBuffer;
 
 class QueryPlan;
@@ -31,11 +34,14 @@ class Pipe;
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
 
+class ColumnSet;
 namespace JSONBuilder
 {
     class IItem;
     using ItemPtr = std::unique_ptr<IItem>;
 }
+
+struct QueryPlanAndSets;
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -55,11 +61,18 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
+    void serialize(WriteBuffer & out) const;
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
+
+    static void resolveReadFromTable(QueryPlan & plan, const ContextPtr & context);
+    static QueryPlan resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
+        const BuildQueryPipelineSettings & build_pipeline_settings,
+        bool do_optimize=true);
 
     struct ExplainPlanOptions
     {
@@ -124,6 +137,45 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     bool concurrency_control = false;
+};
+
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+
+/// This is a structure which contains a query plan and a list of StorageSet.
+/// The reason is that StorageSet is specified by name,
+/// and we do not want to resolve the storage name while deserializing.
+/// Now, it allows to deserialize the plan without the context.
+/// Potentially, it may help to get the atomic snapshot for all the storages.
+///
+/// Use resolveStorages to get an ordinary plan.
+struct QueryPlanAndSets
+{
+    struct Set
+    {
+        CityHash_v1_0_2::uint128 hash;
+        std::list<ColumnSet *> columns;
+    };
+    struct SetFromStorage : public Set
+    {
+        std::string storage_name;
+    };
+
+    struct SetFromTuple : public Set
+    {
+        ColumnsWithTypeAndName set_columns;
+    };
+
+    struct SetFromSubquery : public Set
+    {
+        std::unique_ptr<QueryPlan> plan;
+        std::list<SetFromSubquery> sets;
+    };
+
+    QueryPlan plan;
+    std::list<SetFromStorage> sets_from_storage;
+    std::list<SetFromTuple> sets_from_tuple;
+    std::list<SetFromSubquery> sets_from_subquery;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

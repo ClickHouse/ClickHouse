@@ -24,7 +24,7 @@ InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const AST
 
 BlockIO InterpreterShowAccessEntitiesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(), nullptr, getContext(), QueryFlags{ .internal = true }).second;
 }
 
 
