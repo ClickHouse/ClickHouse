@@ -423,23 +423,47 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     if (config_keys.empty())
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
 
+
+    size_t keys_with_static_shard_number = std::ranges::count_if(config_keys.begin(), config_keys.end(), [& config, & config_prefix](const String& key)
+    {
+        return config.has(config_prefix + key + ".shard_number");
+    });
+
+    if (keys_with_static_shard_number != 0 && keys_with_static_shard_number != config_keys.size())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_number must be specified for every shard(node) in the config or for no one. Config: {}", config_prefix);
+    }
+
+    bool use_static_shard_number = keys_with_static_shard_number == config_keys.size();
+    std::unordered_set<UInt32> used_shard_nums;
     UInt32 current_shard_num = 1;
+
     for (const auto & key : config_keys)
     {
-        if (startsWith(key, "node"))
+        bool shard_with_replicas = startsWith(key, "shard");
+        bool shard_without_replicas = startsWith(key, "node");
+
+        if (!shard_with_replicas && !shard_without_replicas)
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
+
+        const auto & prefix = config_prefix + key + ((shard_with_replicas) ? ".":  "");
+        const auto weight = config.getInt(prefix + ".weight", default_weight);
+        const auto shard_number = use_static_shard_number ? config.getUInt(prefix + ".shard_number") : current_shard_num;
+        if (use_static_shard_number)
+        {
+            if (!shard_number || !used_shard_nums.insert(shard_number).second)
+                throw Exception(ErrorCodes::INVALID_SHARD_ID, "Field shard_number is incorrect. It must be unique in cluster and 1-based.");
+        }
+
+        if (shard_without_replicas)
         {
             /// Shard without replicas.
-
             Addresses addresses;
-
-            const auto & prefix = config_prefix + key;
-            const auto weight = config.getInt(prefix + ".weight", default_weight);
-
-            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
+            addresses.emplace_back(config, prefix, cluster_name, secret, shard_number, 1);
             const auto & address = addresses.back();
 
             ShardInfo info;
-            info.shard_num = current_shard_num;
+            info.shard_num = shard_number;
             info.weight = weight;
 
             if (address.is_local)
@@ -471,10 +495,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             shards_info.emplace_back(std::move(info));
             addresses_with_failover.emplace_back(std::move(addresses));
         }
-        else if (startsWith(key, "shard"))
+        else if (shard_with_replicas)
         {
             /// Shard with replicas.
-
             Poco::Util::AbstractConfiguration::Keys replica_keys;
             config.keys(config_prefix + key, replica_keys);
 
@@ -482,28 +505,25 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             Addresses & replica_addresses = addresses_with_failover.back();
             UInt32 current_replica_num = 1;
 
-            const auto & partial_prefix = config_prefix + key + ".";
-            const auto weight = config.getUInt(partial_prefix + ".weight", default_weight);
-
-            bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
+            bool internal_replication = config.getBool(prefix + ".internal_replication", false);
 
             ShardInfoInsertPathForInternalReplication insert_paths;
             /// "_all_replicas" is a marker that will be replaced with all replicas
             /// (for creating connections in the Distributed engine)
-            insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
+            insert_paths.compact = fmt::format("shard{}_all_replicas", shard_number);
 
             for (const auto & replica_key : replica_keys)
             {
-                if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication"))
+                if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication") || startsWith(replica_key, "shard_number"))
                     continue;
 
                 if (startsWith(replica_key, "replica"))
                 {
                     replica_addresses.emplace_back(config,
-                        partial_prefix + replica_key,
+                        prefix + replica_key,
                         cluster_name,
                         secret,
-                        current_shard_num,
+                        shard_number,
                         current_replica_num);
                     ++current_replica_num;
 
@@ -523,13 +543,11 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 settings,
                 replica_addresses,
                 /* treat_local_as_remote = */ false,
-                current_shard_num,
+                shard_number,
                 weight,
                 std::move(insert_paths),
                 internal_replication);
         }
-        else
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
 
         ++current_shard_num;
     }
