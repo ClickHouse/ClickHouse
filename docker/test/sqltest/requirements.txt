@@ -26,3 +26,4 @@ tzlocal==5.2
 wadllib==1.3.6
 wheel==0.37.1
 zipp==1.0.0
+py-cpuinfo==9.0.0

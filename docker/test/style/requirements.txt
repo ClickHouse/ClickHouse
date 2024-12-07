@@ -56,3 +56,4 @@ wheel==0.38.1
 wrapt==1.16.0
 yamllint==1.26.3
 yarl==1.9.4
+py-cpuinfo==9.0.0

@@ -44,6 +44,8 @@ from subprocess import PIPE, Popen
 from time import sleep, time
 from typing import Dict, List, Optional, Set, Tuple, Union
 
+from cpuinfo import get_cpu_info
+
 try:
     import termcolor  # type: ignore
 except ImportError:
@@ -789,6 +791,10 @@ def get_localzone():
     return os.getenv("TZ", "/".join(os.readlink("/etc/localtime").split("/")[-2:]))
 
 
+def _running_on_arm():
+    return "arm" in get_cpu_info()["arch"].lower()
+
+
 # Refer to `tests/integration/helpers/random_settings.py` for integration test random settings
 class SettingsRandomizer:
     settings = {
@@ -862,7 +868,8 @@ class SettingsRandomizer:
         "filesystem_prefetch_step_bytes": lambda: random.choice(
             [0, "100Mi"]
         ),  # 0 means 'auto'
-        # "compile_expressions": lambda: random.randint(0, 1), - this setting has a bug: https://github.com/ClickHouse/ClickHouse/issues/51264
+        # It crashes CH on ARM for already unclear reason, see discussion in https://github.com/ClickHouse/ClickHouse/pull/70598
+        "compile_expressions": lambda: 0 if _running_on_arm() else random.randint(0, 1),
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),

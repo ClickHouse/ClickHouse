@@ -5,3 +5,4 @@ pandas==1.5.3
 scipy==1.12.0
 pyarrow==18.0.0
 grpcio==1.47.0
+py-cpuinfo==9.0.0

@@ -3,4 +3,5 @@ numpy==1.26.4
 requests==2.32.3
 pandas==1.5.3
 scipy==1.12.0
+py-cpuinfo==9.0.0
 #https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl
