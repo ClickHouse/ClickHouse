@@ -143,6 +143,11 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                 });
         }
         pool->wait();
+
+        for (size_t i = 1; i < slots; ++i)
+        {
+            hash_joins[i]->data->getJoinedData() = hash_joins[0]->data->getJoinedData();
+        }
     }
     catch (...)
     {
