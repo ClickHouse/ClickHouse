@@ -92,7 +92,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    StreamingHandleErrorMode getHandleKafkaErrorMode() const;
+    ExtStreamingHandleErrorMode getHandleKafkaErrorMode() const;
 
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
