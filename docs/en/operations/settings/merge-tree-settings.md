@@ -1115,3 +1115,13 @@ When `cache_populated_by_fetch` is disabled (the default setting), new data part
 If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action. 
 
 Default value: 0.
+
+## enable_minmax_index_for_all_numeric_columns
+When enabled, this setting adds minmax indices for all numeric columns of the table. When a new numeric column is added after table is created and if setting is enabled, then index is added for that too.
+
+Default value: false.
+
+## enable_minmax_index_for_all_string_columns
+When enabled, this setting adds minmax indices for all string columns of the table. When a new string column is added after table is created and if setting is enabled, then index is added for that too.
+
+Default value: false.
