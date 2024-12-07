@@ -68,7 +68,7 @@ public:
     virtual ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
-    virtual String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info, QueryStatusPtr process_list_element);
+    virtual String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info);
 
     /// Host ID (name:port) for logging purposes
     /// Note that in each task hosts are identified individually by name:port from initiator server cluster config
