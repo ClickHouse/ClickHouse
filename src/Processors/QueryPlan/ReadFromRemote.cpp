@@ -378,7 +378,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     LoggerPtr log_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     std::vector<ConnectionPoolPtr> pools_to_use_,
-    std::optional<size_t> exclude_pool_index_)
+    std::optional<size_t> exclude_pool_index_,
+    std::optional<RemoteQueryExecutor::Extension> extension_)
     : ISourceStep(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -393,6 +394,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , log(log_)
     , pools_to_use(std::move(pools_to_use_))
     , exclude_pool_index(exclude_pool_index_)
+    , extension(std::move(extension_))
 {
     chassert(cluster->getShardCount() == 1);
 
@@ -478,6 +480,10 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
     assert(stage != QueryProcessingStage::Complete);
     assert(output_header);
 
+    auto default_extension = RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)};
+    if (extension)
+        default_extension.task_iterator = extension.value().task_iterator;
+
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
         query_string,
@@ -487,10 +493,11 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
         scalars,
         external_tables,
         stage,
-        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
+        default_extension);
 
     remote_query_executor->setLogger(log);
-    remote_query_executor->setMainTable(storage_id);
+    if (storage_id.database_name != "_table_function")
+        remote_query_executor->setMainTable(storage_id);
 
     pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), *output_header);
