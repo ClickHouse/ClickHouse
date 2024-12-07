@@ -104,12 +104,8 @@ Chunk IRowInputFormat::read()
     }
 
     const Block & header = getPort().getHeader();
-
     size_t num_columns = header.columns();
-    MutableColumns columns(num_columns);
-
-    for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = header.getByPosition(i).type->createColumn(*serializations[i]);
+    MutableColumns columns = header.cloneEmptyColumns(serializations);
 
     block_missing_values.clear();
 

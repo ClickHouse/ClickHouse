@@ -449,6 +449,14 @@ MutableColumns Block::cloneEmptyColumns() const
     return columns;
 }
 
+MutableColumns Block::cloneEmptyColumns(const Serializations & serializations) const
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].type->createColumn(*serializations[i]);
+    return columns;
+}
 
 Columns Block::getColumns() const
 {
