@@ -307,7 +307,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
             ObjectStorageType::Azure, config, config_prefix, name,
             AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
-            params.endpoint.getEndpointWithoutContainer());
+            params.endpoint.getServiceEndpoint());
     };
 
     factory.registerObjectStorageType("azure_blob_storage", creator);

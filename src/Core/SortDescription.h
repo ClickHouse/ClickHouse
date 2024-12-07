@@ -143,4 +143,11 @@ void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
 std::string dumpSortDescription(const SortDescription & description);
 
 JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
+
+class WriteBuffer;
+class ReadBuffer;
+
+void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out);
+void deserializeSortDescription(SortDescription & sort_description, ReadBuffer & in);
+
 }
