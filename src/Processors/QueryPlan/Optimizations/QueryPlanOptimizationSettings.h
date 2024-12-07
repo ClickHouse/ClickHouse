@@ -80,6 +80,8 @@ struct QueryPlanOptimizationSettings
 
     bool build_sets = true;
 
+    bool keep_logical_steps = false;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

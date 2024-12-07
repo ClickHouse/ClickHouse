@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
@@ -202,10 +203,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     auto & parent = parent_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
 
+    auto * logical_join = typeid_cast<JoinStepLogical *>(child.get());
     auto * join = typeid_cast<JoinStep *>(child.get());
     auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
 
-    if (!join && !filled_join)
+    if (!join && !filled_join && !logical_join)
         return 0;
 
     /** For equivalent JOIN with condition `ON lhs.x_1 = rhs.y_1 AND lhs.x_2 = rhs.y_2 ...`, we can build equivalent sets of columns and this
@@ -229,21 +231,27 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       */
 
     const auto & join_header = child->getOutputHeader();
-    const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
+    const TableJoin * table_join_ptr = nullptr;
+    if (join)
+        table_join_ptr = &join->getJoin()->getTableJoin();
+    else if (filled_join)
+        table_join_ptr = &filled_join->getJoin()->getTableJoin();
+
     const auto & left_stream_input_header = child->getInputHeaders().front();
     const auto & right_stream_input_header = child->getInputHeaders().back();
 
-    if (table_join.kind() == JoinKind::Full)
+    if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
+        return 0;
+    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Full)
         return 0;
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
 
-    bool has_single_clause = table_join.getClauses().size() == 1;
-
+    bool has_single_clause = table_join_ptr && table_join_ptr->getClauses().size() == 1;
     if (has_single_clause && !filled_join)
     {
-        const auto & join_clause = table_join.getClauses()[0];
+        const auto & join_clause = table_join_ptr->getClauses()[0];
         size_t key_names_size = join_clause.key_names_left.size();
 
         for (size_t i = 0; i < key_names_size; ++i)
@@ -289,16 +297,24 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     bool left_stream_filter_push_down_input_columns_available = true;
     bool right_stream_filter_push_down_input_columns_available = true;
 
-    if (table_join.kind() == JoinKind::Left)
+    if (table_join_ptr && table_join_ptr->kind() == JoinKind::Left)
         right_stream_filter_push_down_input_columns_available = false;
-    else if (table_join.kind() == JoinKind::Right)
+    else if (table_join_ptr && table_join_ptr->kind() == JoinKind::Right)
+        left_stream_filter_push_down_input_columns_available = false;
+
+    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Left)
+        right_stream_filter_push_down_input_columns_available = false;
+    else if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
       * 2. ASOF Right join is not supported.
       */
-    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join.strictness() != JoinStrictness::Asof;
+    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr && table_join_ptr->strictness() != JoinStrictness::Asof;
+    if (logical_join)
+        allow_push_down_to_right = !logical_join->hasPreparedJoinStorage() && logical_join->getJoinInfo().strictness != JoinStrictness::Asof;
+
     if (!allow_push_down_to_right)
         right_stream_filter_push_down_input_columns_available = false;
 
