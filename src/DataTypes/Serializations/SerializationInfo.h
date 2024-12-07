@@ -41,6 +41,7 @@ public:
         void add(const Data & other);
         void remove(const Data & other);
         void addDefaults(size_t length);
+        double getRatioOfDefaultRows() const;
     };
 
     SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_);

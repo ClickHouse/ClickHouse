@@ -755,7 +755,7 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
     values->getExtremes(min, max);
 }
 
-void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const
+void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit, ssize_t) const
 {
     const auto & offsets_data = getOffsetsData();
     const auto * start = from ? std::lower_bound(offsets_data.begin(), offsets_data.end(), from) : offsets_data.begin();
