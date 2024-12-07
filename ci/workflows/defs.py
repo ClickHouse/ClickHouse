@@ -399,7 +399,7 @@ class Jobs:
         runs_on=["...from params..."],
         requires=[],
         command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
-        run_in_docker="clickhouse/binary-builder",
+        run_in_docker="clickhouse/binary-builder+--network=host",
         timeout=3600 * 2,
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -418,15 +418,15 @@ class Jobs:
         ),
     ).parametrize(
         parameter=[
-            "amd_debug",
-            "amd_release",
-            "amd_asan",
-            "amd_tsan",
-            "amd_msan",
-            "amd_ubsan",
-            "amd_binary",
-            "arm_release",
-            "arm_asan",
+            "package_amd_debug",
+            "package_amd_release",
+            "package_amd_asan",
+            "package_amd_tsan",
+            "package_amd_msan",
+            "package_amd_ubsan",
+            "package_amd_binary",
+            "package_arm_release",
+            "package_arm_asan",
         ],
         provides=[
             [

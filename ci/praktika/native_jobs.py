@@ -71,7 +71,7 @@ def _build_dockers(workflow, job_name):
     ):
         print("Install docker container driver")
         if not Shell.check(
-            "docker buildx create --use --name mybuilder --driver docker-container",
+            "docker buildx create --use --name praktika-builder --driver docker-container",
             verbose=True,
         ):
             job_status = Result.Status.FAILED
