@@ -1,4 +1,4 @@
-set mutations_sync = 2;
+SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS tbl;
 DROP TABLE IF EXISTS tbl2;
@@ -14,51 +14,51 @@ Engine=MergeTree()
 ORDER BY key;
 
 SELECT 'Default';
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Enable enable_minmax_index_for_all_numeric_columns';
 ALTER TABLE tbl MODIFY SETTING enable_minmax_index_for_all_numeric_columns = true;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Disable enable_minmax_index_for_all_numeric_columns';
 ALTER TABLE tbl MODIFY SETTING enable_minmax_index_for_all_numeric_columns = false;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Enable enable_minmax_index_for_all_numeric_columns again';
 ALTER TABLE tbl MODIFY SETTING enable_minmax_index_for_all_numeric_columns = true;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Add numeric column';
 ALTER TABLE tbl ADD COLUMN w Int;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Drop numeric column';
 ALTER TABLE tbl DROP COLUMN w;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Add string column';
 ALTER TABLE tbl ADD COLUMN s String;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Enable enable_minmax_index_for_all_string_columns';
 ALTER TABLE tbl MODIFY SETTING enable_minmax_index_for_all_string_columns = true;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Add string column';
 ALTER TABLE tbl ADD COLUMN t String;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Drop string column';
 ALTER TABLE tbl DROP COLUMN t;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Rename column s to ss';
 ALTER TABLE tbl RENAME COLUMN s to ss;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 SELECT 'Disable enable_minmax_index_for_all_string_columns';
 ALTER TABLE tbl MODIFY SETTING enable_minmax_index_for_all_string_columns = false;
-SHOW INDICES FROM tbl;
+SELECT name,type,expr FROM system.data_skipping_indices WHERE table = 'tbl';
 
 CREATE TABLE tbl2
 (
