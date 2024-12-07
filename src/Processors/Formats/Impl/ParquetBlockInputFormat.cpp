@@ -667,7 +667,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         {
             bf_reader = parquet::BloomFilterReader::Make(arrow_file, metadata, bf_reader_properties, nullptr);
 
-            auto hash_one = [&](size_t column_idx, const Field & f) -> std::optional<size_t>
+            auto hash_one = [&](size_t column_idx, const Field & f) -> std::optional<uint64_t>
             {
                 const auto * parquet_column_descriptor
                     = getColumnDescriptorIfBloomFilterIsPresent(metadata->RowGroup(0), index_mapping, column_idx);
@@ -680,7 +680,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                 return parquetTryHashField(f, parquet_column_descriptor);
             };
 
-            auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<std::vector<size_t>>
+            auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<std::vector<uint64_t>>
             {
                 const auto * parquet_column_descriptor
                     = getColumnDescriptorIfBloomFilterIsPresent(metadata->RowGroup(0), index_mapping, column_idx);

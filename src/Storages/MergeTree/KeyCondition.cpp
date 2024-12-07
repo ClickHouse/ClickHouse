@@ -3300,8 +3300,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
     return rpn_stack[0];
 }
 
-void KeyCondition::prepareBloomFilterData(std::function<std::optional<size_t>(size_t column_idx, const Field &)> hash_one,
-                                          std::function<std::optional<std::vector<size_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
+void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
+                                          std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
 {
     for (auto & rpn_element : rpn)
     {
@@ -3330,10 +3330,7 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<size_t>(si
                 continue;
             }
 
-            KeyCondition::BloomFilterData::HashesForColumns::value_type hashes_for_column;
-            hashes_for_column.emplace_back(*hashed_value);
-
-            hashes.emplace_back(static_cast<std::vector<uint64_t>>(std::move(hashes_for_column)));
+            hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
 
             std::vector<std::size_t> key_columns_for_element;
             key_columns_for_element.emplace_back(rpn_element.key_column);
