@@ -2328,7 +2328,7 @@ def test_list_and_delete_race(started_cluster):
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 1000
-    row_num = 10
+    row_num = 1
 
     for instance in [node, node_2]:
         create_table(
@@ -2350,7 +2350,7 @@ def test_list_and_delete_race(started_cluster):
             },
         )
 
-    threads = 6
+    threads = 10
     total_rows = row_num * files_to_generate * (threads + 1)
 
     busy_pool = Pool(threads)
