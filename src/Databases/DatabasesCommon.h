@@ -47,6 +47,7 @@ public:
 protected:
     Tables tables TSA_GUARDED_BY(mutex);
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
+    std::shared_ptr<IDisk> db_disk;
     LoggerPtr log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
