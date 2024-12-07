@@ -1,103 +1,103 @@
 Arrow
-int8	Nullable(Int8)					
-uint8	Nullable(UInt8)					
-int16	Nullable(Int16)					
-uint16	Nullable(UInt16)					
-int32	Nullable(Int32)					
-uint32	Nullable(UInt32)					
-int64	Nullable(Int64)					
-uint64	Nullable(UInt64)					
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
 0	0	0	0	0	0	0	0
 -1	1	-1	1	-1	1	-1	1
-float32	Nullable(Float32)					
-float64	Nullable(Float64)					
-decimal32	Nullable(Decimal(9, 5))					
-decimal64	Nullable(Decimal(18, 5))					
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
-date	Nullable(UInt16)					
-date32	Nullable(Date32)					
+date	UInt16					
+date32	Date32					
 0	1970-01-01
 1	1970-01-02
-str	Nullable(String)					
-fixed_string	Nullable(FixedString(3))					
+str	String					
+fixed_string	FixedString(3)					
 Str: 0	100
 Str: 1	200
-array	Array(Nullable(UInt64))					
-tuple	Tuple(\n    `1` Nullable(UInt64),\n    `2` Nullable(String))					
-map	Map(String, Nullable(UInt64))					
+array	Array(UInt64)					
+tuple	Tuple(\n    `1` UInt64,\n    `2` String)					
+map	Map(String, UInt64)					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(\n    `1` Array(Nullable(UInt64)),\n    `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(Nullable(UInt64))),\n        `2` Map(UInt64, Array(Tuple(\n            `1` Nullable(UInt64),\n            `2` Nullable(String))))),\n    `2` Nullable(UInt8))					
+nested1	Array(Tuple(\n    `1` Array(UInt64),\n    `2` Map(String, UInt64)))					
+nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(UInt64)),\n        `2` Map(UInt64, Array(Tuple(\n            `1` UInt64,\n            `2` String)))),\n    `2` UInt8)					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 ArrowStream
-int8	Nullable(Int8)					
-uint8	Nullable(UInt8)					
-int16	Nullable(Int16)					
-uint16	Nullable(UInt16)					
-int32	Nullable(Int32)					
-uint32	Nullable(UInt32)					
-int64	Nullable(Int64)					
-uint64	Nullable(UInt64)					
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
 0	0	0	0	0	0	0	0
 -1	1	-1	1	-1	1	-1	1
-float32	Nullable(Float32)					
-float64	Nullable(Float64)					
-decimal32	Nullable(Decimal(9, 5))					
-decimal64	Nullable(Decimal(18, 5))					
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
-date	Nullable(UInt16)					
-date32	Nullable(Date32)					
+date	UInt16					
+date32	Date32					
 0	1970-01-01
 1	1970-01-02
-str	Nullable(String)					
-fixed_string	Nullable(FixedString(3))					
+str	String					
+fixed_string	FixedString(3)					
 Str: 0	100
 Str: 1	200
-array	Array(Nullable(UInt64))					
-tuple	Tuple(\n    `1` Nullable(UInt64),\n    `2` Nullable(String))					
-map	Map(String, Nullable(UInt64))					
+array	Array(UInt64)					
+tuple	Tuple(\n    `1` UInt64,\n    `2` String)					
+map	Map(String, UInt64)					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(\n    `1` Array(Nullable(UInt64)),\n    `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(Nullable(UInt64))),\n        `2` Map(UInt64, Array(Tuple(\n            `1` Nullable(UInt64),\n            `2` Nullable(String))))),\n    `2` Nullable(UInt8))					
+nested1	Array(Tuple(\n    `1` Array(UInt64),\n    `2` Map(String, UInt64)))					
+nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(UInt64)),\n        `2` Map(UInt64, Array(Tuple(\n            `1` UInt64,\n            `2` String)))),\n    `2` UInt8)					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 Parquet
-int8	Nullable(Int8)					
-uint8	Nullable(UInt8)					
-int16	Nullable(Int16)					
-uint16	Nullable(UInt16)					
-int32	Nullable(Int32)					
-uint32	Nullable(UInt32)					
-int64	Nullable(Int64)					
-uint64	Nullable(UInt64)					
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
 0	0	0	0	0	0	0	0
 -1	1	-1	1	-1	1	-1	1
-float32	Nullable(Float32)					
-float64	Nullable(Float64)					
-decimal32	Nullable(Decimal(9, 5))					
-decimal64	Nullable(Decimal(18, 5))					
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
-date	Nullable(UInt16)					
-date32	Nullable(Date32)					
+date	UInt16					
+date32	Date32					
 0	1970-01-01
 1	1970-01-02
-str	Nullable(String)					
-fixed_string	Nullable(FixedString(3))					
+str	String					
+fixed_string	FixedString(3)					
 Str: 0	100
 Str: 1	200
-array	Array(Nullable(UInt64))					
-tuple	Tuple(\n    `1` Nullable(UInt64),\n    `2` Nullable(String))					
-map	Map(String, Nullable(UInt64))					
+array	Array(UInt64)					
+tuple	Tuple(\n    `1` UInt64,\n    `2` String)					
+map	Map(String, UInt64)					
 [0,1]	(0,'0')	{'0':0}
 [1,2]	(1,'1')	{'1':1}
-nested1	Array(Tuple(\n    `1` Array(Nullable(UInt64)),\n    `2` Map(String, Nullable(UInt64))))					
-nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(Nullable(UInt64))),\n        `2` Map(UInt64, Array(Tuple(\n            `1` Nullable(UInt64),\n            `2` Nullable(String))))),\n    `2` Nullable(UInt8))					
+nested1	Array(Tuple(\n    `1` Array(UInt64),\n    `2` Map(String, UInt64)))					
+nested2	Tuple(\n    `1` Tuple(\n        `1` Array(Array(UInt64)),\n        `2` Map(UInt64, Array(Tuple(\n            `1` UInt64,\n            `2` String)))),\n    `2` UInt8)					
 [([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
 [([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
 ORC

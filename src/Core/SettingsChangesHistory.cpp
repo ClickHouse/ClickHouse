@@ -69,6 +69,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
+            {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
         }
     },

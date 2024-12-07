@@ -52,7 +52,7 @@ desc file('02841.parquet');
 -- then e.g. for a query that filters by `x BETWEEN a AND b`:
 --   select sum(c), sum(h) from (select count() as c, sum(number) as h, min(x) as mn, max(x) as mx from t group by group) where a <= mx and b >= mn;
 
--- Go over all types individually.
+select '# Go over all types individually';
 select count(), sum(number) from file('02841.parquet') where indexHint(u8 in (10, 15, 250));
 select count(), sum(number) from file('02841.parquet') where indexHint(i8 between -3 and 2);
 select count(), sum(number) from file('02841.parquet') where indexHint(u16 between 4000 and 61000 or u16 == 42);
@@ -76,7 +76,7 @@ select count(), sum(number) from file('02841.parquet') where indexHint(d64 betwe
 select count(), sum(number) from file('02841.parquet') where indexHint(d128 between '-0.00000000000011'::Decimal128(20) and 0.00000000000006::Decimal128(20));
 select count(), sum(number) from file('02841.parquet') where indexHint(d256 between '-0.00000000000000000000000000011'::Decimal256(40) and 0.00000000000000000000000000006::Decimal256(35));
 
--- Some random other cases.
+select '# Some random other cases';
 select count(), sum(number) from file('02841.parquet') where indexHint(0);
 select count(), sum(number) from file('02841.parquet') where indexHint(s like '99%' or u64 == 2000);
 select count(), sum(number) from file('02841.parquet') where indexHint(s like 'z%');
@@ -86,12 +86,12 @@ select count(), sum(number) from file('02841.parquet') where indexHint(u64 + 100
 select count(), sum(number) from file('02841.parquet') where indexHint(u64 + 1000000 == 1001000) settings input_format_parquet_filter_push_down = 0;
 select count(), sum(number) from file('02841.parquet') where indexHint(u32 + 1000000 == 999000);
 
--- Very long string, which makes the Parquet encoder omit the corresponding min/max stat.
+select '# Very long string, which makes the Parquet encoder omit the corresponding min/max stat';
 insert into function file('02841.parquet')
     select arrayStringConcat(range(number*1000000)) as s from numbers(2);
 select count() from file('02841.parquet') where indexHint(s > '');
 
--- Nullable and LowCardinality.
+select '# Nullable and LowCardinality';
 insert into function file('02841.parquet') select
     number,
     if(number%234 == 0, NULL, number) as sometimes_null,
@@ -102,6 +102,7 @@ insert into function file('02841.parquet') select
     toLowCardinality(if(number%345 == 0, number::String, NULL)) as mostly_null_lc
     from numbers(1000);
 
+desc file('02841.parquet');
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null is NULL);
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null_lc is NULL);
 select count(), sum(number) from file('02841.parquet') where indexHint(mostly_null is not NULL);
@@ -116,7 +117,7 @@ select count(), sum(number) from file('02841.parquet') where indexHint(never_nul
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null < 150);
 select count(), sum(number) from file('02841.parquet') where indexHint(sometimes_null_lc < 150);
 
--- Settings that affect the table schema or contents.
+select '# Settings that affect the table schema or contents';
 insert into function file('02841.parquet') select
     number,
     if(number%234 == 0, NULL, number + 100) as positive_or_null,
@@ -132,7 +133,7 @@ select count(), sum(number) from file('02841.parquet') where indexHint(string_or
 select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, string_or_null String') where indexHint(string_or_null == '');
 select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where indexHint(nEgAtIvE_oR_nUlL > -50) settings input_format_parquet_case_insensitive_column_matching = 1;
 
--- Bad type conversions.
+select '# Bad type conversions';
 insert into function file('02841.parquet') select 42 as x;
 select * from file('02841.parquet', Parquet, 'x Nullable(String)') where x not in (1);
 insert into function file('t.parquet', Parquet, 'x String') values ('1'), ('100'), ('2');

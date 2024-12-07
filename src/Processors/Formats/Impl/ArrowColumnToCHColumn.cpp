@@ -745,6 +745,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
+    bool make_nullable_if_low_cardinality,
     const ReadColumnFromArrowColumnSettings & settings)
 {
     switch (arrow_column->type()->id())
@@ -1002,7 +1003,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         case arrow::Type::DICTIONARY:
         {
             auto & dict_info = dictionary_infos[column_name];
-            const auto is_lc_nullable = arrow_column->null_count() > 0 || (type_hint && type_hint->isLowCardinalityNullable());
 
             /// Load dictionary values only once and reuse it.
             if (!dict_info.values)
@@ -1035,7 +1035,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     }
                 }
 
-                auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_column.type) : dict_column.type);
+                auto lc_type = std::make_shared<DataTypeLowCardinality>(make_nullable_if_low_cardinality ? makeNullable(dict_column.type) : dict_column.type);
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
@@ -1052,9 +1052,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
-            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, is_lc_nullable);
+            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, make_nullable_if_low_cardinality);
             auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column);
-            auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_info.values->type) : dict_info.values->type);
+            auto lc_type = std::make_shared<DataTypeLowCardinality>(make_nullable_if_low_cardinality ? makeNullable(dict_info.values->type) : dict_info.values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
         }
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
@@ -1110,7 +1110,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     bool is_map_nested_column,
     const ReadColumnFromArrowColumnSettings & settings)
 {
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && type_hint->isNullable())) && settings.allow_inferring_nullable_columns;
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
@@ -1127,6 +1127,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             dictionary_infos,
             nested_type_hint,
             is_map_nested_column,
+            /*make_nullable_if_low_cardinality*/ false,
             settings);
 
         if (!nested_column.column)
@@ -1144,6 +1145,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         dictionary_infos,
         type_hint,
         is_map_nested_column,
+        /*make_nullable_if_low_cardinality*/ read_as_nullable_column,
         settings);
 }
 
