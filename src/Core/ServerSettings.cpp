@@ -59,7 +59,7 @@ namespace DB
     DECLARE(UInt64, restore_threads, 16, "The maximum number of threads to execute RESTORE requests.", 0) \
     DECLARE(Bool, shutdown_wait_backups_and_restores, true, "If set to true ClickHouse will wait for running backups and restores to finish before shutdown.", 0) \
     DECLARE(Double, cannot_allocate_thread_fault_injection_probability, 0, "For testing purposes.", 0) \
-    DECLARE(Int32, max_connections, 1024, "Max server connections.", 0) \
+    DECLARE(Int32, max_connections, 4096, "Max server connections.", 0) \
     DECLARE(UInt32, asynchronous_metrics_update_period_s, 1, "Period in seconds for updating asynchronous metrics.", 0) \
     DECLARE(Bool, asynchronous_metrics_enable_heavy_metrics, false, "Enable the calculation of heavy asynchronous metrics.", 0) \
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, "Period in seconds for updating heavy asynchronous metrics.", 0) \
