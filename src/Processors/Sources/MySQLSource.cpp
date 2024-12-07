@@ -293,7 +293,8 @@ namespace
                 if (point_type != 1)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only Point data type is supported");
 
-                Float64 x, y;
+                Float64 x;
+                Float64 y;
                 if (endian == 1)
                 {
                     readBinaryLittleEndian(x, payload);

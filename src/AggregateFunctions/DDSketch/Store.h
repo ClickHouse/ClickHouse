@@ -93,7 +93,8 @@ public:
     {
 
         // Calculate the size of the dense and sparse encodings to choose the smallest one
-        UInt64 num_bins = 0, num_non_empty_bins = 0;
+        UInt64 num_bins = 0;
+        UInt64 num_non_empty_bins = 0;
         if (count != 0)
         {
             num_bins = max_key - min_key + 1;
