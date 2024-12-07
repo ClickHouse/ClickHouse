@@ -360,6 +360,19 @@ int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs,
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
 }
 
+bool ColumnLowCardinality::equalsAt(size_t n, size_t m, const IColumn & rhs_) const
+{
+    const auto & rhs = assert_cast<const ColumnLowCardinality &>(rhs_);
+
+    size_t n_index = getIndexes().getUInt(n);
+    size_t m_index = rhs.getIndexes().getUInt(m);
+
+    if (&getDictionary() == &rhs.getDictionary())
+        return n_index == m_index;
+
+    return getDictionary().equalsAt(n_index, m_index, rhs.getDictionary());
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #else

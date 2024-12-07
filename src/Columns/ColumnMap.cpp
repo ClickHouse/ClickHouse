@@ -232,6 +232,12 @@ int ColumnMap::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
     return nested->compareAt(n, m, rhs_map.getNestedColumn(), nan_direction_hint);
 }
 
+bool ColumnMap::equalsAt(size_t n, size_t m, const IColumn & rhs) const
+{
+    const auto & rhs_map = assert_cast<const ColumnMap &>(rhs);
+    return nested->equalsAt(n, m, rhs_map.getNestedColumn());
+}
+
 void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {

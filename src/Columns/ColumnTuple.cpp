@@ -528,6 +528,17 @@ int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs,
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
+bool ColumnTuple::equalsAt(size_t n, size_t m, const IColumn & rhs) const
+{
+    const auto & rhs_columns = assert_cast<const ColumnTuple &>(rhs).columns;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (!columns[i]->equalsAt(n, m, *rhs_columns[i]))
+            return false;
+    }
+    return true;
+}
+
 template <bool positive>
 struct ColumnTuple::Less
 {

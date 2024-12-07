@@ -389,6 +389,8 @@ public:
     }
 #endif
 
+    virtual bool equalsAt(size_t n, size_t m, const IColumn & rhs) const = 0;
+
 #if USE_EMBEDDED_COMPILER
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }

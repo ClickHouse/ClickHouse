@@ -1253,6 +1253,11 @@ int ColumnVariant::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_
     return getVariantByGlobalDiscriminator(left_discr).compareAt(offsetAt(n), rhs_variant.offsetAt(m), rhs_variant.getVariantByGlobalDiscriminator(right_discr), nan_direction_hint);
 }
 
+bool ColumnVariant::equalsAt(size_t n, size_t m, const IColumn & rhs) const
+{
+    return compareAt(n, m, rhs, 1) == 0;
+}
+
 struct ColumnVariant::ComparatorBase
 {
     const ColumnVariant & parent;
