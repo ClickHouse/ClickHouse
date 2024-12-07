@@ -76,7 +76,7 @@ template <>
 struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
         Float64 left_float
             = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
