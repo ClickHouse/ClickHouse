@@ -961,7 +961,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    const bool allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
+                    auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & /*table_expression_node*/)
                     {
                         const JoinNode * join_node = join_tree_node->as<JoinNode>();
                         if (!join_node)
@@ -969,12 +969,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
-                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right
-                            || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
+                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right)
+                            return true;
+
+                        if (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All)
+                            // return join_node->getLeftTableExpression() == table_expression_node;
                             return true;
 
                         return false;
-                    }(parent_join_tree);
+                    };
 
                     if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
@@ -998,7 +1001,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context) && allow_parallel_replicas_for_table_expression)
+                    else if (
+                        ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
+                        && allow_parallel_replicas_for_table_expression(parent_join_tree, table_expression))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
@@ -2002,10 +2007,19 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
       *
       * Examples: Distributed, LiveView, Merge storages.
       */
+    // find parent node in the table expressions stack
+    QueryTreeNodePtr parent_join_tree = join_tree_node;
+    for (const auto & node : table_expressions_stack)
+        if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        {
+            parent_join_tree = node;
+            break;
+        }
+
     auto left_table_expression = table_expressions_stack.front();
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
         left_table_expression,
-        join_tree_node,
+        parent_join_tree,
         select_query_info,
         select_query_options,
         planner_context,
@@ -2074,6 +2088,18 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 query_plans_stack.push_back(std::move(left_table_expression_query_plan)); /// NOLINT
                 left_table_expression = {};
                 continue;
+            }
+
+            // find parent node
+            parent_join_tree.reset();
+            for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
+            {
+                const auto & node = table_expressions_stack[j];
+                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                {
+                    parent_join_tree = node;
+                    break;
+                }
             }
 
             /** If table expression is remote and it is not left most table expression, we wrap read columns from such
