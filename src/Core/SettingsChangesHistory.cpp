@@ -66,6 +66,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
+            {"enable_minmax_index_for_all_numeric_columns", false, false, "New setting to enable secondary indices for all numeric columns"},
+            {"enable_minmax_index_for_all_string_columns", false, false, "New setting to enable secondary indices for all string columns"}
         }
     },
     {"24.11",
