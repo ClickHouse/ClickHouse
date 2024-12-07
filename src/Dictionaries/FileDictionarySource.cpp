@@ -17,7 +17,6 @@ static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
 }

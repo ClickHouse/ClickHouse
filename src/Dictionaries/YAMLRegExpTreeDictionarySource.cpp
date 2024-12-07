@@ -54,7 +54,6 @@ inline const String kYAMLRegExpTree = "yamlregexptree";
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
     extern const int CANNOT_OPEN_FILE;

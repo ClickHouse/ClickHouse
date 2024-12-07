@@ -33,7 +33,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
     extern const int SUPPORT_IS_DISABLED;
