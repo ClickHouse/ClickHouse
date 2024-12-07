@@ -28,5 +28,5 @@ Looker StudioをClickHouse Cloudに接続するには、[MySQLインターフェ
 
 以下のインテグレーション機能は現在、ClickHouse Cloudでは利用できません。これらはエクスペリメンタルな機能であるため、アプリケーションでこれらの機能をサポートする必要がある場合は、support@clickhouse.comまでご連絡ください。
 
-- [MaterializedPostgreSQL](/ja/engines/database-engines/materialized-mysql)
-- [MaterializedMySQL](/ja/engines/table-engines/integrations/materialized-postgresql)
+- [MaterializedPostgreSQL](/ja/engines/table-engines/integrations/materialized-postgresql)
+- [MaterializedMySQL](/ja/engines/database-engines/materialized-mysql)
