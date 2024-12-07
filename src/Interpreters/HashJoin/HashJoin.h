@@ -244,15 +244,15 @@ public:
     {
 /// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
-        std::unique_ptr<TwoLevelHashMap<UInt8, Mapped>> key8;
-        std::unique_ptr<TwoLevelHashMap<UInt16, Mapped>> key16;
-        std::unique_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>> key32;
-        std::unique_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>> key64;
-        std::unique_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_string;
-        std::unique_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_fixed_string;
-        std::unique_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>> keys128;
-        std::unique_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>> keys256;
-        std::unique_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
+        std::shared_ptr<TwoLevelHashMap<UInt8, Mapped>> key8;
+        std::shared_ptr<TwoLevelHashMap<UInt16, Mapped>> key16;
+        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>> key32;
+        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>> key64;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_fixed_string;
+        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>> keys128;
+        std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>> keys256;
+        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
 
         void create(Type which)
         {

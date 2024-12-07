@@ -32,6 +32,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include "Interpreters/HashJoin/HashJoin.h"
 #include "Interpreters/HashJoin/KeyGetter.h"
 #include "Interpreters/NullableUtils.h"
 #include "base/defines.h"
@@ -146,7 +147,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
         for (size_t i = 1; i < slots; ++i)
         {
-            hash_joins[i]->data->getJoinedData() = hash_joins[0]->data->getJoinedData();
+            std::get<HashJoin::MapsAll>(hash_joins[i]->data->getJoinedData()->maps[0])
+                = std::get<HashJoin::MapsAll>(hash_joins[0]->data->getJoinedData()->maps[0]);
         }
     }
     catch (...)
@@ -262,16 +264,17 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     else
     {
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
-        // dispatched_blocks.emplace_back(std::move(block));
-        dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
+        dispatched_blocks.emplace_back(std::move(block));
+        // dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
-    // if (dispatched_blocks.size() != 1)
-    //     throw Exception(ErrorCodes::LOGICAL_ERROR, "dispatched_blocks.size() != 1");
+    if (dispatched_blocks.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "dispatched_blocks.size() != 1");
 
     block = {};
 
     /// Just in case, should be no-op always
-    remaining_blocks.resize(slots);
+    // remaining_blocks.resize(slots);
+    remaining_blocks.resize(1);
 
     chassert(res.empty());
     res.clear();
