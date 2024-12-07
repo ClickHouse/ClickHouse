@@ -1284,6 +1284,7 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
+arrayRocAUC
 arrayRotateLeft
 arrayRotateRight
 arrayShiftLeft
