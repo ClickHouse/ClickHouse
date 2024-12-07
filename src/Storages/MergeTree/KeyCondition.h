@@ -257,8 +257,8 @@ public:
 
     bool isSinglePoint() const { return single_point; }
 
-    void prepareBloomFilterData(std::function<std::optional<size_t>(size_t column_idx, const Field &)> hash_one,
-                                std::function<std::optional<std::vector<size_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
+    void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
+                                std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
 
 private:
     BoolMask checkInRange(
