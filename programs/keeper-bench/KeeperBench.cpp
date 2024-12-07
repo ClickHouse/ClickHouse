@@ -20,7 +20,7 @@ std::optional<T> valueToOptional(const boost::program_options::variable_value & 
 
 }
 
-int main(int argc, char *argv[])
+int mainEntryClickHouseKeeperBench(int argc, char ** argv)
 {
 
     bool print_stacktrace = true;
