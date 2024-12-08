@@ -76,22 +76,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Setting
-{
-    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
-    extern const SettingsUInt64 max_rows_to_group_by;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
-    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsBool compile_aggregate_expressions;
-    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
-    extern const SettingsUInt64 max_block_size;
-    extern const SettingsBool enable_software_prefetch_in_aggregation;
-    extern const SettingsBool optimize_group_by_constant_keys;
-};
-
 }
 
 namespace
@@ -195,45 +179,59 @@ Block Aggregator::getHeader(bool final) const
 }
 
 Aggregator::Params::Params(
-    const Settings & settings,
     const Names & keys_,
     const AggregateDescriptions & aggregates_,
     bool overflow_row_,
+    size_t max_rows_to_group_by_,
+    OverflowMode group_by_overflow_mode_,
     size_t group_by_two_level_threshold_,
     size_t group_by_two_level_threshold_bytes_,
+    size_t max_bytes_before_external_group_by_,
     bool empty_result_for_aggregation_by_empty_set_,
     TemporaryDataOnDiskScopePtr tmp_data_scope_,
+    size_t max_threads_,
+    size_t min_free_disk_space_,
+    bool compile_aggregate_expressions_,
+    size_t min_count_to_compile_aggregate_expression_,
+    size_t max_block_size_,
+    bool enable_prefetch_,
     bool only_merge_, // true for projections
+    bool optimize_group_by_constant_keys_,
+    float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
     , aggregates_size(aggregates.size())
     , overflow_row(overflow_row_)
-    , max_rows_to_group_by(settings[Setting::max_rows_to_group_by])
-    , group_by_overflow_mode(settings[Setting::group_by_overflow_mode])
+    , max_rows_to_group_by(max_rows_to_group_by_)
+    , group_by_overflow_mode(group_by_overflow_mode_)
     , group_by_two_level_threshold(group_by_two_level_threshold_)
     , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
-    , max_bytes_before_external_group_by(settings[Setting::max_bytes_before_external_group_by])
+    , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
     , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
     , tmp_data_scope(std::move(tmp_data_scope_))
-    , max_threads(settings[Setting::max_threads])
-    , min_free_disk_space(settings[Setting::min_free_disk_space_for_temporary_data])
-    , compile_aggregate_expressions(settings[Setting::compile_aggregate_expressions])
-    , min_count_to_compile_aggregate_expression(settings[Setting::min_count_to_compile_aggregate_expression])
-    , max_block_size(settings[Setting::max_block_size])
+    , max_threads(max_threads_)
+    , min_free_disk_space(min_free_disk_space_)
+    , compile_aggregate_expressions(compile_aggregate_expressions_)
+    , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
+    , max_block_size(max_block_size_)
     , only_merge(only_merge_)
-    , enable_prefetch(settings[Setting::enable_software_prefetch_in_aggregation])
-    , optimize_group_by_constant_keys(settings[Setting::optimize_group_by_constant_keys])
-    , min_hit_rate_to_use_consecutive_keys_optimization(settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization])
+    , enable_prefetch(enable_prefetch_)
+    , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
+    , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
 {
-    if (settings[Setting::max_bytes_ratio_before_external_group_by] != 0.)
+}
+
+size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by)
+{
+    if (max_bytes_ratio_before_external_group_by != 0.)
     {
-        if (settings[Setting::max_bytes_before_external_group_by] > 0)
+        if (max_bytes_before_external_group_by > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings max_bytes_ratio_before_external_group_by and max_bytes_before_external_group_by cannot be set simultaneously");
 
-        double ratio = settings[Setting::max_bytes_ratio_before_external_group_by];
+        double ratio = max_bytes_ratio_before_external_group_by;
         if (ratio < 0 || ratio >= 1.)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({})", ratio);
 
@@ -251,6 +249,8 @@ Aggregator::Params::Params(
             LOG_WARNING(getLogger("Aggregator"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_group_by");
         }
     }
+
+    return max_bytes_before_external_group_by;
 }
 
 Aggregator::Params::Params(
@@ -259,7 +259,7 @@ Aggregator::Params::Params(
     bool overflow_row_,
     size_t max_threads_,
     size_t max_block_size_,
-    double min_hit_rate_to_use_consecutive_keys_optimization_)
+    float min_hit_rate_to_use_consecutive_keys_optimization_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
