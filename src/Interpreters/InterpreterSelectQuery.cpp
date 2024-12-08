@@ -96,6 +96,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
+#include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 
@@ -556,8 +557,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
+        if (storage->hasExternalDynamicMetadata())
+        {
+            storage->updateExternalDynamicMetadata(context);
+            metadata_snapshot = storage->getInMemoryMetadataPtr();
+        }
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
+
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 

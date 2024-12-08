@@ -1,4 +1,6 @@
 #include <iomanip>
+
+#include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
