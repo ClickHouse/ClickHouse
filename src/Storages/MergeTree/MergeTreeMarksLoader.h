@@ -5,7 +5,7 @@
 #include <Common/ThreadPool_fwd.h>
 
 #include <atomic>
-
+#include <future>
 
 namespace DB
 {
