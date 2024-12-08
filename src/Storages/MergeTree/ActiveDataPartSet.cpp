@@ -283,6 +283,11 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfos() const
     return res;
 }
 
+const std::map<MergeTreePartInfo, std::string> & ActiveDataPartSet::getPartNamesWithInfos() const
+{
+    return part_info_to_name;
+}
+
 size_t ActiveDataPartSet::size() const
 {
     return part_info_to_name.size();
