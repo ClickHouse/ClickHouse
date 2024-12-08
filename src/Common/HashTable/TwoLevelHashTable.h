@@ -363,6 +363,6 @@ public:
         size_t res = 0;
         for (UInt32 i = 0; i < buck; ++i)
             res += impls[i].getBufferSizeInCells();
-        return res + (ptr - impls[buck].buf);
+        return res + (ptr - impls[buck].buf) + 1;
     }
 };

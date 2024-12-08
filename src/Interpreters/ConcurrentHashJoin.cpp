@@ -147,8 +147,11 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
         for (size_t i = 1; i < slots; ++i)
         {
-            std::get<HashJoin::MapsAll>(hash_joins[i]->data->getJoinedData()->maps[0])
-                = std::get<HashJoin::MapsAll>(hash_joins[0]->data->getJoinedData()->maps[0]);
+            if (hash_joins[0] && hash_joins[0]->data && hash_joins[0]->data->getJoinedData())
+            {
+                hash_joins[i]->data->getJoinedData()->maps = hash_joins[0]->data->getJoinedData()->maps;
+                hash_joins[i]->data->used_flags = hash_joins[0]->data->used_flags;
+            }
         }
     }
     catch (...)

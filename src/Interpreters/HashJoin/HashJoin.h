@@ -414,6 +414,14 @@ public:
 
     std::vector<Sizes> key_sizes;
 
+    /// Right table data. StorageJoin shares it between many Join objects.
+    /// Flags that indicate that particular row already used in join.
+    /// Flag is stored for every record in hash map.
+    /// Number of this flags equals to hashtable buffer size (plus one for zero value).
+    /// Changes in hash table broke correspondence,
+    /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
+    mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
+
 private:
     friend class NotJoinedHash;
 
@@ -435,13 +443,6 @@ private:
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
 
-    /// Right table data. StorageJoin shares it between many Join objects.
-    /// Flags that indicate that particular row already used in join.
-    /// Flag is stored for every record in hash map.
-    /// Number of this flags equals to hashtable buffer size (plus one for zero value).
-    /// Changes in hash table broke correspondence,
-    /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
-    mutable std::unique_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
     bool have_compressed = false;
 
