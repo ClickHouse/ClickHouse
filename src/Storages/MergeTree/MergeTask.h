@@ -476,6 +476,7 @@ private:
 
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
+    static bool enabledMinMaxInsertFile(GlobalRuntimeContextPtr global_ctx);
 
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
 };
