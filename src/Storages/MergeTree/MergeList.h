@@ -57,6 +57,7 @@ struct MergeInfo
 
 struct FutureMergedMutatedPart;
 using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
+using FutureParts = std::vector<FutureMergedMutatedPartPtr>;
 
 struct MergeListElement;
 using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;

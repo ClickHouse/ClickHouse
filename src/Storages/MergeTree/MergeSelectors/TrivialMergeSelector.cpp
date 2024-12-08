@@ -18,9 +18,9 @@ void registerTrivialMergeSelector(MergeSelectorFactory & factory)
     });
 }
 
-TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
+TrivialMergeSelector::PartsRanges TrivialMergeSelector::selectUpToTopN(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge, size_t top_n_ranges)
 {
     size_t num_partitions = parts_ranges.size();
     if (num_partitions == 0)
@@ -44,11 +44,11 @@ TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
     size_t right = 0;
 
     std::vector<PartsRange> candidates;
-    while (candidates.size() < settings.num_ranges_to_choose)
+    while (candidates.size() < top_n_ranges)
     {
         const PartsRange & partition = parts_ranges[partition_idx];
 
-        if (1 + right - left == settings.num_parts_to_merge)
+        if (1 + right - left == top_n_ranges)
         {
             ++right;
 
@@ -59,7 +59,7 @@ TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
             if (!max_total_size_to_merge || total_size <= max_total_size_to_merge)
             {
                 candidates.emplace_back(partition.data() + left, partition.data() + right);
-                if (candidates.size() == settings.num_ranges_to_choose)
+                if (candidates.size() == settings.num_ranges_to_consider)
                     break;
             }
 
@@ -81,6 +81,16 @@ TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
         if (right < partition.size() && partition[right].level < partition[left].level)
             left = right;
     }
+
+    return candidates;
+}
+
+
+TrivialMergeSelector::PartsRange TrivialMergeSelector::selectBest(
+    const PartsRanges & parts_ranges,
+    size_t max_total_size_to_merge)
+{
+    auto candidates = selectUpToTopN(parts_ranges, max_total_size_to_merge, settings.num_ranges_to_consider);
 
     if (candidates.empty())
         return {};

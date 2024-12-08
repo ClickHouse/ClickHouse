@@ -51,7 +51,7 @@ int main(int, char **)
 
     while (parts.size() > 1)
     {
-        IMergeSelector::PartsRange selected_parts = selector.select(partitions, 0);
+        IMergeSelector::PartsRange selected_parts = selector.selectBest(partitions, 0);
 
         if (selected_parts.empty())
         {
