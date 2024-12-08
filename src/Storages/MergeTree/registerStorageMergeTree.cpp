@@ -19,6 +19,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTIndexDeclaration.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -45,6 +46,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
+    extern const MergeTreeSettingsBool enable_minmax_index_for_all_numeric_columns;
+    extern const MergeTreeSettingsBool enable_minmax_index_for_all_string_columns;
 }
 
 namespace ServerSetting
@@ -684,9 +687,63 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
+        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
+
+        // updates the default storage_settings with settings specified via SETTINGS arg in a query
+        if (args.storage_def->settings)
+        {
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
+            metadata.settings_changes = args.storage_def->settings->ptr();
+        }
+
         if (args.query.columns_list && args.query.columns_list->indices)
-            for (auto & index : args.query.columns_list->indices->children)
+        {
+            for (auto &index: args.query.columns_list->indices->children)
+            {
+                auto index_name = index->as<ASTIndexDeclaration>()->name;
+                if (index_name.starts_with(INDEX_MINMAX_NUMERIC_PREFIX) || index_name.starts_with(INDEX_MINMAX_STRING_PREFIX))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {}: index has prefix {} or {} which are reserved for "
+                                                                "default minmax indices", index_name, INDEX_MINMAX_NUMERIC_PREFIX, INDEX_MINMAX_STRING_PREFIX);
+                }
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
+            }
+
+            if ((*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_numeric_columns]
+            || (*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_string_columns])
+            {
+                for (const auto & column : metadata.columns)
+                {
+                    if (!isNumber(column.type) && !isString(column.type))
+                        continue;
+
+                    if (isNumber(column.type) && !(*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_numeric_columns])
+                        continue;
+
+                    if (isString(column.type) && !(*storage_settings)[MergeTreeSetting::enable_minmax_index_for_all_string_columns])
+                        continue;
+
+                    bool index_exists = false;
+                    for (auto &index: metadata.secondary_indices)
+                    {
+                        if (index.column_names.front() == column.name)
+                        {
+                            index_exists = true;
+                            break;
+                        }
+                    }
+
+                    if (index_exists)
+                        continue;
+
+                    auto index_type = makeASTFunction("minmax");
+                    auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type,
+                                                                           (isNumber(column.type) ? INDEX_MINMAX_NUMERIC_PREFIX : INDEX_MINMAX_STRING_PREFIX) + column.name);
+                    metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, columns, context));
+                }
+            }
+        }
 
         if (args.query.columns_list && args.query.columns_list->projections)
             for (auto & projection_ast : args.query.columns_list->projections->children)
@@ -701,16 +758,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
-        }
-
-        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
-
-        // updates the default storage_settings with settings specified via SETTINGS arg in a query
-        if (args.storage_def->settings)
-        {
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
-            metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
         auto constraints = metadata.constraints.getConstraints();
