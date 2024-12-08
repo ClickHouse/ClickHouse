@@ -68,7 +68,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"enable_minmax_index_for_all_numeric_columns", false, false, "New setting to enable secondary indices for all numeric columns"},
-            {"enable_minmax_index_for_all_string_columns", false, false, "New setting to enable secondary indices for all string columns"}
+            {"enable_minmax_index_for_all_string_columns", false, false, "New setting to enable secondary indices for all string columns"},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
