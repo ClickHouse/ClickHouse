@@ -920,7 +920,7 @@ try
             query_for_logging,
             key.query,
             pipeline,
-            interpreter,
+            interpreter.get(),
             internal,
             query_database,
             query_table,
