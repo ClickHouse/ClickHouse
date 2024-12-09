@@ -11,7 +11,7 @@ services:
       - ${KERBERIZED_HDFS_DIR}/secrets/krb_long.conf:/etc/krb5.conf:ro
       - type: ${KERBERIZED_HDFS_FS:-tmpfs}
         source: ${KERBERIZED_HDFS_LOGS:-}
-        target: /var/log/hadoop-hdfs
+        target: /usr/local/hadoop/logs
     expose:
       - ${KERBERIZED_HDFS_NAME_PORT:-50070}
       - ${KERBERIZED_HDFS_DATA_PORT:-1006}
@@ -27,6 +27,7 @@ services:
     volumes:
       - ${KERBERIZED_HDFS_DIR}/secrets:/tmp/keytab
       - ${KERBERIZED_HDFS_DIR}/../../kerberos_image_config.sh:/config.sh
+      - ${KERBERIZED_HDFS_LOGS}_kdc:/var/log/kerberos
       - /dev/urandom:/dev/random
     expose: [88, 749]
     sysctls:
