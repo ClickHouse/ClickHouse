@@ -504,6 +504,17 @@ def test_table_functions():
         if not error:
             node.query(f"DROP TABLE {table_name}")
 
+    # Check EXPLAIN QUERY TREE
+    for toggle, secret in enumerate(["[HIDDEN]", password]):
+        skip = ['mysql', 'postgresql']
+        for table_function in table_functions:
+            should_skip = any([table_function.startswith(prefix_to_skip) for prefix_to_skip in skip])
+            if not should_skip:
+                output = node.query(f"EXPLAIN QUERY TREE SELECT * FROM {table_function} {show_secrets}={toggle}")
+                assert secret in output
+                if not toggle:
+                    assert password not in output
+
 
 def test_table_function_ways_to_call():
     password = new_password()
