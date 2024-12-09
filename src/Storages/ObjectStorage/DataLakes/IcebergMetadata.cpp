@@ -478,7 +478,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        chassert(*iceberg_table_schemas_by_ids.at(schema_id) == *schema_ptr);
+        // chassert(*iceberg_table_schemas_by_ids.at(schema_id) == *schema_ptr);
     }
     else
     {

@@ -36,8 +36,8 @@ namespace DB::Setting
 namespace Iceberg
 {
 
-static constexpr auto config_endpoint = "config";
-static constexpr auto namespaces_endpoint = "namespaces";
+static constexpr auto CONFIG_ENDPOINT = "config";
+static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 
 namespace
 {
@@ -126,7 +126,7 @@ RestCatalog::RestCatalog(
 RestCatalog::Config RestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
-    auto buf = createReadBuffer(config_endpoint, params);
+    auto buf = createReadBuffer(CONFIG_ENDPOINT, params);
 
     std::string json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -301,26 +301,19 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
 bool RestCatalog::empty() const
 {
-    try
+    /// TODO: add a test with empty namespaces and zero namespaces.
+    bool found_table = false;
+    auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
-        bool found_table = false;
-        auto stop_condition = [&](const std::string & namespace_name) -> bool
-        {
-            const auto tables = getTables(namespace_name, /* limit */1);
-            found_table = !tables.empty();
-            return found_table;
-        };
-
-        Namespaces namespaces;
-        getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
-
+        const auto tables = getTables(namespace_name, /* limit */1);
+        found_table = !tables.empty();
         return found_table;
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(log);
-        return true;
-    }
+    };
+
+    Namespaces namespaces;
+    getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
+
+    return found_table;
 }
 
 DB::Names RestCatalog::getTables() const
@@ -359,6 +352,8 @@ void RestCatalog::getNamespacesRecursive(
     StopCondition stop_condition,
     ExecuteFunc func) const
 {
+    checkStackSize();
+
     auto namespaces = getNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
     result.insert(result.end(), namespaces.begin(), namespaces.end());
@@ -384,6 +379,8 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     std::string parent_param;
     for (const auto & part : parts)
     {
+        /// 0x1F is a unit separator
+        /// https://github.com/apache/iceberg/blob/70d87f1750627b14b3b25a0216a97db86a786992/open-api/rest-catalog-open-api.yaml#L264
         if (!parent_param.empty())
             parent_param += static_cast<char>(0x1F);
         parent_param += part;
@@ -399,7 +396,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
 
     try
     {
-        auto buf = createReadBuffer(config.prefix / namespaces_endpoint, params);
+        auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
         auto namespaces = parseNamespaces(*buf, base_namespace);
         LOG_TEST(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
         return namespaces;
@@ -431,36 +428,44 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
     LOG_TEST(log, "Received response: {}", json_str);
 
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-    auto namespaces_object = object->get("namespaces").extract<Poco::JSON::Array::Ptr>();
-    if (!namespaces_object)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
-
-    Namespaces namespaces;
-    for (size_t i = 0; i < namespaces_object->size(); ++i)
+    try
     {
-        auto current_namespace_array = namespaces_object->get(static_cast<int>(i)).extract<Poco::JSON::Array::Ptr>();
-        if (current_namespace_array->size() == 0)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Expected namespace array to be non-empty");
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var json = parser.parse(json_str);
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-        const int idx = static_cast<int>(current_namespace_array->size()) - 1;
-        const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-        const auto full_namespace = base_namespace.empty()
-            ? current_namespace
-            : base_namespace + "." + current_namespace;
+        auto namespaces_object = object->get("namespaces").extract<Poco::JSON::Array::Ptr>();
+        if (!namespaces_object)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
-        namespaces.push_back(full_namespace);
+        Namespaces namespaces;
+        for (size_t i = 0; i < namespaces_object->size(); ++i)
+        {
+            auto current_namespace_array = namespaces_object->get(static_cast<int>(i)).extract<Poco::JSON::Array::Ptr>();
+            if (current_namespace_array->size() == 0)
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Expected namespace array to be non-empty");
+
+            const int idx = static_cast<int>(current_namespace_array->size()) - 1;
+            const auto current_namespace = current_namespace_array->get(idx).extract<String>();
+            const auto full_namespace = base_namespace.empty()
+                ? current_namespace
+                : base_namespace + "." + current_namespace;
+
+            namespaces.push_back(full_namespace);
+        }
+
+        return namespaces;
     }
-
-    return namespaces;
+    catch (DB::Exception & e)
+    {
+        e.addMessage("while parsing JSON: " + json_str);
+        throw;
+    }
 }
 
 DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
-    const auto endpoint = std::string(namespaces_endpoint) + "/" + base_namespace + "/tables";
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / base_namespace / "tables";
     auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, base_namespace, limit);
 }
@@ -473,25 +478,34 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, buf);
 
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-    auto identifiers_object = object->get("identifiers").extract<Poco::JSON::Array::Ptr>();
-    if (!identifiers_object)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
-
-    DB::Names tables;
-    for (size_t i = 0; i < identifiers_object->size(); ++i)
+    try
     {
-        const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-        const auto table_name = current_table_json->get("name").extract<String>();
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var json = parser.parse(json_str);
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-        tables.push_back(base_namespace + "." + table_name);
-        if (limit && tables.size() >= limit)
-            break;
+        auto identifiers_object = object->get("identifiers").extract<Poco::JSON::Array::Ptr>();
+        if (!identifiers_object)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
+
+        DB::Names tables;
+        for (size_t i = 0; i < identifiers_object->size(); ++i)
+        {
+            const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
+            const auto table_name = current_table_json->get("name").extract<String>();
+
+            tables.push_back(base_namespace + "." + table_name);
+            if (limit && tables.size() >= limit)
+                break;
+        }
+
+        return tables;
     }
-    return tables;
+    catch (DB::Exception & e)
+    {
+        e.addMessage("while parsing JSON: " + json_str);
+        throw;
+    }
 }
 
 bool RestCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
@@ -544,7 +558,7 @@ bool RestCatalog::getTableMetadataImpl(
         headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
     }
 
-    const auto endpoint = std::string(namespaces_endpoint) + "/" + namespace_name + "/tables/" + table_name;
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / namespace_name / "tables" / table_name;
     auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
 
     if (buf->eof())
@@ -556,8 +570,11 @@ bool RestCatalog::getTableMetadataImpl(
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
-    /// TODO: remove before merge because it might contain credentials.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// This log message might contain credentials,
+    /// so log it only for debugging.
     LOG_TEST(log, "Received metadata for table {}: {}", table_name, json_str);
+#endif
 
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);

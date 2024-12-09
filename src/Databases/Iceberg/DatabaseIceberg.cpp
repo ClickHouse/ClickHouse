@@ -91,7 +91,7 @@ void DatabaseIceberg::validateSettings()
     }
 }
 
-std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog(ContextPtr) const
+std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog() const
 {
     if (catalog_impl)
         return catalog_impl;
@@ -145,7 +145,7 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfigu
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Server does not contain support for storage type {}",
-                            settings[DatabaseIcebergSetting::storage_type].value);
+                            type);
 #endif
     }
 }
@@ -167,18 +167,18 @@ std::string DatabaseIceberg::getStorageEndpointForTable(const Iceberg::TableMeta
 
 bool DatabaseIceberg::empty() const
 {
-    return getCatalog(Context::getGlobalContextInstance())->empty();
+    return getCatalog()->empty();
 }
 
-bool DatabaseIceberg::isTableExist(const String & name, ContextPtr context_) const
+bool DatabaseIceberg::isTableExist(const String & name, ContextPtr /* context_ */) const
 {
     const auto [namespace_name, table_name] = parseTableName(name);
-    return getCatalog(context_)->existsTable(namespace_name, table_name);
+    return getCatalog()->existsTable(namespace_name, table_name);
 }
 
 StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_) const
 {
-    auto catalog = getCatalog(context_);
+    auto catalog = getCatalog();
     auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
 
     const bool with_vended_credentials = settings[DatabaseIcebergSetting::vended_credentials].value;
@@ -256,7 +256,7 @@ DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
     bool /* skip_not_loaded */) const
 {
     Tables tables;
-    auto catalog = getCatalog(context_);
+    auto catalog = getCatalog();
     const auto iceberg_tables = catalog->getTables();
 
     auto & pool = context_->getIcebergCatalogThreadpool();
@@ -292,10 +292,10 @@ ASTPtr DatabaseIceberg::getCreateDatabaseQuery() const
 
 ASTPtr DatabaseIceberg::getCreateTableQueryImpl(
     const String & name,
-    ContextPtr context_,
+    ContextPtr /* context_ */,
     bool /* throw_on_error */) const
 {
-    auto catalog = getCatalog(context_);
+    auto catalog = getCatalog();
     auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
 
     const auto [namespace_name, table_name] = parseTableName(name);

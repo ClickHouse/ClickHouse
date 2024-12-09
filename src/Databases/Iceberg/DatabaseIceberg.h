@@ -57,7 +57,7 @@ private:
     mutable std::shared_ptr<Iceberg::ICatalog> catalog_impl;
 
     void validateSettings();
-    std::shared_ptr<Iceberg::ICatalog> getCatalog(ContextPtr context_) const;
+    std::shared_ptr<Iceberg::ICatalog> getCatalog() const;
     std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(DatabaseIcebergStorageType type) const;
     std::string getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const;
 };
