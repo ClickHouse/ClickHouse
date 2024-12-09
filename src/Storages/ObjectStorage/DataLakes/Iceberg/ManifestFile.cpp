@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include "config.h"
 
 #if USE_AVRO
@@ -17,6 +18,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
+extern const int BAD_ARGUMENTS;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace Iceberg

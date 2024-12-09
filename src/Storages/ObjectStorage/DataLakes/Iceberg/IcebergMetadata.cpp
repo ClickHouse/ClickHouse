@@ -33,7 +33,6 @@ namespace ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
-extern const int UNSUPPORTED_METHOD;
 extern const int LOGICAL_ERROR;
 }
 
@@ -216,7 +215,7 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
 }
 
-Poco::JSON::Object::Ptr IcebergMetadata::readJson(const String & metadata_file_path, const ContextPtr & local_context) const
+Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_path, const ContextPtr & local_context) const
 {
     StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
@@ -240,7 +239,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     current_metadata_version = metadata_version;
 
-    auto metadata_object = readJson(metadata_file_path, local_context);
+    auto metadata_object = readJSON(metadata_file_path, local_context);
 
     chassert(format_version == metadata_object->getValue<int>("format-version"));
 

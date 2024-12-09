@@ -130,7 +130,7 @@ private:
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
-    Poco::JSON::Object::Ptr readJson(const String & metadata_file_path, const ContextPtr & local_context) const;
+    Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
 
     //Fields are needed only for providing dynamic polymorphism
     std::unordered_map<String, String> column_name_to_physical_name;
