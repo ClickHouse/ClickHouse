@@ -1041,9 +1041,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (settings[Setting::enforce_strict_identifier_format])
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
+            IAST::FormatSettings enforce_strict_identifier_format_settings(true);
             enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-            ast->format(enforce_strict_identifier_format_settings);
+            ast->format(buf, enforce_strict_identifier_format_settings);
         }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
@@ -1540,7 +1540,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context->getDefaultFormat();
 
-        if (format_name == "Null")
+        if (boost::iequals(format_name, "Null"))
             res.null_format = true;
     }
 

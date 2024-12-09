@@ -137,6 +137,13 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 }
 
 
+void SettingsConstraints::check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const
+{
+    check(current_settings, profile_elements.add_settings, source);
+    check(current_settings, profile_elements.modify_settings, source);
+    /// We don't check `drop_settings` here.
+}
+
 void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const
 {
     for (const auto & element : profile_elements)

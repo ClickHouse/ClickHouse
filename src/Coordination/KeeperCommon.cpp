@@ -7,6 +7,7 @@
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 namespace DB
 {
