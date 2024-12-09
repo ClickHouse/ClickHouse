@@ -745,7 +745,12 @@ void AggregatingTransform::initGenerate()
                         all_varians_are_empty = false;
 
                 if (all_varians_are_empty)
-                    params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys, is_cancelled);
+                {
+                    if (params->params.only_merge)
+                        params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys, is_cancelled);
+                    else
+                        params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+                }
             }
 
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
