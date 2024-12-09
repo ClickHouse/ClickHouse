@@ -107,7 +107,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
     {"keeper-client", mainEntryClickHouseKeeperClient},
 #endif
-#if USE_RAPIDJSON
+#if USE_RAPIDJSON && USE_NURAFT
     {"keeper-bench", mainEntryClickHouseKeeperBench},
 #endif
 #if USE_NURAFT
