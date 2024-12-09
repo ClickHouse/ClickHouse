@@ -379,6 +379,12 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
 void PipelineExecutor::spawnThreads()
 {
+    if (!spawn_lock.try_lock())
+    {
+        /// Someone is already spawning threads, skip.
+        return;
+    }
+
     while (auto slot = cpu_slots->tryAcquire())
     {
         size_t thread_num = threads.fetch_add(1);
@@ -411,6 +417,8 @@ void PipelineExecutor::spawnThreads()
             }
         });
     }
+
+    spawn_lock.unlock();
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
