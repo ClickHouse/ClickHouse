@@ -89,20 +89,21 @@ IcebergMetadata::IcebergMetadata(
     const DB::ContextPtr & context_,
     Int32 metadata_version_,
     Int32 format_version_,
-    const String & manifest_list_file_,
     const Poco::JSON::Object::Ptr & object)
     : WithContext(context_)
     , object_storage(std::move(object_storage_))
     , configuration(std::move(configuration_))
     , schema_processor(IcebergSchemaProcessor())
     , log(getLogger("IcebergMetadata"))
-    , metadata_version(metadata_version_)
+    , current_metadata_version(metadata_version_)
     , format_version(format_version_)
-    , current_snapshot(manifest_list_file_.empty() ? std::nullopt : std::optional{getSnapshot(manifest_list_file_)})
 {
-    auto schema_id = parseTableSchema(object, schema_processor, log);
-    schema = *(schema_processor.getClickhouseTableSchemaById(schema_id));
-    current_schema_id = schema_id;
+    auto manifest_list_file = getRelevantManifestList(object);
+    if (manifest_list_file)
+    {
+        current_snapshot = getSnapshot(manifest_list_file.value());
+    }
+    current_schema_id = parseTableSchema(object, schema_processor, log);
 }
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
@@ -235,6 +236,69 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
 }
 
+Poco::JSON::Object::Ptr IcebergMetadata::readJson(const String & metadata_file_path, const ContextPtr & local_context) const
+{
+    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+
+    String json_str;
+    readJSONObjectPossiblyInvalid(json_str, *buf);
+
+    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+    Poco::Dynamic::Var json = parser.parse(json_str);
+    return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+bool IcebergMetadata::update(const ContextPtr & local_context)
+{
+    auto configuration_ptr = configuration.lock();
+
+    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+
+    auto metadata_object = readJson(metadata_file_path, local_context);
+
+    chassert(format_version == metadata_object->getValue<int>("format-version"));
+
+    if (metadata_version == current_metadata_version)
+        return false;
+
+    auto manifest_list_file = getRelevantManifestList(metadata_object);
+    if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value() != current_snapshot->getName())))
+    {
+        current_snapshot = getSnapshot(manifest_list_file.value());
+    }
+    current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
+    return true;
+}
+
+std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata)
+{
+    auto configuration_ptr = configuration.lock();
+
+    auto snapshots = metadata->get("snapshots").extract<Poco::JSON::Array::Ptr>();
+
+    String manifest_list_file;
+    auto current_snapshot_id = metadata->getValue<Int64>("current-snapshot-id");
+
+    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata initialize"), "Current snapshot id {}", current_snapshot_id);
+
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        LOG_DEBUG(
+            &Poco::Logger::get("IcebergMetadata initialize"),
+            "Iterationg on snapshot with id {}",
+            snapshot->getValue<Int64>("snapshot-id"));
+
+        if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
+        {
+            const auto path = snapshot->getValue<String>("manifest-list");
+            return std::filesystem::path(path).filename();
+        }
+    }
+    return std::nullopt;
+}
+
 
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context)
@@ -260,32 +324,8 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto format_version = object->getValue<int>("format-version");
 
-    auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
-
-    String manifest_list_file;
-    auto current_snapshot_id = object->getValue<Int64>("current-snapshot-id");
-
-    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata initialize"), "Current snapshot id {}", current_snapshot_id);
-
-    for (size_t i = 0; i < snapshots->size(); ++i)
-    {
-        const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        LOG_DEBUG(
-            &Poco::Logger::get("IcebergMetadata initialize"),
-            "Iterationg on snapshot with id {}",
-            snapshot->getValue<Int64>("snapshot-id"));
-
-        if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
-        {
-            const auto path = snapshot->getValue<String>("manifest-list");
-            manifest_list_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
-            break;
-        }
-    }
-
-    auto ptr = std::make_unique<IcebergMetadata>(
-        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, object);
-
+    auto ptr
+        = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object);
 
     return ptr;
 }
@@ -323,7 +363,8 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
     auto context = getContext();
-    StorageObjectStorageSource::ObjectInfo object_info(manifest_list_file);
+    StorageObjectStorageSource::ObjectInfo object_info(
+        std::filesystem::path(configuration_ptr->getPath()) / "metadata" / manifest_list_file);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
     LOG_DEBUG(&Poco::Logger::get("initializeManifestList"), "Parse manifest list {}", manifest_list_file);
@@ -399,9 +440,7 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) 
 
 Strings IcebergMetadata::getDataFiles() const
 {
-    std::lock_guard lock(get_data_files_mutex);
-    if (!data_files.empty())
-        return data_files;
+    Strings data_files;
 
     if (!current_snapshot)
     {

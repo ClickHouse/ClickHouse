@@ -48,7 +48,6 @@ public:
         const DB::ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
-        const String & manifest_list_file_,
         const Poco::JSON::Object::Ptr & object);
 
 
@@ -57,7 +56,7 @@ public:
     Strings getDataFiles() const override;
 
     /// Get table schema parsed from metadata.
-    NamesAndTypesList getTableSchema() const override { return schema; }
+    NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
 
     const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
 
@@ -72,7 +71,7 @@ public:
     static DataLakeMetadataPtr
     create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
 
-    size_t getVersion() const { return metadata_version; }
+    size_t getVersion() const { return current_metadata_version; }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
     {
@@ -90,12 +89,15 @@ public:
 
     bool supportsExternalMetadataChange() const override { return true; }
 
+    bool supportsUpdate() const override { return true; }
+
+    bool update(const ContextPtr & local_context) override;
+
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, ManifestFileEntry>;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
-
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
@@ -103,18 +105,10 @@ private:
     mutable ManifestListsByName manifest_lists_by_name;
     mutable ManifestEntryByDataFile manifest_entry_by_data_file;
 
-    Int32 metadata_version;
+    Int32 current_metadata_version;
     Int32 format_version;
     Int32 current_schema_id;
-
     std::optional<IcebergSnapshot> current_snapshot;
-
-    mutable Strings data_files;
-    std::unordered_map<String, String> column_name_to_physical_name;
-    DataLakePartitionColumns partition_columns;
-    NamesAndTypesList schema;
-
-    mutable std::mutex get_data_files_mutex;
 
     ManifestList initializeManifestList(const String & manifest_list_file) const;
 
@@ -136,6 +130,14 @@ private:
     ManifestFileEntry getManifestFile(const String & manifest_file) const;
 
     ManifestFileEntry initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const;
+
+    std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
+
+    Poco::JSON::Object::Ptr readJson(const String & metadata_file_path, const ContextPtr & local_context) const;
+
+    //Fields are needed only for providing dynamic polymorphism
+    std::unordered_map<String, String> column_name_to_physical_name;
+    DataLakePartitionColumns partition_columns;
 };
 
 }

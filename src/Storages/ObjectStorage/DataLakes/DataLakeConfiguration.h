@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
+#include "Common/DateLUT.h"
 #include <Common/logger_useful.h>
 #include "Storages/ColumnsDescription.h"
 
@@ -45,9 +46,8 @@ public:
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
         BaseStorageConfiguration::update(object_storage, local_context);
-        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
 
-        if (!current_metadata || (*current_metadata != *new_metadata))
+        if (updateMetadataObjectIfNeeded(object_storage, local_context))
         {
             if (hasExternalDynamicMetadata())
             {
@@ -57,7 +57,6 @@ public:
             }
             else
             {
-                current_metadata = std::move(new_metadata);
                 BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
                 BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
             }
@@ -99,11 +98,8 @@ public:
     ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr object_storage, ContextPtr context) override
     {
         BaseStorageConfiguration::update(object_storage, context);
-        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
-
-        if (!current_metadata || (*current_metadata != *new_metadata))
+        if (updateMetadataObjectIfNeeded(object_storage, context))
         {
-            current_metadata = std::move(new_metadata);
             BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
             BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
         }
@@ -136,6 +132,31 @@ private:
             }
         }
         return info;
+    }
+
+    bool updateMetadataObjectIfNeeded(ObjectStoragePtr object_storage, ContextPtr context)
+    {
+        if (!current_metadata)
+        {
+            current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+            return true;
+        }
+
+        if (current_metadata->supportsUpdate())
+        {
+            return current_metadata->update(context);
+        }
+
+        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+        if (*current_metadata != *new_metadata)
+        {
+            current_metadata = std::move(new_metadata);
+            return true;
+        }
+        else
+        {
+            return false;
+        }
     }
 };
 
