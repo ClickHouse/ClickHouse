@@ -432,7 +432,9 @@ bool Client::buzzHouse()
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
-        processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Shared;");
+        processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Replicated('/test/db', 's1', 'r1');");
+        processTextAsSingleQuery(
+            "CREATE TABLE fuzztest.t0 (c0 Int) Engine=SharedMergeTree() ORDER BY tuple() SETTINGS storage_policy = 's3_with_keeper';");
         has_cloud_features |= !have_error;
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
