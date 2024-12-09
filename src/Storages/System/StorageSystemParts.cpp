@@ -242,7 +242,7 @@ void StorageSystemParts::processNextStorage(
 
         if (columns_mask[src_index++])
         {
-            /// The full path changes at clean up thread, so do not read it if parts can be deleted, avoid the race.
+            /// The full path changes at clean up thread, so do not read it if parts can be deleted or renamed, avoid the race.
             if (part->isStoredOnDisk()
                 && part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary && part_state != State::PreActive)
             {
