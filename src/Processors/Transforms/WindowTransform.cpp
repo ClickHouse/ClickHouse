@@ -394,7 +394,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
 
         if (window_description.frame.type == WindowFrame::FrameType::SESSION)
         {
-            window_description.frame.session_window_threshold = convertFieldToTypeOrThrow(
+            const auto converted = convertFieldToTypeOrThrow(
                 window_description.frame.session_window_threshold,
                 *entry.type);
 
@@ -406,9 +406,11 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame.session_window_threshold))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be positive, {} given",
-                    window_description.frame.session_window_threshold);
+                    "Window frame start offset must be positive, instead have {} as specified in the query, {} as converted to the ORDER BY type {}",
+                                window_description.frame.session_window_threshold, converted, entry.type->getPrettyName());
             }
+
+            window_description.frame.session_window_threshold = converted;
         }
     }
 

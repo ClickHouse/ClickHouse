@@ -780,6 +780,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildWindow(const ASTPtr & window_definition,
         window_frame.begin_preceding = window_definition_typed.frame_begin_preceding;
         window_frame.end_type = window_definition_typed.frame_end_type;
         window_frame.end_preceding = window_definition_typed.frame_end_preceding;
+        window_frame.session_window_threshold = window_definition_typed.session_window_threshold;
     }
 
     auto window_node = std::make_shared<WindowNode>(window_frame);

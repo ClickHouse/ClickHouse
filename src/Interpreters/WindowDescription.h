@@ -75,6 +75,7 @@ struct WindowFrame
             && other.end_type == end_type
             && other.end_offset == end_offset
             && other.end_preceding == end_preceding
+            && other.session_window_threshold == session_window_threshold
             ;
     }
 };

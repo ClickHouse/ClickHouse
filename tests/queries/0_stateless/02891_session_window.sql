@@ -1,4 +1,5 @@
 -- { echoOn }
+
 select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n session 1);
 select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n session 2);
 select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n session 100);
