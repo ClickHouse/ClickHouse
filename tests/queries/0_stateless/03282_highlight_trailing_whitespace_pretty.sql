@@ -17,6 +17,8 @@ INSERT INTO strings_whitespace VALUES ('string8\t\t');
 INSERT INTO strings_whitespace VALUES ('string9   \n');
 INSERT INTO strings_whitespace VALUES ('string10\t\n\r');
 INSERT INTO strings_whitespace VALUES ('string11                                                                      ');
+INSERT INTO strings_whitespace VALUES ('string 12');
+INSERT INTO strings_whitespace VALUES ('string   13   ');
 INSERT INTO strings_whitespace VALUES ('');
 INSERT INTO strings_whitespace VALUES (' ');
 INSERT INTO strings_whitespace VALUES ('\n');
