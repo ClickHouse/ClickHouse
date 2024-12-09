@@ -257,7 +257,12 @@ void MemoryAccessStorage::setAll(const std::vector<AccessEntityPtr> & all_entiti
 void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
 {
     std::lock_guard lock{mutex};
+    setAllNoLock(all_entities);
+}
 
+
+void MemoryAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
+{
     /// Remove conflicting entities from the specified list.
     auto entities_without_conflicts = all_entities;
     clearConflictsInEntitiesList(entities_without_conflicts, getLogger());
@@ -273,6 +278,7 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
     for (const auto & [id, entity] : entities_without_conflicts)
         insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr);
 }
+
 
 void MemoryAccessStorage::insertEntry(UUID id, String name, AccessEntityType type, AccessEntityPtr entity)
 {
@@ -294,6 +300,7 @@ void MemoryAccessStorage::insertEntry(UUID id, String name, AccessEntityType typ
 
     CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity);
 }
+
 
 void MemoryAccessStorage::removeEntry(UUID id, String name, AccessEntityType type)
 {

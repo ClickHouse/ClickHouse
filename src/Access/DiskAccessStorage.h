@@ -46,14 +46,13 @@ private:
     void scheduleWriteLists(AccessEntityType type);
     void reloadAllAndRebuildLists();
     void setAllInMemory(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities);
-    void removeAllExceptInMemory(const boost::container::flat_set<UUID> & ids_to_keep);
 
     void listsWritingThreadFunc() TSA_NO_THREAD_SAFETY_ANALYSIS;
     void stopListsWritingThread();
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool write_on_disk);
+    bool insertWithDiskNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
     bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool write_on_disk);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists, bool write_on_disk);
+    bool removeWithDiskNoLock(const UUID & id, bool throw_if_not_exists);
 
     AccessEntityPtr readAccessEntityFromDisk(const UUID & id) const;
     void writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const;
@@ -79,6 +78,7 @@ private:
     std::atomic<bool> readonly;
     std::atomic<bool> backup_allowed;
 
+    /// Making some public methods inaccessible
     using MemoryAccessStorage::setAll;
     using MemoryAccessStorage::removeAllExcept;
 };

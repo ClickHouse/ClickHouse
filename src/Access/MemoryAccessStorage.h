@@ -66,18 +66,22 @@ protected:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
 
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists);
+
+    void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep);
+    void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep);
+
+    void setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities);
+
 private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists);
     bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
 
-    void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep);
-    void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep);
 
     const bool backup_allowed = false;
 };
