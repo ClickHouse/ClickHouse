@@ -121,8 +121,8 @@ Filter column: and(notEquals(y, 2), notEquals(x, 0))
 ARRAY JOIN x
 Filter column: notEquals(y, 2)
 > (analyzer) filter is split, one part is filtered before ARRAY JOIN
-Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__table1.x, 0_UInt8))
-ARRAY JOIN __table1.x
+Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))
+ARRAY JOIN __array_join_exp_1
 Filter column: notEquals(__table2.y, 2_UInt8)
 1	3
 > filter is pushed down before Distinct
