@@ -54,7 +54,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
 int mainEntryClickHouseKeeperClient(int argc, char ** argv);
 #endif
-#if USE_RAPIDJSON
+#if USE_RAPIDJSON && USE_NURAFT
 int mainEntryClickHouseKeeperBench(int argc, char ** argv);
 #endif
 #if USE_NURAFT
