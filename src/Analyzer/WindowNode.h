@@ -161,6 +161,24 @@ public:
         return children[frame_end_offset_child_index];
     }
 
+    /// Returns true if window node has FRAME end offset, false otherwise
+    bool hasFrameSessionWindowThreshold() const
+    {
+        return getFrameSessionWindowThresholdNode() != nullptr;
+    }
+
+    /// Get FRAME end offset node
+    const QueryTreeNodePtr & getFrameSessionWindowThresholdNode() const
+    {
+        return children[frame_session_window_threshold_child_index];
+    }
+
+    /// Get FRAME end offset node
+    QueryTreeNodePtr & getFrameSessionWindowThresholdNode()
+    {
+        return children[frame_session_window_threshold_child_index];
+    }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::WINDOW;
@@ -182,6 +200,7 @@ private:
     static constexpr size_t partition_by_child_index = 1;
     static constexpr size_t frame_begin_offset_child_index = 3;
     static constexpr size_t frame_end_offset_child_index = 4;
+    static constexpr size_t frame_session_window_threshold_child_index = 5;
     static constexpr size_t children_size = frame_end_offset_child_index + 1;
 
     WindowFrame window_frame;

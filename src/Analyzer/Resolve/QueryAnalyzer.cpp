@@ -2516,6 +2516,27 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
                 frame_end_offset_projection_names.size());
     }
 
+    if (window_node.hasFrameSessionWindowThreshold())
+    {
+        frame_session_window_threshold_projection_names = resolveExpressionNode(window_node.getFrameSessionWindowThresholdNode(),
+            scope,
+            false /*allow_lambda_expression*/,
+            false /*allow_table_expression*/);
+
+        const auto * window_frame_session_window_threshold_node = window_node.getFrameSessionWindowThresholdNode()->as<ConstantNode>();
+        if (!window_frame_session_window_threshold_node || !isNumber(removeNullable(window_frame_session_window_threshold_node->getResultType())))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Window frame SESSION window threshold must be constant with numeric type. Actual {}. In scope {}",
+                window_node.getFrameSessionWindowThresholdNode()->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        window_node.getWindowFrame().session_window_threshold = window_frame_session_window_threshold_node->getValue();
+        if (frame_session_window_threshold_projection_names.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Window frame SESSION window threshold expected 1 projection name. Actual {}",
+                frame_session_window_threshold_projection_names.size());
+    }
+
     window_node.getWindowFrame().checkValid();
 
     if (result_projection_name.empty())
