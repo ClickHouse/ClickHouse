@@ -162,20 +162,21 @@ private:
     }
 };
 
-using IcebergMetadata = Iceberg::IcebergMetadata;
 
 #if USE_AVRO
+using IcebergMetadata = Iceberg::IcebergMetadata;
+
 #if USE_AWS_S3
 using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
-#    endif
+#endif
 
 #if USE_AZURE_BLOB_STORAGE
 using StorageAzureIcebergConfiguration = DataLakeConfiguration<StorageAzureConfiguration, IcebergMetadata>;
-#    endif
+#endif
 
 #if USE_HDFS
 using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, IcebergMetadata>;
-#    endif
+#endif
 
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
 #endif
@@ -183,7 +184,7 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 #if USE_PARQUET
 #if USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
-#    endif
+#endif
 #endif
 
 #if USE_AWS_S3
