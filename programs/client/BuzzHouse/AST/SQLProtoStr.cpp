@@ -1212,6 +1212,11 @@ CONV_FN(ExprOrderingWithFill, eowf)
         ret += " STEP ";
         ExprToString(ret, eowf.step_expr());
     }
+    if (eowf.has_staleness_expr())
+    {
+        ret += " STALENESS ";
+        ExprToString(ret, eowf.staleness_expr());
+    }
 }
 
 CONV_FN(ExprOrderingTerm, eot)

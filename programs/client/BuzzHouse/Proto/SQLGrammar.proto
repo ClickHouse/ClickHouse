@@ -1942,9 +1942,12 @@ message ExprFrameSpec {
 }
 
 message ExprOrderingWithFill {
-    optional Expr from_expr = 1;
-    optional Expr to_expr = 2;
-    optional Expr step_expr = 3;
+    oneof order_by_oneof {
+        Expr from_expr = 1;
+        Expr staleness_expr = 2;
+    }
+    optional Expr to_expr = 3;
+    optional Expr step_expr = 4;
 }
 
 message ExprOrderingTerm {

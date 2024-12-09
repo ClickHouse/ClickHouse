@@ -926,12 +926,17 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
                 }
                 if (rg.nextSmallNumber() < 2)
                 {
+                    const uint32_t nopt = rg.nextSmallNumber();
                     ExprOrderingWithFill * eowf = eot->mutable_fill();
 
                     has_fill = true;
-                    if (rg.nextSmallNumber() < 4)
+                    if (nopt < 4)
                     {
                         generateExpression(rg, eowf->mutable_from_expr());
+                    }
+                    else if (nopt < 7)
+                    {
+                        generateExpression(rg, eowf->mutable_staleness_expr());
                     }
                     if (rg.nextSmallNumber() < 4)
                     {
