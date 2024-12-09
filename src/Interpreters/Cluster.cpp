@@ -424,18 +424,18 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         throw Exception(ErrorCodes::SHARD_HAS_NO_CONNECTIONS, "No cluster elements (shard, node) specified in config at path {}", config_prefix);
 
 
-    size_t keys_with_static_shard_number = std::ranges::count_if(config_keys.begin(), config_keys.end(), [& config, & config_prefix](const String& key)
+    size_t shards_with_name_count = std::ranges::count_if(config_keys.begin(), config_keys.end(), [& config, & config_prefix](const String& key)
     {
-        return config.has(config_prefix + key + ".shard_number");
+        return config.has(config_prefix + key + ".shard_name");
     });
 
-    if (keys_with_static_shard_number != 0 && keys_with_static_shard_number != config_keys.size())
+    if (shards_with_name_count != 0 && shards_with_name_count != config_keys.size())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_number must be specified for every shard(node) in the config or for no one. Config: {}", config_prefix);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_name must be specified for every shard(node) in the config or for no one. Config: {}", config_prefix);
     }
 
-    bool use_static_shard_number = keys_with_static_shard_number == config_keys.size();
-    std::unordered_set<UInt32> used_shard_nums;
+    bool use_shards_names = shards_with_name_count == config_keys.size();
+    std::unordered_set<String> used_shard_names;
     UInt32 current_shard_num = 1;
 
     for (const auto & key : config_keys)
@@ -448,22 +448,23 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
         const auto & prefix = config_prefix + key + ((shard_with_replicas) ? ".":  "");
         const auto weight = config.getInt(prefix + ".weight", default_weight);
-        const auto shard_number = use_static_shard_number ? config.getUInt(prefix + ".shard_number") : current_shard_num;
-        if (use_static_shard_number)
+        const auto shard_name = use_shards_names ? config.getString(prefix + ".shard_name") : "";
+        if (use_shards_names)
         {
-            if (!shard_number || !used_shard_nums.insert(shard_number).second)
-                throw Exception(ErrorCodes::INVALID_SHARD_ID, "Field shard_number is incorrect. It must be unique in cluster and 1-based.");
+            if (shard_name.empty() || !used_shard_names.insert(shard_name).second)
+                throw Exception(ErrorCodes::INVALID_SHARD_ID, "Field shard_name is incorrect. It must be unique in cluster and non-empty");
         }
 
         if (shard_without_replicas)
         {
             /// Shard without replicas.
             Addresses addresses;
-            addresses.emplace_back(config, prefix, cluster_name, secret, shard_number, 1);
+            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
             const auto & address = addresses.back();
 
             ShardInfo info;
-            info.shard_num = shard_number;
+            info.shard_num = current_shard_num;
+            info.shard_name = shard_name;
             info.weight = weight;
 
             if (address.is_local)
@@ -510,11 +511,11 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             ShardInfoInsertPathForInternalReplication insert_paths;
             /// "_all_replicas" is a marker that will be replaced with all replicas
             /// (for creating connections in the Distributed engine)
-            insert_paths.compact = fmt::format("shard{}_all_replicas", shard_number);
+            insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
 
             for (const auto & replica_key : replica_keys)
             {
-                if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication") || startsWith(replica_key, "shard_number"))
+                if (startsWith(replica_key, "weight") || startsWith(replica_key, "internal_replication") || startsWith(replica_key, "shard_name"))
                     continue;
 
                 if (startsWith(replica_key, "replica"))
@@ -523,7 +524,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                         prefix + replica_key,
                         cluster_name,
                         secret,
-                        shard_number,
+                        current_shard_num,
                         current_replica_num);
                     ++current_replica_num;
 
@@ -543,7 +544,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 settings,
                 replica_addresses,
                 /* treat_local_as_remote = */ false,
-                shard_number,
+                current_shard_num,
+                std::move(shard_name),
                 weight,
                 std::move(insert_paths),
                 internal_replication);
@@ -580,7 +582,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
         ++current_shard_num;
     }
 
@@ -608,7 +610,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num);
         ++current_shard_num;
     }
 
@@ -620,6 +622,7 @@ void Cluster::addShard(
     Addresses addresses,
     bool treat_local_as_remote,
     UInt32 current_shard_num,
+    String current_shard_name,
     UInt32 weight,
     ShardInfoInsertPathForInternalReplication insert_paths,
     bool internal_replication)
@@ -664,6 +667,7 @@ void Cluster::addShard(
     shards_info.push_back({
         std::move(insert_paths),
         current_shard_num,
+        std::move(current_shard_name),
         weight,
         std::move(shard_local_addresses),
         std::move(shard_pool),
