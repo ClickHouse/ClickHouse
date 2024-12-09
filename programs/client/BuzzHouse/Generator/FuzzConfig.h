@@ -6,13 +6,15 @@
 #include <optional>
 #include <string>
 
-#if defined USE_SIMDJSON && USE_SIMDJSON
+#include "config.h"
+
+#if USE_SIMDJSON
 #    include <Common/JSONParsers/SimdJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::SimdJSONParser;
 }
-#elif defined USE_RAPIDJSON && USE_RAPIDJSON
+#elif USE_RAPIDJSON
 #    include <Common/JSONParsers/RapidJSONParser.h>
 namespace BuzzHouse
 {

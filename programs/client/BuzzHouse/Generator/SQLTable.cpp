@@ -628,6 +628,10 @@ int StatementGenerator::addTableColumn(
         possible_types &= ~(
             allow_hugeint | allow_unsigned_int | allow_dynamic | allow_array | allow_map | allow_tuple | allow_variant | allow_nested
             | allow_geo);
+        if (t.hasSQLitePeer())
+        {
+            possible_types &= ~(allow_bool); //it maps to int type, then it outputs 0 as default instead of false
+        }
     }
     if (t.isMongoDBEngine())
     {
