@@ -5837,7 +5837,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!retryable || (try_no + 1 == loading_parts_max_tries))
         {
             if (Exception * e = exception_cast<Exception *>(error))
-                e->addMessage("while restoring part {} of table {}", part->name, getStorageID());
+                e->addMessage("while restoring part {} of table {}", part_name, getStorageID());
             std::rethrow_exception(error);
         }
 
