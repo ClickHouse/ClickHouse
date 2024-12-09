@@ -2,7 +2,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/createUniqueTableAliases.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -394,7 +394,7 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
-    createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+    createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
     // settings won't break any remote parser. It's also more reasonable since the query settings

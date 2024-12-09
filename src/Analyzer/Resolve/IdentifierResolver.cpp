@@ -541,7 +541,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromExpressionArguments
 
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr || scope.aliases.array_join_aliases.contains(identifier_lookup.identifier.front());
+    return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
 }
 
 /** Resolve identifier from table columns.
@@ -655,6 +655,27 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
     }
 
     return can_bind_identifier_to_table_expression;
+}
+
+bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
+{
+    bool result = false;
+
+    for (const auto & table_expression : scope.registered_table_expression_nodes)
+    {
+        auto * array_join_node = table_expression->as<ArrayJoinNode>();
+        if (!array_join_node)
+            continue;
+
+        for (const auto & array_join_expression : array_join_node->getJoinExpressions())
+        {
+            auto array_join_expression_alias = array_join_expression->getAlias();
+            if (identifier_lookup.identifier.front() == array_join_expression_alias)
+                return true;
+        }
+    }
+
+    return result;
 }
 
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromStorage(
@@ -1393,9 +1414,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromArrayJoin(const Ide
 
         IdentifierView identifier_view(identifier_lookup.identifier);
 
-        if (identifier_view.isCompound() && from_array_join_node.hasAlias() && identifier_view.front() == from_array_join_node.getAlias())
-            identifier_view.popFirst();
-
         const auto & alias_or_name = array_join_column_expression_typed.hasAlias()
             ? array_join_column_expression_typed.getAlias()
             : array_join_column_expression_typed.getColumnName();
@@ -1407,18 +1425,16 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromArrayJoin(const Ide
         else
             continue;
 
+        auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
+            array_join_column_expression_typed.getColumnSource());
         if (identifier_view.empty())
-        {
-            auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                array_join_column_expression_typed.getColumnSource());
             return array_join_column;
-        }
 
         /// Resolve subcolumns. Example : SELECT x.y.z FROM tab ARRAY JOIN arr AS x
         auto compound_expr = tryResolveIdentifierFromCompoundExpression(
             identifier_lookup.identifier,
             identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize() /*identifier_bind_size*/,
-            array_join_column_expression,
+            array_join_column,
             {} /* compound_expression_source */,
             scope,
             true /* can_be_not_found */);
