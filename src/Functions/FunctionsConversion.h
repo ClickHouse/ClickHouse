@@ -1678,8 +1678,8 @@ struct ConvertImpl
                 && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>)
                 && (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    named_from.column->getName(), Name::name);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}/{} of first argument of function {}",
+                    named_from.column->getName(), typeid(FromDataType).name(), Name::name);
             }
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
@@ -1993,6 +1993,124 @@ struct ConvertImplGenericFromString
     }
 };
 
+struct ConvertImplFromDynamicToColumn
+{
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert)
+    {
+        /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
+        /// and construct the result based on discriminators.
+        const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
+        const auto & variant_column = column_dynamic.getVariantColumn();
+        const auto & variant_info = column_dynamic.getVariantInfo();
+
+        /// First, cast usual variants to result type.
+        const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+        std::vector<ColumnPtr> cast_variant_columns;
+        cast_variant_columns.reserve(variant_types.size());
+        for (size_t i = 0; i != variant_types.size(); ++i)
+        {
+            /// Skip shared variant, it will be processed later.
+            if (i == column_dynamic.getSharedVariantDiscriminator())
+            {
+                cast_variant_columns.push_back(nullptr);
+                continue;
+            }
+
+            ColumnsWithTypeAndName new_args = arguments;
+            new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
+            cast_variant_columns.push_back(nested_convert(new_args, result_type));
+        }
+
+        /// Second, collect all variants stored in shared variant and cast them to result type.
+        std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
+        DataTypes variant_types_from_shared_variant;
+        /// We will need to know what variant to use when we see discriminator of a shared variant.
+        /// To do it, we remember what variant was extracted from each row and what was it's offset.
+        PaddedPODArray<UInt64> shared_variant_indexes;
+        PaddedPODArray<UInt64> shared_variant_offsets;
+        std::unordered_map<String, UInt64> shared_variant_to_index;
+        const auto & shared_variant = column_dynamic.getSharedVariant();
+        const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+        const auto & local_discriminators = variant_column.getLocalDiscriminators();
+        const auto & offsets = variant_column.getOffsets();
+        if (!shared_variant.empty())
+        {
+            shared_variant_indexes.reserve(input_rows_count);
+            shared_variant_offsets.reserve(input_rows_count);
+            FormatSettings format_settings;
+            const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
+            for (size_t i = 0; i != input_rows_count; ++i)
+            {
+                if (local_discriminators[i] == shared_variant_local_discr)
+                {
+                    auto value = shared_variant.getDataAt(offsets[i]);
+                    ReadBufferFromMemory buf(value.data, value.size);
+                    auto type = decodeDataType(buf);
+                    auto type_name = type->getName();
+                    auto it = shared_variant_to_index.find(type_name);
+                    /// Check if we didn't create column for this variant yet.
+                    if (it == shared_variant_to_index.end())
+                    {
+                        it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
+                        variant_columns_from_shared_variant.push_back(type->createColumn());
+                        variant_types_from_shared_variant.push_back(type);
+                    }
+
+                    shared_variant_indexes.push_back(it->second);
+                    shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
+                    type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
+                }
+                else
+                {
+                    shared_variant_indexes.emplace_back();
+                    shared_variant_offsets.emplace_back();
+                }
+            }
+        }
+
+        /// Cast all extracted variants into result type.
+        std::vector<ColumnPtr> cast_shared_variant_columns;
+        cast_shared_variant_columns.reserve(variant_types_from_shared_variant.size());
+        for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
+        {
+            ColumnsWithTypeAndName new_args = arguments;
+            new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
+            cast_shared_variant_columns.push_back(nested_convert(new_args, result_type));
+        }
+
+        /// Construct result column from all cast variants.
+        auto res = result_type->createColumn();
+        res->reserve(input_rows_count);
+        for (size_t i = 0; i != input_rows_count; ++i)
+        {
+            auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                res->insertDefault();
+            }
+            else if (global_discr == shared_variant_discr)
+            {
+                if (cast_shared_variant_columns[shared_variant_indexes[i]])
+                    res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                else
+                    res->insertDefault();
+            }
+            else
+            {
+                if (cast_variant_columns[global_discr])
+                    res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
+                else
+                    res->insertDefault();
+            }
+        }
+
+        return res;
+    }
+};
 
 /// Declared early because used below.
 struct NameToDate { static constexpr auto name = "toDate"; };
@@ -2325,6 +2443,16 @@ private:
 
         if (context)
             date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
+
+        if (isDynamic(from_type))
+        {
+            auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
+            {
+                return executeInternal(args, to_type, args[0].column->size());
+            };
+
+            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
+        }
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
         {
@@ -4692,138 +4820,160 @@ private:
 
     WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const
     {
-        return [this]
+        auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & result_type) -> ColumnPtr
+        {
+            WrapperType wrapper;
+            if (cast_type == CastType::accurateOrNull)
+            {
+                /// Create wrapper only if we support conversion from variant to the resulting type.
+                wrapper = createWrapperIfCanConvert(args[0].type, result_type);
+                if (!wrapper)
+                    return nullptr;
+            }
+            else
+            {
+                wrapper = prepareUnpackDictionaries(args[0].type, result_type);
+            }
+
+            return wrapper(args, result_type, nullptr, args[0].column->size());
+        };
+
+        return [nested_convert]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
-            /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
-            /// and construct the result based on discriminators.
-            const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
-            const auto & variant_column = column_dynamic.getVariantColumn();
-            const auto & variant_info = column_dynamic.getVariantInfo();
-
-            /// First, cast usual variants to result type.
-            const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-            std::vector<ColumnPtr> cast_variant_columns;
-            cast_variant_columns.reserve(variant_types.size());
-            for (size_t i = 0; i != variant_types.size(); ++i)
-            {
-                /// Skip shared variant, it will be processed later.
-                if (i == column_dynamic.getSharedVariantDiscriminator())
-                {
-                    cast_variant_columns.push_back(nullptr);
-                    continue;
-                }
-
-                const auto & variant_col = variant_column.getVariantPtrByGlobalDiscriminator(i);
-                ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], ""}};
-                WrapperType variant_wrapper;
-                if (cast_type == CastType::accurateOrNull)
-                    /// Create wrapper only if we support conversion from variant to the resulting type.
-                    variant_wrapper = createWrapperIfCanConvert(variant_types[i], result_type);
-                else
-                    variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
-
-                ColumnPtr cast_variant;
-                /// Check if we have wrapper for this variant.
-                if (variant_wrapper)
-                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
-                cast_variant_columns.push_back(cast_variant);
-            }
-
-            /// Second, collect all variants stored in shared variant and cast them to result type.
-            std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
-            DataTypes variant_types_from_shared_variant;
-            /// We will need to know what variant to use when we see discriminator of a shared variant.
-            /// To do it, we remember what variant was extracted from each row and what was it's offset.
-            PaddedPODArray<UInt64> shared_variant_indexes;
-            PaddedPODArray<UInt64> shared_variant_offsets;
-            std::unordered_map<String, UInt64> shared_variant_to_index;
-            const auto & shared_variant = column_dynamic.getSharedVariant();
-            const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
-            const auto & local_discriminators = variant_column.getLocalDiscriminators();
-            const auto & offsets = variant_column.getOffsets();
-            if (!shared_variant.empty())
-            {
-                shared_variant_indexes.reserve(input_rows_count);
-                shared_variant_offsets.reserve(input_rows_count);
-                FormatSettings format_settings;
-                const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
-                for (size_t i = 0; i != input_rows_count; ++i)
-                {
-                    if (local_discriminators[i] == shared_variant_local_discr)
-                    {
-                        auto value = shared_variant.getDataAt(offsets[i]);
-                        ReadBufferFromMemory buf(value.data, value.size);
-                        auto type = decodeDataType(buf);
-                        auto type_name = type->getName();
-                        auto it = shared_variant_to_index.find(type_name);
-                        /// Check if we didn't create column for this variant yet.
-                        if (it == shared_variant_to_index.end())
-                        {
-                            it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
-                            variant_columns_from_shared_variant.push_back(type->createColumn());
-                            variant_types_from_shared_variant.push_back(type);
-                        }
-
-                        shared_variant_indexes.push_back(it->second);
-                        shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
-                        type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
-                    }
-                    else
-                    {
-                        shared_variant_indexes.emplace_back();
-                        shared_variant_offsets.emplace_back();
-                    }
-                }
-            }
-
-            /// Cast all extracted variants into result type.
-            std::vector<ColumnPtr> cast_shared_variant_columns;
-            cast_shared_variant_columns.reserve(variant_types_from_shared_variant.size());
-            for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
-            {
-                ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
-                WrapperType variant_wrapper;
-                if (cast_type == CastType::accurateOrNull)
-                    /// Create wrapper only if we support conversion from variant to the resulting type.
-                    variant_wrapper = createWrapperIfCanConvert(variant_types_from_shared_variant[i], result_type);
-                else
-                    variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
-
-                ColumnPtr cast_variant;
-                /// Check if we have wrapper for this variant.
-                if (variant_wrapper)
-                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
-                cast_shared_variant_columns.push_back(cast_variant);
-            }
-
-            /// Construct result column from all cast variants.
-            auto res = result_type->createColumn();
-            res->reserve(input_rows_count);
-            for (size_t i = 0; i != input_rows_count; ++i)
-            {
-                auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                {
-                    res->insertDefault();
-                }
-                else if (global_discr == shared_variant_discr)
-                {
-                    if (cast_shared_variant_columns[shared_variant_indexes[i]])
-                        res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
-                    else
-                        res->insertDefault();
-                }
-                else
-                {
-                    if (cast_variant_columns[global_discr])
-                        res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
-                    else
-                        res->insertDefault();
-                }
-            }
-
-            return res;
+            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
+//
+//
+//
+//            /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
+//            /// and construct the result based on discriminators.
+//            const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
+//            const auto & variant_column = column_dynamic.getVariantColumn();
+//            const auto & variant_info = column_dynamic.getVariantInfo();
+//
+//            /// First, cast usual variants to result type.
+//            const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+//            std::vector<ColumnPtr> cast_variant_columns;
+//            cast_variant_columns.reserve(variant_types.size());
+//            for (size_t i = 0; i != variant_types.size(); ++i)
+//            {
+//                /// Skip shared variant, it will be processed later.
+//                if (i == column_dynamic.getSharedVariantDiscriminator())
+//                {
+//                    cast_variant_columns.push_back(nullptr);
+//                    continue;
+//                }
+//
+//                const auto & variant_col = variant_column.getVariantPtrByGlobalDiscriminator(i);
+//                ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], ""}};
+//                WrapperType variant_wrapper;
+//                if (cast_type == CastType::accurateOrNull)
+//                    /// Create wrapper only if we support conversion from variant to the resulting type.
+//                    variant_wrapper = createWrapperIfCanConvert(variant_types[i], result_type);
+//                else
+//                    variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
+//
+//                ColumnPtr cast_variant;
+//                /// Check if we have wrapper for this variant.
+//                if (variant_wrapper)
+//                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+//                cast_variant_columns.push_back(cast_variant);
+//            }
+//
+//            /// Second, collect all variants stored in shared variant and cast them to result type.
+//            std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
+//            DataTypes variant_types_from_shared_variant;
+//            /// We will need to know what variant to use when we see discriminator of a shared variant.
+//            /// To do it, we remember what variant was extracted from each row and what was it's offset.
+//            PaddedPODArray<UInt64> shared_variant_indexes;
+//            PaddedPODArray<UInt64> shared_variant_offsets;
+//            std::unordered_map<String, UInt64> shared_variant_to_index;
+//            const auto & shared_variant = column_dynamic.getSharedVariant();
+//            const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+//            const auto & local_discriminators = variant_column.getLocalDiscriminators();
+//            const auto & offsets = variant_column.getOffsets();
+//            if (!shared_variant.empty())
+//            {
+//                shared_variant_indexes.reserve(input_rows_count);
+//                shared_variant_offsets.reserve(input_rows_count);
+//                FormatSettings format_settings;
+//                const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
+//                for (size_t i = 0; i != input_rows_count; ++i)
+//                {
+//                    if (local_discriminators[i] == shared_variant_local_discr)
+//                    {
+//                        auto value = shared_variant.getDataAt(offsets[i]);
+//                        ReadBufferFromMemory buf(value.data, value.size);
+//                        auto type = decodeDataType(buf);
+//                        auto type_name = type->getName();
+//                        auto it = shared_variant_to_index.find(type_name);
+//                        /// Check if we didn't create column for this variant yet.
+//                        if (it == shared_variant_to_index.end())
+//                        {
+//                            it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
+//                            variant_columns_from_shared_variant.push_back(type->createColumn());
+//                            variant_types_from_shared_variant.push_back(type);
+//                        }
+//
+//                        shared_variant_indexes.push_back(it->second);
+//                        shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
+//                        type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
+//                    }
+//                    else
+//                    {
+//                        shared_variant_indexes.emplace_back();
+//                        shared_variant_offsets.emplace_back();
+//                    }
+//                }
+//            }
+//
+//            /// Cast all extracted variants into result type.
+//            std::vector<ColumnPtr> cast_shared_variant_columns;
+//            cast_shared_variant_columns.reserve(variant_types_from_shared_variant.size());
+//            for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
+//            {
+//                ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
+//                WrapperType variant_wrapper;
+//                if (cast_type == CastType::accurateOrNull)
+//                    /// Create wrapper only if we support conversion from variant to the resulting type.
+//                    variant_wrapper = createWrapperIfCanConvert(variant_types_from_shared_variant[i], result_type);
+//                else
+//                    variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
+//
+//                ColumnPtr cast_variant;
+//                /// Check if we have wrapper for this variant.
+//                if (variant_wrapper)
+//                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
+//                cast_shared_variant_columns.push_back(cast_variant);
+//            }
+//
+//            /// Construct result column from all cast variants.
+//            auto res = result_type->createColumn();
+//            res->reserve(input_rows_count);
+//            for (size_t i = 0; i != input_rows_count; ++i)
+//            {
+//                auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+//                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+//                {
+//                    res->insertDefault();
+//                }
+//                else if (global_discr == shared_variant_discr)
+//                {
+//                    if (cast_shared_variant_columns[shared_variant_indexes[i]])
+//                        res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+//                    else
+//                        res->insertDefault();
+//                }
+//                else
+//                {
+//                    if (cast_variant_columns[global_discr])
+//                        res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
+//                    else
+//                        res->insertDefault();
+//                }
+//            }
+//
+//            return res;
         };
     }
 
