@@ -293,7 +293,7 @@ EOF
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
-        <(cat fuzzer_args.txt) \
+        $(cat fuzzer_args.txt) \
         > fuzzer.log \
         2>&1 &
     fuzzer_pid=$!
