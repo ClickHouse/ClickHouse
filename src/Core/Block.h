@@ -141,6 +141,9 @@ public:
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
 
+    /** Get empty columns with the same types as in block and given serializations. */
+    MutableColumns cloneEmptyColumns(const Serializations & serializations) const;
+
     /** Get columns from block for mutation. Columns in block will be nullptr. */
     MutableColumns mutateColumns();
 

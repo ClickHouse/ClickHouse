@@ -12,7 +12,7 @@ This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ec
 
 ``` sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
-    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression], [headers])
     [SETTINGS]
     [mode = '',]
     [after_processing = 'keep',]
