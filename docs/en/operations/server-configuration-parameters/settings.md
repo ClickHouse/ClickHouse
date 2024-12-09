@@ -3287,7 +3287,7 @@ Type: Bool
 
 Default value: `true`.
 
-## allowed_feature_tier
+## allow_feature_tier
 
 Controls if the user can change settings related to the different feature tiers.
 0 - Changes to any setting are allowed (experimental, beta, production).
