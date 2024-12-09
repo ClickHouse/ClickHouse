@@ -258,7 +258,7 @@ public:
                     getName(),
                     nested_type->getName());
 
-            /// The third and optional argument (labels) must be an array of integers
+            /// The third and optional argument (partial_offsets) must be an array of integers
             if (i == 2 && !isInteger(nested_type))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
