@@ -1,0 +1,4 @@
+simple_with_analyzer	['default.03148_dictionary']
+nested_with_analyzer	['default.03148_dictionary']
+simple_without_analyzer	['default.03148_dictionary']
+nested_without_analyzer	['default.03148_dictionary']

@@ -1,9 +1,21 @@
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Common/BitHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
+
+String MarkInCompressedFile::toString() const
+{
+    return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
+}
+
+String MarkInCompressedFile::toStringWithRows(size_t rows_num) const
+{
+    return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ","
+        + DB::toString(rows_num) + ")";
+}
 
 // Write a range of bits in a bit-packed array.
 // The array must be overallocated by one element.
@@ -97,7 +109,7 @@ std::tuple<const MarksInCompressedFile::BlockInfo *, size_t> MarksInCompressedFi
 
 size_t MarksInCompressedFile::approximateMemoryUsage() const
 {
-    return sizeof(*this) + blocks.size() * sizeof(blocks[0]) + packed.size() * sizeof(packed[0]);
+    return sizeof(*this) + blocks.allocated_bytes() + packed.allocated_bytes();
 }
 
 }

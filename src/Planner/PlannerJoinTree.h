@@ -11,10 +11,15 @@
 namespace DB
 {
 
+using UsefulSets = std::unordered_set<FutureSetPtr>;
+
 struct JoinTreeQueryPlan
 {
     QueryPlan query_plan;
     QueryProcessingStage::Enum from_stage;
+    std::set<std::string> used_row_policies{};
+    UsefulSets useful_sets{};
+    std::unordered_map<const QueryNode *, const QueryPlan::Node *> query_node_to_plan_step_mapping{};
 };
 
 /// Build JOIN TREE query plan for query node

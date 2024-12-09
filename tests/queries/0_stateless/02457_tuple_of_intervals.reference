@@ -10,6 +10,9 @@ SELECT (toIntervalSecond(-1), toIntervalMinute(2), toIntervalMonth(-3), toInterv
 (1,2)
 (1,0)
 ---
+()
+()
+---
 2022-10-12
 2022-10-10
 2022-10-12

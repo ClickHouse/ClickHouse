@@ -39,7 +39,7 @@ SELECT a, b, c FROM (SELECT ...)
 ## Materialized {#materialized}
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
 物化视图存储由相应的[SELECT](../../../sql-reference/statements/select/index.md)管理.
@@ -55,7 +55,7 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 
 如果指定`POPULATE`，则在创建视图时将现有表数据插入到视图中，就像创建一个`CREATE TABLE ... AS SELECT ...`一样。 否则，查询仅包含创建视图后插入表中的数据。 我们**不建议**使用POPULATE，因为在创建视图期间插入表中的数据不会插入其中。
 
-`SELECT` 查询可以包含`DISTINCT`、`GROUP BY`、`ORDER BY`、`LIMIT`……请注意，相应的转换是在每个插入数据块上独立执行的。 例如，如果设置了`GROUP BY`，则在插入期间聚合数据，但仅在插入数据的单个数据包内。 数据不会被进一步聚合。 例外情况是使用独立执行数据聚合的`ENGINE`，例如`SummingMergeTree`。
+`SELECT` 查询可以包含`DISTINCT`、`GROUP BY`、`ORDER BY`、`LIMIT`...请注意，相应的转换是在每个插入数据块上独立执行的。 例如，如果设置了`GROUP BY`，则在插入期间聚合数据，但仅在插入数据的单个数据包内。 数据不会被进一步聚合。 例外情况是使用独立执行数据聚合的`ENGINE`，例如`SummingMergeTree`。
 
 在物化视图上执行[ALTER](../../../sql-reference/statements/alter/index.md)查询有局限性，因此可能不方便。 如果物化视图使用构造`TO [db.]name`，你可以`DETACH`视图，为目标表运行`ALTER`，然后`ATTACH`先前分离的（`DETACH`）视图。
 

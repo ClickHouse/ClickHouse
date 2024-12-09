@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/int-uint
-sidebar_position: 40
+sidebar_position: 2
 sidebar_label: UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256
 ---
 
@@ -21,10 +21,10 @@ When creating tables, numeric parameters for integer numbers can be set (e.g. `T
 
 Aliases:
 
-- `Int8` — `TINYINT`, `BOOL`, `BOOLEAN`, `INT1`.
-- `Int16` — `SMALLINT`, `INT2`.
-- `Int32` — `INT`, `INT4`, `INTEGER`.
-- `Int64` — `BIGINT`.
+- `Int8` — `TINYINT`, `INT1`, `BYTE`, `TINYINT SIGNED`, `INT1 SIGNED`.
+- `Int16` — `SMALLINT`, `SMALLINT SIGNED`.
+- `Int32` — `INT`, `INTEGER`, `MEDIUMINT`, `MEDIUMINT SIGNED`, `INT SIGNED`, `INTEGER SIGNED`.
+- `Int64` — `BIGINT`, `SIGNED`, `BIGINT SIGNED`, `TIME`.
 
 ## UInt Ranges
 
@@ -34,3 +34,11 @@ Aliases:
 - `UInt64` — \[0 : 18446744073709551615\]
 - `UInt128` — \[0 : 340282366920938463463374607431768211455\]
 - `UInt256` — \[0 : 115792089237316195423570985008687907853269984665640564039457584007913129639935\]
+
+Aliases:
+
+- `UInt8` — `TINYINT UNSIGNED`, `INT1 UNSIGNED`.
+- `UInt16` — `SMALLINT UNSIGNED`.
+- `UInt32` — `MEDIUMINT UNSIGNED`, `INT UNSIGNED`, `INTEGER UNSIGNED`
+- `UInt64` — `UNSIGNED`, `BIGINT UNSIGNED`, `BIT`, `SET`
+

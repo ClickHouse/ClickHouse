@@ -1,6 +1,6 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Common/logger_useful.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -35,7 +35,7 @@ InterserverCredentials::CurrentCredentials InterserverCredentials::parseCredenti
     const Poco::Util::AbstractConfiguration & config,
     const std::string & root_tag)
 {
-    auto * log = &Poco::Logger::get("InterserverCredentials");
+    auto log = getLogger("InterserverCredentials");
     CurrentCredentials store;
     store.emplace_back(current_user_, current_password_);
     if (config.getBool(root_tag + ".allow_empty", false))

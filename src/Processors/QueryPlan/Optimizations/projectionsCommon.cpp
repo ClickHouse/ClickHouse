@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
@@ -14,6 +15,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool allow_experimental_query_deduplication;
+    extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 select_sequential_consistency;
+}
 
 namespace ErrorCodes
 {
@@ -25,8 +34,7 @@ namespace QueryPlanOptimizations
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
 {
-    /// Probably some projection already was applied.
-    if (reading->hasAnalyzedResult())
+    if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return false;
 
     if (reading->isQueryWithFinal())
@@ -41,12 +49,19 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->readsInOrder())
         return false;
 
+    const auto & query_settings = reading->getContext()->getSettingsRef();
+
     // Currently projection don't support deduplication when moving parts between shards.
-    if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
+    if (query_settings[Setting::allow_experimental_query_deduplication])
         return false;
 
     // Currently projection don't support settings which implicitly modify aggregate functions.
-    if (reading->getContext()->getSettingsRef().aggregate_functions_null_for_empty)
+    if (query_settings[Setting::aggregate_functions_null_for_empty])
+        return false;
+
+    /// Don't use projections if have mutations to apply
+    /// because we need to apply them on original data.
+    if (query_settings[Setting::apply_mutations_on_fly] && reading->getMutationsSnapshot()->hasDataMutations())
         return false;
 
     return true;
@@ -56,7 +71,7 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
 {
     ContextPtr context = reading->getContext();
 
-    if (context->getSettingsRef().select_sequential_consistency)
+    if (context->getSettingsRef()[Setting::select_sequential_consistency])
     {
         if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&reading->getMergeTreeData()))
             return std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
@@ -65,12 +80,12 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
     return {};
 }
 
-void QueryDAG::appendExpression(const ActionsDAGPtr & expression)
+void QueryDAG::appendExpression(const ActionsDAG & expression)
 {
     if (dag)
-        dag->mergeInplace(std::move(*expression->clone()));
+        dag->mergeInplace(expression.clone());
     else
-        dag = expression->clone();
+        dag = expression.clone();
 }
 
 const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
@@ -121,22 +136,19 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
         {
             if (prewhere_info->row_level_filter)
             {
-                appendExpression(prewhere_info->row_level_filter);
+                appendExpression(*prewhere_info->row_level_filter);
                 if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->row_level_column_name, false))
                     filter_nodes.push_back(filter_expression);
                 else
                     return false;
             }
 
-            if (prewhere_info->prewhere_actions)
-            {
-                appendExpression(prewhere_info->prewhere_actions);
-                if (const auto * filter_expression
-                    = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
-                    filter_nodes.push_back(filter_expression);
-                else
-                    return false;
-            }
+            appendExpression(prewhere_info->prewhere_actions);
+            if (const auto * filter_expression
+                = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
+                filter_nodes.push_back(filter_expression);
+            else
+                return false;
         }
         return true;
     }
@@ -150,7 +162,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
     {
         const auto & actions = expression->getExpression();
-        if (actions->hasArrayJoin())
+        if (actions.hasArrayJoin())
             return false;
 
         appendExpression(actions);
@@ -160,7 +172,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     if (auto * filter = typeid_cast<FilterStep *>(step))
     {
         const auto & actions = filter->getExpression();
-        if (actions->hasArrayJoin())
+        if (actions.hasArrayJoin())
             return false;
 
         appendExpression(actions);
@@ -210,56 +222,54 @@ bool analyzeProjectionCandidate(
     const ReadFromMergeTree & reading,
     const MergeTreeDataSelectExecutor & reader,
     const Names & required_column_names,
-    const MergeTreeData::DataPartsVector & parts,
-    const StorageMetadataPtr & metadata,
+    const RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionDAGNodes & added_filter_nodes)
+    const ActionsDAG * dag)
 {
     MergeTreeData::DataPartsVector projection_parts;
     MergeTreeData::DataPartsVector normal_parts;
-    for (const auto & part : parts)
+
+    for (const auto & part_with_ranges : parts_with_ranges)
     {
-        const auto & created_projections = part->getProjectionParts();
+        const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
-        if (it != created_projections.end())
+        if (it != created_projections.end() && !it->second->is_broken)
             projection_parts.push_back(it->second);
         else
-            normal_parts.push_back(part);
+            normal_parts.push_back(part_with_ranges.data_part);
     }
 
     if (projection_parts.empty())
         return false;
 
+    auto projection_query_info = query_info;
+    projection_query_info.prewhere_info = nullptr;
+    if (dag)
+        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(dag->clone());
+
     auto projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
-        nullptr,
+        reading.getMutationsSnapshot()->cloneEmpty(),
         required_column_names,
-        metadata,
         candidate.projection->metadata,
-        query_info, /// How it is actually used? I hope that for index we need only added_filter_nodes
-        added_filter_nodes,
+        projection_query_info,
         context,
-        context->getSettingsRef().max_threads,
+        context->getSettingsRef()[Setting::max_threads],
         max_added_blocks);
 
-    if (projection_result_ptr->error())
-        return false;
-
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
-    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->marks();
+    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks;
 
     if (!normal_parts.empty())
     {
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), /* alter_conversions = */ {});
+        /// TODO: We can reuse existing analysis_result by filtering out projection parts
+        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
 
-        if (normal_result_ptr->error())
-            return false;
-
-        if (normal_result_ptr->marks() != 0)
+        if (normal_result_ptr->selected_marks != 0)
         {
-            candidate.sum_marks += normal_result_ptr->marks();
+            candidate.sum_marks += normal_result_ptr->selected_marks;
             candidate.merge_tree_ordinary_select_result_ptr = std::move(normal_result_ptr);
         }
     }

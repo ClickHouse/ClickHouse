@@ -6,84 +6,74 @@ SELECT count() FROM a JOIN b ON b.b1 = a.a1 JOIN c ON c.c1 = b.b1 JOIN d ON d.d1
 Expression ((Project names + Projection))
 Header: count() UInt64
   Aggregating
-  Header: a2_4 String
+  Header: __table1.a2 String
           count() UInt64
-    Expression ((Before GROUP BY + DROP unused columns after JOIN))
-    Header: a2_4 String
+    Expression (Before GROUP BY)
+    Header: __table1.a2 String
       Join (JOIN FillRightFirst)
-      Header: a2_4 String
-              c1_2 UInt64
-        Expression ((JOIN actions + DROP unused columns after JOIN))
-        Header: a2_4 String
-                c1_2 UInt64
+      Header: __table1.a2 String
+        Expression (JOIN actions)
+        Header: __table1.a2 String
+                __table3.c1 UInt64
           Join (JOIN FillRightFirst)
-          Header: a2_4 String
-                  b1_0 UInt64
-                  c1_2 UInt64
-            Expression ((JOIN actions + DROP unused columns after JOIN))
-            Header: a2_4 String
-                    b1_0 UInt64
+          Header: __table1.a2 String
+                  __table3.c1 UInt64
+            Expression (JOIN actions)
+            Header: __table1.a2 String
+                    __table2.b1 UInt64
               Join (JOIN FillRightFirst)
-              Header: a1_1 UInt64
-                      a2_4 String
-                      b1_0 UInt64
+              Header: __table1.a2 String
+                      __table2.b1 UInt64
                 Expression ((JOIN actions + Change column names to column identifiers))
-                Header: a1_1 UInt64
-                        a2_4 String
+                Header: __table1.a1 UInt64
+                        __table1.a2 String
                   ReadFromMemoryStorage
                   Header: a1 UInt64
                           a2 String
                 Expression ((JOIN actions + Change column names to column identifiers))
-                Header: b1_0 UInt64
+                Header: __table2.b1 UInt64
                   ReadFromMemoryStorage
                   Header: b1 UInt64
             Expression ((JOIN actions + Change column names to column identifiers))
-            Header: c1_2 UInt64
+            Header: __table3.c1 UInt64
               ReadFromMemoryStorage
               Header: c1 UInt64
         Expression ((JOIN actions + Change column names to column identifiers))
-        Header: d1_3 UInt64
+        Header: __table4.d1 UInt64
           ReadFromMemoryStorage
           Header: d1 UInt64
 EXPLAIN PLAN header = 1
 SELECT a.a2, d.d2 FROM a JOIN b USING (k) JOIN c USING (k) JOIN d USING (k)
 ;
-Expression ((Project names + (Projection + DROP unused columns after JOIN)))
+Expression ((Project names + Projection))
 Header: a2 String
         d2 String
   Join (JOIN FillRightFirst)
-  Header: a2_0 String
-          k_2 UInt64
-          d2_1 String
-    Expression (DROP unused columns after JOIN)
-    Header: a2_0 String
-            k_2 UInt64
+  Header: __table1.a2 String
+          __table4.d2 String
+    Join (JOIN FillRightFirst)
+    Header: __table1.a2 String
+            __table1.k UInt64
       Join (JOIN FillRightFirst)
-      Header: a2_0 String
-              k_2 UInt64
-        Expression (DROP unused columns after JOIN)
-        Header: a2_0 String
-                k_2 UInt64
-          Join (JOIN FillRightFirst)
-          Header: a2_0 String
-                  k_2 UInt64
-            Expression (Change column names to column identifiers)
-            Header: a2_0 String
-                    k_2 UInt64
-              ReadFromMemoryStorage
-              Header: a2 String
-                      k UInt64
-            Expression (Change column names to column identifiers)
-            Header: k_3 UInt64
-              ReadFromMemoryStorage
-              Header: k UInt64
+      Header: __table1.a2 String
+              __table1.k UInt64
         Expression (Change column names to column identifiers)
-        Header: k_4 UInt64
+        Header: __table1.a2 String
+                __table1.k UInt64
+          ReadFromMemoryStorage
+          Header: a2 String
+                  k UInt64
+        Expression (Change column names to column identifiers)
+        Header: __table2.k UInt64
           ReadFromMemoryStorage
           Header: k UInt64
+      Expression (Change column names to column identifiers)
+      Header: __table3.k UInt64
+        ReadFromMemoryStorage
+        Header: k UInt64
     Expression (Change column names to column identifiers)
-    Header: d2_1 String
-            k_5 UInt64
+    Header: __table4.d2 String
+            __table4.k UInt64
       ReadFromMemoryStorage
       Header: d2 String
               k UInt64
@@ -97,55 +87,52 @@ WHERE c.c2 != '' ORDER BY a.a2
 Expression (Project names)
 Header: bx String
   Sorting (Sorting for ORDER BY)
-  Header: a2_6 String
-          bx_0 String
+  Header: __table1.a2 String
+          __table2.bx String
     Expression ((Before ORDER BY + (Projection + )))
-    Header: a2_6 String
-            bx_0 String
+    Header: __table1.a2 String
+            __table2.bx String
       Join (JOIN FillRightFirst)
-      Header: a2_6 String
-              bx_0 String
-              c2_5 String
-              c1_3 UInt64
+      Header: __table1.a2 String
+              __table2.bx String
+              __table4.c2 String
         Expression
-        Header: a2_6 String
-                bx_0 String
-                c2_5 String
-                c1_3 UInt64
+        Header: __table1.a2 String
+                __table2.bx String
+                __table4.c1 UInt64
+                __table4.c2 String
           Join (JOIN FillRightFirst)
-          Header: a2_6 String
-                  bx_0 String
-                  b1_1 UInt64
-                  c2_5 String
-                  c1_3 UInt64
-            Expression ((JOIN actions + DROP unused columns after JOIN))
-            Header: a2_6 String
-                    bx_0 String
-                    b1_1 UInt64
+          Header: __table1.a2 String
+                  __table2.bx String
+                  __table4.c1 UInt64
+                  __table4.c2 String
+            Expression (JOIN actions)
+            Header: __table1.a2 String
+                    __table2.b1 UInt64
+                    __table2.bx String
               Join (JOIN FillRightFirst)
-              Header: a1_2 UInt64
-                      a2_6 String
-                      bx_0 String
-                      b1_1 UInt64
+              Header: __table1.a2 String
+                      __table2.b1 UInt64
+                      __table2.bx String
                 Expression ((JOIN actions + Change column names to column identifiers))
-                Header: a1_2 UInt64
-                        a2_6 String
+                Header: __table1.a1 UInt64
+                        __table1.a2 String
                   ReadFromMemoryStorage
                   Header: a1 UInt64
                           a2 String
                 Expression ((JOIN actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-                Header: b1_1 UInt64
-                        bx_0 String
+                Header: __table2.b1 UInt64
+                        __table2.bx String
                   ReadFromMemoryStorage
                   Header: b1 UInt64
                           b2 String
             Filter (( + (JOIN actions + Change column names to column identifiers)))
-            Header: c1_3 UInt64
-                    c2_5 String
+            Header: __table4.c1 UInt64
+                    __table4.c2 String
               ReadFromMemoryStorage
               Header: c1 UInt64
                       c2 String
         Expression ((JOIN actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-        Header: d1_4 UInt64
-          ReadFromStorage (SystemNumbers)
+        Header: __table5.d1 UInt64
+          ReadFromSystemNumbers
           Header: number UInt64

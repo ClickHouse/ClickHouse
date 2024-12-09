@@ -1,17 +1,20 @@
 #pragma once
 
-#include <sstream>
-#include <string>
+#include "config.h"
+
+#include <atomic>
+#include <memory>
 #include <unordered_map>
-
-#include <Coordination/KeeperDispatcher.h>
-#include <IO/WriteBufferFromString.h>
-
-#include "config_version.h"
-
+#include <string>
+#include <vector>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
+
+class KeeperDispatcher;
+
+using String = std::string;
 
 struct IFourLetterCommand;
 using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
@@ -23,7 +26,6 @@ using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
 struct IFourLetterCommand
 {
 public:
-    using StringBuffer = DB::WriteBufferFromOwnString;
     explicit IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_);
 
     virtual String name() = 0;
@@ -413,6 +415,82 @@ struct FeatureFlagsCommand : public IFourLetterCommand
     String name() override { return "ftfl"; }
     String run() override;
     ~FeatureFlagsCommand() override = default;
+};
+
+/// Yield leadership and become follower.
+struct YieldLeadershipCommand : public IFourLetterCommand
+{
+    explicit YieldLeadershipCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "ydld"; }
+    String run() override;
+    ~YieldLeadershipCommand() override = default;
+};
+
+#if USE_JEMALLOC
+struct JemallocDumpStats : public IFourLetterCommand
+{
+    explicit JemallocDumpStats(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmst"; }
+    String run() override;
+    ~JemallocDumpStats() override = default;
+
+};
+
+struct JemallocFlushProfile : public IFourLetterCommand
+{
+    explicit JemallocFlushProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmfp"; }
+    String run() override;
+    ~JemallocFlushProfile() override = default;
+};
+
+struct JemallocEnableProfile : public IFourLetterCommand
+{
+    explicit JemallocEnableProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmep"; }
+    String run() override;
+    ~JemallocEnableProfile() override = default;
+};
+
+struct JemallocDisableProfile : public IFourLetterCommand
+{
+    explicit JemallocDisableProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmdp"; }
+    String run() override;
+    ~JemallocDisableProfile() override = default;
+};
+#endif
+
+struct ProfileEventsCommand : public IFourLetterCommand
+{
+    explicit ProfileEventsCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "pfev"; }
+    String run() override;
+    ~ProfileEventsCommand() override = default;
 };
 
 }

@@ -1,8 +1,10 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -20,6 +22,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsOverflowMode distinct_overflow_mode;
+    extern const SettingsUInt64 max_rows_in_distinct;
+    extern const SettingsUInt64 max_bytes_in_distinct;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool optimize_distinct_in_order;
+}
 
 namespace ErrorCodes
 {
@@ -76,9 +86,8 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
 
     /// AST must have been changed by the visitor.
     if (final_operator == Operator::UNKNOWN || num_children != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "SelectIntersectExceptyQuery has not been normalized (number of children: {})",
-                        num_children);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "SelectIntersectExceptQuery has not been normalized (number of children: {})", num_children);
 
     nested_interpreters.resize(num_children);
 
@@ -119,30 +128,29 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
 
     size_t num_plans = nested_interpreters.size();
     std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-    DataStreams data_streams(num_plans);
+    Headers headers(num_plans);
 
     for (size_t i = 0; i < num_plans; ++i)
     {
         plans[i] = std::make_unique<QueryPlan>();
         nested_interpreters[i]->buildQueryPlan(*plans[i]);
 
-        if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
+        if (!blocksHaveEqualStructure(plans[i]->getCurrentHeader(), result_header))
         {
             auto actions_dag = ActionsDAG::makeConvertingActions(
-                    plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                    plans[i]->getCurrentHeader().getColumnsWithTypeAndName(),
                     result_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Position);
-            auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
+            auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
             converting_step->setStepDescription("Conversion before UNION");
             plans[i]->addStep(std::move(converting_step));
         }
 
-        data_streams[i] = plans[i]->getCurrentDataStream();
+        headers[i] = plans[i]->getCurrentHeader();
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto max_threads = settings.max_threads;
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, max_threads);
+    auto step = std::make_unique<IntersectOrExceptStep>(std::move(headers), final_operator, settings[Setting::max_threads]);
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
@@ -150,15 +158,14 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         || query.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
     {
         /// Add distinct transform
-        SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
         auto distinct_step = std::make_unique<DistinctStep>(
-            query_plan.getCurrentDataStream(),
+            query_plan.getCurrentHeader(),
             limits,
             0,
             result_header.getNames(),
-            false,
-            settings.optimize_distinct_in_order);
+            false);
 
         query_plan.addStep(std::move(distinct_step));
     }
@@ -208,6 +215,15 @@ void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogEleme
             }
         }
     }
+}
+
+void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectIntersectExceptQuery", create_fn);
 }
 
 }

@@ -3,6 +3,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
 
@@ -80,6 +81,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(rows);
     src_rows += rows;
     src_bytes += chunk.bytes();
 
@@ -159,7 +162,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                 if (group_by_key)
                     params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
                 else
-                    params->aggregator.mergeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_columns_data);
+                    params->aggregator.mergeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_columns_data, is_cancelled);
             }
             else
             {
@@ -254,29 +257,25 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         {
             return Status::Ready;
         }
-        else
-        {
-            output.push(std::move(to_push_chunk));
-            return Status::Ready;
-        }
-    }
-    else
-    {
-        if (is_consume_finished)
-        {
-            output.push(std::move(to_push_chunk));
-            output.finish();
-            LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})",
-                src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
-            return Status::Finished;
-        }
 
-        if (input.isFinished())
-        {
-            is_consume_finished = true;
-            return Status::Ready;
-        }
+        output.push(std::move(to_push_chunk));
+        return Status::Ready;
     }
+
+    if (is_consume_finished)
+    {
+        output.push(std::move(to_push_chunk));
+        output.finish();
+        LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})", src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
+        return Status::Finished;
+    }
+
+    if (input.isFinished())
+    {
+        is_consume_finished = true;
+        return Status::Ready;
+    }
+
     if (!input.hasData())
     {
         input.setNeeded();
@@ -331,7 +330,7 @@ void AggregatingInOrderTransform::generate()
     variants.aggregates_pool = variants.aggregates_pools.at(0).get();
 
     /// Pass info about used memory by aggregate functions further.
-    to_push_chunk.setChunkInfo(std::make_shared<ChunkInfoWithAllocatedBytes>(cur_block_bytes));
+    to_push_chunk.getChunkInfos().add(std::make_shared<ChunkInfoWithAllocatedBytes>(cur_block_bytes));
 
     cur_block_bytes = 0;
     cur_block_size = 0;
@@ -350,11 +349,12 @@ FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, Aggregati
 void FinalizeAggregatedTransform::transform(Chunk & chunk)
 {
     if (params->final)
-        finalizeChunk(chunk, aggregates_mask);
-    else if (!chunk.getChunkInfo())
     {
-        auto info = std::make_shared<AggregatedChunkInfo>();
-        chunk.setChunkInfo(std::move(info));
+        finalizeChunk(chunk, aggregates_mask);
+    }
+    else if (!chunk.getChunkInfos().get<AggregatedChunkInfo>())
+    {
+        chunk.getChunkInfos().add(std::make_shared<AggregatedChunkInfo>());
     }
 }
 

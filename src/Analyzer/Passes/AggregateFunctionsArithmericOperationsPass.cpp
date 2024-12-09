@@ -9,9 +9,17 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
+
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
+}
+
 
 namespace ErrorCodes
 {
@@ -32,6 +40,10 @@ Field zeroField(const Field & value)
         case Field::Types::Int128: return static_cast<Int128>(0);
         case Field::Types::UInt256: return static_cast<UInt256>(0);
         case Field::Types::Int256: return static_cast<Int256>(0);
+        case Field::Types::Decimal32: return static_cast<Decimal32>(0);
+        case Field::Types::Decimal64: return static_cast<Decimal64>(0);
+        case Field::Types::Decimal128: return static_cast<Decimal128>(0);
+        case Field::Types::Decimal256: return static_cast<Decimal256>(0);
         default:
             break;
     }
@@ -51,9 +63,9 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<AggregateFunctionsArithmericOperationsVisitor>;
     using Base::Base;
 
-    void leaveImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
+        if (!getSettings()[Setting::optimize_arithmetic_operations_in_aggregate_functions])
             return;
 
         auto * aggregate_function_node = node->as<FunctionNode>();
@@ -106,10 +118,9 @@ public:
         {
             if (aggregate_function_name == "min")
                 return "max";
-            else if (aggregate_function_name == "max")
+            if (aggregate_function_name == "max")
                 return "min";
-            else
-                return aggregate_function_name;
+            return aggregate_function_name;
         };
 
         size_t arithmetic_function_argument_index = 0;
@@ -164,38 +175,20 @@ private:
 
         auto aggregate_function_clone = aggregate_function->clone();
         auto & aggregate_function_clone_typed = aggregate_function_clone->as<FunctionNode &>();
+
         aggregate_function_clone_typed.getArguments().getNodes() = { arithmetic_function_clone_argument };
-        resolveAggregateFunctionNode(aggregate_function_clone_typed, arithmetic_function_clone_argument, result_aggregate_function_name);
+        resolveAggregateFunctionNodeByName(aggregate_function_clone_typed, result_aggregate_function_name);
 
         arithmetic_function_clone_arguments_nodes[arithmetic_function_argument_index] = std::move(aggregate_function_clone);
-        resolveOrdinaryFunctionNode(arithmetic_function_clone_typed, arithmetic_function_clone_typed.getFunctionName());
+        resolveOrdinaryFunctionNodeByName(arithmetic_function_clone_typed, arithmetic_function_clone_typed.getFunctionName(), getContext());
 
         return arithmetic_function_clone;
-    }
-
-    inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
-    {
-        auto function = FunctionFactory::instance().get(function_name, getContext());
-        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
-    }
-
-    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const QueryTreeNodePtr & argument, const String & aggregate_function_name)
-    {
-        auto function_aggregate_function = function_node.getAggregateFunction();
-
-        AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
-            { argument->getResultType() },
-            function_aggregate_function->getParameters(),
-            properties);
-
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }
 };
 
 }
 
-void AggregateFunctionsArithmericOperationsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void AggregateFunctionsArithmericOperationsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     AggregateFunctionsArithmericOperationsVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);

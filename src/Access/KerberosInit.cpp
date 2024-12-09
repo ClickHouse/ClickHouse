@@ -44,7 +44,7 @@ private:
     krb5_ccache defcache = nullptr;
     krb5_get_init_creds_opt * options = nullptr;
     // Credentials structure including ticket, session key, and lifetime info.
-    krb5_creds my_creds;
+    krb5_creds my_creds {};
     krb5_keytab keytab = nullptr;
     krb5_principal defcache_princ = nullptr;
     String fmtError(krb5_error_code code) const;
@@ -63,7 +63,7 @@ String KerberosInit::fmtError(krb5_error_code code) const
 
 void KerberosInit::init(const String & keytab_file, const String & principal, const String & cache_name)
 {
-    auto * log = &Poco::Logger::get("KerberosInit");
+    auto log = getLogger("KerberosInit");
     LOG_TRACE(log,"Trying to authenticate with Kerberos v5");
 
     krb5_error_code ret;
@@ -166,8 +166,7 @@ void KerberosInit::init(const String & keytab_file, const String & principal, co
         ret = krb5_get_init_creds_keytab(k5.ctx, &my_creds, k5.me, keytab, 0, nullptr, options);
         if (ret)
             throw Exception(ErrorCodes::KERBEROS_ERROR, "Error in getting initial credentials: {}", fmtError(ret));
-        else
-            LOG_TRACE(log,"Got initial credentials");
+        LOG_TRACE(log, "Got initial credentials");
     }
     else
     {

@@ -1,0 +1,64 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# send Ctrl-R (octal code of R is 022, see ascii(7))
+send -- "\022"
+# we cannot use "expect" for skim, since it dups the fd, and expect will not catch it
+sleep 1
+
+# trigger a crash https://github.com/lotabout/tuikit/pull/51 via "pasting" "R;"
+send -- "\33\[200~R;\33\[201~"
+# usually this should be enough
+sleep 1
+
+# only panic info is written to regular stderr, so we are checking that it is not there
+set is_panicked 0
+set max_iterations 3
+set timeout 1
+while {$is_panicked == 0 && $max_iterations >= 0} {
+    expect {
+        "panic" {
+            set is_panicked 1
+        }
+        default {
+            # Reset the expect_after
+        }
+    }
+    set max_iterations [expr $max_iterations-1];
+}
+if {$is_panicked} {
+    send_user "Panicked\n"
+    exit 1
+}
+
+set timeout 60
+
+# Ctrl-C
+send -- "\3"
+expect ":)"
+
+send "exit\r"
+expect eof

@@ -11,6 +11,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int QUOTA_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 void ExecutionThreadContext::wait(std::atomic_bool & finished)
@@ -37,7 +38,8 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
     /// Don't add additional info to limits and quota exceptions, and in case of kill query (to pass tests).
     return exception.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES
            && exception.code() != ErrorCodes::QUOTA_EXCEEDED
-           && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
+           && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED
+           && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
@@ -64,11 +66,12 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
             }
         }
     }
-    catch (Exception & exception)
+    catch (Exception exception) /// NOLINT
     {
+        /// Copy exception before modifying it because multiple threads can rethrow the same exception
         if (checkCanAddAdditionalInfoToException(exception))
             exception.addMessage("While executing " + node->processor->getName());
-        throw;
+        throw exception;
     }
 }
 
@@ -78,7 +81,7 @@ bool ExecutionThreadContext::executeTask()
 
     if (trace_processors)
     {
-        span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor->getName());
+        span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor->getUniqID());
         span->addAttribute("thread_number", thread_number);
     }
     std::optional<Stopwatch> execution_time_watch;
@@ -102,10 +105,10 @@ bool ExecutionThreadContext::executeTask()
 
     if (profile_processors)
     {
-        UInt64 elapsed_microseconds =  execution_time_watch->elapsedMicroseconds();
-        node->processor->elapsed_us += elapsed_microseconds;
+        UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
+        node->processor->elapsed_ns += elapsed_ns;
         if (trace_processors)
-            span->addAttribute("execution_time_ms", elapsed_microseconds);
+            span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();

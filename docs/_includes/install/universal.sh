@@ -14,15 +14,20 @@ then
         HAS_SSE42=$(grep sse4_2 /proc/cpuinfo)
         if [ "${HAS_SSE42}" ]
         then
-            DIR="amd64"
+            if ldd --version 2>&1 | grep -q musl
+            then
+                DIR="amd64musl"
+            else
+                DIR="amd64"
+            fi
         else
             DIR="amd64compat"
         fi
     elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
     then
-        # If the system has >=ARMv8.2 (https://en.wikipedia.org/wiki/AArch64), choose the corresponding build, else fall back to a v8.0
-        # compat build. Unfortunately, the ARM ISA level cannot be read directly, we need to guess from the "features" in /proc/cpuinfo.
-        # Also, the flags in /proc/cpuinfo are named differently than the flags passed to the compiler (cmake/cpu_features.cmake).
+        # Dispatch between standard and compatibility builds, see cmake/cpu_features.cmake for details. Unfortunately, (1) the ARM ISA level
+        # cannot be read directly, we need to guess from the "features" in /proc/cpuinfo, and (2) the flags in /proc/cpuinfo are named
+        # differently than the flags passed to the compiler in cpu_features.cmake.
         HAS_ARMV82=$(grep -m 1 'Features' /proc/cpuinfo | awk '/asimd/ && /sha1/ && /aes/ && /atomics/ && /lrcpc/')
         if [ "${HAS_ARMV82}" ]
         then

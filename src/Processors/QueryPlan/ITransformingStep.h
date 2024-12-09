@@ -46,10 +46,12 @@ public:
         TransformTraits transform_traits;
     };
 
-    ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_ = true);
+    ITransformingStep(Header input_header, Header output_header, Traits traits, bool collect_processors_ = true);
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
+    /// Append processors from the current step to the query pipeline.
+    /// Step always has a single input stream, so we implement updatePipeline over this function.
     virtual void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     const TransformTraits & getTransformTraits() const { return transform_traits; }
@@ -64,15 +66,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
 
-    bool canUpdateInputStream() const override { return true; }
-
 protected:
-    /// Create output stream from header and traits.
-    static DataStream createOutputStream(
-            const DataStream & input_stream,
-            Block output_header,
-            const DataStreamTraits & stream_traits);
-
     TransformTraits transform_traits;
 
 private:

@@ -23,19 +23,19 @@ function check_output() {
 
 # TCP CLIENT
 echo "TCP CLIENT"
-OUTPUT=$($CLICKHOUSE_CLIENT --max_execution_time $MAX_TIMEOUT -q "SELECT count() FROM system.numbers" 2>&1 || true)
+OUTPUT=$($CLICKHOUSE_CLIENT --max_rows_to_read 0 --max_execution_time $MAX_TIMEOUT -q "SELECT count() FROM system.numbers" 2>&1 || true)
 check_output "${OUTPUT}"
 
 echo "TCP CLIENT WITH SETTINGS IN QUERY"
-OUTPUT=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.numbers SETTINGS max_execution_time=$MAX_TIMEOUT" 2>&1 || true)
+OUTPUT=$($CLICKHOUSE_CLIENT --max_rows_to_read 0 -q "SELECT count() FROM system.numbers SETTINGS max_execution_time=$MAX_TIMEOUT" 2>&1 || true)
 check_output "${OUTPUT}"
 
 # HTTP CLIENT
 echo "HTTP CLIENT"
-OUTPUT=$(${CLICKHOUSE_CURL_COMMAND} -q -sS "$CLICKHOUSE_URL&max_execution_time=$MAX_TIMEOUT" -d \
+OUTPUT=$(${CLICKHOUSE_CURL_COMMAND} -q -sS "$CLICKHOUSE_URL&max_execution_time=${MAX_TIMEOUT}&max_rows_to_read=0" -d \
     "SELECT count() FROM system.numbers" || true)
 check_output "${OUTPUT}"
 
 # CHECK system.settings
 echo "TABLE: system.settings"
-echo "SELECT name, value, changed from system.settings where name = 'max_execution_time'" | clickhouse-client --max_execution_time 30.5
+echo "SELECT name, value, changed from system.settings where name = 'max_execution_time'" | $CLICKHOUSE_CLIENT_BINARY --max_execution_time 30.5

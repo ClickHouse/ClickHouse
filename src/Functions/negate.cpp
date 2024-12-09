@@ -11,7 +11,7 @@ struct NegateImpl
     using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
     static constexpr const bool allow_string_or_fixed_string = false;
 
-    static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
+    static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         return -static_cast<ResultType>(a);
     }
@@ -19,7 +19,7 @@ struct NegateImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
-    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
     {
         return arg->getType()->isIntegerTy() ? b.CreateNeg(arg) : b.CreateFNeg(arg);
     }

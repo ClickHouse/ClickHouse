@@ -6,19 +6,7 @@ FROM clickhouse/stateless-test:$FROM_TAG
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
-        python3-requests \
         nodejs \
         npm \
-    && apt-get clean
-
-COPY s3downloader /s3downloader
-
-ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
-ENV DATASETS="hits visits"
-
-# The following is already done in clickhouse/stateless-test
-# RUN npm install -g azurite
-# RUN npm install tslib
-
-COPY run.sh /
-CMD ["/bin/bash", "/run.sh"]
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*

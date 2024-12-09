@@ -107,7 +107,7 @@ export -f drop_partition_thread;
 export -f optimize_thread;
 export -f drop_part_thread;
 
-TIMEOUT=60
+TIMEOUT=40
 
 #timeout $TIMEOUT bash -c "create_drop_thread ${engines[@]}" &
 timeout $TIMEOUT bash -c 'insert_thread src' &

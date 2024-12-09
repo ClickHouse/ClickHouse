@@ -4,7 +4,7 @@
 SET max_threads = 1;
 
 -- data should be inserted into Distributed table synchronously
-SET insert_distributed_sync = 1;
+SET distributed_foreground_insert = 1;
 
 DROP TABLE IF EXISTS mem1;
 DROP TABLE IF EXISTS mem2;
@@ -73,16 +73,21 @@ SELECT _shard_num, key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.p
 FROM dist_1 a
 JOIN system.clusters b
 ON _shard_num = b.shard_num
-WHERE b.cluster = 'test_cluster_two_shards_localhost'; -- { serverError 403 }
+WHERE b.cluster = 'test_cluster_two_shards_localhost'
+ORDER BY key
+SETTINGS enable_analyzer = 1;
 
 SELECT 'Rewrite with alias';
 SELECT a._shard_num, key FROM dist_1 a;
+
 -- the same with JOIN, just in case
 SELECT a._shard_num, a.key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
 FROM dist_1 a
 JOIN system.clusters b
 ON a._shard_num = b.shard_num
-WHERE b.cluster = 'test_cluster_two_shards_localhost'; -- { serverError 47, 403 }
+WHERE b.cluster = 'test_cluster_two_shards_localhost'
+ORDER BY key
+SETTINGS enable_analyzer = 1;
 
 SELECT 'dist_3';
 SELECT * FROM dist_3;

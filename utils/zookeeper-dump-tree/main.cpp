@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 
         bool dump_ctime = options.count("ctime");
 
-        zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(options.at("address").as<std::string>());
+        zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(options.at("address").as<std::string>());
 
         std::string initial_path = options.at("path").as<std::string>();
 
@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
                 {
                     continue;
                 }
-                else if (Coordination::isHardwareError(e.code))
+                if (Coordination::isHardwareError(e.code))
                 {
                     /// Reinitialize the session and move the node to the end of the queue for later retry.
                     if (!ensure_session())
@@ -78,8 +78,8 @@ int main(int argc, char ** argv)
                     list_futures.emplace_back(it->first, zookeeper->asyncGetChildren(it->first));
                     continue;
                 }
-                else
-                    throw;
+
+                throw;
             }
 
             std::cout << it->first << '\t' << response.stat.numChildren << '\t' << response.stat.dataLength;

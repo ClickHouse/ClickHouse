@@ -9,6 +9,10 @@ assignees: ''
 
 (you don't have to strictly follow this form)
 
+**Company or project name**
+
+Put your company name or project description here
+
 **Describe the unexpected behaviour**
 A clear and concise description of what works not as it is supposed to.
 

@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
+#include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <base/defines.h>
 
@@ -18,6 +19,13 @@ namespace ErrorCodes
     extern const int IO_SETUP_ERROR;
 }
 
+namespace FileLogSetting
+{
+    extern const FileLogSettingsUInt64 poll_directory_watch_events_backoff_factor;
+    extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_init;
+    extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_max;
+}
+
 static constexpr int buffer_size = 4096;
 
 DirectoryWatcherBase::DirectoryWatcherBase(
@@ -26,7 +34,7 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     , owner(owner_)
     , path(path_)
     , event_mask(event_mask_)
-    , milliseconds_to_wait(owner.storage.getFileLogSettings()->poll_directory_watch_events_backoff_init.totalMilliseconds())
+    , milliseconds_to_wait((*owner.storage.getFileLogSettings())[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
     if (!std::filesystem::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Path {} does not exist", path);
@@ -34,9 +42,9 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     if (!std::filesystem::is_directory(path))
         throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path {} is not a directory", path);
 
-    fd = inotify_init();
-    if (fd == -1)
-        throwFromErrno("Cannot initialize inotify", ErrorCodes::IO_SETUP_ERROR);
+    inotify_fd = inotify_init();
+    if (inotify_fd == -1)
+        throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
 
     watch_task = getContext()->getSchedulePool().createTask("directory_watch", [this] { watchFunc(); });
     start();
@@ -56,25 +64,29 @@ void DirectoryWatcherBase::watchFunc()
     if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
         mask |= IN_MOVED_TO;
 
-    int wd = inotify_add_watch(fd, path.c_str(), mask);
+    int wd = inotify_add_watch(inotify_fd, path.c_str(), mask);
     if (wd == -1)
     {
         owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Watch directory {} failed", path));
-        throwFromErrnoWithPath("Watch directory {} failed", path, ErrorCodes::IO_SETUP_ERROR);
+        ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "Watch directory {} failed", path);
     }
 
     std::string buffer;
     buffer.resize(buffer_size);
-    pollfd pfd;
-    pfd.fd = fd;
-    pfd.events = POLLIN;
+    pollfd pfds[2];
+    /// inotify descriptor
+    pfds[0].fd = inotify_fd;
+    pfds[0].events = POLLIN;
+    // notifier
+    pfds[1].fd = event_pipe.fds_rw[0];
+    pfds[1].events = POLLIN;
     while (!stopped)
     {
         const auto & settings = owner.storage.getFileLogSettings();
-        if (poll(&pfd, 1, static_cast<int>(milliseconds_to_wait)) > 0 && pfd.revents & POLLIN)
+        if (poll(pfds, 2, static_cast<int>(milliseconds_to_wait)) > 0 && pfds[0].revents & POLLIN)
         {
-            milliseconds_to_wait = settings->poll_directory_watch_events_backoff_init.totalMilliseconds();
-            ssize_t n = read(fd, buffer.data(), buffer.size());
+            milliseconds_to_wait = (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
+            ssize_t n = read(inotify_fd, buffer.data(), buffer.size());
             int i = 0;
             if (n > 0)
             {
@@ -121,8 +133,8 @@ void DirectoryWatcherBase::watchFunc()
         }
         else
         {
-            if (milliseconds_to_wait < static_cast<uint64_t>(settings->poll_directory_watch_events_backoff_max.totalMilliseconds()))
-                milliseconds_to_wait *= settings->poll_directory_watch_events_backoff_factor.value;
+            if (milliseconds_to_wait < static_cast<uint64_t>((*settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
+                milliseconds_to_wait *= (*settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value;
         }
     }
 }
@@ -130,7 +142,7 @@ void DirectoryWatcherBase::watchFunc()
 DirectoryWatcherBase::~DirectoryWatcherBase()
 {
     stop();
-    int err = ::close(fd);
+    [[maybe_unused]] int err = ::close(inotify_fd);
     chassert(!err || errno == EINTR);
 }
 
@@ -143,6 +155,7 @@ void DirectoryWatcherBase::start()
 void DirectoryWatcherBase::stop()
 {
     stopped = true;
+    ::write(event_pipe.fds_rw[1], "\0", 1);
     if (watch_task)
         watch_task->deactivate();
 }

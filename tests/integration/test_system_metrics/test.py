@@ -1,9 +1,11 @@
 import time
 
 import pytest
+from kazoo.client import KazooClient
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 
 def fill_nodes(nodes, shard):
@@ -24,7 +26,10 @@ def fill_nodes(nodes, shard):
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+    "node1",
+    main_configs=["configs/remote_servers.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
@@ -213,4 +218,46 @@ def test_attach_without_zk_incr_readonly_metric(start_cluster):
         "0\n",
         retry_count=300,
         sleep_time=1,
+    )
+
+
+def get_zk(timeout=30.0):
+    _zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip("zoo1") + ":2181", timeout=timeout
+    )
+    _zk_instance.start()
+    return _zk_instance
+
+
+def test_broken_tables_readonly_metric(start_cluster):
+    node1.query(
+        "CREATE TABLE test.broken_table_readonly(initial_name Int8) ENGINE = ReplicatedMergeTree('/clickhouse/broken_table_readonly', 'replica') ORDER BY tuple()"
+    )
+    assert_eq_with_retry(
+        node1,
+        "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'",
+        "0\n",
+        retry_count=300,
+        sleep_time=1,
+    )
+
+    zk_path = node1.query(
+        "SELECT replica_path FROM system.replicas WHERE table = 'broken_table_readonly'"
+    ).strip()
+
+    node1.stop_clickhouse()
+
+    zk_client = get_zk()
+
+    columns_path = zk_path + "/columns"
+    metadata = zk_client.get(columns_path)[0]
+    modified_metadata = metadata.replace(b"initial_name", b"new_name")
+    zk_client.set(columns_path, modified_metadata)
+
+    node1.start_clickhouse()
+
+    assert node1.contains_in_log("Initialization failed, table will remain readonly")
+    assert (
+        node1.query("SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'")
+        == "1\n"
     )

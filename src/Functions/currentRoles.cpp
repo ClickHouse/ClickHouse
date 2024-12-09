@@ -17,7 +17,7 @@ namespace DB
 
 namespace
 {
-    enum class Kind
+    enum class Kind : uint8_t
     {
         CURRENT_ROLES,
         ENABLED_ROLES,
@@ -35,7 +35,33 @@ namespace
 
         String getName() const override { return name; }
 
-        explicit FunctionCurrentRoles(const ContextPtr & context)
+        explicit FunctionCurrentRoles(const ContextPtr & context_)
+            : context(context_)
+        {}
+
+        size_t getNumberOfArguments() const override { return 0; }
+        bool isDeterministic() const override { return false; }
+
+        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+        {
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        }
+
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+        {
+            std::call_once(initialized_flag, [&]{ initialize(); });
+
+            auto col_res = ColumnArray::create(ColumnString::create());
+            ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
+            ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+            for (const String & role_name : role_names)
+                res_strings.insertData(role_name.data(), role_name.length());
+            res_offsets.push_back(res_strings.size());
+            return ColumnConst::create(std::move(col_res), input_rows_count);
+        }
+
+    private:
+        void initialize() const
         {
             if constexpr (kind == Kind::CURRENT_ROLES)
             {
@@ -57,27 +83,9 @@ namespace
             ::sort(role_names.begin(), role_names.end());
         }
 
-        size_t getNumberOfArguments() const override { return 0; }
-        bool isDeterministic() const override { return false; }
-
-        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-        {
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-        }
-
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
-        {
-            auto col_res = ColumnArray::create(ColumnString::create());
-            ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
-            ColumnArray::Offsets & res_offsets = col_res->getOffsets();
-            for (const String & role_name : role_names)
-                res_strings.insertData(role_name.data(), role_name.length());
-            res_offsets.push_back(res_strings.size());
-            return ColumnConst::create(std::move(col_res), input_rows_count);
-        }
-
-    private:
-        Strings role_names;
+        mutable std::once_flag initialized_flag;
+        ContextPtr context;
+        mutable Strings role_names;
     };
 }
 

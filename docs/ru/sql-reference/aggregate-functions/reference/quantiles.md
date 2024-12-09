@@ -7,7 +7,7 @@ sidebar_position: 201
 
 ## quantiles {#quantiles}
 
-Синтаксис: `quantiles(level1, level2, …)(x)`
+Синтаксис: `quantiles(level1, level2, ...)(x)`
 
 Все функции для вычисления квантилей имеют соответствующие функции для вычисления нескольких квантилей: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`, `quantilesBFloat16`. Эти функции вычисляют все квантили указанных уровней в один проход и возвращают массив с вычисленными значениями.
 

@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # note, that this should be written in .sh since we need $CLICKHOUSE_DATABASE
 # not 'default' to catch text_log
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists ttl_02262;
     drop table if exists this_text_log;
 
@@ -31,11 +31,11 @@ $CLICKHOUSE_CLIENT -nm -q "
 
 ttl_02262_uuid=$($CLICKHOUSE_CLIENT -q "select uuid from system.tables where database = '$CLICKHOUSE_DATABASE' and name = 'ttl_02262'")
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     -- OPTIMIZE TABLE x FINAL will be done in background
     -- attach to it's log, via table UUID in query_id (see merger/mutator code).
     create materialized view this_text_log engine=Memory() as
-    select * from system.text_log where query_id like '%${ttl_02262_uuid}%';
+    select * from system.text_log where query_id like '%${ttl_02262_uuid}%' SETTINGS max_rows_to_read = 0;
 
     optimize table ttl_02262 final;
     system flush logs;

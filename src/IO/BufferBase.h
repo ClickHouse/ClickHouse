@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <algorithm>
+#include <memory>
 
 
 namespace DB
@@ -36,13 +37,13 @@ public:
     {
         Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
 
-        inline Position begin() const { return begin_pos; }
-        inline Position end() const { return end_pos; }
-        inline size_t size() const { return size_t(end_pos - begin_pos); }
-        inline void resize(size_t size) { end_pos = begin_pos + size; }
-        inline bool empty() const { return size() == 0; }
+        Position begin() const { return begin_pos; }
+        Position end() const { return end_pos; }
+        size_t size() const { return size_t(end_pos - begin_pos); }
+        void resize(size_t size) { end_pos = begin_pos + size; }
+        bool empty() const { return size() == 0; }
 
-        inline void swap(Buffer & other)
+        void swap(Buffer & other) noexcept
         {
             std::swap(begin_pos, other.begin_pos);
             std::swap(end_pos, other.end_pos);
@@ -59,6 +60,9 @@ public:
     BufferBase(Position ptr, size_t size, size_t offset)
         : pos(ptr + offset), working_buffer(ptr, ptr + size), internal_buffer(ptr, ptr + size) {}
 
+    /// Assign the buffers and pos.
+    /// Be careful when calling this from ReadBuffer::nextImpl() implementations: `offset` is
+    /// effectively ignored because ReadBuffer::next() reassigns `pos`.
     void set(Position ptr, size_t size, size_t offset)
     {
         internal_buffer = Buffer(ptr, ptr + size);
@@ -67,21 +71,21 @@ public:
     }
 
     /// get buffer
-    inline Buffer & internalBuffer() { return internal_buffer; }
+    Buffer & internalBuffer() { return internal_buffer; }
 
     /// get the part of the buffer from which you can read / write data
-    inline Buffer & buffer() { return working_buffer; }
+    Buffer & buffer() { return working_buffer; }
 
     /// get (for reading and modifying) the position in the buffer
-    inline Position & position() { return pos; }
+    Position & position() { return pos; }
 
     /// offset in bytes of the cursor from the beginning of the buffer
-    inline size_t offset() const { return size_t(pos - working_buffer.begin()); }
+    size_t offset() const { return size_t(pos - working_buffer.begin()); }
 
     /// How many bytes are available for read/write
-    inline size_t available() const { return size_t(working_buffer.end() - pos); }
+    size_t available() const { return size_t(working_buffer.end() - pos); }
 
-    inline void swap(BufferBase & other)
+    void swap(BufferBase & other) noexcept
     {
         internal_buffer.swap(other.internal_buffer);
         working_buffer.swap(other.working_buffer);

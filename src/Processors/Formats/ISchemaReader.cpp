@@ -2,6 +2,7 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <boost/algorithm/string.hpp>
@@ -39,27 +40,29 @@ void checkFinalInferredType(
                     "of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
                     name,
                     rows_read);
-            else
-                throw Exception(
-                    ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                    "Cannot determine type for column '{}' by first {} rows "
-                    "of data, most likely this column contains only Nulls or empty Arrays/Maps. "
-                    "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-                    name,
-                    rows_read,
-                    hints_parsing_error);
+            throw Exception(
+                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                "Cannot determine type for column '{}' by first {} rows "
+                "of data, most likely this column contains only Nulls or empty Arrays/Maps. "
+                "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+                name,
+                rows_read,
+                hints_parsing_error);
         }
 
         type = default_type;
     }
 
-    if (settings.schema_inference_make_columns_nullable)
+    if (settings.schema_inference_make_columns_nullable == 1)
         type = makeNullableRecursively(type);
-    /// In case when data for some column could contain nulls and regular values,
-    /// resulting inferred type is Nullable.
-    /// If input_format_null_as_default is enabled, we should remove Nullable type.
-    else if (settings.null_as_default)
-        type = removeNullable(type);
+}
+
+void ISchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    DataTypes types = {type, new_type};
+    auto least_supertype = tryGetLeastSupertype(types);
+    if (least_supertype)
+        type = new_type = least_supertype;
 }
 
 IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
@@ -72,7 +75,7 @@ IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & fo
 {
 }
 
-void IIRowSchemaReader::setContext(ContextPtr & context)
+void IIRowSchemaReader::setContext(const ContextPtr & context)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, context, hints_parsing_error))
@@ -82,13 +85,8 @@ void IIRowSchemaReader::setContext(ContextPtr & context)
     }
     else
     {
-        LOG_WARNING(&Poco::Logger::get("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
+        LOG_WARNING(getLogger("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
     }
-}
-
-void IIRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

@@ -16,7 +16,7 @@ namespace DB
 class IMessageProducer
 {
 public:
-    explicit IMessageProducer(Poco::Logger * log_);
+    explicit IMessageProducer(LoggerPtr log_);
 
     /// Do some preparations.
     virtual void start(const ContextPtr & context) = 0;
@@ -27,17 +27,20 @@ public:
     /// Finalize producer.
     virtual void finish() = 0;
 
+    /// Cancel producer.
+    virtual void cancel() noexcept = 0;
+
     virtual ~IMessageProducer() = default;
 
 protected:
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Implements interface for concurrent message producing.
 class AsynchronousMessageProducer : public IMessageProducer
 {
 public:
-    explicit AsynchronousMessageProducer(Poco::Logger * log_) : IMessageProducer(log_) {}
+    explicit AsynchronousMessageProducer(LoggerPtr log_) : IMessageProducer(log_) {}
 
     /// Create and schedule task in BackgroundSchedulePool that will produce messages.
     void start(const ContextPtr & context) override;

@@ -67,22 +67,30 @@ Implementations of `ReadBuffer`/`WriteBuffer` are used for working with files an
 
 Read/WriteBuffers only deal with bytes. There are functions from `ReadHelpers` and `WriteHelpers` header files to help with formatting input/output. For example, there are helpers to write a number in decimal format.
 
-Let’s look at what happens when you want to write a result set in `JSON` format to stdout. You have a result set ready to be fetched from `IBlockInputStream`. You create `WriteBufferFromFileDescriptor(STDOUT_FILENO)` to write bytes to stdout. You create `JSONRowOutputStream`, initialized with that `WriteBuffer`, to write rows in `JSON` to stdout. You create `BlockOutputStreamFromRowOutputStream` on top of it, to represent it as `IBlockOutputStream`. Then you call `copyData` to transfer data from `IBlockInputStream` to `IBlockOutputStream`, and everything works. Internally, `JSONRowOutputStream` will write various JSON delimiters and call the `IDataType::serializeTextJSON` method with a reference to `IColumn` and the row number as arguments. Consequently, `IDataType::serializeTextJSON` will call a method from `WriteHelpers.h`: for example, `writeText` for numeric types and `writeJSONString` for `DataTypeString`.
+Let's examine what happens when you want to write a result set in `JSON` format to stdout.
+You have a result set ready to be fetched from a pulling `QueryPipeline`.
+First, you create a `WriteBufferFromFileDescriptor(STDOUT_FILENO)` to write bytes to stdout.
+Next, you connect the result from the query pipeline to `JSONRowOutputFormat`, which is initialized with that `WriteBuffer`, to write rows in `JSON` format to stdout.
+This can be done via the `complete` method, which turns a pulling `QueryPipeline` into a completed `QueryPipeline`.
+Internally, `JSONRowOutputFormat` will write various JSON delimiters and call the `IDataType::serializeTextJSON` method with a reference to `IColumn` and the row number as arguments. Consequently, `IDataType::serializeTextJSON` will call a method from `WriteHelpers.h`: for example, `writeText` for numeric types and `writeJSONString` for `DataTypeString`.
 
 ## Tables {#tables}
 
 The `IStorage` interface represents tables. Different implementations of that interface are different table engines. Examples are `StorageMergeTree`, `StorageMemory`, and so on. Instances of these classes are just tables.
 
-The key `IStorage` methods are `read` and `write`. There are also `alter`, `rename`, `drop`, and so on. The `read` method accepts the following arguments: the set of columns to read from a table, the `AST` query to consider, and the desired number of streams to return. It returns one or multiple `IBlockInputStream` objects and information about the stage of data processing that was completed inside a table engine during query execution.
+The key methods in `IStorage` are `read` and `write`, along with others such as `alter`, `rename`, and `drop`. The `read` method accepts the following arguments: a set of columns to read from a table, the `AST` query to consider, and the desired number of streams. It returns a `Pipe`.
 
-In most cases, the read method is only responsible for reading the specified columns from a table, not for any further data processing. All further data processing is done by the query interpreter and is outside the responsibility of `IStorage`.
+In most cases, the read method is responsible only for reading the specified columns from a table, not for any further data processing.
+All subsequent data processing is handled by another part of the pipeline, which falls outside the responsibility of `IStorage`.
 
 But there are notable exceptions:
 
 - The AST query is passed to the `read` method, and the table engine can use it to derive index usage and to read fewer data from a table.
 - Sometimes the table engine can process data itself to a specific stage. For example, `StorageDistributed` can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data. The query interpreter then finishes processing the data.
 
-The table’s `read` method can return multiple `IBlockInputStream` objects to allow parallel data processing. These multiple block input streams can read from a table in parallel. Then you can wrap these streams with various transformations (such as expression evaluation or filtering) that can be calculated independently and create a `UnionBlockInputStream` on top of them, to read from multiple streams in parallel.
+The table’s `read` method can return a `Pipe` consisting of multiple `Processors`. These `Processors` can read from a table in parallel.
+Then, you can connect these processors with various other transformations (such as expression evaluation or filtering), which can be calculated independently.
+And then, create a `QueryPipeline` on top of them, and execute it via `PipelineExecutor`.
 
 There are also `TableFunction`s. These are functions that return a temporary `IStorage` object to use in the `FROM` clause of a query.
 
@@ -98,9 +106,19 @@ A hand-written recursive descent parser parses a query. For example, `ParserSele
 
 ## Interpreters {#interpreters}
 
-Interpreters are responsible for creating the query execution pipeline from an `AST`. There are simple interpreters, such as `InterpreterExistsQuery` and `InterpreterDropQuery`, or the more sophisticated `InterpreterSelectQuery`. The query execution pipeline is a combination of block input or output streams. For example, the result of interpreting the `SELECT` query is the `IBlockInputStream` to read the result set from; the result of the `INSERT` query is the `IBlockOutputStream` to write data for insertion to, and the result of interpreting the `INSERT SELECT` query is the `IBlockInputStream` that returns an empty result set on the first read, but that copies data from `SELECT` to `INSERT` at the same time.
+Interpreters are responsible for creating the query execution pipeline from an AST. There are simple interpreters, such as `InterpreterExistsQuery` and `InterpreterDropQuery`, as well as the more sophisticated `InterpreterSelectQuery`.
 
-`InterpreterSelectQuery` uses `ExpressionAnalyzer` and `ExpressionActions` machinery for query analysis and transformations. This is where most rule-based query optimizations are done. `ExpressionAnalyzer` is quite messy and should be rewritten: various query transformations and optimizations should be extracted to separate classes to allow modular transformations of query.
+The query execution pipeline is a combination of processors that can consume and produce chunks (sets of columns with specific types).
+A processor communicates via ports and can have multiple input ports and multiple output ports.
+A more detailed description can be found in [src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h).
+
+For example, the result of interpreting the `SELECT` query is a "pulling" `QueryPipeline` which has a special output port to read the result set from.
+The result of the `INSERT` query is a "pushing" `QueryPipeline` with an input port to write data for insertion.
+And the result of interpreting the `INSERT SELECT` query is a "completed" `QueryPipeline` that has no inputs or outputs but copies data from `SELECT` to `INSERT` simultaneously.
+
+`InterpreterSelectQuery` uses `ExpressionAnalyzer` and `ExpressionActions` machinery for query analysis and transformations. This is where most rule-based query optimizations are performed. `ExpressionAnalyzer` is quite messy and should be rewritten: various query transformations and optimizations should be extracted into separate classes to allow for modular transformations of the query.
+
+To address problems that exist in interpreters, a new `InterpreterSelectQueryAnalyzer` has been developed. This is a new version of the `InterpreterSelectQuery`, which does not use the `ExpressionAnalyzer` and introduces an additional layer of abstraction between `AST` and `QueryPipeline`, called `QueryTree'. It is fully ready for use in production, but just in case it can be turned off by setting the value of the `enable_analyzer` setting to `false`.
 
 ## Functions {#functions}
 
@@ -148,11 +166,11 @@ For most external applications, we recommend using the HTTP interface because it
 
 ## Configuration {#configuration}
 
-ClickHouse Server is based on POCO C++ Libraries and uses `Poco::Util::AbstractConfiguration` to represent it's configuration. Configuration is held by `Poco::Util::ServerApplication` class inherited by `DaemonBase` class, which in turn is inherited by `DB::Server` class, implementing clickhouse-server itself. So config can be accessed by `ServerApplication::config()` method.
+ClickHouse Server is based on POCO C++ Libraries and uses `Poco::Util::AbstractConfiguration` to represent its configuration. Configuration is held by `Poco::Util::ServerApplication` class inherited by `DaemonBase` class, which in turn is inherited by `DB::Server` class, implementing clickhouse-server itself. So config can be accessed by `ServerApplication::config()` method.
 
 Config is read from multiple files (in XML or YAML format) and merged into single `AbstractConfiguration` by `ConfigProcessor` class. Configuration is loaded at server startup and can be reloaded later if one of config files is updated, removed or added. `ConfigReloader` class is responsible for periodic monitoring of these changes and reload procedure as well. `SYSTEM RELOAD CONFIG` query also triggers config to be reloaded.
 
-For queries and subsystems other than `Server` config is accessible using `Context::getConfigRef()` method. Every subsystem that is capable of reloading it's config without server restart should register itself in reload callback in `Server::main()` method. Note that if newer config has an error, most subsystems will ignore new config, log warning messages and keep working with previously loaded config. Due to the nature of `AbstractConfiguration` it is not possible to pass reference to specific section, so `String config_prefix` is usually used instead.
+For queries and subsystems other than `Server` config is accessible using `Context::getConfigRef()` method. Every subsystem that is capable of reloading its config without server restart should register itself in reload callback in `Server::main()` method. Note that if newer config has an error, most subsystems will ignore new config, log warning messages and keep working with previously loaded config. Due to the nature of `AbstractConfiguration` it is not possible to pass reference to specific section, so `String config_prefix` is usually used instead.
 
 ## Threads and jobs {#threads-and-jobs}
 
@@ -237,7 +255,7 @@ When we are going to read something from a part in `MergeTree`, we look at `prim
 
 When you `INSERT` a bunch of data into `MergeTree`, that bunch is sorted by primary key order and forms a new part. There are background threads that periodically select some parts and merge them into a single sorted part to keep the number of parts relatively low. That’s why it is called `MergeTree`. Of course, merging leads to “write amplification”. All parts are immutable: they are only created and deleted, but not modified. When SELECT is executed, it holds a snapshot of the table (a set of parts). After merging, we also keep old parts for some time to make a recovery after failure easier, so if we see that some merged part is probably broken, we can replace it with its source parts.
 
-`MergeTree` is not an LSM tree because it does not contain MEMTABLE and LOG: inserted data is written directly to the filesystem. This behavior makes MergeTree much more suitable to insert data in batches. Therefore frequently inserting small amounts of rows is not ideal for MergeTree. For example, a couple of rows per second is OK, but doing it a thousand times a second is not optimal for MergeTree. However, there is an async insert mode for small inserts to overcome this limitation. We did it this way for simplicity’s sake, and because we are already inserting data in batches in our applications
+`MergeTree` is not an LSM tree because it does not contain MEMTABLE and LOG: inserted data is written directly to the filesystem. This behavior makes MergeTree much more suitable to insert data in batches. Therefore, frequently inserting small amounts of rows is not ideal for MergeTree. For example, a couple of rows per second is OK, but doing it a thousand times a second is not optimal for MergeTree. However, there is an async insert mode for small inserts to overcome this limitation. We did it this way for simplicity’s sake, and because we are already inserting data in batches in our applications
 
 There are MergeTree engines that are doing additional work during background merges. Examples are `CollapsingMergeTree` and `AggregatingMergeTree`. This could be treated as special support for updates. Keep in mind that these are not real updates because users usually have no control over the time when background merges are executed, and data in a `MergeTree` table is almost always stored in more than one part, not in completely merged form.
 
@@ -258,5 +276,3 @@ Besides, each replica stores its state in ZooKeeper as the set of parts and its 
 :::note
 The ClickHouse cluster consists of independent shards, and each shard consists of replicas. The cluster is **not elastic**, so after adding a new shard, data is not rebalanced between shards automatically. Instead, the cluster load is supposed to be adjusted to be uneven. This implementation gives you more control, and it is ok for relatively small clusters, such as tens of nodes. But for clusters with hundreds of nodes that we are using in production, this approach becomes a significant drawback. We should implement a table engine that spans across the cluster with dynamically replicated regions that could be split and balanced between clusters automatically.
 :::
-
-[Original article](https://clickhouse.com/docs/en/development/architecture/)

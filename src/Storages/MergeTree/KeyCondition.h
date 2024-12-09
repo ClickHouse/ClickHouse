@@ -2,10 +2,12 @@
 
 #include <optional>
 
+#include <boost/geometry.hpp>
+
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
-#include <Parsers/ASTExpressionList.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/ActionsDAG.h>
@@ -38,39 +40,13 @@ struct ActionDAGNodes;
 class KeyCondition
 {
 public:
-    /// Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters
-    KeyCondition(
-        const ASTPtr & query,
-        const ASTs & additional_filter_asts,
-        Block block_with_constants,
-        PreparedSetsPtr prepared_sets_,
-        ContextPtr context,
-        const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr,
-        NameSet array_joined_column_names,
-        bool single_point_ = false,
-        bool strict_ = false);
-
-    /** Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters.
-      * Select query, additional filters, prepared sets are initialized using query info.
-      */
-    KeyCondition(
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr_,
-        bool single_point_ = false,
-        bool strict_ = false);
-
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
-        ActionsDAGPtr filter_dag,
+        const ActionsDAG * filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        NameSet array_joined_column_names,
-        bool single_point_ = false,
-        bool strict_ = false);
+        bool single_point_ = false);
 
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
@@ -158,7 +134,19 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+
     bool matchesExactContinuousRange() const;
+
+    /// Extract plain ranges of the condition.
+    /// Note that only support one column key condition.
+    ///
+    /// Now some cases are parsed to unknown function:
+    ///     1. where 1=1
+    ///     2. where true
+    ///     3. no where
+    /// TODO handle the cases when generate RPN.
+    bool extractPlainRanges(Ranges & ranges) const;
 
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -172,7 +160,18 @@ public:
             FUNCTION_NOT_IN_SET,
             FUNCTION_IS_NULL,
             FUNCTION_IS_NOT_NULL,
-            FUNCTION_UNKNOWN, /// Can take any value.
+            /// Special for space-filling curves.
+            /// For example, if key is mortonEncode(x, y),
+            /// and the condition contains its arguments, e.g.:
+            ///   x >= 10 AND x <= 20 AND y >= 20 AND y <= 30,
+            /// this expression will be analyzed and then represented by following:
+            ///   args in hyperrectangle [10, 20] × [20, 30].
+            FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// Special for pointInPolygon to utilize minmax indices.
+            /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
+            FUNCTION_POINT_IN_POLYGON,
+            /// Can take any value.
+            FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
             FUNCTION_NOT,
             FUNCTION_AND,
@@ -196,9 +195,33 @@ public:
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
         size_t key_column = 0;
+
+        /// If the key_column is a space filling curve, e.g. mortonEncode(x, y),
+        /// we will analyze expressions of its arguments (x and y) similarly how we do for a normal key columns,
+        /// and this designates the argument number (0 for x, 1 for y):
+        std::optional<size_t> argument_num_of_space_filling_curve;
+
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
+
+        /// For FUNCTION_ARGS_IN_HYPERRECTANGLE
+        Hyperrectangle space_filling_curve_args_hyperrectangle;
+
+        /// For FUNCTION_POINT_IN_POLYGON.
+        /// Function like 'pointInPolygon' has multiple columns.
+        /// This struct description column part of the function, such as (x, y) in 'pointInPolygon'.
+        struct MultiColumnsFunctionDescription
+        {
+            String function_name;
+            std::vector<size_t> key_column_positions;
+            std::vector<String> key_columns;
+        };
+        std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
+
+        using Point = boost::geometry::model::d2::point_xy<Float64>;
+        using Polygon = boost::geometry::model::polygon<Point>;
+        Polygon polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
     };
@@ -212,6 +235,8 @@ public:
     const RPN & getRPN() const { return rpn; }
     const ColumnIndices & getKeyColumns() const { return key_columns; }
 
+    bool isRelaxed() const { return relaxed; }
+
 private:
     BoolMask checkInRange(
         size_t used_key_size,
@@ -223,31 +248,36 @@ private:
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    /** Is node the key column
-      *  or expression in which column of key is wrapped by chain of functions,
-      *  that can be monotonic on certain ranges?
-      * If these conditions are true, then returns number of column in key, type of resulting expression
-      *  and fills chain of possibly-monotonic functions.
-      */
+    /// Is node the key column, or an argument of a space-filling curve that is a key column,
+    ///  or expression in which that column is wrapped by a chain of functions,
+    ///  that can be monotonic on certain ranges?
+    /// If these conditions are true, then returns number of column in key,
+    ///  optionally the argument position of a space-filling curve,
+    ///  type of resulting expression
+    ///  and fills chain of possibly-monotonic functions.
+    /// If @assume_function_monotonicity = true, assume all deterministic
+    /// functions as monotonic, which is useful for partition pruning.
     bool isKeyPossiblyWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
+        std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_res_column_type,
-        MonotonicFunctionsChain & out_functions_chain);
+        MonotonicFunctionsChain & out_functions_chain,
+        bool assume_function_monotonicity = false);
 
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
+        std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
-    bool transformConstantWithValidFunctions(
+    bool extractMonotonicFunctionsChainFromKey(
         ContextPtr context,
         const String & expr_name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type,
+        MonotonicFunctionsChain & out_functions_chain,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
@@ -264,13 +294,26 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
+    /// Checks if node is a subexpression of any of key columns expressions,
+    /// wrapped by deterministic functions, and if so, returns `true`, and
+    /// specifies key column position / type. Besides that it produces the
+    /// chain of functions which should be executed on set, to transform it
+    /// into key column values.
+    bool canSetValuesBeWrappedByFunctions(
+        const RPNBuilderTreeNode & node,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_res_column_type,
+        MonotonicFunctionsChain & out_functions_chain);
+
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
         const RPNBuilderFunctionTreeNode & func,
         RPNElement & out,
-        size_t & out_key_column_num);
+        size_t & out_key_column_num,
+        bool & allow_constant_transformation,
+        bool & is_constant_transformed);
 
     /// Checks that the index can not be used.
     ///
@@ -296,7 +339,16 @@ private:
     ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
     bool unknownOrAlwaysTrue(bool unknown_any) const;
 
+    /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
+      * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.
+      */
+    void findHyperrectanglesForArgumentsOfSpaceFillingCurves();
+
     RPN rpn;
+
+    /// If query has no filter, rpn will has one element with unknown function.
+    /// This flag identify whether there are filters.
+    bool has_filter;
 
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;
@@ -306,14 +358,86 @@ private:
     /// All intermediate columns are used to calculate key_expr.
     const NameSet key_subexpr_names;
 
+    /// Space-filling curves in the key
+    enum class SpaceFillingCurveType
+    {
+        Unknown = 0,
+        Morton,
+        Hilbert
+    };
+    static const std::unordered_map<String, SpaceFillingCurveType> space_filling_curve_name_to_type;
+
+    struct SpaceFillingCurveDescription
+    {
+        size_t key_column_pos;
+        String function_name;
+        std::vector<String> arguments;
+        SpaceFillingCurveType type;
+    };
+    using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
+    SpaceFillingCurveDescriptions key_space_filling_curves;
+    void getAllSpaceFillingCurves();
+
     /// Array joined column names
     NameSet array_joined_column_names;
 
-    // If true, always allow key_expr to be wrapped by function
+    /// If true, this key condition is used only to validate single value
+    /// ranges. It permits key_expr and constant of FunctionEquals to be
+    /// transformed by any deterministic functions. It is used by
+    /// PartitionPruner.
     bool single_point;
 
-    // If true, do not use always_monotonic information to transform constants
-    bool strict;
+    /// If true, this key condition is relaxed. When a key condition is relaxed, it
+    /// is considered weakened. This is because keys may not always align perfectly
+    /// with the condition specified in the query, and the aim is to enhance the
+    /// usefulness of different types of key expressions across various scenarios.
+    ///
+    /// For instance, in a scenario with one granule of key column toDate(a), where
+    /// the hyperrectangle is toDate(a) ∊ [x, y], the result of a ∊ [u, v] can be
+    /// deduced as toDate(a) ∊ [toDate(u), toDate(v)] due to the monotonic
+    /// non-decreasing nature of the toDate function. Similarly, for a ∊ (u, v), the
+    /// transformed outcome remains toDate(a) ∊ [toDate(u), toDate(v)] as toDate
+    /// does not strictly follow a monotonically increasing transformation. This is
+    /// one of the main use case about key condition relaxation.
+    ///
+    /// During the KeyCondition::checkInRange process, relaxing the key condition
+    /// can lead to a loosened result. For example, when transitioning from (u, v)
+    /// to [u, v], if a key is within the range [u, u], BoolMask::can_be_true will
+    /// be true instead of false, causing us to not skip this granule. This behavior
+    /// is acceptable as we can still filter it later on. Conversely, if the key is
+    /// within the range [u, v], BoolMask::can_be_false will be false instead of
+    /// true, indicating a stricter condition where all elements of the granule
+    /// satisfy the key condition. Hence, when the key condition is relaxed, we
+    /// cannot rely on BoolMask::can_be_false. One significant use case of
+    /// BoolMask::can_be_false is in trivial count optimization.
+    ///
+    /// Now let's review all the cases of key condition relaxation across different
+    /// atom types.
+    ///
+    /// 1. Not applicable: ALWAYS_FALSE, ALWAYS_TRUE, FUNCTION_NOT,
+    /// FUNCTION_AND, FUNCTION_OR.
+    ///
+    /// These atoms are either never relaxed or are relaxed by their children.
+    ///
+    /// 2. Constant transformed: FUNCTION_IN_RANGE, FUNCTION_NOT_IN_RANGE,
+    /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
+    /// FUNCTION_NOT_IN_SET (1 element)
+    ///
+    /// These atoms are relaxed only when the associated constants undergo
+    /// transformation by monotonic functions, as illustrated in the example
+    /// mentioned earlier.
+    ///
+    /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
+    /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
+    ///
+    /// These atoms are always considered relaxed for the sake of implementation
+    /// simplicity, as there may be "gaps" within the atom's hyperrectangle that the
+    /// granule's hyperrectangle may or may not intersect.
+    ///
+    /// NOTE: we also need to examine special functions that generate atoms. For
+    /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
+    /// on a given regular expression, which is relaxed for simplicity.
+    bool relaxed = false;
 };
 
 String extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);

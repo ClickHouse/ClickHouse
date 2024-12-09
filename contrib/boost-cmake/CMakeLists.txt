@@ -44,12 +44,14 @@ set (SRCS_IOSTREAMS
     "${LIBRARY_DIR}/libs/iostreams/src/gzip.cpp"
     "${LIBRARY_DIR}/libs/iostreams/src/mapped_file.cpp"
     "${LIBRARY_DIR}/libs/iostreams/src/zlib.cpp"
+    "${LIBRARY_DIR}/libs/iostreams/src/zstd.cpp"
 )
 
 add_library (_boost_iostreams ${SRCS_IOSTREAMS})
 add_library (boost::iostreams ALIAS _boost_iostreams)
 target_include_directories (_boost_iostreams PRIVATE ${LIBRARY_DIR})
 target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zlib)
+target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zstd)
 
 # program_options
 
@@ -66,6 +68,11 @@ set (SRCS_PROGRAM_OPTIONS
     "${LIBRARY_DIR}/libs/program_options/src/variables_map.cpp"
     "${LIBRARY_DIR}/libs/program_options/src/winmain.cpp"
 )
+
+# Always compile this file with the highest possible level of optimizations, even in Debug builds.
+# Otherwise the client takes too long to start and SQL stateless tests (many options to parse)
+# https://github.com/ClickHouse/ClickHouse/issues/65745
+set_source_files_properties(${SRCS_PROGRAM_OPTIONS} PROPERTIES COMPILE_FLAGS "-O3")
 
 add_library (_boost_program_options ${SRCS_PROGRAM_OPTIONS})
 add_library (boost::program_options ALIAS _boost_program_options)
@@ -137,6 +144,12 @@ elseif (ARCH_RISCV64)
         "${LIBRARY_DIR}/libs/context/src/asm/jump_riscv64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/make_riscv64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/ontop_riscv64_sysv_elf_gas.S"
+    )
+elseif (ARCH_LOONGARCH64)
+    set (SRCS_CONTEXT ${SRCS_CONTEXT}
+        "${LIBRARY_DIR}/libs/context/src/asm/jump_loongarch64_sysv_elf_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/make_loongarch64_sysv_elf_gas.S"
+        "${LIBRARY_DIR}/libs/context/src/asm/ontop_loongarch64_sysv_elf_gas.S"
     )
 elseif(OS_DARWIN)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}

@@ -13,17 +13,17 @@ namespace DB
 class PartitionPruner
 {
 public:
-    PartitionPruner(const StorageMetadataPtr & metadata, const SelectQueryInfo & query_info, ContextPtr context, bool strict);
-    PartitionPruner(const StorageMetadataPtr & metadata, ActionsDAGPtr filter_actions_dag, ContextPtr context, bool strict);
+    PartitionPruner(const StorageMetadataPtr & metadata, const ActionsDAG * filter_actions_dag, ContextPtr context, bool strict = false);
 
-    bool canBePruned(const IMergeTreeDataPart & part);
+    bool canBePruned(const IMergeTreeDataPart & part) const;
 
     bool isUseless() const { return useless; }
 
     const KeyCondition & getKeyCondition() const { return partition_condition; }
 
 private:
-    std::unordered_map<String, bool> partition_filter_map;
+    /// Cache already analyzed partitions.
+    mutable std::unordered_map<String, bool> partition_filter_map;
 
     /// partition_key is adjusted here (with substitution from modulo to moduloLegacy).
     KeyDescription partition_key;

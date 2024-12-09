@@ -9,6 +9,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <numeric>
@@ -17,6 +18,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 function_range_max_elements_in_block;
+}
 
 namespace ErrorCodes
 {
@@ -40,7 +45,7 @@ public:
 
     const size_t max_elements;
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionRange>(std::move(context_)); }
-    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef().function_range_max_elements_in_block) {}
+    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef()[Setting::function_range_max_elements_in_block]) { }
 
 private:
     String getName() const override { return name; }
@@ -119,7 +124,7 @@ private:
             for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
             {
                 for (T elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
-                    out_data[offset + elem_idx] = static_cast<T>(elem_idx);
+                    out_data[offset + elem_idx] = elem_idx;
 
                 offset += in_data[row_idx];
                 out_offsets[row_idx] = offset;
@@ -127,8 +132,7 @@ private:
 
             return ColumnArray::create(std::move(data_col), std::move(offsets_col));
         }
-        else
-            return nullptr;
+        return nullptr;
     }
 
     template <typename T>
@@ -404,7 +408,7 @@ private:
         {
             if (!col.type->isNullable())
                 return;
-            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(*col.column);
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(col.column.get());
             if (!nullable_col)
                 nullable_col = checkAndGetColumnConstData<ColumnNullable>(col.column.get());
             if (!nullable_col)
@@ -421,8 +425,8 @@ private:
             const auto * col = arguments[0].column.get();
             if (arguments[0].type->isNullable())
             {
-                const auto * nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
-                col = nullable->getNestedColumnPtr().get();
+                const auto & nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
+                col = nullable.getNestedColumnPtr().get();
             }
 
             if (!((res = executeInternal<UInt8>(col)) || (res = executeInternal<UInt16>(col)) || (res = executeInternal<UInt32>(col))

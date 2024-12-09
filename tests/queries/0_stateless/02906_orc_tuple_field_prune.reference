@@ -1,0 +1,108 @@
+int64_column	Nullable(Int64)					
+string_column	Nullable(String)					
+float64_column	Nullable(Float64)					
+tuple_column	Tuple(\n    a Nullable(String),\n    b Nullable(Float64),\n    c Nullable(Int64))					
+array_tuple_column	Array(Tuple(\n    a Nullable(String),\n    b Nullable(Float64),\n    c Nullable(Int64)))					
+map_tuple_column	Map(String, Tuple(\n    a Nullable(String),\n    b Nullable(Float64),\n    c Nullable(Int64)))					
+-- { echoOn }
+-- Test primitive types
+select int64_column, string_column, float64_column from file('02906.orc') where int64_column % 15 = 0;
+0	0	0
+15	15	15
+30	30	30
+45	45	45
+60	60	60
+75	75	75
+90	90	90
+-- Test tuple type with names
+select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64))') where int64_column % 15 = 0;
+(NULL,NULL,NULL)
+('15',15,15)
+(NULL,NULL,NULL)
+('45',45,45)
+(NULL,NULL,NULL)
+('75',75,75)
+(NULL,NULL,NULL)
+select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(c Nullable(Int64))') where int64_column % 15 = 0;
+(NULL)
+(15)
+(NULL)
+(45)
+(NULL)
+(75)
+(NULL)
+select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(c Nullable(Int64), d Nullable(String))') where int64_column % 15 = 0;
+(NULL,NULL)
+(15,NULL)
+(NULL,NULL)
+(45,NULL)
+(NULL,NULL)
+(75,NULL)
+(NULL,NULL)
+-- Test tuple type without names
+select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(Nullable(String), Nullable(Float64), Nullable(Int64))') where int64_column % 15 = 0;
+(NULL,NULL,NULL)
+('15',15,15)
+(NULL,NULL,NULL)
+('45',45,45)
+(NULL,NULL,NULL)
+('75',75,75)
+(NULL,NULL,NULL)
+select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(Nullable(String), Nullable(Float64))') where int64_column % 15 = 0;
+(NULL,NULL)
+('15',15)
+(NULL,NULL)
+('45',45)
+(NULL,NULL)
+('75',75)
+(NULL,NULL)
+-- Test tuple nested in array
+select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
+[(NULL,NULL,NULL)]
+[('15',15,15)]
+[(NULL,NULL,NULL)]
+[('45',45,45)]
+[(NULL,NULL,NULL)]
+[('75',75,75)]
+[(NULL,NULL,NULL)]
+select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
+[(NULL,NULL)]
+[(15,15)]
+[(NULL,NULL)]
+[(45,45)]
+[(NULL,NULL)]
+[(75,75)]
+[(NULL,NULL)]
+select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(b Nullable(Float64), c Nullable(Int64), d Nullable(String)))') where int64_column % 15 = 0;
+[(NULL,NULL,NULL)]
+[(15,15,NULL)]
+[(NULL,NULL,NULL)]
+[(45,45,NULL)]
+[(NULL,NULL,NULL)]
+[(75,75,NULL)]
+[(NULL,NULL,NULL)]
+-- Test tuple nested in map
+select map_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
+{'0':(NULL,NULL,NULL)}
+{'15':('15',15,15)}
+{'30':(NULL,NULL,NULL)}
+{'45':('45',45,45)}
+{'60':(NULL,NULL,NULL)}
+{'75':('75',75,75)}
+{'90':(NULL,NULL,NULL)}
+select map_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
+{'0':(NULL,NULL)}
+{'15':(15,15)}
+{'30':(NULL,NULL)}
+{'45':(45,45)}
+{'60':(NULL,NULL)}
+{'75':(75,75)}
+{'90':(NULL,NULL)}
+select map_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(b Nullable(Float64), c Nullable(Int64), d Nullable(String)))') where int64_column % 15 = 0;
+{'0':(NULL,NULL,NULL)}
+{'15':(15,15,NULL)}
+{'30':(NULL,NULL,NULL)}
+{'45':(45,45,NULL)}
+{'60':(NULL,NULL,NULL)}
+{'75':(75,75,NULL)}
+{'90':(NULL,NULL,NULL)}

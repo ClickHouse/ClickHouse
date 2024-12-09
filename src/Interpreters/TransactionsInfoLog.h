@@ -3,6 +3,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <Common/TransactionID.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -39,10 +40,9 @@ struct TransactionsInfoLogElement
     String part_name;
 
     static std::string name() { return "TransactionsInfoLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 
     void fillCommonFields(const TransactionInfoContext * context = nullptr);
 };
@@ -53,7 +53,7 @@ class TransactionsInfoLog : public SystemLog<TransactionsInfoLogElement>
 };
 
 
-void tryWriteEventToSystemLog(Poco::Logger * log, TransactionsInfoLogElement::Type type,
+void tryWriteEventToSystemLog(LoggerPtr log, TransactionsInfoLogElement::Type type,
                               const TransactionID & tid, const TransactionInfoContext & context);
 
 }

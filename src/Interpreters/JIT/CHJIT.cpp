@@ -3,6 +3,7 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
+#include <cmath>
 
 #include <boost/noncopyable.hpp>
 
@@ -119,9 +120,9 @@ public:
         return result;
     }
 
-    inline size_t getAllocatedSize() const { return allocated_size; }
+    size_t getAllocatedSize() const { return allocated_size; }
 
-    inline size_t getPageSize() const { return page_size; }
+    size_t getPageSize() const { return page_size; }
 
     ~PageArena()
     {
@@ -153,7 +154,7 @@ public:
             {
                 int res = mprotect(block.base(), block.blockSize(), protection_flags | PROT_READ);
                 if (res != 0)
-                    throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                    throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
 
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
                 invalidate_cache = false;
@@ -161,7 +162,7 @@ public:
 #    endif
             int res = mprotect(block.base(), block.blockSize(), protection_flags);
             if (res != 0)
-                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
 
             if (invalidate_cache)
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
@@ -177,10 +178,10 @@ private:
         {
         }
 
-        inline void * base() const { return pages_base; }
-        inline size_t pagesSize() const { return pages_size; }
-        inline size_t pageSize() const { return page_size; }
-        inline size_t blockSize() const { return pages_size * page_size; }
+        void * base() const { return pages_base; }
+        size_t pagesSize() const { return pages_size; }
+        size_t pageSize() const { return page_size; }
+        size_t blockSize() const { return pages_size * page_size; }
 
     private:
         void * pages_base;
@@ -217,10 +218,8 @@ private:
 
             return static_cast<char *>(result);
         }
-        else
-        {
-            return nullptr;
-        }
+
+        return nullptr;
     }
 
     void allocateNextPageBlock(size_t size)
@@ -232,10 +231,12 @@ private:
         int res = posix_memalign(&buf, page_size, allocate_size);
 
         if (res != 0)
-            throwFromErrno(
-                fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.", page_size, ReadableSize(allocate_size)),
+            ErrnoException::throwWithErrno(
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-                res);
+                res,
+                "Cannot allocate memory (posix_memalign) alignment {} size {}",
+                page_size,
+                ReadableSize(allocate_size));
 
         page_blocks.emplace_back(buf, pages_to_allocate_size, page_size);
         page_blocks_allocated_size.emplace_back(0);
@@ -243,6 +244,31 @@ private:
         allocated_size += allocate_size;
     }
 };
+
+#ifdef PRINT_ASSEMBLY
+
+class AssemblyPrinter
+{
+public:
+    explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
+    : target_machine(target_machine_)
+    {
+    }
+
+    void print(llvm::Module & module)
+    {
+        llvm::legacy::PassManager pass_manager;
+        target_machine.Options.MCOptions.AsmVerbose = true;
+        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+            throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
+
+        pass_manager.run(module);
+    }
+private:
+    llvm::TargetMachine & target_machine;
+};
+
+#endif
 
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
@@ -260,8 +286,7 @@ public:
     {
         if (is_read_only)
             return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
-        else
-            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+        return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
     }
 
     bool finalizeMemory(std::string *) override
@@ -271,7 +296,7 @@ public:
         return true;
     }
 
-    inline size_t allocatedSize() const
+    size_t allocatedSize() const
     {
         size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
         size_t code_size = ex_page_arena.getAllocatedSize();
@@ -346,6 +371,9 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
+
+    double (*fmod_ptr)(double, double) = &fmod;
+    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
 }
 
 CHJIT::~CHJIT() = default;
@@ -374,6 +402,11 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
     runOptimizationPassesOnModule(*module);
+
+#ifdef PRINT_ASSEMBLY
+    AssemblyPrinter assembly_printer(*machine);
+    assembly_printer.print(*module);
+#endif
 
     auto buffer = compiler->compile(*module);
 

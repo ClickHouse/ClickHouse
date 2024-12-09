@@ -6,22 +6,8 @@
 #include <Common/quoteString.h>
 
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_COMPILE_REGEXP;
-}
 
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {
@@ -42,59 +28,45 @@ void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
         writeCString(".", ostr);
     }
     writeCString("COLUMNS(", ostr);
-    writeQuotedString(original_pattern, ostr);
+    writeQuotedString(pattern, ostr);
     writeChar(')', ostr);
 }
 
-void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
+    hash_state.update(pattern.size());
+    hash_state.update(pattern);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    ostr << (settings.hilite ? hilite_keyword : "");
 
     if (expression)
     {
-        expression->formatImpl(settings, state, frame);
-        settings.ostr << ".";
+        expression->formatImpl(ostr, settings, state, frame);
+        ostr << ".";
     }
 
-    settings.ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
+    ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << quoteString(pattern);
+    ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(ostr, settings, state, frame);
     }
 }
 
-void ASTColumnsRegexpMatcher::setPattern(String pattern)
+void ASTColumnsRegexpMatcher::setPattern(String pattern_)
 {
-    original_pattern = std::move(pattern);
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "COLUMNS pattern {} cannot be compiled: {}", original_pattern, column_matcher->error());
+    pattern = std::move(pattern_);
 }
 
 const String & ASTColumnsRegexpMatcher::getPattern() const
 {
-    return original_pattern;
-}
-
-const std::shared_ptr<re2::RE2> & ASTColumnsRegexpMatcher::getMatcher() const
-{
-    return column_matcher;
-}
-
-bool ASTColumnsRegexpMatcher::isColumnMatching(const String & column_name) const
-{
-    return RE2::PartialMatch(column_name, *column_matcher);
+    return pattern;
 }
 
 ASTPtr ASTColumnsListMatcher::clone() const
@@ -129,31 +101,31 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    ostr << (settings.hilite ? hilite_keyword : "");
 
     if (expression)
     {
-        expression->formatImpl(settings, state, frame);
-        settings.ostr << ".";
+        expression->formatImpl(ostr, settings, state, frame);
+        ostr << ".";
     }
 
-    settings.ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
         {
-            settings.ostr << ", ";
+            ostr << ", ";
         }
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(ostr, settings, state, frame);
     }
-    settings.ostr << ")";
+    ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(ostr, settings, state, frame);
     }
 }
 
@@ -174,53 +146,40 @@ void ASTQualifiedColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) cons
 {
     qualifier->appendColumnName(ostr);
     writeCString(".COLUMNS(", ostr);
-    writeQuotedString(original_pattern, ostr);
+    writeQuotedString(pattern, ostr);
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::setPattern(String pattern, bool set_matcher)
+void ASTQualifiedColumnsRegexpMatcher::setPattern(String pattern_)
 {
-    original_pattern = std::move(pattern);
-
-    if (!set_matcher)
-        return;
-
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "COLUMNS pattern {} cannot be compiled: {}", original_pattern, column_matcher->error());
+    pattern = std::move(pattern_);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::setMatcher(std::shared_ptr<re2::RE2> matcher)
+const String & ASTQualifiedColumnsRegexpMatcher::getPattern() const
 {
-    column_matcher = std::move(matcher);
+    return pattern;
 }
 
-const std::shared_ptr<re2::RE2> & ASTQualifiedColumnsRegexpMatcher::getMatcher() const
+void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    return column_matcher;
+    hash_state.update(pattern.size());
+    hash_state.update(pattern);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTQualifiedColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
-}
+    ostr << (settings.hilite ? hilite_keyword : "");
 
-void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    qualifier->formatImpl(ostr, settings, state, frame);
 
-    qualifier->formatImpl(settings, state, frame);
-
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
+    ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << quoteString(pattern);
+    ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(ostr, settings, state, frame);
     }
 }
 
@@ -255,24 +214,24 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTQualifiedColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-    qualifier->formatImpl(settings, state, frame);
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << (settings.hilite ? hilite_keyword : "");
+    qualifier->formatImpl(ostr, settings, state, frame);
+    ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
-            settings.ostr << ", ";
+            ostr << ", ";
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(ostr, settings, state, frame);
     }
-    settings.ostr << ")";
+    ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(ostr, settings, state, frame);
     }
 }
 

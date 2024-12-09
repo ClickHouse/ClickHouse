@@ -1,5 +1,5 @@
 #include <IO/TimeoutSetter.h>
-
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 
@@ -38,7 +38,11 @@ TimeoutSetter::~TimeoutSetter()
     }
     catch (...)
     {
+        /// It's known that setting timeouts for a socket often does not work on Apple macOS.
+        /// Let's not confuse the users of Apple macOS with extraneous error messages.
+#if !defined(OS_DARWIN)
         tryLogCurrentException("Client", "TimeoutSetter: Can't reset timeouts");
+#endif
     }
 }
 

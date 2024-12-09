@@ -1,7 +1,10 @@
 #pragma once
 
+#include <limits>
+#include <memory>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
+#include "Core/Settings.h"
 
 
 namespace DB
@@ -13,24 +16,29 @@ namespace DB
 class LimitReadBuffer : public ReadBuffer
 {
 public:
-    LimitReadBuffer(ReadBuffer & in_, UInt64 limit_, bool throw_exception_,
-                    std::optional<size_t> exact_limit_, std::string exception_message_ = {});
-    LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, UInt64 limit_, bool throw_exception_, std::optional<size_t> exact_limit_,
-                    std::string exception_message_ = {});
+    struct Settings
+    {
+        size_t read_no_less = 0;
+        size_t read_no_more = std::numeric_limits<size_t>::max();
+        bool expect_eof = false;
+        std::string excetion_hint = {};
+    };
+
+    LimitReadBuffer(ReadBuffer & in_, Settings settings);
+    LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, Settings settings);
+
     ~LimitReadBuffer() override;
 
 private:
     ReadBuffer * in;
-    bool owns_in;
+    std::unique_ptr<ReadBuffer> holder;
 
-    UInt64 limit;
-    bool throw_exception;
-    std::optional<size_t> exact_limit;
-    std::string exception_message;
+    const Settings settings;
 
-    LimitReadBuffer(ReadBuffer * in_, bool owns, UInt64 limit_, bool throw_exception_, std::optional<size_t> exact_limit_, std::string exception_message_);
+    LimitReadBuffer(ReadBuffer * in_, bool owns, size_t limit_, bool throw_exception_, std::optional<size_t> exact_limit_, std::string exception_message_);
 
     bool nextImpl() override;
+    size_t getEffectiveBufferSize() const;
 };
 
 }

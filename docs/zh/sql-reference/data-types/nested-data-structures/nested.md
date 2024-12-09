@@ -1,7 +1,7 @@
 ---
 slug: /zh/sql-reference/data-types/nested-data-structures/nested
 ---
-# Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
+# Nested(Name1 Type1, Name2 Type2, ...) {#nestedname1-type1-name2-type2}
 
 嵌套数据结构类似于嵌套表。嵌套数据结构的参数（列名和类型）与 CREATE 查询类似。每个表可以包含任意多行嵌套数据结构。
 

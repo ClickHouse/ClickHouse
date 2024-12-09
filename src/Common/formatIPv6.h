@@ -1,14 +1,14 @@
 #pragma once
 
-#include <base/types.h>
-#include <cstring>
 #include <algorithm>
+#include <array>
+#include <cstring>
 #include <type_traits>
 #include <utility>
-#include <base/range.h>
-#include <base/unaligned.h>
 #include <base/hex.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <base/types.h>
+#include <base/unaligned.h>
+#include <Common/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
 constexpr size_t IPV6_BINARY_LENGTH = 16;
@@ -45,7 +45,7 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  * @return            - true if parsed successfully, false otherwise.
  */
 template <typename T, typename EOFfunction>
-requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
+requires (std::is_same_v<std::remove_cv_t<T>, char>)
 inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_octet = -1)
 {
     if (src == nullptr || first_octet > 255)
@@ -131,7 +131,7 @@ inline bool parseIPv4whole(const char * src, unsigned char * dst)
 * @return            - true if parsed successfully, false otherwise.
 */
 template <typename T, typename EOFfunction>
-requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
+requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
 inline bool parseIPv6(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_block = -1)
 {
     const auto clear_dst = [dst]()
@@ -305,7 +305,7 @@ inline bool parseIPv6whole(const char * src, unsigned char * dst)
 * @return    - true if parsed successfully, false otherwise.
 */
 template <typename T, typename EOFfunction>
-requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
+requires (std::is_same_v<typename std::remove_cv_t<T>, char>)
 inline bool parseIPv6orIPv4(T * &src, EOFfunction eof, unsigned char * dst)
 {
     const auto clear_dst = [dst]()

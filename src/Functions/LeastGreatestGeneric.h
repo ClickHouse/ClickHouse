@@ -8,7 +8,6 @@
 #include <Functions/FunctionFactory.h>
 #include <base/map.h>
 
-
 namespace DB
 {
 
@@ -18,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-enum class LeastGreatest
+enum class LeastGreatest : uint8_t
 {
     Least,
     Greatest
@@ -37,6 +36,7 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
@@ -49,13 +49,22 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        size_t num_arguments = arguments.size();
-        if (1 == num_arguments)
+        if (arguments.size() == 1)
             return arguments[0].column;
 
-        Columns converted_columns(num_arguments);
-        for (size_t arg = 0; arg < num_arguments; ++arg)
-            converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+        Columns converted_columns;
+        for (const auto & argument : arguments)
+        {
+            if (argument.type->onlyNull())
+                continue; /// ignore NULL arguments
+            auto converted_col = castColumn(argument, result_type)->convertToFullColumnIfConst();
+            converted_columns.emplace_back(converted_col);
+        }
+
+        if (converted_columns.empty())
+            return arguments[0].column;
+        else if (converted_columns.size() == 1)
+            return converted_columns[0];
 
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
@@ -63,17 +72,17 @@ private:
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t best_arg = 0;
-            for (size_t arg = 1; arg < num_arguments; ++arg)
+            for (size_t arg = 1; arg < converted_columns.size(); ++arg)
             {
-                auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
-
                 if constexpr (kind == LeastGreatest::Least)
                 {
+                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], 1);
                     if (cmp_result < 0)
                         best_arg = arg;
                 }
                 else
                 {
+                    auto cmp_result = converted_columns[arg]->compareAt(row_num, row_num, *converted_columns[best_arg], -1);
                     if (cmp_result > 0)
                         best_arg = arg;
                 }
@@ -85,7 +94,6 @@ private:
         return result_column;
     }
 };
-
 
 template <LeastGreatest kind, typename SpecializedFunction>
 class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
@@ -103,6 +111,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
@@ -134,5 +143,3 @@ private:
 };
 
 }
-
-

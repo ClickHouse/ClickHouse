@@ -24,12 +24,12 @@ bool ParserOptimizeQueryColumnsSpecification::parseImpl(Pos & pos, ASTPtr & node
 
 bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_optimize_table("OPTIMIZE TABLE");
-    ParserKeyword s_partition("PARTITION");
-    ParserKeyword s_final("FINAL");
-    ParserKeyword s_deduplicate("DEDUPLICATE");
-    ParserKeyword s_cleanup("CLEANUP");
-    ParserKeyword s_by("BY");
+    ParserKeyword s_optimize_table(Keyword::OPTIMIZE_TABLE);
+    ParserKeyword s_partition(Keyword::PARTITION);
+    ParserKeyword s_final(Keyword::FINAL);
+    ParserKeyword s_deduplicate(Keyword::DEDUPLICATE);
+    ParserKeyword s_cleanup(Keyword::CLEANUP);
+    ParserKeyword s_by(Keyword::BY);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
     ParserPartition partition_p;
@@ -55,7 +55,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
     }
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+    if (ParserKeyword{Keyword::ON}.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
         return false;
 
     if (s_partition.ignore(pos, expected))

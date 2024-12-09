@@ -88,8 +88,14 @@ public:
         queue.push_back(std::move(item));
     }
 
-    void remove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
+        for (auto & item : queue)
+        {
+            if (item->task->getStorageID() == id)
+                item->task->cancel();
+        }
+
         auto it = std::remove_if(queue.begin(), queue.end(),
             [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         queue.erase(it, queue.end());
@@ -128,8 +134,14 @@ public:
         std::push_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
 
-    void remove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
+        for (auto & item : buffer)
+        {
+            if (item->task->getStorageID() == id)
+                item->task->cancel();
+        }
+
         std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
     }
@@ -163,9 +175,9 @@ public:
         std::visit([&] (auto && queue) { queue.push(std::move(item)); }, impl);
     }
 
-    void remove(StorageID id)
+    void cancelAndRemove(StorageID id)
     {
-        std::visit([&] (auto && queue) { queue.remove(id); }, impl);
+        std::visit([&] (auto && queue) { queue.cancelAndRemove(id); }, impl);
     }
 
     void setCapacity(size_t count)
@@ -307,7 +319,7 @@ private:
     std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
     bool shutdown TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<ThreadPool> pool;
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
+    LoggerPtr log = getLogger("MergeTreeBackgroundExecutor");
 };
 
 extern template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;

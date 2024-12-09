@@ -34,10 +34,12 @@ public:
 
         auto choice = distribution(generator);
         if (choice == 0)
-            throw std::runtime_error("Unlucky...");
+            throw TestException();
 
         return false;
     }
+
+    void cancel() noexcept override { /* no op */ }
 
     StorageID getStorageID() const override
     {
@@ -48,7 +50,7 @@ public:
     {
         auto choice = distribution(generator);
         if (choice == 0)
-            throw std::runtime_error("Unlucky...");
+            throw TestException();
     }
 
     Priority getPriority() const override { return {}; }
@@ -79,6 +81,8 @@ public:
             step_func(name, step_count);
         return --step_count;
     }
+
+    void cancel() noexcept override { chassert(false, "Not implemented"); }
 
     StorageID getStorageID() const override
     {

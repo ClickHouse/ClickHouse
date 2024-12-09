@@ -45,7 +45,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
                     if (!identifier || !literal || literal->value.getType() != Field::Types::String)
                         continue;
 
-                    String regexp = likePatternToRegexp(literal->value.get<String>());
+                    String regexp = likePatternToRegexp(literal->value.safeGet<String>());
                     /// Case insensitive. Works with UTF-8 as well.
                     if (is_ilike)
                         regexp = "(?i)" + regexp;
@@ -61,7 +61,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
                         match->arguments->children.push_back(it->second);
                         unique_elems.push_back(std::move(match));
                     }
-                    it->second->value.get<Array>().push_back(regexp);
+                    it->second->value.safeGet<Array>().push_back(regexp);
                 }
             }
 

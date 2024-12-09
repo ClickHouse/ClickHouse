@@ -46,7 +46,7 @@ The `CHECK TABLE` query supports the following table engines:
 - [StripeLog](../../engines/table-engines/log-family/stripelog.md)
 - [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
-Performed over the tables with another table engines causes an `NOT_IMPLEMETED` exception.
+Performed over the tables with another table engines causes an `NOT_IMPLEMENTED` exception.
 
 Engines from the `*Log` family do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
@@ -136,8 +136,30 @@ Output:
 └──────────────┴───────────┴──────────────────────────────────────────┘
 ```
 
-If the checksums.txt file is missing, it can be restored. It will be recalculated and rewritten during the execution of the CHECK TABLE command for the specific partition, and the status will still be reported as 'success.'"
+If the checksums.txt file is missing, it can be restored. It will be recalculated and rewritten during the execution of the CHECK TABLE command for the specific partition, and the status will still be reported as 'is_passed = 1'.
 
+You can check all existing `(Replicated)MergeTree` tables at once by using the `CHECK ALL TABLES` query.
+
+```sql
+CHECK ALL TABLES
+FORMAT PrettyCompactMonoBlock
+SETTINGS check_query_single_value_result = 0
+```
+
+```text
+┌─database─┬─table────┬─part_path───┬─is_passed─┬─message─┐
+│ default  │ t2       │ all_1_95_3  │         1 │         │
+│ db1      │ table_01 │ all_39_39_0 │         1 │         │
+│ default  │ t1       │ all_39_39_0 │         1 │         │
+│ db1      │ t1       │ all_39_39_0 │         1 │         │
+│ db1      │ table_01 │ all_1_6_1   │         1 │         │
+│ default  │ t1       │ all_1_6_1   │         1 │         │
+│ db1      │ t1       │ all_1_6_1   │         1 │         │
+│ db1      │ table_01 │ all_7_38_2  │         1 │         │
+│ db1      │ t1       │ all_7_38_2  │         1 │         │
+│ default  │ t1       │ all_7_38_2  │         1 │         │
+└──────────┴──────────┴─────────────┴───────────┴─────────┘
+```
 
 ## If the Data Is Corrupted
 

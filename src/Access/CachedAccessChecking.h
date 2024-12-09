@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/ContextAccess.h>
 #include <memory>
 
 
@@ -13,14 +14,14 @@ class ContextAccess;
 class CachedAccessChecking
 {
 public:
-    CachedAccessChecking(const std::shared_ptr<const ContextAccess> & access_, AccessFlags access_flags_);
-    CachedAccessChecking(const std::shared_ptr<const ContextAccess> & access_, const AccessRightsElement & element_);
+    CachedAccessChecking(const std::shared_ptr<const ContextAccessWrapper> & access_, AccessFlags access_flags_);
+    CachedAccessChecking(const std::shared_ptr<const ContextAccessWrapper> & access_, const AccessRightsElement & element_);
     ~CachedAccessChecking();
 
     bool checkAccess(bool throw_if_denied = true);
 
 private:
-    const std::shared_ptr<const ContextAccess> access;
+    const std::shared_ptr<const ContextAccessWrapper> access;
     const AccessRightsElement element;
     bool checked = false;
     bool result = false;

@@ -20,9 +20,21 @@
 23	Sx>b:^UG	XpedE)Q:	7433019734386307503
 29	2j&S)ba?XG	QuQj	17163829389637435056
 3	UlI+1		14144472852965836438
+0	PJFiUe#J2O	_s\'	14427935816175499794
+1	>T%O	,z<	17537932797009027240
+12	D[6,P	#}Lmb[ ZzU	6394957109822140795
+18		$_N-	24422838680427462
+2	bX?}ix [	Ny]2 G	16242612901291874718
+20	VE]	Y	15120036904703536841
+22	Ti~3)N)<	A!( 3	18361093572663329113
+23	Sx>b:^UG	XpedE)Q:	7433019734386307503
+29	2j&S)ba?XG	QuQj	17163829389637435056
+3	UlI+1		14144472852965836438
 =============== QUERIES EXECUTED BY PARALLEL INNER QUERY ALONE ===============
+0	2	SELECT `__table1`.`key` AS `key`, `__table1`.`value1` AS `value1`, `__table1`.`value2` AS `value2`, toUInt64(min(`__table1`.`time`)) AS `start_ts` FROM `default`.`join_inner_table` AS `__table1` PREWHERE (`__table1`.`id` = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (`__table1`.`number` > _CAST(1610517366120, \'UInt64\')) GROUP BY `__table1`.`key`, `__table1`.`value1`, `__table1`.`value2` ORDER BY `__table1`.`key` ASC, `__table1`.`value1` ASC, `__table1`.`value2` ASC LIMIT _CAST(10, \'UInt64\')
 0	3	SELECT `key`, `value1`, `value2`, toUInt64(min(`time`)) AS `start_ts` FROM `default`.`join_inner_table` PREWHERE (`id` = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (`number` > toUInt64(\'1610517366120\')) GROUP BY `key`, `value1`, `value2` ORDER BY `key` ASC, `value1` ASC, `value2` ASC LIMIT 10
-1	1	-- Parallel inner query alone\nSELECT\n    key,\n    value1,\n    value2,\n    toUInt64(min(time)) AS start_ts\nFROM join_inner_table\nPREWHERE (id = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (number > toUInt64(\'1610517366120\'))\nGROUP BY key, value1, value2\nORDER BY key, value1, value2\nLIMIT 10\nSETTINGS allow_experimental_parallel_reading_from_replicas = 1;
+1	1	-- Parallel inner query alone\nSELECT\n    key,\n    value1,\n    value2,\n    toUInt64(min(time)) AS start_ts\nFROM join_inner_table\nPREWHERE (id = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (number > toUInt64(\'1610517366120\'))\nGROUP BY key, value1, value2\nORDER BY key, value1, value2\nLIMIT 10\nSETTINGS enable_parallel_replicas = 1, enable_analyzer=0;
+1	1	-- Parallel inner query alone\nSELECT\n    key,\n    value1,\n    value2,\n    toUInt64(min(time)) AS start_ts\nFROM join_inner_table\nPREWHERE (id = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (number > toUInt64(\'1610517366120\'))\nGROUP BY key, value1, value2\nORDER BY key, value1, value2\nLIMIT 10\nSETTINGS enable_parallel_replicas = 1, enable_analyzer=1;
 =============== OUTER QUERY (NO PARALLEL) ===============
 >T%O	,z<	10
 NQTpY#	W\\Xx4	10
@@ -39,6 +51,15 @@ U	c	10
 UlI+1		10
 bX?}ix [	Ny]2 G	10
 t<iT	X48q:Z]t0	10
+>T%O	,z<	10
+NQTpY#	W\\Xx4	10
+PJFiUe#J2O	_s\'	10
+U	c	10
+UlI+1		10
+bX?}ix [	Ny]2 G	10
+t<iT	X48q:Z]t0	10
+0	2	SELECT `__table2`.`value1` AS `value1`, `__table2`.`value2` AS `value2`, count() AS `count` FROM `default`.`join_outer_table` AS `__table1` ALL INNER JOIN (SELECT `__table3`.`key` AS `key`, `__table3`.`value1` AS `value1`, `__table3`.`value2` AS `value2` FROM `default`.`join_inner_table` AS `__table3` PREWHERE (`__table3`.`id` = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (`__table3`.`number` > _CAST(1610517366120, \'UInt64\')) GROUP BY `__table3`.`key`, `__table3`.`value1`, `__table3`.`value2`) AS `__table2` USING (`key`) GROUP BY `__table1`.`key`, `__table2`.`value1`, `__table2`.`value2`
 0	3	SELECT `key`, `value1`, `value2` FROM `default`.`join_inner_table` PREWHERE (`id` = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (`number` > toUInt64(\'1610517366120\')) GROUP BY `key`, `value1`, `value2`
-0	3	SELECT `value1`, `value2`, count() AS `count` FROM `default`.`join_outer_table` ALL INNER JOIN `_data_11888098645495698704_17868075224240210014` USING (`key`) GROUP BY `key`, `value1`, `value2`
-1	1	-- Parallel full query\nSELECT\n    value1,\n    value2,\n    avg(count) AS avg\nFROM\n    (\n        SELECT\n            key,\n            value1,\n            value2,\n            count() AS count\n        FROM join_outer_table\n        INNER JOIN\n        (\n            SELECT\n                key,\n                value1,\n                value2,\n                toUInt64(min(time)) AS start_ts\n            FROM join_inner_table\n            PREWHERE (id = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (number > toUInt64(\'1610517366120\'))\n            GROUP BY key, value1, value2\n        ) USING (key)\n        GROUP BY key, value1, value2\n        )\nGROUP BY value1, value2\nORDER BY value1, value2\nSETTINGS allow_experimental_parallel_reading_from_replicas = 1;
+0	3	SELECT `value1`, `value2`, count() AS `count` FROM `default`.`join_outer_table` ALL INNER JOIN `_data_` USING (`key`) GROUP BY `key`, `value1`, `value2`
+1	1	-- Parallel full query\nSELECT\n    value1,\n    value2,\n    avg(count) AS avg\nFROM\n    (\n        SELECT\n            key,\n            value1,\n            value2,\n            count() AS count\n        FROM join_outer_table\n        INNER JOIN\n        (\n            SELECT\n                key,\n                value1,\n                value2,\n                toUInt64(min(time)) AS start_ts\n            FROM join_inner_table\n            PREWHERE (id = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (number > toUInt64(\'1610517366120\'))\n            GROUP BY key, value1, value2\n        ) USING (key)\n        GROUP BY key, value1, value2\n        )\nGROUP BY value1, value2\nORDER BY value1, value2\nSETTINGS enable_parallel_replicas = 1, enable_analyzer=0;
+1	1	-- Parallel full query\nSELECT\n    value1,\n    value2,\n    avg(count) AS avg\nFROM\n    (\n        SELECT\n            key,\n            value1,\n            value2,\n            count() AS count\n        FROM join_outer_table\n        INNER JOIN\n        (\n            SELECT\n                key,\n                value1,\n                value2,\n                toUInt64(min(time)) AS start_ts\n            FROM join_inner_table\n            PREWHERE (id = \'833c9e22-c245-4eb5-8745-117a9a1f26b1\') AND (number > toUInt64(\'1610517366120\'))\n            GROUP BY key, value1, value2\n        ) USING (key)\n        GROUP BY key, value1, value2\n        )\nGROUP BY value1, value2\nORDER BY value1, value2\nSETTINGS enable_parallel_replicas = 1, enable_analyzer=1;

@@ -44,7 +44,7 @@ INSERT INTO map_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
     ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
     ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
-    
+
 SELECT
     timeslot,
     sumMap(status),
@@ -106,8 +106,8 @@ To work with these states, use:
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
 - [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
 - [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
-- [-Merge](#aggregate_functions_combinators-merge) combinator.
-- [-MergeState](#aggregate_functions_combinators-mergestate) combinator.
+- [-Merge](#-merge) combinator.
+- [-MergeState](#-mergestate) combinator.
 
 ## -Merge
 
@@ -124,7 +124,7 @@ Converts an aggregate function for tables into an aggregate function for arrays 
 ## -Distinct
 
 Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
-Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
+Examples: `sum(DISTINCT x)` (or `sumDistinct(x)`), `groupArray(DISTINCT x)` (or `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (or `corrStableDistinct(x, y)`) and so on.
 
 ## -OrDefault
 
@@ -317,6 +317,15 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
+## -ArgMin
+
+The suffix -ArgMin can be appended to the name of any aggregate function. In this case, the aggregate function accepts an additional argument, which should be any comparable expression. The aggregate function processes only the rows that have the minimum value for the specified extra expression.
+
+Examples: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` and so on.
+
+## -ArgMax
+
+Similar to suffix -ArgMin but processes only the rows that have the maximum value for the specified extra expression.
 
 ## Related Content
 

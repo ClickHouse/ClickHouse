@@ -11,7 +11,7 @@ namespace DB
 {
 
 class ReadBuffer;
-
+class JSONCompactEachRowFormatReader;
 
 /** A stream for reading data in a bunch of formats:
  *  - JSONCompactEachRow
@@ -20,7 +20,7 @@ class ReadBuffer;
  *  - JSONCompactStringsEachRowWithNamesAndTypes
  *
 */
-class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAndTypes<JSONCompactEachRowFormatReader>
 {
 public:
     JSONCompactEachRowRowInputFormat(
@@ -64,6 +64,7 @@ public:
     void skipRowStartDelimiter() override;
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
+    void skipRowBetweenDelimiter() override;
 
     void skipRow() override;
 
@@ -92,6 +93,7 @@ private:
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     JSONCompactEachRowFormatReader reader;

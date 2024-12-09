@@ -4,6 +4,7 @@
 #include <vector>
 #include <Columns/ColumnsNumber.h>
 #include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -92,6 +93,7 @@ TEST(ColumnVector, Filter)
     testFilter<Int64>();
     testFilter<UInt128>();
     testFilter<Int256>();
+    testFilter<BFloat16>();
     testFilter<Float32>();
     testFilter<Float64>();
     testFilter<UUID>();

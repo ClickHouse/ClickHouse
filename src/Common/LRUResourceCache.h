@@ -221,7 +221,7 @@ private:
         {
             std::lock_guard lock(mutex);
             auto it = cells.find(key);
-            if (it != cells.end() && !it->second.expired)
+            if (it != cells.end())
             {
                 if (!it->second.expired)
                 {
@@ -230,14 +230,12 @@ private:
                     queue.splice(queue.end(), queue, it->second.queue_iterator);
                     return it->second.value;
                 }
-                else if (it->second.reference_count > 0)
+                if (it->second.reference_count > 0)
                     return nullptr;
-                else
-                {
-                    // should not reach here
-                    LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "element is in invalid status.");
-                    abort();
-                }
+
+                // should not reach here
+                LOG_ERROR(getLogger("LRUResourceCache"), "element is in invalid status.");
+                abort();
             }
             ++misses;
             auto & token = insert_tokens[key];
@@ -306,7 +304,7 @@ private:
         auto it = cells.find(key);
         if (it == cells.end() || it->second.reference_count == 0)
         {
-            LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "try to release an invalid element");
+            LOG_ERROR(getLogger("LRUResourceCache"), "try to release an invalid element");
             abort();
         }
 
@@ -359,7 +357,7 @@ private:
             auto cell_it = cells.find(key);
             if (cell_it == cells.end())
             {
-                LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "LRUResourceCache became inconsistent. There must be a bug in it.");
+                LOG_ERROR(getLogger("LRUResourceCache"), "LRUResourceCache became inconsistent. There must be a bug in it.");
                 abort();
             }
 
@@ -379,7 +377,7 @@ private:
 
         if (loss_weight > current_weight + weight)
         {
-            LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "LRUResourceCache became inconsistent. There must be a bug in it.");
+            LOG_ERROR(getLogger("LRUResourceCache"), "LRUResourceCache became inconsistent. There must be a bug in it.");
             abort();
         }
 

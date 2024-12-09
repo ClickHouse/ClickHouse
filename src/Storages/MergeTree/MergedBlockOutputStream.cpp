@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/queryToString.h>
-#include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -13,41 +15,70 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool enable_index_granularity_compression;
+}
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
+    const ColumnsStatistics & statistics,
     CompressionCodecPtr default_codec_,
-    const MergeTreeTransactionPtr & txn,
+    MergeTreeIndexGranularityPtr index_granularity_ptr,
+    TransactionID tid,
+    size_t part_uncompressed_bytes,
     bool reset_columns_,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_, columns_list_, reset_columns_)
+    : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
     , write_settings(write_settings_)
 {
+    /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
+    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
+    /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
+    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
+
     MergeTreeWriterSettings writer_settings(
-        storage.getContext()->getSettings(),
+        data_part->storage.getContext()->getSettingsRef(),
         write_settings,
-        storage.getSettings(),
+        storage_settings,
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
+        save_marks_in_cache,
+        save_primary_index_in_memory,
         blocks_are_granules_size);
 
+    /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
     if (data_part->isStoredOnDisk())
         data_part_storage->createDirectories();
 
-    /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
     data_part->version.setCreationTID(tid, nullptr);
     data_part->storeVersionMetadata();
 
-    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings, {});
+    writer = createMergeTreeDataPartWriter(data_part->getType(),
+        data_part->name,
+        data_part->storage.getLogName(),
+        data_part->getSerializations(),
+        data_part_storage,
+        data_part->index_granularity_info,
+        storage_settings,
+        columns_list,
+        data_part->getColumnPositions(),
+        metadata_snapshot,
+        data_part->storage.getVirtualsPtr(),
+        skip_indices,
+        statistics,
+        data_part->getMarksFileExtension(),
+        default_codec,
+        writer_settings,
+        std::move(index_granularity_ptr));
 }
 
 /// If data is pre-sorted.
@@ -55,6 +86,13 @@ void MergedBlockOutputStream::write(const Block & block)
 {
     writeImpl(block, nullptr);
 }
+
+void MergedBlockOutputStream::cancel() noexcept
+{
+    if (writer)
+        writer->cancel();
+}
+
 
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
     * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
@@ -81,13 +119,23 @@ struct MergedBlockOutputStream::Finalizer::Impl
     }
 
     void finish();
+    void cancel();
 };
 
 void MergedBlockOutputStream::Finalizer::finish()
 {
     std::unique_ptr<Impl> to_finish = std::move(impl);
+    impl.reset();
     if (to_finish)
         to_finish->finish();
+}
+
+void MergedBlockOutputStream::Finalizer::cancel()
+{
+    std::unique_ptr<Impl> to_cancel = std::move(impl);
+    impl.reset();
+    if (to_cancel)
+        to_cancel->cancel();
 }
 
 void MergedBlockOutputStream::Finalizer::Impl::finish()
@@ -119,26 +167,50 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         part->getDataPartStorage().removeFile(file_name);
 }
 
+void MergedBlockOutputStream::Finalizer::Impl::cancel()
+{
+    writer.cancel();
+
+    for (auto & file : written_files)
+    {
+        file->cancel();
+    }
+}
+
 MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) noexcept = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
 
-MergedBlockOutputStream::Finalizer::~Finalizer() = default;
+MergedBlockOutputStream::Finalizer::~Finalizer()
+{
+    try
+    {
+        if (impl)
+            finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+    MergeTreeData::DataPart::Checksums * additional_column_checksums,
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums).finish();
+    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_samples).finish();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+    MergeTreeData::DataPart::Checksums * additional_column_checksums,
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
@@ -153,7 +225,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     for (const auto & name : checksums_to_remove)
         checksums.files.erase(name);
 
-    LOG_TRACE(&Poco::Logger::get("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
+    LOG_TRACE(getLogger("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -173,21 +245,46 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }
 
-    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
+    std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     if (new_part->isStoredOnDisk())
-       finalizer->written_files = finalizePartOnDisk(new_part, checksums);
+       written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
-    new_part->index = writer->releaseIndexColumns();
+
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
+    new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
+    auto columns_sample = writer->getColumnsSample();
+    if (additional_columns_samples)
+    {
+       for (const auto & column : *additional_columns_samples)
+            columns_sample.insert(column);
+    }
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(columns_sample);
+
+    if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
+    {
+        if (auto new_index_granularity = new_part->index_granularity->optimize())
+            new_part->index_granularity = std::move(new_index_granularity);
+    }
+
+    /// It's important to set index after index granularity.
+    if (auto computed_index = writer->releaseIndexColumns())
+        new_part->setIndex(std::move(*computed_index));
+
+    /// In mutation, existing_rows_count is already calculated in PartMergerWriter
+    /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
+    if (!new_part->existing_rows_count.has_value())
+        new_part->existing_rows_count = rows_count;
 
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
 
+    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
+    finalizer->written_files = std::move(written_files);
     return Finalizer(std::move(finalizer));
 }
 
@@ -200,7 +297,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     if (new_part->isProjectionPart())
     {
-        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
+        if (new_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
         {
             auto count_out = new_part->getDataPartStorage().writeFile("count.txt", 4096, write_settings);
             HashingWriteBuffer count_out_hashing(*count_out);
@@ -226,14 +323,16 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             written_files.emplace_back(std::move(out));
         }
 
-        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        if (new_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            if (auto file = new_part->partition.store(storage, new_part->getDataPartStorage(), checksums))
+            if (auto file = new_part->partition.store(
+                new_part->storage.getInMemoryMetadataPtr(), new_part->storage.getContext(),
+                new_part->getDataPartStorage(), checksums))
                 written_files.emplace_back(std::move(file));
 
             if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(storage, new_part->getDataPartStorage(), checksums);
+                auto files = new_part->minmax_idx->store(new_part->storage, new_part->getDataPartStorage(), checksums);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }

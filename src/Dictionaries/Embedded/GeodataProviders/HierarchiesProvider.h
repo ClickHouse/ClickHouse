@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <Common/FileUpdatesTracker.h>
 
+namespace DB
+{
 
 // Represents local file with regions hierarchy dump
 class RegionsHierarchyDataSource : public IRegionsHierarchyDataSource
@@ -50,3 +52,5 @@ public:
 private:
     void discoverFilesWithCustomHierarchies();
 };
+
+}

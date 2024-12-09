@@ -2,7 +2,12 @@
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
-exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 
 log_user 0
 set timeout 60
@@ -18,23 +23,23 @@ spawn bash
 send "source $basedir/../shell_config.sh\r"
 
 send "\$CLICKHOUSE_CLIENT --query 'select 0b'\r"
-expect "DB::Exception: Missing columns: '0b' while processing query: 'SELECT `0b`', required columns: '0b'. (UNKNOWN_IDENTIFIER)"
+expect "(UNKNOWN_IDENTIFIER)"
 
 send "\$CLICKHOUSE_CLIENT --query 'select 0b;'\r"
-expect "DB::Exception: Missing columns: '0b' while processing query: 'SELECT `0b`', required columns: '0b'. (UNKNOWN_IDENTIFIER)"
+expect "(UNKNOWN_IDENTIFIER)"
 
 send "\$CLICKHOUSE_CLIENT --query 'select 0b ;'\r"
-expect "DB::Exception: Missing columns: '0b' while processing query: 'SELECT `0b`', required columns: '0b'. (UNKNOWN_IDENTIFIER)"
+expect "(UNKNOWN_IDENTIFIER)"
 
 
 send "\$CLICKHOUSE_CLIENT --query 'select 0x'\r"
-expect "DB::Exception: Missing columns: '0x' while processing query: 'SELECT `0x`', required columns: '0x'. (UNKNOWN_IDENTIFIER)"
+expect "(UNKNOWN_IDENTIFIER)"
 
 send "\$CLICKHOUSE_CLIENT --query 'select 0x;'\r"
-expect "DB::Exception: Missing columns: '0x' while processing query: 'SELECT `0x`', required columns: '0x'. (UNKNOWN_IDENTIFIER)"
+expect "(UNKNOWN_IDENTIFIER)"
 
 send "\$CLICKHOUSE_CLIENT --query 'select 0x ;'\r"
-expect "DB::Exception: Missing columns: '0x' while processing query: 'SELECT `0x`', required columns: '0x'. (UNKNOWN_IDENTIFIER)"
+expect "(UNKNOWN_IDENTIFIER)"
 
 send "exit\r"
 expect eof

@@ -1,14 +1,14 @@
 #include <Analyzer/ArrayJoinNode.h>
-
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
+#include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
-
-#include <Analyzer/Utils.h>
-#include <Analyzer/ColumnNode.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -26,6 +26,9 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     buffer << std::string(indent, ' ') << "ARRAY_JOIN id: " << format_state.getNodeId(this);
     buffer << ", is_left: " << is_left;
 
+    if (hasAlias())
+        buffer << ", alias: " << getAlias();
+
     buffer << '\n' << std::string(indent + 2, ' ') << "TABLE EXPRESSION\n";
     getTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
@@ -33,13 +36,13 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     getJoinExpressionsNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool ArrayJoinNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool ArrayJoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ArrayJoinNode &>(rhs);
     return is_left == rhs_typed.is_left;
 }
 
-void ArrayJoinNode::updateTreeHashImpl(HashState & state) const
+void ArrayJoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(is_left);
 }
@@ -63,7 +66,9 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 
         auto * column_node = array_join_expression->as<ColumnNode>();
         if (column_node && column_node->getExpression())
+        {
             array_join_expression_ast = column_node->getExpression()->toAST(options);
+        }
         else
             array_join_expression_ast = array_join_expression->toAST(options);
 

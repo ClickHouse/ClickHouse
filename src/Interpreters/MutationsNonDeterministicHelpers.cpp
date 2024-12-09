@@ -5,6 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
+#include <Core/Settings.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
@@ -14,6 +15,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool mutations_execute_nondeterministic_on_initiator;
+    extern const SettingsBool mutations_execute_subqueries_on_initiator;
+    extern const SettingsUInt64 mutations_max_literal_size_to_replace;
+}
 
 namespace
 {
@@ -165,45 +172,61 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
 ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings.mutations_execute_subqueries_on_initiator
-        && !settings.mutations_execute_nondeterministic_on_initiator)
+    if (!settings[Setting::mutations_execute_subqueries_on_initiator] && !settings[Setting::mutations_execute_nondeterministic_on_initiator])
         return nullptr;
 
     auto query = alter_command.clone();
     auto & new_alter_command = *query->as<ASTAlterCommand>();
 
-    if (settings.mutations_execute_subqueries_on_initiator)
+    auto remove_child = [](auto & children, IAST *& erase_ptr)
+    {
+        auto it = std::find_if(children.begin(), children.end(), [&](const auto & ptr) { return ptr.get() == erase_ptr; });
+        erase_ptr = nullptr;
+        children.erase(it);
+    };
+    auto visit = [&](auto & visitor)
+    {
+        if (new_alter_command.update_assignments)
+        {
+            ASTPtr update_assignments = new_alter_command.update_assignments->clone();
+            remove_child(new_alter_command.children, new_alter_command.update_assignments);
+            visitor.visit(update_assignments);
+            new_alter_command.update_assignments = new_alter_command.children.emplace_back(std::move(update_assignments)).get();
+        }
+        if (new_alter_command.predicate)
+        {
+            ASTPtr predicate = new_alter_command.predicate->clone();
+            remove_child(new_alter_command.children, new_alter_command.predicate);
+            visitor.visit(predicate);
+            new_alter_command.predicate = new_alter_command.children.emplace_back(std::move(predicate)).get();
+        }
+    };
+
+    if (settings[Setting::mutations_execute_subqueries_on_initiator])
     {
         Scalars scalars;
         Scalars local_scalars;
 
         ExecuteScalarSubqueriesVisitor::Data data{
             WithContext{context},
-            /*subquery_depth=*/ 0,
+            /*subquery_depth=*/0,
             scalars,
             local_scalars,
-            /*only_analyze=*/ false,
-            /*is_create_parameterized_view=*/ false,
-            /*replace_only_to_literals=*/ true,
-            settings.mutations_max_literal_size_to_replace};
+            /*only_analyze=*/false,
+            /*is_create_parameterized_view=*/false,
+            /*replace_only_to_literals=*/true,
+            settings[Setting::mutations_max_literal_size_to_replace]};
 
         ExecuteScalarSubqueriesVisitor visitor(data);
-        if (new_alter_command.update_assignments)
-            visitor.visit(new_alter_command.update_assignments);
-        if (new_alter_command.predicate)
-            visitor.visit(new_alter_command.predicate);
+        visit(visitor);
     }
 
-    if (settings.mutations_execute_nondeterministic_on_initiator)
+    if (settings[Setting::mutations_execute_nondeterministic_on_initiator])
     {
-        ExecuteNonDeterministicConstFunctionsVisitor::Data data{
-            context, settings.mutations_max_literal_size_to_replace};
+        ExecuteNonDeterministicConstFunctionsVisitor::Data data{context, settings[Setting::mutations_max_literal_size_to_replace]};
 
         ExecuteNonDeterministicConstFunctionsVisitor visitor(data);
-        if (new_alter_command.update_assignments)
-            visitor.visit(new_alter_command.update_assignments);
-        if (new_alter_command.predicate)
-            visitor.visit(new_alter_command.predicate);
+        visit(visitor);
     }
 
     return query;

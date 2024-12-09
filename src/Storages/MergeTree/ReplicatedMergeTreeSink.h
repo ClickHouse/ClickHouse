@@ -3,8 +3,9 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 
 
@@ -45,12 +46,14 @@ public:
         ContextPtr context_,
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
-        bool is_attach_ = false);
+        bool is_attach_ = false,
+        bool allow_attach_while_readonly_ = false);
 
     ~ReplicatedMergeTreeSinkImpl() override;
 
     void onStart() override;
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
+    void onFinish() override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
@@ -59,9 +62,10 @@ public:
 
     struct DelayedChunk;
 private:
+    std::vector<String> detectConflictsInAsyncBlockIDs(const std::vector<String> & ids);
+
     using BlockIDsType = std::conditional_t<async_insert, std::vector<String>, String>;
 
-    ZooKeeperRetriesInfo zookeeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
@@ -81,8 +85,8 @@ private:
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
-        size_t replicas_num,
-        bool writing_existing_part);
+        size_t replicas_num);
+
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
@@ -91,6 +95,7 @@ private:
         const std::string & part_name,
         const std::string & quorum_path,
         int is_active_node_version,
+        int host_node_version,
         size_t replicas_num) const;
 
     StorageReplicatedMergeTree & storage;
@@ -109,12 +114,12 @@ private:
     UInt64 cache_version = 0;
 
     bool is_attach = false;
+    bool allow_attach_while_readonly = false;
     bool quorum_parallel = false;
     const bool deduplicate = true;
     UInt64 num_blocks_processed = 0;
 
-    using Logger = Poco::Logger;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;

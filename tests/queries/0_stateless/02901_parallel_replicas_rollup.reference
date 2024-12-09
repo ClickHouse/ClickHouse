@@ -1,5 +1,7 @@
 1
 02901_parallel_replicas_rollup-default	Used parallel replicas: true
+Distributed query with analyzer
+1
 0	0	0	6
 2019	0	0	2
 2019	1	0	2

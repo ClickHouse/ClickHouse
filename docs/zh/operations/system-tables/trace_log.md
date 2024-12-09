@@ -22,7 +22,7 @@ ClickHouse创建此表时 [trace_log](../../operations/server-configuration-para
 
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse server build revision.
 
-    通过以下方式连接到服务器 `clickhouse-client`，你看到的字符串类似于 `Connected to ClickHouse server version 19.18.1 revision 54429.`. 该字段包含 `revision`，但不是 `version` 的服务器。
+    通过以下方式连接到服务器 `clickhouse-client`，你看到的字符串类似于 `Connected to ClickHouse server version 19.18.1.`. 该字段包含 `revision`，但不是 `version` 的服务器。
 
 -   `timer_type` ([枚举8](../../sql-reference/data-types/enum.md)) — Timer type:
 

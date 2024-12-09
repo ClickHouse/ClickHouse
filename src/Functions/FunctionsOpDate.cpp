@@ -1,5 +1,4 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -32,11 +31,19 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"date", &isDateOrDate32OrDateTimeOrDateTime64<IDataType>, nullptr, "Date or date with time"},
-            {"interval", &isInterval<IDataType>, nullptr, "Interval"}
-        };
-        validateFunctionArgumentTypes(*this, arguments, args);
+        if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type) && !isString(arguments[0].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 1st argument of function {}. Should be a date, a date with time or a string",
+                arguments[0].type->getName(),
+                getName());
+
+        if (!isInterval(arguments[1].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 2nd argument of function {}. Should be an interval",
+                arguments[1].type->getName(),
+                getName());
 
         auto op = FunctionFactory::instance().get(Op::internal_name, context);
         auto op_build = op->build(arguments);
@@ -48,7 +55,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+        if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type) && !isString(arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of 1st argument of function {}. Should be a date or a date with time",
@@ -66,7 +73,7 @@ public:
         auto op_build = op->build(arguments);
 
         auto res_type = op_build->getResultType();
-        return op_build->execute(arguments, res_type, input_rows_count);
+        return op_build->execute(arguments, res_type, input_rows_count, /* dry_run = */ false);
     }
 
 private:
@@ -92,8 +99,8 @@ using FunctionSubDate = FunctionOpDate<SubDate>;
 
 REGISTER_FUNCTION(AddInterval)
 {
-    factory.registerFunction<FunctionAddDate>({}, FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionSubDate>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAddDate>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionSubDate>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

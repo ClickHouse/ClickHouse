@@ -10,7 +10,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # (i.e. "No active replica has part X or covering part")
 # does not appears as errors (level=Error), only as info message (level=Information).
 
-$CLICKHOUSE_CLIENT -nm -q "
+cluster=test_shard_localhost
+if [[ $($CLICKHOUSE_CLIENT -q "select count()>0 from system.clusters where cluster = 'test_cluster_database_replicated'") = 1 ]]; then
+    cluster=test_cluster_database_replicated
+fi
+
+$CLICKHOUSE_CLIENT -m --distributed_ddl_output_mode=none -q "
     drop table if exists rmt1;
     drop table if exists rmt2;
 
@@ -21,7 +26,12 @@ $CLICKHOUSE_CLIENT -nm -q "
     insert into rmt1 values (2);
 
     system sync replica rmt1;
-    system stop pulling replication log rmt2;
+    -- SYSTEM STOP PULLING REPLICATION LOG does not waits for the current pull,
+    -- trigger it explicitly to 'avoid race' (though proper way will be to wait
+    -- for current pull in the StorageReplicatedMergeTree::getActionLock())
+    system sync replica rmt2;
+    -- NOTE: CLICKHOUSE_DATABASE is required
+    system stop pulling replication log on cluster $cluster $CLICKHOUSE_DATABASE.rmt2;
     optimize table rmt1 final settings alter_sync=0, optimize_throw_if_noop=1;
 " || exit 1
 
@@ -36,7 +46,7 @@ part_name='%'
 
 # wait while there be at least one 'No active replica has part all_0_1_1 or covering part' in logs
 for _ in {0..50}; do
-    no_active_repilica_messages=$($CLICKHOUSE_CLIENT -nm -q "
+    no_active_repilica_messages=$($CLICKHOUSE_CLIENT -m -q "
         system flush logs;
 
         select count()
@@ -46,7 +56,8 @@ for _ in {0..50}; do
             (
                 (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
                 (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
-            );
+            )
+        SETTINGS max_rows_to_read = 0;
     ")
     if [[ $no_active_repilica_messages -gt 0 ]]; then
         break
@@ -55,7 +66,7 @@ for _ in {0..50}; do
     sleep 1
 done
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     system start pulling replication log rmt2;
     system flush logs;
 
@@ -68,5 +79,6 @@ $CLICKHOUSE_CLIENT -nm -q "
             (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
             (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
         )
-    group by level;
+    group by level
+    SETTINGS max_rows_to_read = 0;
 "

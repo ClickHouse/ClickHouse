@@ -1,0 +1,16 @@
+<test>
+    <settings>
+        <output_format_orc_string_as_string>1</output_format_orc_string_as_string>
+        <input_format_orc_row_batch_size>10000</input_format_orc_row_batch_size>
+    </settings>
+
+    <fill_query>
+        insert into function file('test_orc_tfp.orc', 'ORC') select * from generateRandom('tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)), array_tuple_column Nested(a Nullable(String), b Nullable(Float64), c Nullable(Int64)), map_tuple_column Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') limit 1000000
+    </fill_query>
+   
+    <drop_query>DROP TABLE IF EXISTS test_orc_tfp</drop_query>
+
+    <query>select * from file('test_orc_tfp.orc', 'ORC', 'tuple_column Tuple(c Nullable(Int64))') format Null</query>
+    <query>select * from file('test_orc_tfp.orc', 'ORC', 'array_tuple_column Nested(c Nullable(Int64))') format Null</query>
+    <query>select * from file('test_orc_tfp.orc', 'ORC', 'map_tuple_column Map(String, Tuple(c Nullable(Int64)))') format Null</query>
+</test>

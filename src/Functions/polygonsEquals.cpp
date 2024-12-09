@@ -19,12 +19,17 @@
 #include <memory>
 #include <utility>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 template <typename Point>
 class FunctionPolygonsEquals : public IFunction
@@ -55,6 +60,11 @@ public:
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -103,10 +113,10 @@ public:
     }
 };
 
-
 template <>
 const char * FunctionPolygonsEquals<CartesianPoint>::name = "polygonsEqualsCartesian";
 
+}
 
 REGISTER_FUNCTION(PolygonsEquals)
 {

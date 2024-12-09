@@ -1,8 +1,8 @@
 -- Tags: distributed
 
--- set insert_distributed_sync = 1;  -- see https://github.com/ClickHouse/ClickHouse/issues/18971
+-- set distributed_foreground_insert = 1;  -- see https://github.com/ClickHouse/ClickHouse/issues/18971
 
-SET allow_experimental_parallel_reading_from_replicas = 0; -- see https://github.com/ClickHouse/ClickHouse/issues/34525
+SET enable_parallel_replicas = 0; -- see https://github.com/ClickHouse/ClickHouse/issues/34525
 SET prefer_localhost_replica = 1;
 
 DROP TABLE IF EXISTS local_01099_a;
@@ -87,6 +87,60 @@ DROP TABLE local_01099_b;
 DROP TABLE distributed_01099_a;
 DROP TABLE distributed_01099_b;
 
+--- test_cluster_1_shard_3_replicas_1_unavailable
+
+SELECT 'test_cluster_1_shard_3_replicas_1_unavailable';
+
+CREATE TABLE local_01099_a (number UInt64) ENGINE = MergeTree() ORDER BY number;
+CREATE TABLE local_01099_b (number UInt64) ENGINE = MergeTree() ORDER BY number;
+CREATE TABLE distributed_01099_a AS local_01099_a ENGINE = Distributed('test_cluster_1_shard_3_replicas_1_unavailable', currentDatabase(), local_01099_a, rand());
+CREATE TABLE distributed_01099_b AS local_01099_b ENGINE = Distributed('test_cluster_1_shard_3_replicas_1_unavailable', currentDatabase(), local_01099_b, rand());
+
+SYSTEM STOP DISTRIBUTED SENDS distributed_01099_b;
+SET prefer_localhost_replica=0; -- to require distributed send for local replica too
+INSERT INTO local_01099_a SELECT number from system.numbers limit 3;
+INSERT INTO distributed_01099_b SELECT * from distributed_01099_a;
+SET prefer_localhost_replica=1;
+
+-- distributed sends disabled, but they are not required, since insert is done into local table.
+-- (since parallel_distributed_insert_select=2)
+SELECT 'distributed';
+SELECT number, count(number) FROM distributed_01099_b group by number order by number;
+SELECT 'local';
+SELECT number, count(number) FROM local_01099_b group by number order by number;
+
+DROP TABLE local_01099_a;
+DROP TABLE local_01099_b;
+SET send_logs_level='fatal';
+DROP TABLE distributed_01099_a;
+DROP TABLE distributed_01099_b;
+SET send_logs_level='warning';
+
+--- test_cluster_1_shard_3_replicas_1_unavailable with storageCluster
+
+SELECT 'test_cluster_1_shard_3_replicas_1_unavailable with storageCluster';
+
+CREATE TABLE local_01099_b (number UInt64) ENGINE = MergeTree() ORDER BY number;
+CREATE TABLE distributed_01099_b AS local_01099_b ENGINE = Distributed('test_cluster_1_shard_3_replicas_1_unavailable', currentDatabase(), local_01099_b, rand());
+
+SYSTEM STOP DISTRIBUTED SENDS distributed_01099_b;
+SET prefer_localhost_replica=0; -- to require distributed send for local replica too
+SET send_logs_level='error';
+INSERT INTO distributed_01099_b SELECT * FROM urlCluster('test_cluster_two_shards', 'http://localhost:8123/?query=select+{1,2,3}+format+TSV', 'TSV', 's String');
+SET send_logs_level='warning';
+SET prefer_localhost_replica=1;
+
+-- distributed sends disabled, but they are not required, since insert is done into local table.
+-- (since parallel_distributed_insert_select=2)
+SELECT 'distributed';
+SELECT number, count(number) FROM distributed_01099_b group by number order by number;
+SELECT 'local';
+SELECT number, count(number) FROM local_01099_b group by number order by number;
+
+DROP TABLE local_01099_b;
+SET send_logs_level='fatal';
+DROP TABLE distributed_01099_b;
+SET send_logs_level='warning';
 
 SET parallel_distributed_insert_select=2;
 SELECT 'parallel_distributed_insert_select=2';
@@ -164,3 +218,56 @@ DROP TABLE local_01099_a;
 DROP TABLE local_01099_b;
 DROP TABLE distributed_01099_a;
 DROP TABLE distributed_01099_b;
+
+--- test_cluster_1_shard_3_replicas_1_unavailable
+
+SELECT 'test_cluster_1_shard_3_replicas_1_unavailable';
+
+CREATE TABLE local_01099_a (number UInt64) ENGINE = MergeTree() ORDER BY number;
+CREATE TABLE local_01099_b (number UInt64) ENGINE = MergeTree() ORDER BY number;
+CREATE TABLE distributed_01099_a AS local_01099_a ENGINE = Distributed('test_cluster_1_shard_3_replicas_1_unavailable', currentDatabase(), local_01099_a, rand());
+CREATE TABLE distributed_01099_b AS local_01099_b ENGINE = Distributed('test_cluster_1_shard_3_replicas_1_unavailable', currentDatabase(), local_01099_b, rand());
+
+SYSTEM STOP DISTRIBUTED SENDS distributed_01099_b;
+SET prefer_localhost_replica=0; -- to require distributed send for local replica too
+INSERT INTO local_01099_a SELECT number from system.numbers limit 3;
+INSERT INTO distributed_01099_b SELECT * from distributed_01099_a;
+SET prefer_localhost_replica=1;
+
+-- distributed sends disabled, but they are not required, since insert is done into local table.
+-- (since parallel_distributed_insert_select=2)
+SELECT 'distributed';
+SELECT number, count(number) FROM distributed_01099_b group by number order by number;
+SELECT 'local';
+SELECT number, count(number) FROM local_01099_b group by number order by number;
+
+DROP TABLE local_01099_a;
+DROP TABLE local_01099_b;
+DROP TABLE distributed_01099_a;
+DROP TABLE distributed_01099_b;
+
+--- test_cluster_1_shard_3_replicas_1_unavailable with storageCluster
+
+SELECT 'test_cluster_1_shard_3_replicas_1_unavailable with storageCluster';
+
+CREATE TABLE local_01099_b (number UInt64) ENGINE = MergeTree() ORDER BY number;
+CREATE TABLE distributed_01099_b AS local_01099_b ENGINE = Distributed('test_cluster_1_shard_3_replicas_1_unavailable', currentDatabase(), local_01099_b, rand());
+
+SYSTEM STOP DISTRIBUTED SENDS distributed_01099_b;
+SET prefer_localhost_replica=0; -- to require distributed send for local replica too
+SET send_logs_level='error';
+INSERT INTO distributed_01099_b SELECT * FROM urlCluster('test_cluster_two_shards', 'http://localhost:8123/?query=select+{1,2,3}+format+TSV', 'TSV', 's String');
+SET send_logs_level='warning';
+SET prefer_localhost_replica=1;
+
+-- distributed sends disabled, but they are not required, since insert is done into local table.
+-- (since parallel_distributed_insert_select=2)
+SELECT 'distributed';
+SELECT number, count(number) FROM distributed_01099_b group by number order by number;
+SELECT 'local';
+SELECT number, count(number) FROM local_01099_b group by number order by number;
+
+DROP TABLE local_01099_b;
+SET send_logs_level='fatal';
+DROP TABLE distributed_01099_b;
+SET send_logs_level='warning';

@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <allow_experimental_transactions>42</allow_experimental_transactions>
 
     <merge_tree>
@@ -18,4 +18,4 @@
         <!-- Fault injection after commit should not affect tests, because default waiting mode is WAIT_UNKNOWN -->
         <fault_probability_after_commit>0.01</fault_probability_after_commit>
     </transaction_log>
-</yandex>
+</clickhouse>

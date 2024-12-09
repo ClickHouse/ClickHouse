@@ -34,10 +34,13 @@ public:
     virtual bool hasStrictOrderOfColumns() const { return true; }
 
     virtual bool needContext() const { return false; }
-    virtual void setContext(ContextPtr &) {}
+    virtual void setContext(const ContextPtr &) {}
 
     virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
     virtual size_t getNumRowsRead() const { return 0; }
+
+    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
+    virtual void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) { transformTypesIfNeeded(type, new_type); }
 
     virtual ~ISchemaReader() = default;
 
@@ -53,9 +56,7 @@ public:
     IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
 
     bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & context) override;
-
-    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
+    void setContext(const ContextPtr & context) override;
 
 protected:
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
@@ -188,16 +189,15 @@ void chooseResultColumnType(
                 column_name,
                 row,
                 type->getName());
-        else
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
-                "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-                new_type->getName(),
-                column_name,
-                row,
-                type->getName(),
-                hints_parsing_error);
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
+            "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
+            new_type->getName(),
+            column_name,
+            row,
+            type->getName(),
+            hints_parsing_error);
     }
 }
 

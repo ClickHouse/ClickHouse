@@ -6,7 +6,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
@@ -91,16 +91,14 @@ void writeQueryWithHighlightedErrorPositions(
             out << "\033[41;1m \033[0m";
             return;
         }
-        else
-        {
-            size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
 
-            /// Bright on red background.
-            out << "\033[41;1m";
-            out.write(current_position_to_hilite, bytes_to_hilite);
-            out << "\033[0m";
-            pos = current_position_to_hilite + bytes_to_hilite;
-        }
+        size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+
+        /// Bright on red background.
+        out << "\033[41;1m";
+        out.write(current_position_to_hilite, bytes_to_hilite);
+        out << "\033[0m";
+        pos = current_position_to_hilite + bytes_to_hilite;
     }
     out.write(pos, end - pos);
 }
@@ -289,8 +287,7 @@ UnmatchedParentheses checkKQLUnmatchedParentheses(TokenIterator begin)
                 stack.push_back(*it);
                 return stack;
             }
-            else if (
-                (stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
+            if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
                 || (stack.back().type == TokenType::OpeningSquareBracket && it->type == TokenType::ClosingSquareBracket))
             {
                 /// Valid match.
@@ -322,12 +319,13 @@ ASTPtr tryParseKQLQuery(
     bool allow_multi_statements,
     size_t max_query_size,
     size_t max_parser_depth,
+    size_t max_parser_backtracks,
     bool skip_insignificant)
 {
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
-    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth));
+    IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
 
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
@@ -441,10 +439,11 @@ ASTPtr parseKQLQueryAndMovePosition(
     const std::string & query_description,
     bool allow_multi_statements,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
     std::string error_message;
-    ASTPtr res = tryParseKQLQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size, max_parser_depth);
+    ASTPtr res = tryParseKQLQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size, max_parser_depth, max_parser_backtracks);
 
     if (res)
         return res;
@@ -458,9 +457,10 @@ ASTPtr parseKQLQuery(
     const char * end,
     const std::string & query_description,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
-    return parseKQLQueryAndMovePosition(parser, begin, end, query_description, false, max_query_size, max_parser_depth);
+    return parseKQLQueryAndMovePosition(parser, begin, end, query_description, false, max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
 ASTPtr parseKQLQuery(
@@ -468,18 +468,20 @@ ASTPtr parseKQLQuery(
     const std::string & query,
     const std::string & query_description,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
-    return parseKQLQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size, max_parser_depth);
+    return parseKQLQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
 ASTPtr parseKQLQuery(
     IParser & parser,
     const std::string & query,
     size_t max_query_size,
-    size_t max_parser_depth)
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
-    return parseKQLQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth);
+    return parseKQLQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
 }

@@ -1,6 +1,8 @@
 #pragma once
 #include <Core/Block.h>
 #include <Storages/StorageSnapshot.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -19,8 +21,14 @@ namespace DB
         NamesAndTypesList requested_columns;
         /// The list of requested virtual columns.
         NamesAndTypesList requested_virtual_columns;
+        /// Hints for the serialization of columns.
+        /// For example can be retrieved from the destination table in INSERT SELECT query.
+        SerializationInfoByName serialization_hints;
     };
 
     /// Get all needed information for reading from data in some input format.
-    ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, bool supports_subset_of_columns, const NamesAndTypesList & virtuals);
+    ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns);
+
+    /// Returns the serialization hints from the insertion table (if it's set in the Context).
+    SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
 }

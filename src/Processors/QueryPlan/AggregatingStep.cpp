@@ -3,15 +3,19 @@
 #include <memory>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -28,6 +32,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_DATA;
 }
 
 static bool memoryBoundMergingWillBeUsed(
@@ -93,7 +99,7 @@ Block AggregatingStep::appendGroupingColumn(Block block, const Names & keys, boo
 }
 
 AggregatingStep::AggregatingStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     Aggregator::Params params_,
     GroupingSetsParamsList grouping_sets_params_,
     bool final_,
@@ -109,8 +115,8 @@ AggregatingStep::AggregatingStep(
     bool memory_bound_merging_of_aggregation_results_enabled_,
     bool explicit_sorting_required_for_aggregation_in_order_)
     : ITransformingStep(
-        input_stream_,
-        appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
+        input_header_,
+        appendGroupingColumn(params_.getHeader(input_header_, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
         getTraits(should_produce_results_in_order_of_bucket_number_),
         false)
     , params(std::move(params_))
@@ -128,31 +134,103 @@ AggregatingStep::AggregatingStep(
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
 {
-    if (memoryBoundMergingWillBeUsed())
-    {
-        output_stream->sort_description = group_by_sort_description;
-        output_stream->sort_scope = DataStream::SortScope::Global;
-        output_stream->has_single_port = true;
-    }
 }
 
 void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_)
 {
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
+    explicit_sorting_required_for_aggregation_in_order = false;
+}
 
+const SortDescription & AggregatingStep::getSortDescription() const
+{
     if (memoryBoundMergingWillBeUsed())
+        return group_by_sort_description;
+
+    return IQueryPlanStep::getSortDescription();
+}
+
+static void updateThreadsValues(
+    size_t & new_merge_threads,
+    size_t & new_temporary_data_merge_threads,
+    Aggregator::Params & params,
+    const BuildQueryPipelineSettings & settings)
+{
+    /// Update values from settings if plan was deserialized.
+    if (new_merge_threads == 0)
+        new_merge_threads = settings.max_threads;
+
+    if (new_temporary_data_merge_threads == 0)
+        new_temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads;
+    if (new_temporary_data_merge_threads == 0)
+        new_temporary_data_merge_threads = new_merge_threads;
+
+    if (params.max_threads == 0)
+        params.max_threads = settings.max_threads;
+}
+
+ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
+    const Block & in_header,
+    const Block & out_header,
+    const GroupingSetsParamsList & grouping_sets_params,
+    UInt64 group,
+    bool group_by_use_nulls)
+{
+    /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
+    ActionsDAG dag(in_header.getColumnsWithTypeAndName());
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.reserve(out_header.columns() + 1);
+
+    auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, group), 0);
+    const auto * grouping_node = &dag.addColumn(
+        {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+
+    grouping_node = &dag.materializeNode(*grouping_node);
+    outputs.push_back(grouping_node);
+
+    const auto & missing_columns = grouping_sets_params[group].missing_keys;
+    const auto & used_keys = grouping_sets_params[group].used_keys;
+
+    auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
+    for (size_t i = 0; i < out_header.columns(); ++i)
     {
-        output_stream->sort_description = group_by_sort_description;
-        output_stream->sort_scope = DataStream::SortScope::Global;
-        output_stream->has_single_port = true;
+        const auto & col = out_header.getByPosition(i);
+        const auto missing_it = std::find_if(
+            missing_columns.begin(), missing_columns.end(), [&](const auto & missing_col) { return missing_col == col.name; });
+        const auto used_it = std::find_if(
+            used_keys.begin(), used_keys.end(), [&](const auto & used_col) { return used_col == col.name; });
+        if (missing_it != missing_columns.end())
+        {
+            auto column_with_default = col.column->cloneEmpty();
+            col.type->insertDefaultInto(*column_with_default);
+            column_with_default->finalize();
+
+            auto column = ColumnConst::create(std::move(column_with_default), 0);
+            const auto * node = &dag.addColumn({ColumnPtr(std::move(column)), col.type, col.name});
+            node = &dag.materializeNode(*node);
+            outputs.push_back(node);
+        }
+        else
+        {
+            const auto * column_node = dag.getOutputs()[in_header.getPositionByName(col.name)];
+            if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
+                outputs.push_back(&dag.addFunction(to_nullable_function, { column_node }, col.name));
+            else
+                outputs.push_back(column_node);
+        }
     }
 
-    explicit_sorting_required_for_aggregation_in_order = false;
+    dag.getOutputs().swap(outputs);
+    return dag;
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    size_t new_merge_threads = merge_threads;
+    size_t new_temporary_data_merge_threads = temporary_data_merge_threads;
+    updateThreadsValues(new_merge_threads, new_temporary_data_merge_threads, params, settings);
+
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
@@ -190,20 +268,24 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         const size_t streams = pipeline.getNumStreams();
 
         auto input_header = pipeline.getHeader();
-        pipeline.transform([&](OutputPortRawPtrs ports)
+
+        if (grouping_sets_size > 1)
         {
-            Processors copiers;
-            copiers.reserve(ports.size());
-
-            for (auto * port : ports)
+            pipeline.transform([&](OutputPortRawPtrs ports)
             {
-                auto copier = std::make_shared<CopyTransform>(input_header, grouping_sets_size);
-                connect(*port, copier->getInputPort());
-                copiers.push_back(copier);
-            }
+                Processors copiers;
+                copiers.reserve(ports.size());
 
-            return copiers;
-        });
+                for (auto * port : ports)
+                {
+                    auto copier = std::make_shared<CopyTransform>(input_header, grouping_sets_size);
+                    connect(*port, copier->getInputPort());
+                    copiers.push_back(copier);
+                }
+
+                return copiers;
+            });
+        }
 
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
@@ -211,27 +293,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             Processors processors;
             for (size_t i = 0; i < grouping_sets_size; ++i)
             {
-                Aggregator::Params params_for_set
-                {
-                    grouping_sets_params[i].used_keys,
-                    transform_params->params.aggregates,
-                    transform_params->params.overflow_row,
-                    transform_params->params.max_rows_to_group_by,
-                    transform_params->params.group_by_overflow_mode,
-                    transform_params->params.group_by_two_level_threshold,
-                    transform_params->params.group_by_two_level_threshold_bytes,
-                    transform_params->params.max_bytes_before_external_group_by,
-                    transform_params->params.empty_result_for_aggregation_by_empty_set,
-                    transform_params->params.tmp_data_scope,
-                    transform_params->params.max_threads,
-                    transform_params->params.min_free_disk_space,
-                    transform_params->params.compile_aggregate_expressions,
-                    transform_params->params.min_count_to_compile_aggregate_expression,
-                    transform_params->params.max_block_size,
-                    transform_params->params.enable_prefetch,
-                    /* only_merge */ false,
-                    transform_params->params.optimize_group_by_constant_keys,
-                    transform_params->params.stats_collecting_params};
+                Aggregator::Params params_for_set = transform_params->params.cloneWithKeys(grouping_sets_params[i].used_keys, false);
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
 
                 if (streams > 1)
@@ -244,8 +306,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                             transform_params_for_set,
                             many_data,
                             j,
-                            merge_threads,
-                            temporary_data_merge_threads,
+                            new_merge_threads,
+                            new_temporary_data_merge_threads,
                             should_produce_results_in_order_of_bucket_number,
                             skip_merging);
                         // For each input stream we have `grouping_sets_size` copies, so port index
@@ -293,52 +355,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 const auto & header = ports[set_counter]->getHeader();
 
-                /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
-                auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-                ActionsDAG::NodeRawConstPtrs outputs;
-                outputs.reserve(output_header.columns() + 1);
-
-                auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
-                const auto * grouping_node = &dag->addColumn(
-                    {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
-
-                grouping_node = &dag->materializeNode(*grouping_node);
-                outputs.push_back(grouping_node);
-
-                const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
-                const auto & used_keys = grouping_sets_params[set_counter].used_keys;
-
-                auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
-                for (size_t i = 0; i < output_header.columns(); ++i)
-                {
-                    auto & col = output_header.getByPosition(i);
-                    const auto missing_it = std::find_if(
-                        missing_columns.begin(), missing_columns.end(), [&](const auto & missing_col) { return missing_col == col.name; });
-                    const auto used_it = std::find_if(
-                        used_keys.begin(), used_keys.end(), [&](const auto & used_col) { return used_col == col.name; });
-                    if (missing_it != missing_columns.end())
-                    {
-                        auto column_with_default = col.column->cloneEmpty();
-                        col.type->insertDefaultInto(*column_with_default);
-                        column_with_default->finalize();
-
-                        auto column = ColumnConst::create(std::move(column_with_default), 0);
-                        const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
-                        node = &dag->materializeNode(*node);
-                        outputs.push_back(node);
-                    }
-                    else
-                    {
-                        const auto * column_node = dag->getOutputs()[header.getPositionByName(col.name)];
-                        if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
-                            outputs.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
-                        else
-                            outputs.push_back(column_node);
-                    }
-                }
-
-                dag->getOutputs().swap(outputs);
-                auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
+                auto dag = makeCreatingMissingKeysForGroupingSetDAG(header, output_header, grouping_sets_params, set_counter, group_by_use_nulls);
+                auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
 
                 connect(*ports[set_counter], transform->getInputPort());
@@ -382,7 +400,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
-                    max_block_size, aggregation_in_order_max_block_bytes / merge_threads,
+                    max_block_size, aggregation_in_order_max_block_bytes / new_merge_threads,
                     many_data, counter++);
             });
 
@@ -408,7 +426,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.addTransform(std::move(transform));
 
             /// Do merge of aggregated data in parallel.
-            pipeline.resize(merge_threads);
+            pipeline.resize(new_merge_threads);
 
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
             pipeline.addSimpleTransform(
@@ -464,8 +482,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params,
                     many_data,
                     counter++,
-                    merge_threads,
-                    temporary_data_merge_threads,
+                    new_merge_threads,
+                    new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
                     skip_merging);
             });
@@ -493,6 +511,7 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
+    // settings.out << prefix << "Memory bound merging: " << memory_bound_merging_of_aggregation_results_enabled << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -524,41 +543,38 @@ bool AggregatingStep::canUseProjection() const
     return grouping_sets_params.empty() && sort_description_for_merging.empty();
 }
 
-void AggregatingStep::requestOnlyMergeForAggregateProjection(const DataStream & input_stream)
+void AggregatingStep::requestOnlyMergeForAggregateProjection(const Header & input_header)
 {
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
-    auto output_header = getOutputStream().header;
-    input_streams.front() = input_stream;
+    auto output_header = getOutputHeader();
+    input_headers.front() = input_header;
     params.only_merge = true;
-    updateOutputStream();
-    assertBlocksHaveEqualStructure(output_header, getOutputStream().header, "AggregatingStep");
+    updateOutputHeader();
+    assertBlocksHaveEqualStructure(output_header, getOutputHeader(), "AggregatingStep");
 }
 
-std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const DataStream & input_stream) const
+std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const Header & input_header) const
 {
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
     auto aggregating_projection = std::make_unique<AggregatingProjectionStep>(
-        DataStreams{input_streams.front(), input_stream},
+        Headers{input_headers.front(), input_header},
         params,
         final,
         merge_threads,
         temporary_data_merge_threads
     );
 
-    assertBlocksHaveEqualStructure(getOutputStream().header, aggregating_projection->getOutputStream().header, "AggregatingStep");
+    assertBlocksHaveEqualStructure(getOutputHeader(), aggregating_projection->getOutputHeader(), "AggregatingStep");
     return aggregating_projection;
 }
 
-void AggregatingStep::updateOutputStream()
+void AggregatingStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
-        getDataStreamTraits());
+    output_header = appendGroupingColumn(params.getHeader(input_headers.front(), final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls);
 }
 
 bool AggregatingStep::memoryBoundMergingWillBeUsed() const
@@ -568,7 +584,7 @@ bool AggregatingStep::memoryBoundMergingWillBeUsed() const
 }
 
 AggregatingProjectionStep::AggregatingProjectionStep(
-    DataStreams input_streams_,
+    Headers input_headers_,
     Aggregator::Params params_,
     bool final_,
     size_t merge_threads_,
@@ -578,28 +594,34 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     , merge_threads(merge_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
 {
-    input_streams = std::move(input_streams_);
+    updateInputHeaders(std::move(input_headers_));
+}
 
-    if (input_streams.size() != 2)
+void AggregatingProjectionStep::updateOutputHeader()
+{
+    if (input_headers.size() != 2)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "AggregatingProjectionStep is expected to have two input streams, got {}",
-            input_streams.size());
+            input_headers.size());
 
-    auto normal_parts_header = params.getHeader(input_streams.front().header, final);
+    auto normal_parts_header = params.getHeader(input_headers.front(), final);
     params.only_merge = true;
-    auto projection_parts_header = params.getHeader(input_streams.back().header, final);
+    auto projection_parts_header = params.getHeader(input_headers.back(), final);
     params.only_merge = false;
 
     assertBlocksHaveEqualStructure(normal_parts_header, projection_parts_header, "AggregatingProjectionStep");
-    output_stream.emplace();
-    output_stream->header = std::move(normal_parts_header);
+    output_header = std::move(normal_parts_header);
 }
 
 QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
     QueryPipelineBuilders pipelines,
-    const BuildQueryPipelineSettings &)
+    const BuildQueryPipelineSettings & settings)
 {
+    size_t new_merge_threads = merge_threads;
+    size_t new_temporary_data_merge_threads = temporary_data_merge_threads;
+    updateThreadsValues(new_merge_threads, new_temporary_data_merge_threads, params, settings);
+
     auto & normal_parts_pipeline = pipelines.front();
     auto & projection_parts_pipeline = pipelines.back();
 
@@ -634,7 +656,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
         pipeline.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<AggregatingTransform>(
-                header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+                header, transform_params, many_data, counter++, new_merge_threads, new_temporary_data_merge_threads);
         });
     };
 
@@ -644,11 +666,180 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
     for (auto & cur_pipeline : pipelines)
-        assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), getOutputStream().header, "AggregatingProjectionStep");
+        assertBlocksHaveEqualStructure(cur_pipeline->getHeader(), getOutputHeader(), "AggregatingProjectionStep");
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
     pipeline->resize(1);
     return pipeline;
 }
+
+
+void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings.max_block_size = max_block_size;
+    settings.aggregation_in_order_max_block_bytes = aggregation_in_order_max_block_bytes;
+
+    settings.aggregation_in_order_memory_bound_merging = should_produce_results_in_order_of_bucket_number;
+    settings.aggregation_sort_result_by_bucket_number = memory_bound_merging_of_aggregation_results_enabled;
+
+    settings.max_rows_to_group_by = params.max_rows_to_group_by;
+    settings.group_by_overflow_mode = params.group_by_overflow_mode;
+
+    settings.group_by_two_level_threshold = params.group_by_two_level_threshold;
+    settings.group_by_two_level_threshold_bytes = params.group_by_two_level_threshold_bytes;
+
+    settings.max_bytes_before_external_group_by = params.max_bytes_before_external_group_by;
+    settings.empty_result_for_aggregation_by_empty_set = params.empty_result_for_aggregation_by_empty_set;
+
+    settings.min_free_disk_space_for_temporary_data = params.min_free_disk_space;
+
+    settings.compile_aggregate_expressions = params.compile_aggregate_expressions;
+    settings.min_count_to_compile_aggregate_expression = params.min_count_to_compile_aggregate_expression;
+
+    settings.enable_software_prefetch_in_aggregation = params.enable_prefetch;
+    settings.optimize_group_by_constant_keys = params.optimize_group_by_constant_keys;
+    settings.min_hit_rate_to_use_consecutive_keys_optimization = params.min_hit_rate_to_use_consecutive_keys_optimization;
+
+    settings.collect_hash_table_stats_during_aggregation = params.stats_collecting_params.isCollectionAndUseEnabled();
+    settings.max_entries_for_hash_table_stats = params.stats_collecting_params.max_entries_for_hash_table_stats;
+    settings.max_size_to_preallocate_for_aggregation = params.stats_collecting_params.max_size_to_preallocate;
+}
+
+void AggregatingStep::serialize(Serialization & ctx) const
+{
+    if (!sort_description_for_merging.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep optimized for in-order is not supported.");
+
+    if (!grouping_sets_params.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep with grouping sets is not supported.");
+
+    if (explicit_sorting_required_for_aggregation_in_order)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep explicit_sorting_required_for_aggregation_in_order is not supported.");
+
+    /// If you wonder why something is serialized using settings, and other is serialized using flags, considerations are following:
+    /// * flags are something that may change data format returning from the step
+    /// * settings are something which already was in Settings.h and, usually, is passed to Aggregator unchanged
+    /// Flags `final` and `group_by_use_nulls` change types, and `overflow_row` appends additional block to results.
+    /// Settings like `max_rows_to_group_by` or `empty_result_for_aggregation_by_empty_set` affect the result,
+    /// but does not change data format.
+    /// Overall, the rule is not strict.
+
+    UInt8 flags = 0;
+    if (final)
+        flags |= 1;
+    if (params.overflow_row)
+        flags |= 2;
+    if (group_by_use_nulls)
+        flags |= 4;
+    if (!grouping_sets_params.empty())
+        flags |= 8;
+    /// Ideally, key should be calculated from QueryPlan on the follower.
+    /// So, let's have a flag to disable sending/reading pre-calculated value.
+    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+        flags |= 16;
+
+    writeIntBinary(flags, ctx.out);
+
+    if (explicit_sorting_required_for_aggregation_in_order)
+        serializeSortDescription(group_by_sort_description, ctx.out);
+
+    writeVarUInt(params.keys.size(), ctx.out);
+    for (const auto & key : params.keys)
+        writeStringBinary(key, ctx.out);
+
+    serializeAggregateDescriptions(params.aggregates, ctx.out);
+
+    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+        writeIntBinary(params.stats_collecting_params.key, ctx.out);
+}
+
+std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "AggregatingStep must have one input stream");
+
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+
+    bool final = bool(flags & 1);
+    bool overflow_row = bool(flags & 2);
+    bool group_by_use_nulls = bool(flags & 4);
+    bool has_grouping_sets = bool(flags & 8);
+    bool has_stats_key = bool(flags & 16);
+
+    if (has_grouping_sets)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep with grouping sets is not supported.");
+
+    UInt64 num_keys;
+    readVarUInt(num_keys, ctx.in);
+    Names keys(num_keys);
+    for (auto & key : keys)
+        readStringBinary(key, ctx.in);
+
+    AggregateDescriptions aggregates;
+    deserializeAggregateDescriptions(aggregates, ctx.in);
+
+    UInt64 stats_key = 0;
+    if (has_stats_key)
+        readIntBinary(stats_key, ctx.in);
+
+    StatsCollectingParams stats_collecting_params(
+        stats_key,
+        ctx.settings.collect_hash_table_stats_during_aggregation,
+        ctx.settings.max_entries_for_hash_table_stats,
+        ctx.settings.max_size_to_preallocate_for_aggregation);
+
+    Aggregator::Params params
+    {
+        keys,
+        aggregates,
+        overflow_row,
+        ctx.settings.max_rows_to_group_by,
+        ctx.settings.group_by_overflow_mode,
+        ctx.settings.group_by_two_level_threshold,
+        ctx.settings.group_by_two_level_threshold_bytes,
+        ctx.settings.max_bytes_before_external_group_by,
+        ctx.settings.empty_result_for_aggregation_by_empty_set,
+        Context::getGlobalContextInstance()->getTempDataOnDisk(),
+        0, //settings.max_threads,
+        ctx.settings.min_free_disk_space_for_temporary_data,
+        ctx.settings.compile_aggregate_expressions,
+        ctx.settings.min_count_to_compile_aggregate_expression,
+        ctx.settings.max_block_size,
+        ctx.settings.enable_software_prefetch_in_aggregation,
+        /* only_merge */ false,
+        ctx.settings.optimize_group_by_constant_keys,
+        ctx.settings.min_hit_rate_to_use_consecutive_keys_optimization,
+        stats_collecting_params
+    };
+
+    SortDescription sort_description_for_merging;
+    GroupingSetsParamsList grouping_sets_params;
+
+    auto aggregating_step = std::make_unique<AggregatingStep>(
+        ctx.input_headers.front(),
+        std::move(params),
+        std::move(grouping_sets_params),
+        final,
+        ctx.settings.max_block_size,
+        ctx.settings.aggregation_in_order_max_block_bytes,
+        0, //merge_threads,
+        0, //temporary_data_merge_threads,
+        false, // storage_has_evenly_distributed_read, TODO: later
+        group_by_use_nulls,
+        std::move(sort_description_for_merging),
+        SortDescription{},
+        ctx.settings.aggregation_in_order_memory_bound_merging,
+        ctx.settings.aggregation_sort_result_by_bucket_number,
+        false);
+
+    return aggregating_step;
+}
+
+void registerAggregatingStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Aggregating", AggregatingStep::deserialize);
+}
+
 
 }

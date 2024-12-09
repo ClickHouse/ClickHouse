@@ -93,9 +93,34 @@ void HTTPSession::setTimeout(const Poco::Timespan& timeout)
 
 void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco::Timespan& sendTimeout, const Poco::Timespan& receiveTimeout)
 {
-	 _connectionTimeout = connectionTimeout;
-	 _sendTimeout = sendTimeout;
-	 _receiveTimeout = receiveTimeout;
+     try
+     {
+         _connectionTimeout = connectionTimeout;
+
+         if (_sendTimeout.totalMicroseconds() != sendTimeout.totalMicroseconds()) {
+             _sendTimeout = sendTimeout;
+
+             if (connected())
+                 _socket.setSendTimeout(_sendTimeout);
+         }
+
+         if (_receiveTimeout.totalMicroseconds() != receiveTimeout.totalMicroseconds()) {
+             _receiveTimeout = receiveTimeout;
+
+             if (connected())
+                 _socket.setReceiveTimeout(_receiveTimeout);
+         }
+     }
+     catch (NetException &)
+     {
+#ifndef NDEBUG
+         throw;
+#else
+         // mute exceptions in release
+         // just in case when changing settings on socket is not allowed
+         // however it should be OK for timeouts
+#endif
+     }
 }
 
 
@@ -103,14 +128,14 @@ int HTTPSession::get()
 {
 	if (_pCurrent == _pEnd)
 		refill();
-	
+
 	if (_pCurrent < _pEnd)
 		return *_pCurrent++;
 	else
 		return std::char_traits<char>::eof();
 }
 
-	
+
 int HTTPSession::peek()
 {
 	if (_pCurrent == _pEnd)
@@ -122,7 +147,7 @@ int HTTPSession::peek()
 		return std::char_traits<char>::eof();
 }
 
-	
+
 int HTTPSession::read(char* buffer, std::streamsize length)
 {
 	if (_pCurrent < _pEnd)
@@ -141,10 +166,17 @@ int HTTPSession::write(const char* buffer, std::streamsize length)
 {
 	try
 	{
-		return _socket.sendBytes(buffer, (int) length);
+		if (_sendDataHooks)
+			_sendDataHooks->atStart((int) length);
+		int result = _socket.sendBytes(buffer, (int) length);
+		if (_sendDataHooks)
+			_sendDataHooks->atFinish(result);
+		return result;
 	}
 	catch (Poco::Exception& exc)
 	{
+		if (_sendDataHooks)
+			_sendDataHooks->atFail();
 		setException(exc);
 		throw;
 	}
@@ -155,10 +187,17 @@ int HTTPSession::receive(char* buffer, int length)
 {
 	try
 	{
-		return _socket.receiveBytes(buffer, length);
+		if (_receiveDataHooks)
+			_receiveDataHooks->atStart(length);
+		int result = _socket.receiveBytes(buffer, length);
+		if (_receiveDataHooks)
+			_receiveDataHooks->atFinish(result);
+		return result;
 	}
 	catch (Poco::Exception& exc)
 	{
+		if (_receiveDataHooks)
+			_receiveDataHooks->atFail();
 		setException(exc);
 		throw;
 	}

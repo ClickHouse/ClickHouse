@@ -9,7 +9,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -26,8 +25,8 @@ namespace DB
 {
 
 class Context;
-
-enum class MySQLDataTypesSupport;
+struct MySQLSettings;
+enum class MySQLDataTypesSupport : uint8_t;
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
@@ -58,7 +57,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_nam, bool skip_not_loaded) const override;
 
     ASTPtr getCreateDatabaseQuery() const override;
 

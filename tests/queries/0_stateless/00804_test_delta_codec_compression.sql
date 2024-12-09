@@ -16,6 +16,8 @@ CREATE TABLE default_codec_synthetic
     id UInt64 Codec(ZSTD(3))
 ) ENGINE MergeTree() ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1;
 
+set max_insert_threads = 1;
+
 INSERT INTO delta_codec_synthetic SELECT number FROM system.numbers LIMIT 5000000;
 INSERT INTO default_codec_synthetic SELECT number FROM system.numbers LIMIT 5000000;
 

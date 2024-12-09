@@ -19,18 +19,18 @@ std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const Witho
 
 bool ASTQueryWithOnCluster::parse(Pos & pos, std::string & cluster_str, Expected & expected)
 {
-    if (!ParserKeyword{"CLUSTER"}.ignore(pos, expected))
+    if (!ParserKeyword(Keyword::CLUSTER).ignore(pos, expected))
         return false;
 
     return parseIdentifierOrStringLiteral(pos, expected, cluster_str);
 }
 
 
-void ASTQueryWithOnCluster::formatOnCluster(const IAST::FormatSettings & settings) const
+void ASTQueryWithOnCluster::formatOnCluster(WriteBuffer & ostr, const IAST::FormatSettings & settings) const
 {
     if (!cluster.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON CLUSTER " << (settings.hilite ? IAST::hilite_none : "")
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " ON CLUSTER " << (settings.hilite ? IAST::hilite_none : "")
         << backQuoteIfNeed(cluster);
     }
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -37,6 +38,10 @@ public:
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)
     virtual size_t uniqueInsert(const Field & x) = 0;
 
+    /// Appends new value at the end of column if value has appropriate type (column's size is increased by 1).
+    /// Return true if value is inserted and set @index to inserted value index and false otherwise.
+    virtual bool tryUniqueInsert(const Field & x, size_t & index) = 0;
+
     virtual size_t uniqueInsertFrom(const IColumn & src, size_t n) = 0;
     /// Appends range of elements from other column.
     /// Could be used to concatenate columns.
@@ -68,7 +73,7 @@ public:
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
 
-    const char * getFamilyName() const override { return "ColumnUnique"; }
+    const char * getFamilyName() const override { return "Unique"; }
     TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
 
     void insert(const Field &) override
@@ -76,7 +81,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insert is not supported for ColumnUnique.");
     }
 
+    bool tryInsert(const Field &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryInsert is not supported for ColumnUnique.");
+    }
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t, size_t) override
+#else
+    void doInsertRangeFrom(const IColumn &, size_t, size_t) override
+#endif
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertRangeFrom is not supported for ColumnUnique.");
     }
@@ -145,7 +159,7 @@ public:
     void updatePermutation(PermutationSortDirection, PermutationSortStability,
                     size_t, int, Permutation &, EqualRanges &) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getPermutation is not supported for ColumnUnique.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePermutation is not supported for ColumnUnique.");
     }
 
     std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
@@ -153,9 +167,9 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for ColumnUnique.");
     }
 
-    void updateWeakHash32(WeakHash32 &) const override
+    WeakHash32 getWeakHash32() const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateWeakHash32 is not supported for ColumnUnique.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for ColumnUnique.");
     }
 
     void updateHashFast(SipHash &) const override
@@ -173,7 +187,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
     }
 
-    /** Given some value (usually, of type @e ColumnType) @p value that is convertible to DB::StringRef, obtains its
+    /** Given some value (usually, of type @e ColumnType) @p value that is convertible to StringRef, obtains its
      * index in the DB::ColumnUnique::reverse_index hashtable.
      *
      * The reverse index (StringRef => UInt64) is built lazily, so there are two variants:

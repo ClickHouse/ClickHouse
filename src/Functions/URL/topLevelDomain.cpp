@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include "domain.h"
+#include <Functions/URL/domain.h>
 
 namespace DB
 {
@@ -28,7 +28,7 @@ struct ExtractTopLevelDomain
 
             const auto * host_end = host.data() + host.size();
 
-            Pos last_dot = find_last_symbols_or_null<'.'>(host.data(), host_end);
+            Pos last_dot = find_last_symbols_or_null<'.'>(host.data(), host_end);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
             if (!last_dot)
                 return;
 

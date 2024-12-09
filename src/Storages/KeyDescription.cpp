@@ -151,6 +151,18 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
                             "Column {} with type {} is not allowed in key expression, it's not comparable",
                             backQuote(result.sample_block.getByPosition(i).name), result.data_types.back()->getName());
+
+        auto check = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
+                    "Column with type Variant/Dynamic is not allowed in key expression. Consider using a subcolumn with a specific data "
+                    "type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type");
+        };
+
+        check(*result.data_types.back());
+        result.data_types.back()->forEachChild(check);
     }
 
     return result;
@@ -160,7 +172,7 @@ KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;
     result.expression_list_ast = std::make_shared<ASTExpressionList>();
-    result.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(), ExpressionActionsSettings{});
+    result.expression = std::make_shared<ExpressionActions>(ActionsDAG(), ExpressionActionsSettings{});
     return result;
 }
 
@@ -171,8 +183,8 @@ KeyDescription KeyDescription::parse(const String & str, const ColumnsDescriptio
         return result;
 
     ParserExpression parser;
-    ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    FunctionNameNormalizer().visit(ast.get());
+    ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    FunctionNameNormalizer::visit(ast.get());
 
     return getKeyFromAST(ast, columns, context);
 }

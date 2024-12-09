@@ -4,14 +4,11 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+
+namespace re2
+{
+    class RE2;
+}
 
 namespace DB
 {
@@ -64,7 +61,7 @@ namespace DB
   */
 
 /// Column transformer type
-enum class ColumnTransfomerType
+enum class ColumnTransfomerType : uint8_t
 {
     APPLY,
     EXCEPT,
@@ -101,7 +98,7 @@ protected:
     explicit IColumnTransformerNode(size_t children_size);
 };
 
-enum class ApplyColumnTransformerType
+enum class ApplyColumnTransformerType : uint8_t
 {
     LAMBDA,
     FUNCTION
@@ -110,8 +107,6 @@ enum class ApplyColumnTransformerType
 /// Get apply column transformer type name
 const char * toString(ApplyColumnTransformerType type);
 
-class ApplyColumnTransformerNode;
-using ApplyColumnTransformerNodePtr = std::shared_ptr<ApplyColumnTransformerNode>;
 
 /// Apply column transformer
 class ApplyColumnTransformerNode final : public IColumnTransformerNode
@@ -142,9 +137,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
+    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -158,7 +153,7 @@ private:
 };
 
 /// Except column transformer type
-enum class ExceptColumnTransformerType
+enum class ExceptColumnTransformerType : uint8_t
 {
     REGEXP,
     COLUMN_LIST,
@@ -166,8 +161,6 @@ enum class ExceptColumnTransformerType
 
 const char * toString(ExceptColumnTransformerType type);
 
-class ExceptColumnTransformerNode;
-using ExceptColumnTransformerNodePtr = std::shared_ptr<ExceptColumnTransformerNode>;
 
 /** Except column transformer.
   * Strict EXCEPT column transformer must use all column names during matched nodes transformation.
@@ -221,9 +214,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
+    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -238,8 +231,6 @@ private:
     static constexpr size_t children_size = 0;
 };
 
-class ReplaceColumnTransformerNode;
-using ReplaceColumnTransformerNodePtr = std::shared_ptr<ReplaceColumnTransformerNode>;
 
 /** Replace column transformer.
   * Strict replace column transformer must use all replacements during matched nodes transformation.
@@ -299,9 +290,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
+    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

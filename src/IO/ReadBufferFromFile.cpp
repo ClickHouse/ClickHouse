@@ -45,13 +45,13 @@ ReadBufferFromFile::ReadBufferFromFile(
     fd = ::open(file_name.c_str(), flags == -1 ? O_RDONLY | O_CLOEXEC : flags | O_CLOEXEC);
 
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
-                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
 #ifdef OS_DARWIN
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            throwFromErrnoWithPath("Cannot set F_NOCACHE on file " + file_name, file_name, ErrorCodes::CANNOT_OPEN_FILE);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot set F_NOCACHE on file {}", file_name);
     }
 #endif
 }
@@ -77,7 +77,7 @@ ReadBufferFromFile::~ReadBufferFromFile()
     if (fd < 0)
         return;
 
-    int err = ::close(fd);
+    [[maybe_unused]] int err = ::close(fd);
     chassert(!err || errno == EINTR);
 }
 
@@ -88,7 +88,10 @@ void ReadBufferFromFile::close()
         return;
 
     if (0 != ::close(fd))
+    {
+        fd = -1;
         throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
+    }
 
     fd = -1;
     metric_increment.destroy();

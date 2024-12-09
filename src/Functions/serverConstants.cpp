@@ -5,14 +5,16 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/ClickHouseRevision.h>
 
 #include <Poco/Environment.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 
 namespace DB
@@ -20,117 +22,125 @@ namespace DB
 namespace
 {
 
+    template<typename Derived, typename T, typename ColumnT>
+    class FunctionServerConstantBase : public FunctionConstantBase<Derived, T, ColumnT>
+    {
+    public:
+        using FunctionConstantBase<Derived, T, ColumnT>::FunctionConstantBase;
+        bool isServerConstant() const override { return true; }
+    };
+
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     /// buildId() - returns the compiler build id of the running binary.
-    class FunctionBuildId : public FunctionConstantBase<FunctionBuildId, String, DataTypeString>
+    class FunctionBuildId : public FunctionServerConstantBase<FunctionBuildId, String, DataTypeString>
     {
     public:
         static constexpr auto name = "buildId";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBuildId>(context); }
-        explicit FunctionBuildId(ContextPtr context) : FunctionConstantBase(SymbolIndex::instance().getBuildIDHex(), context->isDistributed()) {}
+        explicit FunctionBuildId(ContextPtr context) : FunctionServerConstantBase(SymbolIndex::instance().getBuildIDHex(), context->isDistributed()) {}
     };
 #endif
 
 
-    /// Get the host name. Is is constant on single server, but is not constant in distributed queries.
-    class FunctionHostName : public FunctionConstantBase<FunctionHostName, String, DataTypeString>
+    /// Get the host name. It is constant on single server, but is not constant in distributed queries.
+    class FunctionHostName : public FunctionServerConstantBase<FunctionHostName, String, DataTypeString>
     {
     public:
         static constexpr auto name = "hostName";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionHostName>(context); }
-        explicit FunctionHostName(ContextPtr context) : FunctionConstantBase(DNSResolver::instance().getHostName(), context->isDistributed()) {}
+        explicit FunctionHostName(ContextPtr context) : FunctionServerConstantBase(DNSResolver::instance().getHostName(), context->isDistributed()) {}
     };
 
 
-    class FunctionServerUUID : public FunctionConstantBase<FunctionServerUUID, UUID, DataTypeUUID>
+    class FunctionServerUUID : public FunctionServerConstantBase<FunctionServerUUID, UUID, DataTypeUUID>
     {
     public:
         static constexpr auto name = "serverUUID";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionServerUUID>(context); }
-        explicit FunctionServerUUID(ContextPtr context) : FunctionConstantBase(ServerUUID::get(), context->isDistributed()) {}
+        explicit FunctionServerUUID(ContextPtr context) : FunctionServerConstantBase(ServerUUID::get(), context->isDistributed()) {}
     };
 
 
-    class FunctionTcpPort : public FunctionConstantBase<FunctionTcpPort, UInt16, DataTypeUInt16>
+    class FunctionTCPPort : public FunctionServerConstantBase<FunctionTCPPort, UInt16, DataTypeUInt16>
     {
     public:
         static constexpr auto name = "tcpPort";
-        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTcpPort>(context); }
-        explicit FunctionTcpPort(ContextPtr context) : FunctionConstantBase(context->getTCPPort(), context->isDistributed()) {}
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTCPPort>(context); }
+        explicit FunctionTCPPort(ContextPtr context) : FunctionServerConstantBase(context->getTCPPort(), context->isDistributed()) {}
     };
 
 
     /// Returns timezone for current session.
-    class FunctionTimezone : public FunctionConstantBase<FunctionTimezone, String, DataTypeString>
+    class FunctionTimezone : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(DateLUT::instance().getTimeZone(), context->isDistributed()) {}
+        explicit FunctionTimezone(ContextPtr context) : FunctionServerConstantBase(DateLUT::instance().getTimeZone(), context->isDistributed()) {}
     };
 
     /// Returns the server time zone (timezone in which server runs).
-    class FunctionServerTimezone : public FunctionConstantBase<FunctionServerTimezone, String, DataTypeString>
+    class FunctionServerTimezone : public FunctionServerConstantBase<FunctionServerTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "serverTimezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionServerTimezone>(context); }
-        explicit FunctionServerTimezone(ContextPtr context) : FunctionConstantBase(DateLUT::serverTimezoneInstance().getTimeZone(), context->isDistributed()) {}
+        explicit FunctionServerTimezone(ContextPtr context) : FunctionServerConstantBase(DateLUT::serverTimezoneInstance().getTimeZone(), context->isDistributed()) {}
     };
 
 
     /// Returns server uptime in seconds.
-    class FunctionUptime : public FunctionConstantBase<FunctionUptime, UInt32, DataTypeUInt32>
+    class FunctionUptime : public FunctionServerConstantBase<FunctionUptime, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "uptime";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionUptime>(context); }
-        explicit FunctionUptime(ContextPtr context) : FunctionConstantBase(context->getUptimeSeconds(), context->isDistributed()) {}
+        explicit FunctionUptime(ContextPtr context) : FunctionServerConstantBase(context->getUptimeSeconds(), context->isDistributed()) {}
     };
 
 
     /// version() - returns the current version as a string.
-    class FunctionVersion : public FunctionConstantBase<FunctionVersion, String, DataTypeString>
+    class FunctionVersion : public FunctionServerConstantBase<FunctionVersion, String, DataTypeString>
     {
     public:
         static constexpr auto name = "version";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionVersion>(context); }
-        explicit FunctionVersion(ContextPtr context) : FunctionConstantBase(VERSION_STRING, context->isDistributed()) {}
+        explicit FunctionVersion(ContextPtr context) : FunctionServerConstantBase(VERSION_STRING, context->isDistributed()) {}
     };
 
     /// revision() - returns the current revision.
-    class FunctionRevision : public FunctionConstantBase<FunctionRevision, UInt32, DataTypeUInt32>
+    class FunctionRevision : public FunctionServerConstantBase<FunctionRevision, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "revision";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionRevision>(context); }
-        explicit FunctionRevision(ContextPtr context) : FunctionConstantBase(ClickHouseRevision::getVersionRevision(), context->isDistributed()) {}
+        explicit FunctionRevision(ContextPtr context) : FunctionServerConstantBase(ClickHouseRevision::getVersionRevision(), context->isDistributed()) {}
     };
 
-    class FunctionZooKeeperSessionUptime : public FunctionConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
+    class FunctionZooKeeperSessionUptime : public FunctionServerConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "zookeeperSessionUptime";
         explicit FunctionZooKeeperSessionUptime(ContextPtr context)
-            : FunctionConstantBase(context->getZooKeeperSessionUptime(), context->isDistributed())
+            : FunctionServerConstantBase(context->getZooKeeperSessionUptime(), context->isDistributed())
         {
         }
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
 
-    class FunctionGetOSKernelVersion : public FunctionConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
+    class FunctionGetOSKernelVersion : public FunctionServerConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
     {
     public:
         static constexpr auto name = "getOSKernelVersion";
-        explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionConstantBase(Poco::Environment::osName() + " " + Poco::Environment::osVersion(), context->isDistributed()) {}
+        explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionServerConstantBase(Poco::Environment::osName() + " " + Poco::Environment::osVersion(), context->isDistributed()) {}
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
 
-    class FunctionDisplayName : public FunctionConstantBase<FunctionDisplayName, String, DataTypeString>
+    class FunctionDisplayName : public FunctionServerConstantBase<FunctionDisplayName, String, DataTypeString>
     {
     public:
         static constexpr auto name = "displayName";
-        explicit FunctionDisplayName(ContextPtr context) : FunctionConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
+        explicit FunctionDisplayName(ContextPtr context) : FunctionServerConstantBase(context->getConfigRef().getString("display_name", getFQDNOrHostName()), context->isDistributed()) {}
         static FunctionPtr create(ContextPtr context) {return std::make_shared<FunctionDisplayName>(context); }
     };
 }
@@ -153,9 +163,9 @@ REGISTER_FUNCTION(ServerUUID)
     factory.registerFunction<FunctionServerUUID>();
 }
 
-REGISTER_FUNCTION(TcpPort)
+REGISTER_FUNCTION(TCPPort)
 {
-    factory.registerFunction<FunctionTcpPort>();
+    factory.registerFunction<FunctionTCPPort>();
 }
 
 REGISTER_FUNCTION(Timezone)
@@ -197,12 +207,12 @@ REGISTER_FUNCTION(Uptime)
 
 REGISTER_FUNCTION(Version)
 {
-    factory.registerFunction<FunctionVersion>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>({}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Revision)
 {
-    factory.registerFunction<FunctionRevision>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionRevision>({}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
@@ -228,8 +238,7 @@ Returns the value of `display_name` from config or server FQDN if not set.
 )",
             .examples{{"displayName", "SELECT displayName();", ""}},
             .categories{"Constant", "Miscellaneous"}
-        },
-        FunctionFactory::CaseSensitive);
+        });
 }
 
 

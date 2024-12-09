@@ -10,7 +10,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 
@@ -161,7 +161,13 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
     {
         auto & join = node.table_join->as<ASTTableJoin &>();
         if (join.on_expression)
+        {
+            ASTPtr original_on_expression = join.on_expression;
             visit(join.on_expression, data);
+            if (join.on_expression != original_on_expression)
+                join.children = { join.on_expression };
+        }
+
     }
 }
 

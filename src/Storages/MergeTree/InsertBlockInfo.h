@@ -8,7 +8,7 @@ namespace DB
 struct SyncInsertBlockInfo
 {
     SyncInsertBlockInfo(
-        Poco::Logger * /*log_*/,
+        LoggerPtr /*log_*/,
         std::string && block_id_,
         BlockWithPartition && /*block_*/,
         std::optional<BlockWithPartition> && /*unmerged_block_with_partition_*/)
@@ -25,7 +25,7 @@ struct SyncInsertBlockInfo
 
 struct AsyncInsertBlockInfo
 {
-    Poco::Logger * log;
+    LoggerPtr log;
     std::vector<std::string> block_id;
     BlockWithPartition block_with_partition;
     /// Some merging algorithms can mofidy the block which loses the information about the async insert offsets
@@ -34,7 +34,7 @@ struct AsyncInsertBlockInfo
     std::unordered_map<String, std::vector<size_t>> block_id_to_offset_idx;
 
     AsyncInsertBlockInfo(
-        Poco::Logger * log_,
+        LoggerPtr log_,
         std::vector<std::string> && block_id_,
         BlockWithPartition && block_,
         std::optional<BlockWithPartition> && unmerged_block_with_partition_);

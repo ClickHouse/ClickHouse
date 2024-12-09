@@ -4,6 +4,11 @@
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 
 namespace DB
 {
@@ -54,11 +59,26 @@ public:
         if (arguments[0].type->onlyNull() && !col->empty())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
 
-        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&*col))
             return nullable_col->getNestedColumnPtr();
-        else
-            return col;
+        return col;
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        if (arguments[0].type->isNullable())
+            return b.CreateExtractValue(arguments[0].value, {0});
+        else
+            return arguments[0].value;
+    }
+#endif
+
+
 };
 
 }

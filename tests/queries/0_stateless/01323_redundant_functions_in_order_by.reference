@@ -49,14 +49,14 @@ QUERY id: 0
           LIST id: 3, nodes: 1
             COLUMN id: 4, column_name: x, result_type: UInt64, source_id: 5
   JOIN TREE
-    QUERY id: 5, is_subquery: 1
+    QUERY id: 5, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         x UInt64
       PROJECTION
         LIST id: 6, nodes: 1
           COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
       JOIN TREE
-        TABLE_FUNCTION id: 8, table_function_name: numbers
+        TABLE_FUNCTION id: 8, alias: __table2, table_function_name: numbers
           ARGUMENTS
             LIST id: 9, nodes: 1
               CONSTANT id: 10, constant_value: UInt64_3, constant_value_type: UInt8
@@ -65,7 +65,7 @@ QUERY id: 0
           SORT id: 12, sort_direction: ASCENDING, with_fill: 0
             EXPRESSION
               COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT groupArray(x)
 FROM
 (
@@ -83,14 +83,14 @@ QUERY id: 0
           LIST id: 3, nodes: 1
             COLUMN id: 4, column_name: x, result_type: UInt64, source_id: 5
   JOIN TREE
-    QUERY id: 5, is_subquery: 1
+    QUERY id: 5, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         x UInt64
       PROJECTION
         LIST id: 6, nodes: 1
           COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
       JOIN TREE
-        TABLE_FUNCTION id: 8, table_function_name: numbers
+        TABLE_FUNCTION id: 8, alias: __table2, table_function_name: numbers
           ARGUMENTS
             LIST id: 9, nodes: 1
               CONSTANT id: 10, constant_value: UInt64_3, constant_value_type: UInt8
@@ -99,7 +99,7 @@ QUERY id: 0
           SORT id: 12, sort_direction: ASCENDING, with_fill: 0
             EXPRESSION
               COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT groupArray(x)
 FROM
 (
@@ -119,14 +119,14 @@ QUERY id: 0
           LIST id: 3, nodes: 1
             COLUMN id: 4, column_name: x, result_type: UInt64, source_id: 5
   JOIN TREE
-    QUERY id: 5, is_subquery: 1
+    QUERY id: 5, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         x UInt64
       PROJECTION
         LIST id: 6, nodes: 1
           COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
       JOIN TREE
-        TABLE_FUNCTION id: 8, table_function_name: numbers
+        TABLE_FUNCTION id: 8, alias: __table2, table_function_name: numbers
           ARGUMENTS
             LIST id: 9, nodes: 1
               CONSTANT id: 10, constant_value: UInt64_3, constant_value_type: UInt8
@@ -141,7 +141,7 @@ QUERY id: 0
           SORT id: 15, sort_direction: ASCENDING, with_fill: 0
             EXPRESSION
               COLUMN id: 7, column_name: number, result_type: UInt64, source_id: 8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
     key,
     a,
@@ -171,7 +171,7 @@ QUERY id: 0
   JOIN TREE
     JOIN id: 8, strictness: ALL, kind: FULL
       LEFT TABLE EXPRESSION
-        QUERY id: 3, alias: s, is_subquery: 1
+        QUERY id: 3, alias: __table1, is_subquery: 1
           PROJECTION COLUMNS
             key UInt64
           PROJECTION
@@ -182,12 +182,12 @@ QUERY id: 0
                     COLUMN id: 12, column_name: number, result_type: UInt64, source_id: 13
                     CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
           JOIN TREE
-            TABLE_FUNCTION id: 13, table_function_name: numbers
+            TABLE_FUNCTION id: 13, alias: __table2, table_function_name: numbers
               ARGUMENTS
                 LIST id: 15, nodes: 1
                   CONSTANT id: 16, constant_value: UInt64_4, constant_value_type: UInt8
       RIGHT TABLE EXPRESSION
-        TABLE id: 5, alias: t, table_name: default.test
+        TABLE id: 5, alias: __table3, table_name: default.test
       JOIN EXPRESSION
         LIST id: 17, nodes: 1
           COLUMN id: 18, column_name: key, result_type: UInt64, source_id: 8
@@ -203,7 +203,7 @@ QUERY id: 0
       SORT id: 25, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 26, column_name: key, result_type: UInt64, source_id: 5
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
     key,
     a
@@ -220,7 +220,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
       COLUMN id: 4, column_name: a, result_type: UInt8, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.test
+    TABLE id: 3, alias: __table1, table_name: default.test
   ORDER BY
     LIST id: 5, nodes: 2
       SORT id: 6, sort_direction: ASCENDING, with_fill: 0
@@ -229,7 +229,7 @@ QUERY id: 0
       SORT id: 7, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 4, column_name: a, result_type: UInt8, source_id: 3
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
     key,
     a
@@ -246,7 +246,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
       COLUMN id: 4, column_name: a, result_type: UInt8, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.test
+    TABLE id: 3, alias: __table1, table_name: default.test
   ORDER BY
     LIST id: 5, nodes: 2
       SORT id: 6, sort_direction: ASCENDING, with_fill: 0
@@ -262,7 +262,7 @@ QUERY id: 0
                     LIST id: 11, nodes: 2
                       COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
                       COLUMN id: 4, column_name: a, result_type: UInt8, source_id: 3
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 QUERY id: 0
   PROJECTION COLUMNS
     key UInt64
@@ -270,7 +270,7 @@ QUERY id: 0
     LIST id: 1, nodes: 1
       COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.test
+    TABLE id: 3, alias: __table1, table_name: default.test
   GROUP BY
     LIST id: 4, nodes: 1
       COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
@@ -285,7 +285,7 @@ QUERY id: 0
       SORT id: 10, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 2, column_name: key, result_type: UInt64, source_id: 3
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 QUERY id: 0
   PROJECTION COLUMNS
     t1.id UInt64
@@ -297,9 +297,9 @@ QUERY id: 0
   JOIN TREE
     JOIN id: 6, strictness: ALL, kind: INNER
       LEFT TABLE EXPRESSION
-        TABLE id: 3, table_name: default.t1
+        TABLE id: 3, alias: __table1, table_name: default.t1
       RIGHT TABLE EXPRESSION
-        TABLE id: 5, table_name: default.t2
+        TABLE id: 5, alias: __table2, table_name: default.t2
       JOIN EXPRESSION
         FUNCTION id: 7, function_name: equals, function_type: ordinary, result_type: UInt8
           ARGUMENTS
@@ -314,7 +314,7 @@ QUERY id: 0
       SORT id: 14, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
           COLUMN id: 15, column_name: id, result_type: UInt64, source_id: 5
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 [0,1,2]
 [0,1,2]
 [0,1,2]

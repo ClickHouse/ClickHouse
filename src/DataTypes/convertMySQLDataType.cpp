@@ -10,13 +10,15 @@
 #include "DataTypeDate32.h"
 #include "DataTypeDateTime.h"
 #include "DataTypeDateTime64.h"
-#include "DataTypeEnum.h"
 #include "DataTypesDecimal.h"
 #include "DataTypeFixedString.h"
 #include "DataTypeNullable.h"
 #include "DataTypeString.h"
 #include "DataTypesNumber.h"
+#include "DataTypeCustomGeo.h"
+#include "DataTypeFactory.h"
 #include "IDataType.h"
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -109,14 +111,18 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     }
     else if (type_support.isSet(MySQLDataTypesSupport::DECIMAL) && (type_name == "numeric" || type_name == "decimal"))
     {
-        if (precision <= DecimalUtils::max_precision<Decimal32>)
+        if (precision <=  DataTypeDecimalBase<Decimal32>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal64>)
+        else if (precision <= DataTypeDecimalBase<Decimal64>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal128>)
+        else if (precision <= DataTypeDecimalBase<Decimal128>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-        else if (precision <= DecimalUtils::max_precision<Decimal256>)
+        else if (precision <= DataTypeDecimalBase<Decimal256>::maxPrecision())
             res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
+    }
+    else if (type_name == "point")
+    {
+        res = DataTypeFactory::instance().get("Point");
     }
 
     /// Also String is fallback for all unknown types.

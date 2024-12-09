@@ -11,7 +11,7 @@ N.B. `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless
 is turned on,
 [`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
 is turned on and user has
-[`displaySecretsInShowAndSelect`](grant.md#grant-display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](grant.md#display-secrets) privilege.
 
 ## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
 
@@ -207,7 +207,7 @@ The optional keyword `FULL` causes the output to include the collation, comment 
 
 The statement produces a result table with the following structure:
 - `field` - The name of the column (String)
-- `type` - The column data type. If setting `[use_mysql_types_in_show_columns](../../operations/settings/settings.md#use_mysql_types_in_show_columns) = 1` (default: 0), then the equivalent type name in MySQL is shown. (String)
+- `type` - The column data type. If the query was made through the MySQL wire protocol, then the equivalent type name in MySQL is shown. (String)
 - `null` - `YES` if the column data type is Nullable, `NO` otherwise (String)
 - `key` - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
 - `default` - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))
@@ -351,10 +351,14 @@ Shows privileges for a user.
 **Syntax**
 
 ``` sql
-SHOW GRANTS [FOR user1 [, user2 ...]]
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
 ```
 
 If user is not specified, the query returns privileges for the current user.
+
+The `WITH IMPLICIT` modifier allows to show the implicit grants (e.g., `GRANT SELECT ON system.one`)
+
+The `FINAL` modifier merges all grants from the user and its granted roles (with inheritance)
 
 ## SHOW CREATE USER
 
@@ -466,7 +470,7 @@ SHOW [CURRENT] QUOTA
 ```
 ## SHOW ACCESS
 
-Shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#grant-privileges).
+Shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#privileges).
 
 **Syntax**
 
@@ -668,6 +672,15 @@ If either `LIKE` or `ILIKE` clause is specified, the query returns a list of sys
 
 Returns a list of merges. All merges are listed in the [system.merges](../../operations/system-tables/merges.md) table.
 
+- `table` -- Table name.
+- `database` -- The name of the database the table is in.
+- `estimate_complete` -- The estimated time to complete (in seconds).
+- `elapsed` -- The time elapsed (in seconds) since the merge started.
+- `progress` -- The percentage of completed work (0-100 percent).
+- `is_mutation` -- 1 if this process is a part mutation.
+- `size_compressed` -- The total size of the compressed data of the merged parts.
+- `memory_usage` -- Memory consumption of the merge process.
+
 
 **Syntax**
 
@@ -686,10 +699,9 @@ SHOW MERGES;
 Result:
 
 ```text
-┌─table──────┬─database─┬─estimate_complete─┬─────elapsed─┬─progress─┬─is_mutation─┬─size─────┬─mem───────┐
-│ your_table │ default  │              0.14 │ 0.365592338 │     0.73 │           0 │ 5.40 MiB │ 10.25 MiB │
-└────────────┴──────────┴───────────────────┴─────────────┴──────────┴─────────────┴────────────┴─────────┘
-
+┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
+│ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
 ```
 
 Query:
@@ -701,9 +713,8 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 Result:
 
 ```text
-┌─table──────┬─database─┬─estimate_complete─┬─────elapsed─┬─progress─┬─is_mutation─┬─size─────┬─mem───────┐
-│ your_table │ default  │              0.05 │ 1.727629065 │     0.97 │           0 │ 5.40 MiB │ 10.25 MiB │
-└────────────┴──────────┴───────────────────┴─────────────┴──────────┴─────────────┴────────────┴─────────┘
-
+┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
+│ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
 ```
 

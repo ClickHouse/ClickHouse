@@ -45,6 +45,7 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
         std::cerr << "Error (ZSTD):" << decompressed_size << " " << ZSTD_getErrorName(decompressed_size) << std::endl;
         return 1;
     }
+    std::cerr << "." << std::flush;
     return 0;
 }
 
@@ -173,7 +174,7 @@ bool isSudo()
     return geteuid() == 0;
 }
 
-/// Read data about files and decomrpess them.
+/// Read data about files and decompress them.
 int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
@@ -321,6 +322,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             return 1;
         }
 
+        if (0 != munmap(output, le64toh(file_info.uncompressed_size)))
+            perror("munmap");
         if (0 != fsync(output_fd))
             perror("fsync");
         if (0 != close(output_fd))
@@ -332,6 +335,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
     if (0 != munmap(input, info_in.st_size))
         perror("munmap");
+
+    std::cerr << std::endl;
     return 0;
 }
 
@@ -440,6 +445,8 @@ int main(int/* argc*/, char* argv[])
         return 1;
     }
 
+    std::cerr << "Decompressing the binary" << std::flush;
+
     std::stringstream lock_path; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     lock_path << "/tmp/" << name << ".decompression." << inode << ".lock";
     int lock = open(lock_path.str().c_str(), O_CREAT | O_RDWR, 0666);
@@ -522,6 +529,8 @@ int main(int/* argc*/, char* argv[])
         char decompressed_name[decompressed_name_len + 1];
         (void)snprintf(decompressed_name, decompressed_name_len + 1, decompressed_name_fmt, self, decompressed_suffix);
 
+#if defined(OS_DARWIN)
+        // We can't just rename it on Mac due to security issues, so we copy it...
         std::error_code ec;
         std::filesystem::copy_file(static_cast<char *>(decompressed_name), static_cast<char *>(self), ec);
         if (ec)
@@ -529,7 +538,13 @@ int main(int/* argc*/, char* argv[])
             std::cerr << ec.message() << std::endl;
             return 1;
         }
-
+#else
+        if (link(decompressed_name, self))
+        {
+            perror("link");
+            return 1;
+        }
+#endif
         if (chmod(self, static_cast<uint32_t>(decompressed_umask)))
         {
             perror("chmod");

@@ -25,8 +25,7 @@ The steps below will easily work on a local install of ClickHouse too. The only 
 1. Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the result:
 
 ```sql
-DESCRIBE s3Cluster(
-    'default',
+DESCRIBE s3(
     'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
     'JSONLines'
 );
@@ -35,29 +34,29 @@ DESCRIBE s3Cluster(
 ClickHouse infers the following schema from the JSON file:
 
 ```response
-┌─name────────────────┬─type─────────────────────────────────┐
-│ id                  │ Nullable(String)                     │
-│ fetch_date          │ Nullable(Int64)                      │
-│ upload_date         │ Nullable(String)                     │
-│ title               │ Nullable(String)                     │
-│ uploader_id         │ Nullable(String)                     │
-│ uploader            │ Nullable(String)                     │
-│ uploader_sub_count  │ Nullable(Int64)                      │
-│ is_age_limit        │ Nullable(Bool)                       │
-│ view_count          │ Nullable(Int64)                      │
-│ like_count          │ Nullable(Int64)                      │
-│ dislike_count       │ Nullable(Int64)                      │
-│ is_crawlable        │ Nullable(Bool)                       │
-│ is_live_content     │ Nullable(Bool)                       │
-│ has_subtitles       │ Nullable(Bool)                       │
-│ is_ads_enabled      │ Nullable(Bool)                       │
-│ is_comments_enabled │ Nullable(Bool)                       │
-│ description         │ Nullable(String)                     │
-│ rich_metadata       │ Array(Map(String, Nullable(String))) │
-│ super_titles        │ Array(Map(String, Nullable(String))) │
-│ uploader_badges     │ Nullable(String)                     │
-│ video_badges        │ Nullable(String)                     │
-└─────────────────────┴──────────────────────────────────────┘
+┌─name────────────────┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id                  │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+│ fetch_date          │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+│ upload_date         │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+│ title               │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+│ uploader_id         │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+│ uploader            │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+│ uploader_sub_count  │ Nullable(Int64)                                                                                                                        │              │                    │         │                  │                │
+│ is_age_limit        │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+│ view_count          │ Nullable(Int64)                                                                                                                        │              │                    │         │                  │                │
+│ like_count          │ Nullable(Int64)                                                                                                                        │              │                    │         │                  │                │
+│ dislike_count       │ Nullable(Int64)                                                                                                                        │              │                    │         │                  │                │
+│ is_crawlable        │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+│ is_live_content     │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+│ has_subtitles       │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+│ is_ads_enabled      │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+│ is_comments_enabled │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+│ description         │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+│ rich_metadata       │ Array(Tuple(call Nullable(String), content Nullable(String), subtitle Nullable(String), title Nullable(String), url Nullable(String))) │              │                    │         │                  │                │
+│ super_titles        │ Array(Tuple(text Nullable(String), url Nullable(String)))                                                                              │              │                    │         │                  │                │
+│ uploader_badges     │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+│ video_badges        │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+└─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
 2. Based on the inferred schema, we cleaned up the data types and added a primary key. Define the following table:
@@ -82,13 +81,13 @@ CREATE TABLE youtube
     `is_ads_enabled` Bool,
     `is_comments_enabled` Bool,
     `description` String,
-    `rich_metadata` Array(Map(String, String)),
-    `super_titles` Array(Map(String, String)),
+    `rich_metadata` Array(Tuple(call String, content String, subtitle String, title String, url String)),
+    `super_titles` Array(Tuple(text String, url String)),
     `uploader_badges` String,
     `video_badges` String
 )
 ENGINE = MergeTree
-ORDER BY (uploader, upload_date);
+ORDER BY (uploader, upload_date)
 ```
 
 3. The following command streams the records from the S3 files into the `youtube` table.

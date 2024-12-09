@@ -40,6 +40,7 @@ public:
     const char * getFamilyName() const override { return family_name; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
+    TypeIndex getColumnType() const override { return TypeIndex::UInt32; }
 
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

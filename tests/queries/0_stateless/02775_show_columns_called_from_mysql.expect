@@ -1,0 +1,305 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest, no-parallel
+# no-fasttest: requires mysql client, rapidjson and s2geometry
+# no-parallel: can't provide currentDatabase() to SHOW COLUMNS
+
+# Tests the output of SHOW COLUMNS when called through the MySQL protocol.
+
+# -----------------------------------------------------------------------------------
+# Please keep this test in-sync with 02775_show_columns_called_from_clickhouse.sql
+# -----------------------------------------------------------------------------------
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+spawn bash -c "source $basedir/../shell_config.sh ; \$MYSQL_CLIENT_BINARY \$MYSQL_CLIENT_OPT"
+expect -nocase -re "mysql.*> "
+
+send -- "DROP TABLE IF EXISTS tab;\r"
+expect "Query OK, 0 rows affected"
+
+send -- "SET allow_suspicious_low_cardinality_types=1;\r"
+send -- "SET allow_experimental_json_type=1;\r"
+
+send -- "
+CREATE TABLE tab
+(
+    i8            Int8,
+    i16           Int16,
+    i32           Int32,
+    i64           Int64,
+    i128          Int128,
+    i256          Int256,
+    ui8           UInt8,
+    ui16          UInt16,
+    ui32          UInt32,
+    ui64          UInt64,
+    ui128         UInt128,
+    ui256         UInt256,
+    f32           Float32,
+    f64           Float64,
+    dec32         Decimal32(2),
+    dec64         Decimal64(2),
+    dec128        Decimal128(2),
+    dec128_native Decimal(35, 30),
+    dec128_text   Decimal(35, 31),
+    dec256        Decimal256(2),
+    dec256_native Decimal(65, 2),
+    dec256_text   Decimal(66, 2),
+    p             Point,
+    r             Ring,
+    pg            Polygon,
+    mpg           MultiPolygon,
+    b             Bool,
+    s             String,
+    fs            FixedString(3),
+    uuid          UUID,
+    d             Date,
+    d32           Date32,
+    dt            DateTime,
+    dt_tz1        DateTime('UTC'),
+    dt_tz2        DateTime('Europe/Amsterdam'),
+    dt64          DateTime64(3),
+    dt64_3_tz1    DateTime64(3, 'UTC'),
+    dt64_3_tz2    DateTime64(3, 'Asia/Shanghai'),
+    dt64_6        DateTime64(6, 'UTC'),
+    dt64_9        DateTime64(9, 'UTC'),
+    enm           Enum('hallo' = 1, 'welt' = 2),
+    agg           AggregateFunction(uniq, UInt64),
+    sagg          SimpleAggregateFunction(sum, Double),
+    a             Array(String),
+    o             JSON,
+    t             Tuple(Int32, String, Nullable(String), LowCardinality(String), LowCardinality(Nullable(String)), Tuple(Int32, String)),
+    m             Map(Int32, String),
+    m_complex     Map(Int32, Map(Int32, LowCardinality(Nullable(String)))),
+    nested        Nested (col1 String, col2 UInt32),
+    ip4           IPv4,
+    ip6           IPv6,
+    ns            Nullable(String),
+    nfs           Nullable(FixedString(3)),
+    ndt64         Nullable(DateTime64(3)),
+    ndt64_tz      Nullable(DateTime64(3, 'Asia/Shanghai')),
+    ls            LowCardinality(String),
+    lfs           LowCardinality(FixedString(3)),
+    lns           LowCardinality(Nullable(String)),
+    lnfs          LowCardinality(Nullable(FixedString(3))),
+) ENGINE Memory;\r
+"
+
+send -- "SHOW COLUMNS FROM tab;\r"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+expect -- "| field         | type              | null | key  | default | extra |"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+expect -- "| a             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| agg           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| b             | TINYINT           | NO   |      | NULL    |       |"
+expect -- "| d             | DATE              | NO   |      | NULL    |       |"
+expect -- "| d32           | DATE              | NO   |      | NULL    |       |"
+expect -- "| dec128        | DECIMAL(38, 2)    | NO   |      | NULL    |       |"
+expect -- "| dec128_native | DECIMAL(35, 30)   | NO   |      | NULL    |       |"
+expect -- "| dec128_text   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec256        | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec256_native | DECIMAL(65, 2)    | NO   |      | NULL    |       |"
+expect -- "| dec256_text   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec32         | DECIMAL(9, 2)     | NO   |      | NULL    |       |"
+expect -- "| dec64         | DECIMAL(18, 2)    | NO   |      | NULL    |       |"
+expect -- "| dt            | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64          | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_3_tz1    | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_3_tz2    | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_6        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_9        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt_tz1        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt_tz2        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| enm           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| f32           | FLOAT             | NO   |      | NULL    |       |"
+expect -- "| f64           | DOUBLE            | NO   |      | NULL    |       |"
+expect -- "| fs            | TEXT              | NO   |      | NULL    |       |"
+expect -- "| i128          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| i16           | SMALLINT          | NO   |      | NULL    |       |"
+expect -- "| i256          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| i32           | INTEGER           | NO   |      | NULL    |       |"
+expect -- "| i64           | BIGINT            | NO   |      | NULL    |       |"
+expect -- "| i8            | TINYINT           | NO   |      | NULL    |       |"
+expect -- "| ip4           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ip6           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| lfs           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| lnfs          | TEXT              | YES  |      | NULL    |       |"
+expect -- "| lns           | TEXT              | YES  |      | NULL    |       |"
+expect -- "| ls            | TEXT              | NO   |      | NULL    |       |"
+expect -- "| m             | JSON              | NO   |      | NULL    |       |"
+expect -- "| m_complex     | JSON              | NO   |      | NULL    |       |"
+expect -- "| mpg           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ndt64         | DATETIME          | YES  |      | NULL    |       |"
+expect -- "| ndt64_tz      | DATETIME          | YES  |      | NULL    |       |"
+expect -- "| nested.col1   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| nested.col2   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| nfs           | TEXT              | YES  |      | NULL    |       |"
+expect -- "| ns            | TEXT              | YES  |      | NULL    |       |"
+expect -- "| o             | JSON              | NO   |      | NULL    |       |"
+expect -- "| p             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| pg            | TEXT              | NO   |      | NULL    |       |"
+expect -- "| r             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| s             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| sagg          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| t             | JSON              | NO   |      | NULL    |       |"
+expect -- "| ui128         | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ui16          | SMALLINT UNSIGNED | NO   |      | NULL    |       |"
+expect -- "| ui256         | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ui32          | INTEGER UNSIGNED  | NO   |      | NULL    |       |"
+expect -- "| ui64          | BIGINT UNSIGNED   | NO   |      | NULL    |       |"
+expect -- "| ui8           | TINYINT UNSIGNED  | NO   |      | NULL    |       |"
+expect -- "| uuid          | CHAR              | NO   |      | NULL    |       |"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+
+send -- "SHOW COLUMNS FROM tab SETTINGS mysql_map_string_to_text_in_show_columns=0;\r"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+expect -- "| field         | type              | null | key  | default | extra |"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+expect -- "| a             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| agg           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| b             | TINYINT           | NO   |      | NULL    |       |"
+expect -- "| d             | DATE              | NO   |      | NULL    |       |"
+expect -- "| d32           | DATE              | NO   |      | NULL    |       |"
+expect -- "| dec128        | DECIMAL(38, 2)    | NO   |      | NULL    |       |"
+expect -- "| dec128_native | DECIMAL(35, 30)   | NO   |      | NULL    |       |"
+expect -- "| dec128_text   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec256        | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec256_native | DECIMAL(65, 2)    | NO   |      | NULL    |       |"
+expect -- "| dec256_text   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec32         | DECIMAL(9, 2)     | NO   |      | NULL    |       |"
+expect -- "| dec64         | DECIMAL(18, 2)    | NO   |      | NULL    |       |"
+expect -- "| dt            | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64          | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_3_tz1    | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_3_tz2    | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_6        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_9        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt_tz1        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt_tz2        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| enm           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| f32           | FLOAT             | NO   |      | NULL    |       |"
+expect -- "| f64           | DOUBLE            | NO   |      | NULL    |       |"
+expect -- "| fs            | TEXT              | NO   |      | NULL    |       |"
+expect -- "| i128          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| i16           | SMALLINT          | NO   |      | NULL    |       |"
+expect -- "| i256          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| i32           | INTEGER           | NO   |      | NULL    |       |"
+expect -- "| i64           | BIGINT            | NO   |      | NULL    |       |"
+expect -- "| i8            | TINYINT           | NO   |      | NULL    |       |"
+expect -- "| ip4           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ip6           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| lfs           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| lnfs          | TEXT              | YES  |      | NULL    |       |"
+expect -- "| lns           | BLOB              | YES  |      | NULL    |       |"
+expect -- "| ls            | BLOB              | NO   |      | NULL    |       |"
+expect -- "| m             | JSON              | NO   |      | NULL    |       |"
+expect -- "| m_complex     | JSON              | NO   |      | NULL    |       |"
+expect -- "| mpg           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ndt64         | DATETIME          | YES  |      | NULL    |       |"
+expect -- "| ndt64_tz      | DATETIME          | YES  |      | NULL    |       |"
+expect -- "| nested.col1   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| nested.col2   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| nfs           | TEXT              | YES  |      | NULL    |       |"
+expect -- "| ns            | BLOB              | YES  |      | NULL    |       |"
+expect -- "| o             | JSON              | NO   |      | NULL    |       |"
+expect -- "| p             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| pg            | TEXT              | NO   |      | NULL    |       |"
+expect -- "| r             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| s             | BLOB              | NO   |      | NULL    |       |"
+expect -- "| sagg          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| t             | JSON              | NO   |      | NULL    |       |"
+expect -- "| ui128         | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ui16          | SMALLINT UNSIGNED | NO   |      | NULL    |       |"
+expect -- "| ui256         | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ui32          | INTEGER UNSIGNED  | NO   |      | NULL    |       |"
+expect -- "| ui64          | BIGINT UNSIGNED   | NO   |      | NULL    |       |"
+expect -- "| ui8           | TINYINT UNSIGNED  | NO   |      | NULL    |       |"
+expect -- "| uuid          | CHAR              | NO   |      | NULL    |       |"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+
+send -- "SHOW COLUMNS FROM tab SETTINGS mysql_map_fixed_string_to_text_in_show_columns=0;\r"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+expect -- "| field         | type              | null | key  | default | extra |"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+expect -- "| a             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| agg           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| b             | TINYINT           | NO   |      | NULL    |       |"
+expect -- "| d             | DATE              | NO   |      | NULL    |       |"
+expect -- "| d32           | DATE              | NO   |      | NULL    |       |"
+expect -- "| dec128        | DECIMAL(38, 2)    | NO   |      | NULL    |       |"
+expect -- "| dec128_native | DECIMAL(35, 30)   | NO   |      | NULL    |       |"
+expect -- "| dec128_text   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec256        | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec256_native | DECIMAL(65, 2)    | NO   |      | NULL    |       |"
+expect -- "| dec256_text   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| dec32         | DECIMAL(9, 2)     | NO   |      | NULL    |       |"
+expect -- "| dec64         | DECIMAL(18, 2)    | NO   |      | NULL    |       |"
+expect -- "| dt            | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64          | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_3_tz1    | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_3_tz2    | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_6        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt64_9        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt_tz1        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| dt_tz2        | DATETIME          | NO   |      | NULL    |       |"
+expect -- "| enm           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| f32           | FLOAT             | NO   |      | NULL    |       |"
+expect -- "| f64           | DOUBLE            | NO   |      | NULL    |       |"
+expect -- "| fs            | BLOB              | NO   |      | NULL    |       |"
+expect -- "| i128          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| i16           | SMALLINT          | NO   |      | NULL    |       |"
+expect -- "| i256          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| i32           | INTEGER           | NO   |      | NULL    |       |"
+expect -- "| i64           | BIGINT            | NO   |      | NULL    |       |"
+expect -- "| i8            | TINYINT           | NO   |      | NULL    |       |"
+expect -- "| ip4           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ip6           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| lfs           | BLOB              | NO   |      | NULL    |       |"
+expect -- "| lnfs          | BLOB              | YES  |      | NULL    |       |"
+expect -- "| lns           | TEXT              | YES  |      | NULL    |       |"
+expect -- "| ls            | TEXT              | NO   |      | NULL    |       |"
+expect -- "| m             | JSON              | NO   |      | NULL    |       |"
+expect -- "| m_complex     | JSON              | NO   |      | NULL    |       |"
+expect -- "| mpg           | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ndt64         | DATETIME          | YES  |      | NULL    |       |"
+expect -- "| ndt64_tz      | DATETIME          | YES  |      | NULL    |       |"
+expect -- "| nested.col1   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| nested.col2   | TEXT              | NO   |      | NULL    |       |"
+expect -- "| nfs           | BLOB              | YES  |      | NULL    |       |"
+expect -- "| ns            | TEXT              | YES  |      | NULL    |       |"
+expect -- "| o             | JSON              | NO   |      | NULL    |       |"
+expect -- "| p             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| pg            | TEXT              | NO   |      | NULL    |       |"
+expect -- "| r             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| s             | TEXT              | NO   |      | NULL    |       |"
+expect -- "| sagg          | TEXT              | NO   |      | NULL    |       |"
+expect -- "| t             | JSON              | NO   |      | NULL    |       |"
+expect -- "| ui128         | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ui16          | SMALLINT UNSIGNED | NO   |      | NULL    |       |"
+expect -- "| ui256         | TEXT              | NO   |      | NULL    |       |"
+expect -- "| ui32          | INTEGER UNSIGNED  | NO   |      | NULL    |       |"
+expect -- "| ui64          | BIGINT UNSIGNED   | NO   |      | NULL    |       |"
+expect -- "| ui8           | TINYINT UNSIGNED  | NO   |      | NULL    |       |"
+expect -- "| uuid          | CHAR              | NO   |      | NULL    |       |"
+expect -- "+---------------+-------------------+------+------+---------+-------+"
+
+
+send -- "DROP TABLE tab;"
+
+send -- "quit;\r"
+expect eof

@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/TokenIterator.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
@@ -92,7 +92,6 @@ private:
     bool parseLiteralAndAssertType(
         ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * type, size_t column_idx, const Settings & settings);
 
-private:
     TemplateStructurePtr structure;
     MutableColumns columns;
 

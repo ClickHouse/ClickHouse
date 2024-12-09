@@ -151,36 +151,36 @@ struct Processor
     template <typename FirstArgVectorType, typename SecondArgType>
     void NO_INLINE
     vectorConstant(const FirstArgVectorType & vec_first, const SecondArgType second_value,
-                   PaddedPODArray<typename ResultType::FieldType> & vec_to, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale) const
+                   PaddedPODArray<typename ResultType::FieldType> & vec_to, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale,
+                   size_t input_rows_count) const
     {
-        size_t size = vec_first.size();
-        vec_to.resize(size);
+        vec_to.resize(input_rows_count);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
             vec_to[i] = transform.execute(vec_first[i], second_value, scale_a, scale_b, result_scale);
     }
 
     template <typename FirstArgVectorType, typename SecondArgVectorType>
     void NO_INLINE
     vectorVector(const FirstArgVectorType & vec_first, const SecondArgVectorType & vec_second,
-                 PaddedPODArray<typename ResultType::FieldType> & vec_to, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale) const
+                 PaddedPODArray<typename ResultType::FieldType> & vec_to, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale,
+                 size_t input_rows_count) const
     {
-        size_t size = vec_first.size();
-        vec_to.resize(size);
+        vec_to.resize(input_rows_count);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
             vec_to[i] = transform.execute(vec_first[i], vec_second[i], scale_a, scale_b, result_scale);
     }
 
     template <typename FirstArgType, typename SecondArgVectorType>
     void NO_INLINE
     constantVector(const FirstArgType & first_value, const SecondArgVectorType & vec_second,
-                   PaddedPODArray<typename ResultType::FieldType> & vec_to, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale) const
+                   PaddedPODArray<typename ResultType::FieldType> & vec_to, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale,
+                   size_t input_rows_count) const
     {
-        size_t size = vec_second.size();
-        vec_to.resize(size);
+        vec_to.resize(input_rows_count);
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
             vec_to[i] = transform.execute(first_value, vec_second[i], scale_a, scale_b, result_scale);
     }
 };
@@ -189,7 +189,7 @@ struct Processor
 template <typename FirstArgType, typename SecondArgType, typename ResultType, typename Transform>
 struct DecimalArithmeticsImpl
 {
-    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
     {
         using FirstArgValueType = typename FirstArgType::FieldType;
         using FirstArgColumnType = typename FirstArgType::ColumnType;
@@ -214,13 +214,13 @@ struct DecimalArithmeticsImpl
         if (first_col)
         {
             if (second_col_const)
-                op.vectorConstant(first_col->getData(), second_col_const->template getValue<SecondArgValueType>(), col_to->getData(), scale_a, scale_b, result_scale);
+                op.vectorConstant(first_col->getData(), second_col_const->template getValue<SecondArgValueType>(), col_to->getData(), scale_a, scale_b, result_scale, input_rows_count);
             else
-                op.vectorVector(first_col->getData(), second_col->getData(), col_to->getData(), scale_a, scale_b, result_scale);
+                op.vectorVector(first_col->getData(), second_col->getData(), col_to->getData(), scale_a, scale_b, result_scale, input_rows_count);
         }
         else if (first_col_const)
         {
-            op.constantVector(first_col_const->template getValue<FirstArgValueType>(), second_col->getData(), col_to->getData(), scale_a, scale_b, result_scale);
+            op.constantVector(first_col_const->template getValue<FirstArgValueType>(), second_col->getData(), col_to->getData(), scale_a, scale_b, result_scale, input_rows_count);
         }
         else
         {
@@ -280,7 +280,7 @@ public:
         /**
         At compile time, result is unknown. We only know the Scale (number of fractional digits) at runtime.
         Also nothing is known about size of whole part.
-        As in simple division/multiplication for decimals, we scale the result up, but is is explicit here and no downscale is performed.
+        As in simple division/multiplication for decimals, we scale the result up, but it is explicit here and no downscale is performed.
         It guarantees that result will have given scale and it can also be MANUALLY converted to other decimal types later.
         **/
         if (scale > DecimalUtils::max_precision<Decimal256>)
@@ -293,14 +293,14 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return resolveOverload(arguments, result_type);
+        return resolveOverload(arguments, result_type, input_rows_count);
     }
 
 private:
     // long resolver to call proper templated func
-    ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    ColumnPtr resolveOverload(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         WhichDataType which_dividend(arguments[0].type.get());
         WhichDataType which_divisor(arguments[1].type.get());
@@ -309,55 +309,64 @@ private:
         {
             using DividendType = DataTypeDecimal32;
             if (which_divisor.isDecimal32())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal64())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal128())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal256())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal64())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal128())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal256())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
         }
 
         else if (which_dividend.isDecimal64())
         {
             using DividendType = DataTypeDecimal64;
             if (which_divisor.isDecimal32())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal64())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal128())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal256())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal64())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal128())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal256())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
         }
 
         else if (which_dividend.isDecimal128())
         {
             using DividendType = DataTypeDecimal128;
             if (which_divisor.isDecimal32())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal64())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal128())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal256())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal64())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal128())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal256())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
         }
 
         else if (which_dividend.isDecimal256())
         {
             using DividendType = DataTypeDecimal256;
             if (which_divisor.isDecimal32())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal64())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal128())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-            else if (which_divisor.isDecimal256())
-                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type);
-
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal32, DataTypeDecimal256, Transform>::execute(Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal64())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal64, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal128())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal128, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
+            if (which_divisor.isDecimal256())
+                return DecimalArithmeticsImpl<DividendType, DataTypeDecimal256, DataTypeDecimal256, Transform>::execute(
+                    Transform{}, arguments, result_type, input_rows_count);
         }
 
         // the compiler is happy now
