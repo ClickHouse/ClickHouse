@@ -21,6 +21,7 @@ FROM system.query_log
 WHERE
     current_database = currentDatabase() AND
     event_date >= yesterday() AND
+    event_time >= now() - INTERVAL '5 MINUTES' AND -- time limit for tests not marked `long` is 3 minutes, 5 should be more than enough
     query LIKE '%special query for 01290_max_execution_speed_distributed%' AND
     query NOT LIKE '%system.query_log%' AND
     type = 2;
