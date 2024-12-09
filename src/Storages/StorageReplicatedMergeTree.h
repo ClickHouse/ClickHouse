@@ -162,7 +162,6 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
-    std::optional<UInt64> totalBytesWithInactive(const Settings & settings) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
