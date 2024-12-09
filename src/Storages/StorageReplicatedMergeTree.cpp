@@ -1859,9 +1859,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     /// detached all unexpected data parts after sanity check.
     for (auto & part_state : unexpected_data_parts)
-    {
-        part_state.part->renameToDetached("ignored");
-    }
+        part_state.part->renameToDetached("ignored", /* ignore_error= */ true);
     unexpected_data_parts.clear();
 
     return true;
@@ -5757,6 +5755,15 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytesUncompressed(const S
 {
     UInt64 res = 0;
     foreachActiveParts([&res](auto & part) { res += part->getBytesUncompressedOnDisk(); }, settings[Setting::select_sequential_consistency]);
+    return res;
+}
+
+std::optional<UInt64> StorageReplicatedMergeTree::totalBytesWithInactive(const Settings &) const
+{
+    UInt64 res = 0;
+    auto outdated_parts = getDataPartsStateRange(DataPartState::Outdated);
+    for (const auto & part : outdated_parts)
+        res += part->getBytesOnDisk();
     return res;
 }
 

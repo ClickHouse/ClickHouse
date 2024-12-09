@@ -689,7 +689,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
 static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr query)
 {
-    if (!hasDynamicSubcolumns(all_columns))
+    if (!hasDynamicSubcolumnsDeprecated(all_columns))
         return false;
 
     if (!query)
