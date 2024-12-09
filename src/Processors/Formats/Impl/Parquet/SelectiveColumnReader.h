@@ -3,15 +3,19 @@
 
 #include <iostream>
 #include <vector>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/Parquet/PageReader.h>
+#include <arrow/util/decimal.h>
 #include <arrow/util/rle_encoding.h>
 #include <parquet/column_page.h>
 #include <parquet/column_reader.h>
 #include <parquet/file_reader.h>
 #include <Common/PODArray.h>
+
 namespace parquet
 {
 class ColumnDescriptor;
@@ -79,7 +83,7 @@ struct ParquetData
     void checkSize(size_t size) const
     {
         if (size > buffer_size) [[unlikely]]
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION , "ParquetData: buffer size is not enough, {} > {}", size, buffer_size);
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "ParquetData: buffer size is not enough, {} > {}", size, buffer_size);
     }
 
     // before consume, should check size first
@@ -93,6 +97,22 @@ struct ParquetData
     {
         checkSize(size);
         consume(size);
+    }
+};
+
+struct PageOffsets
+{
+    size_t remain_rows = 0;
+    size_t levels_offset = 0;
+
+    void consume(size_t rows)
+    {
+        if (rows > remain_rows)
+        {
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "read too many rows: {} > {}", rows, remain_rows);
+        }
+        remain_rows -= rows;
+        levels_offset += rows;
     }
 };
 
@@ -110,24 +130,75 @@ struct ScanState
     std::unique_ptr<FilterCache> filter_cache;
 
     // current column chunk available rows
-    size_t remain_rows = 0;
+    PageOffsets offsets;
 };
 
 Int32 loadLength(const uint8_t * data);
+
+using ValueConverter = std::function<void(const uint8_t *, uint8_t *)>;
+
+template <typename Type>
+struct ValueConverterImpl
+{
+    static void convert(const uint8_t *, uint8_t *)
+    {
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported type: {}", typeid(Type).name());
+    }
+};
+
+template <>
+struct ValueConverterImpl<Decimal128>
+{
+    static void convert(const uint8_t * src, uint8_t * dst)
+    {
+        auto status = arrow::Decimal128::FromBigEndian(src, 16);
+        assert(status.ok());
+        status.ValueUnsafe().ToBytes(reinterpret_cast<uint8_t *>(dst));
+    }
+};
+
+template <>
+struct ValueConverterImpl<Decimal256>
+{
+    static void convert(const uint8_t * src, uint8_t * dst)
+    {
+        auto status = arrow::Decimal256::FromBigEndian(src, 32);
+        assert(status.ok());
+        status.ValueUnsafe().ToBytes(reinterpret_cast<uint8_t *>(dst));
+    }
+};
 
 
 class PlainDecoder
 {
 public:
-    PlainDecoder(ParquetData& data_, size_t & remain_rows_) : page_data(data_), remain_rows(remain_rows_) { }
+    PlainDecoder(ParquetData & data_, PageOffsets & offsets_) : page_data(data_), offsets(offsets_) { }
 
     template <typename T, typename S>
     void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read);
 
+    void decodeFixedString(ColumnFixedString::Chars & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t n);
+
+    template <typename T>
+    void
+    decodeFixedLengthData(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read, ValueConverter value_converter);
+
     void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read);
 
     template <typename T, typename S>
-    void decodeFixedValueSpace(PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
+    void
+    decodeFixedValueSpace(PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
+
+    void decodeFixedStringSpace(
+        ColumnFixedString::Chars & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read, size_t n);
+
+    template <typename T>
+    void decodeFixedLengthDataSpace(
+        PaddedPODArray<T> & data,
+        const OptionalRowSet & row_set,
+        PaddedPODArray<UInt8> & null_map,
+        size_t rows_to_read,
+        ValueConverter value_converter);
 
     void decodeStringSpace(
         ColumnString::Chars & chars,
@@ -136,13 +207,13 @@ public:
         PaddedPODArray<UInt8> & null_map,
         size_t rows_to_read);
 
-    size_t calculateStringTotalSize(const ParquetData& data, const OptionalRowSet & row_set, size_t rows_to_read);
+    size_t calculateStringTotalSize(const ParquetData & data, const OptionalRowSet & row_set, size_t rows_to_read);
 
-    size_t
-    calculateStringTotalSizeSpace(const ParquetData& data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
+    size_t calculateStringTotalSizeSpace(
+        const ParquetData & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
 
 private:
-    void addOneString(bool null, const ParquetData& data, size_t & offset, const OptionalRowSet & row_set, size_t row, size_t & total_size)
+    void addOneString(bool null, const ParquetData & data, size_t & offset, const OptionalRowSet & row_set, size_t row, size_t & total_size)
     {
         if (row_set.has_value())
         {
@@ -153,7 +224,7 @@ private:
                     total_size++;
                 return;
             }
-            data.checkSize(offset +4);
+            data.checkSize(offset + 4);
             auto len = loadLength(data.buffer + offset);
             offset += 4 + len;
             data.checkSize(offset);
@@ -167,7 +238,7 @@ private:
                 total_size++;
                 return;
             }
-            data.checkSize(offset +4);
+            data.checkSize(offset + 4);
             auto len = loadLength(data.buffer + offset);
             offset += 4 + len;
             data.checkSize(offset);
@@ -175,17 +246,25 @@ private:
         }
     }
 
-    ParquetData& page_data;
-    size_t & remain_rows;
+    ParquetData & page_data;
+    PageOffsets & offsets;
 };
 
 class DictDecoder
 {
 public:
-    DictDecoder(PaddedPODArray<Int32> & idx_buffer_, size_t & remain_rows_) : idx_buffer(idx_buffer_), remain_rows(remain_rows_) { }
+    DictDecoder(PaddedPODArray<Int32> & idx_buffer_, PageOffsets & offsets_) : idx_buffer(idx_buffer_), offsets(offsets_) { }
 
     template <class DictValueType>
-    void decodeFixedValue(PaddedPODArray<DictValueType> & dict, PaddedPODArray<DictValueType> & data, const OptionalRowSet & row_set, size_t rows_to_read);
+    void decodeFixedValue(
+        PaddedPODArray<DictValueType> & dict, PaddedPODArray<DictValueType> & data, const OptionalRowSet & row_set, size_t rows_to_read);
+
+    void
+    decodeFixedString(PaddedPODArray<String> & dict, ColumnFixedString::Chars & chars, const OptionalRowSet & row_set, size_t rows_to_read);
+
+    template <class DictValueType>
+    void decodeFixedLengthData(
+        PaddedPODArray<DictValueType> & dict, PaddedPODArray<DictValueType> & data, const OptionalRowSet & row_set, size_t rows_to_read);
 
     void decodeString(
         std::vector<String> & dict,
@@ -210,9 +289,24 @@ public:
         PaddedPODArray<UInt8> & null_map,
         size_t rows_to_read);
 
+    void decodeFixedStringSpace(
+        PaddedPODArray<String> & dict,
+        ColumnFixedString::Chars & chars,
+        const OptionalRowSet & row_set,
+        PaddedPODArray<UInt8> & null_map,
+        size_t rows_to_read);
+
+    template <class DictValueType>
+    void decodeFixedLengthDataSpace(
+        PaddedPODArray<DictValueType> & dict,
+        PaddedPODArray<DictValueType> & data,
+        const OptionalRowSet & row_set,
+        PaddedPODArray<UInt8> & null_map,
+        size_t rows_to_read);
+
 private:
     PaddedPODArray<Int32> & idx_buffer;
-    size_t & remain_rows;
+    PageOffsets & offsets;
 };
 
 
@@ -231,38 +325,56 @@ public:
         if (!page_reader)
             page_reader = page_reader_creator();
     }
+    /// calculate row mask on decompression buffer
     virtual void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) = 0;
-    virtual void computeRowSetSpace(OptionalRowSet &, PaddedPODArray<UInt8> &, size_t, size_t) { }
+    /// calculate row mask on decompression buffer with null bitmap
+    virtual void computeRowSetSpace(
+        OptionalRowSet & /* row_set */, PaddedPODArray<UInt8> & /* null_map */, size_t /* null_count */, size_t /* rows_to_read */)
+    {
+    }
+    /// read batch data
     virtual void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) = 0;
-    virtual void readSpace(MutableColumnPtr &, OptionalRowSet &, PaddedPODArray<UInt8> &, size_t, size_t) { }
+    /// read batch data with nullmap
+    virtual void readSpace(
+        MutableColumnPtr & /* column */,
+        OptionalRowSet & /* row_set */,
+        PaddedPODArray<UInt8> & /* null_map */,
+        size_t /* null_count */,
+        size_t /* rows_to_read */)
+    {
+    }
+    /// init page data
     virtual void readPageIfNeeded();
+    /// read next page
     void readAndDecodePage()
     {
         readPageIfNeeded();
         decodePage();
     }
-
+    /// create empty result column
     virtual MutableColumnPtr createColumn() = 0;
+    /// get all definition levels of current page
     const PaddedPODArray<Int16> & getDefinitionLevels()
     {
         readAndDecodePage();
         return state.def_levels;
     }
-
+    /// get all repetition levels of current page
     const PaddedPODArray<Int16> & getRepetitionLevels()
     {
         readAndDecodePage();
         return state.rep_levels;
     }
+    /// levels offset in current page
+    virtual size_t levelsOffset() const { return state.offsets.levels_offset; }
+    virtual size_t availableRows() const { return std::max(state.offsets.remain_rows - state.lazy_skip_rows, 0UL); }
 
-    virtual size_t currentRemainRows() const { return state.remain_rows; }
-    virtual size_t availableRows() const { return std::max(state.remain_rows - state.lazy_skip_rows, 0UL); }
-
+    /// skip n rows null value
     void skipNulls(size_t rows_to_skip);
-
+    /// skip n rows
     void skip(size_t rows);
 
-    // skip values in current page, return the number of rows need to lazy skip
+    /// skip values in current page, return the number of rows need to lazy skip
     virtual size_t skipValuesInCurrentPage(size_t rows_to_skip) = 0;
 
     virtual int16_t maxDefinitionLevel() const { return scan_spec.column_desc->max_definition_level(); }
@@ -274,6 +386,8 @@ protected:
     virtual void skipPageIfNeed();
     bool readPage();
     void readDataPageV1(const parquet::DataPageV1 & page);
+
+    // for dictionary reader
     virtual void readDictPage(const parquet::DictionaryPage &) { }
     virtual void initIndexDecoderIfNeeded() { }
     virtual void createDictDecoder() { }
@@ -285,7 +399,6 @@ protected:
     ScanSpec scan_spec;
     std::unique_ptr<PlainDecoder> plain_decoder;
     bool plain = true;
-
 };
 
 template <typename DataType, typename SerializedType>
@@ -298,8 +411,9 @@ public:
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
-    void readSpace(
-        MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
+    void
+    readSpace(MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+        override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
 private:
@@ -331,9 +445,7 @@ protected:
         idx_decoder = arrow::util::RleDecoder(state.data.buffer, static_cast<int>(state.data.buffer_size), bit_width);
     }
     void nextIdxBatchIfEmpty(size_t rows_to_read);
-
     void createDictDecoder() override;
-
     void downgradeToPlain() override;
 
 private:
@@ -342,6 +454,59 @@ private:
     std::unique_ptr<DictDecoder> dict_decoder;
     PaddedPODArray<typename DataType::FieldType> dict;
     PaddedPODArray<typename DataType::FieldType> batch_buffer;
+};
+
+template <typename DataType>
+class FixedLengthColumnDirectReader : public SelectiveColumnReader
+{
+public:
+    FixedLengthColumnDirectReader(PageReaderCreator page_reader_creator_, ScanSpec scan_spec_, DataTypePtr datatype_);
+    void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
+    void
+    readSpace(MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+        override;
+    MutableColumnPtr createColumn() override { return data_type->createColumn(); }
+    size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+
+private:
+    size_t element_size = 0;
+    DataTypePtr data_type;
+};
+
+template <typename DataType, typename DictValueType>
+class FixedLengthColumnDictionaryReader : public SelectiveColumnReader
+{
+public:
+    FixedLengthColumnDictionaryReader(PageReaderCreator page_reader_creator_, ScanSpec scan_spec_, DataTypePtr datatype_);
+    void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
+    void readSpace(MutableColumnPtr & ptr, OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t size) override;
+    MutableColumnPtr createColumn() override { return data_type->createColumn(); }
+    size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+
+protected:
+    void readDictPage(const parquet::DictionaryPage & page) override;
+    void initIndexDecoderIfNeeded() override
+    {
+        if (dict.empty())
+            return;
+        uint8_t bit_width = *state.data.buffer;
+        state.data.checkSize(1);
+        state.data.consume(1);
+        idx_decoder = arrow::util::RleDecoder(state.data.buffer, static_cast<int>(state.data.buffer_size), bit_width);
+    }
+    void nextIdxBatchIfEmpty(size_t rows_to_read);
+    void createDictDecoder() override;
+    void downgradeToPlain() override;
+
+
+private:
+    DataTypePtr data_type;
+    size_t element_size = 0;
+    arrow::util::RleDecoder idx_decoder;
+    std::unique_ptr<DictDecoder> dict_decoder;
+    PaddedPODArray<DictValueType> dict;
 };
 
 void computeRowSetPlainString(const uint8_t * start, OptionalRowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read);
@@ -360,11 +525,13 @@ public:
     }
 
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
-    void computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t /*null_count*/, size_t rows_to_read) override;
+    void
+    computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t /*null_count*/, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
 
-    void readSpace(
-        MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
+    void
+    readSpace(MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+        override;
 
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
@@ -387,7 +554,9 @@ public:
 
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
 
-    void readSpace(MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
+    void
+    readSpace(MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+        override;
 
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
@@ -399,7 +568,7 @@ protected:
     /// TODO move to DictDecoder
     void nextIdxBatchIfEmpty(size_t rows_to_read);
 
-    void createDictDecoder() override { dict_decoder = std::make_unique<DictDecoder>(state.idx_buffer, state.remain_rows); }
+    void createDictDecoder() override { dict_decoder = std::make_unique<DictDecoder>(state.idx_buffer, state.offsets); }
 
     void downgradeToPlain() override;
 
@@ -423,7 +592,6 @@ public:
 
     void readPageIfNeeded() override { child->readPageIfNeeded(); }
     MutableColumnPtr createColumn() override;
-    size_t currentRemainRows() const override;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
@@ -469,6 +637,7 @@ public:
     void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) override;
     MutableColumnPtr createColumn() override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+    size_t availableRows() const override;
 
 private:
     SelectiveColumnReaderPtr child;
@@ -493,6 +662,8 @@ public:
     void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) override;
     MutableColumnPtr createColumn() override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+    size_t availableRows() const override;
+
 private:
     SelectiveColumnReaderPtr key_reader;
     SelectiveColumnReaderPtr value_reader;
@@ -507,16 +678,12 @@ public:
         : SelectiveColumnReader(nullptr, ScanSpec{}), children(children_), structType(structType_)
     {
     }
-
     ~StructColumnReader() override = default;
-
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
-
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
-
     MutableColumnPtr createColumn() override;
-
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+    size_t availableRows() const override;
 
 private:
     std::unordered_map<String, SelectiveColumnReaderPtr> children;

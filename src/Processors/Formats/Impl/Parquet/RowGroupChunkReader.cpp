@@ -17,6 +17,42 @@ extern const Event ParquetOutputRows;
 
 namespace DB
 {
+RowGroupChunkReader::RowGroupChunkReader(
+    ParquetReader * parquetReader, size_t row_group_idx, RowGroupPrefetchPtr prefetch_conditions_, RowGroupPrefetchPtr prefetch_, std::unordered_map<String, ColumnFilterPtr> filters)
+    : parquet_reader(parquetReader)
+    , row_group_meta(parquetReader->meta_data->RowGroup(static_cast<int>(row_group_idx)))
+    , prefetch_conditions(std::move(prefetch_conditions_))
+    , prefetch(std::move(prefetch_))
+{
+    column_readers.reserve(parquet_reader->header.columns());
+    column_buffers.resize(parquet_reader->header.columns());
+    context.parquet_reader = parquetReader;
+    context.row_group_meta = row_group_meta;
+    context.prefetch = prefetch;
+    context.prefetch_conditions = prefetch_conditions;
+    context.filter_columns = filter_columns;
+    remain_rows = row_group_meta->num_rows();
+    builder = std::make_unique<ColumnReaderBuilder>(parquet_reader->header, context, parquet_reader->filters, parquet_reader->condition_columns);
+
+    for (const auto & col_with_name : parquet_reader->header)
+    {
+        if (!parquetReader->parquet_columns.contains(col_with_name.name))
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", col_with_name.name);
+
+        const auto & node = parquetReader->parquet_columns.at(col_with_name.name);
+        SelectiveColumnReaderPtr column_reader;
+        auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
+        column_reader = builder->buildReader(node, col_with_name.type, 0, 0);
+        column_readers.push_back(column_reader);
+        reader_columns_mapping[col_with_name.name] = column_reader;
+        if (filter)
+            filter_columns.push_back(col_with_name.name);
+    }
+    if (prefetch_conditions)
+        prefetch_conditions->startPrefetch();
+//    prefetch->startPrefetch();
+    selectConditions = std::make_unique<SelectConditions>(reader_columns_mapping, filter_columns, parquet_reader->expression_filters, parquet_reader->header);
+}
 
 Chunk RowGroupChunkReader::readChunk(size_t rows)
 {
@@ -30,7 +66,7 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         size_t rows_to_read = std::min(rows - rows_read, remain_rows);
         if (!rows_to_read)
             break;
-        for (const auto & column : parquet_reader->condition_columns)
+        for (const auto & column : filter_columns)
         {
             auto reader = reader_columns_mapping.at(column);
             if (!reader->availableRows())
@@ -81,10 +117,15 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                 }
                 else
                 {
+                    prefetch->startPrefetch();
                     auto & reader = reader_columns_mapping.at(name);
                     auto column = reader->createColumn();
                     column->reserve(select_result.valid_count);
                     reader->read(column, select_result.set, rows_to_read);
+                    if (select_result.valid_count != column->size())
+                    {
+                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column {}, expect {} rows, but got {}", name, select_result.valid_count, column->size());
+                    }
                     columns.emplace_back(std::move(column));
                 }
             }
@@ -211,44 +252,6 @@ ColumnChunkData RowGroupPrefetch::readRange(const arrow::io::ReadRange & range)
         throw Exception(
             ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Range was not requested for caching: offset={}, length={}", range.offset, range.length);
     }
-}
-
-
-RowGroupChunkReader::RowGroupChunkReader(
-    ParquetReader * parquetReader, size_t row_group_idx, RowGroupPrefetchPtr prefetch_conditions_, RowGroupPrefetchPtr prefetch_, std::unordered_map<String, ColumnFilterPtr> filters)
-    : parquet_reader(parquetReader)
-    , row_group_meta(parquetReader->meta_data->RowGroup(static_cast<int>(row_group_idx)))
-    , prefetch_conditions(std::move(prefetch_conditions_))
-    , prefetch(std::move(prefetch_))
-{
-    column_readers.reserve(parquet_reader->header.columns());
-    column_buffers.resize(parquet_reader->header.columns());
-    context.parquet_reader = parquetReader;
-    context.row_group_meta = row_group_meta;
-    context.prefetch = prefetch;
-    context.prefetch_conditions = prefetch_conditions;
-    context.filter_columns = filter_columns;
-    remain_rows = row_group_meta->num_rows();
-    builder = std::make_unique<ColumnReaderBuilder>(parquet_reader->header, context, parquet_reader->filters, parquet_reader->condition_columns);
-
-    for (const auto & col_with_name : parquet_reader->header)
-    {
-        if (!parquetReader->parquet_columns.contains(col_with_name.name))
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", col_with_name.name);
-
-        const auto & node = parquetReader->parquet_columns.at(col_with_name.name);
-        SelectiveColumnReaderPtr column_reader;
-        auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
-        column_reader = builder->buildReader(node, col_with_name.type, 0, 0);
-        column_readers.push_back(column_reader);
-        reader_columns_mapping[col_with_name.name] = column_reader;
-        if (filter)
-            filter_columns.push_back(col_with_name.name);
-    }
-    if (prefetch_conditions)
-        prefetch_conditions->startPrefetch();
-    prefetch->startPrefetch();
-    selectConditions = std::make_unique<SelectConditions>(reader_columns_mapping, filter_columns, parquet_reader->expression_filters, parquet_reader->header);
 }
 
 static IColumn::Filter mergeFilters(std::vector<IColumn::Filter> & filters)

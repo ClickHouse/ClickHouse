@@ -22,17 +22,30 @@ struct PhysicTypeTraits
     using simd_type = xsimd::batch<simd_internal_type>;
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<simd_internal_type>;
-    using idx_type = simd_internal_type;
+};
+template<> struct PhysicTypeTraits<Int8>
+{
+    using simd_internal_type = int8_t;
+    using simd_type = xsimd::batch<simd_internal_type>;
+    using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
+    using simd_idx_type = xsimd::batch<simd_internal_type>;
+};
+template<> struct PhysicTypeTraits<char8_t>
+{
+    using simd_internal_type = int8_t;
+    using simd_type = xsimd::batch<simd_internal_type>;
+    using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
+    using simd_idx_type = xsimd::batch<simd_internal_type>;
 };
 template struct PhysicTypeTraits<Int32>;
 template struct PhysicTypeTraits<Int64>;
+
 template<> struct PhysicTypeTraits<Float32>
 {
     using simd_internal_type = Float32;
     using simd_type = xsimd::batch<simd_internal_type>;
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<Int32>;
-    using idx_type = Int32;
 };
 template<> struct PhysicTypeTraits<Float64>
 {
@@ -40,7 +53,6 @@ template<> struct PhysicTypeTraits<Float64>
     using simd_type = xsimd::batch<simd_internal_type>;
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<Int64>;
-    using idx_type = Int64;
 };
 template<> struct PhysicTypeTraits<DateTime64>
 {
@@ -48,7 +60,6 @@ template<> struct PhysicTypeTraits<DateTime64>
     using simd_type = xsimd::batch<simd_internal_type>;
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<simd_internal_type>;
-    using idx_type = simd_internal_type;
 };
 
 template <typename T, typename S>
@@ -98,6 +109,11 @@ void FilterHelper::filterPlainFixedData(const S* src, PaddedPODArray<T> & dst, c
     }
 }
 
+template void FilterHelper::filterPlainFixedData<char8_t, char8_t>(char8_t const*, DB::PaddedPODArray<char8_t>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Int8, Int8>(Int8 const*, DB::PaddedPODArray<Int8>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<int8_t, int8_t>(int8_t const*, DB::PaddedPODArray<int8_t>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<UInt8, Int32>(Int32 const*, DB::PaddedPODArray<UInt8>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Int8, Int32>(Int32 const*, DB::PaddedPODArray<Int8>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int16, Int32>(Int32 const*, DB::PaddedPODArray<Int16>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int16, Int16>(Int16 const*, DB::PaddedPODArray<Int16>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<UInt16, Int32>(Int32 const*, DB::PaddedPODArray<UInt16>&, DB::RowSet const&, size_t);
@@ -106,6 +122,8 @@ template void FilterHelper::filterPlainFixedData<Int32, Int32>(Int32 const*, DB:
 template void FilterHelper::filterPlainFixedData<UInt32, UInt32>(UInt32 const*, DB::PaddedPODArray<UInt32>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<UInt32, Int32>(Int32 const*, DB::PaddedPODArray<UInt32>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<UInt32, Int64>(Int64 const*, DB::PaddedPODArray<UInt32>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<UInt64, Int64>(Int64 const*, DB::PaddedPODArray<UInt64>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<UInt64, UInt64>(UInt64 const*, DB::PaddedPODArray<UInt64>&, DB::RowSet const&, size_t);
 template void FilterHelper::filterPlainFixedData<Int64, Int64>(const Int64* src, PaddedPODArray<Int64> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<Float32, Float32>(const Float32* src, PaddedPODArray<Float32> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<Float64, Float64>(const Float64* src, PaddedPODArray<Float64> & dst, const RowSet & row_set, size_t rows_to_read);
