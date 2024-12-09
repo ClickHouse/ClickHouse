@@ -102,7 +102,7 @@ String highlightDigitGroups(String source)
     }
 
     return result;
-}fsfsf
+}
 
 String highlightTrailingWhitespace(String source)
 {
