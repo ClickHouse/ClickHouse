@@ -16,6 +16,8 @@ public:
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
     virtual const DataLakePartitionColumns & getPartitionColumns() const = 0;
     virtual const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const = 0;
+    virtual bool supportsPartitionPruning() { return false; }
+    virtual Strings makePartitionPruning(const ActionsDAG &) { return {}; }
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
     virtual bool supportsExternalMetadataChange() const { return false; }

@@ -1,33 +1,33 @@
-#include <mutex>
 #include "config.h"
 
 #if USE_AVRO
 
-#include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadHelpers.h>
-#include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/IColumn.h>
+#    include <Core/Settings.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypeDate.h>
+#    include <DataTypes/DataTypeDateTime64.h>
+#    include <DataTypes/DataTypeFactory.h>
+#    include <DataTypes/DataTypeFixedString.h>
+#    include <DataTypes/DataTypeMap.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypeTuple.h>
+#    include <DataTypes/DataTypeUUID.h>
+#    include <DataTypes/DataTypesDecimal.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <Formats/FormatFactory.h>
+#    include <IO/ReadBufferFromFileBase.h>
+#    include <IO/ReadBufferFromString.h>
+#    include <IO/ReadHelpers.h>
+#    include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#    include <Storages/ObjectStorage/DataLakes/Common.h>
+#    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#    include <Common/logger_useful.h>
+
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -80,20 +80,6 @@ IcebergMetadata::IcebergMetadata(
 namespace
 {
 
-enum class ManifestEntryStatus : uint8_t
-{
-    EXISTING = 0,
-    ADDED = 1,
-    DELETED = 2,
-};
-
-enum class DataFileContent : uint8_t
-{
-    DATA = 0,
-    POSITION_DELETES = 1,
-    EQUALITY_DELETES = 2,
-};
-
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
 {
     ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
@@ -128,6 +114,7 @@ bool operator!=(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
 {
     return !(first == second);
 }
+
 }
 
 
@@ -227,7 +214,6 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(const Poco::JSON::Object::Ptr &
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
-
 }
 
 
@@ -251,6 +237,7 @@ bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_typ
     }
     return allowed_type_conversion;
 }
+
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
     Poco::JSON::Object::Ptr schema;
@@ -509,7 +496,7 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
 
 MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & header, const FormatSettings & settings)
 {
-    auto deserializer = std::make_unique<AvroDeserializer>(header, file_reader.dataSchema(), true, true, settings);
+    auto deserializer = std::make_unique<DB::AvroDeserializer>(header, file_reader.dataSchema(), true, true, settings);
     MutableColumns columns = header.cloneEmptyColumns();
 
     file_reader.init();
@@ -535,9 +522,7 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
     if (metadata_files.empty())
     {
         throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST,
-            "The metadata file for Iceberg table with path {} doesn't exist",
-            configuration.getPath());
+            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration.getPath());
     }
 
     std::vector<std::pair<UInt32, String>> metadata_files_with_versions;
@@ -554,7 +539,8 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
             version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
 
         if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
         metadata_files_with_versions.emplace_back(std::stoi(version_str), path);
     }
 
@@ -583,8 +569,6 @@ DataLakeMetadataPtr IcebergMetadata::create(
     Poco::Dynamic::Var json = parser.parse(json_str);
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-    IcebergSchemaProcessor schema_processor;
-
     auto format_version = object->getValue<int>("format-version");
 
     auto snapshots = object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
@@ -603,11 +587,14 @@ DataLakeMetadataPtr IcebergMetadata::create(
         }
     }
 
-    auto ptr = std::make_unique<IcebergMetadata>(
-        object_storage, configuration_ptr, local_context, metadata_version, format_version, manifest_list_file, object);
-
-
-    return ptr;
+    return std::make_unique<IcebergMetadata>(
+        object_storage,
+        configuration_ptr,
+        local_context,
+        metadata_version,
+        format_version,
+        manifest_list_file,
+        object);
 }
 
 /**
@@ -644,7 +631,6 @@ Strings IcebergMetadata::getDataFiles() const
         return data_files;
 
     auto configuration_ptr = configuration.lock();
-    Strings manifest_files;
     if (manifest_list_file.empty())
         return data_files;
 
@@ -653,7 +639,8 @@ Strings IcebergMetadata::getDataFiles() const
     auto context = getContext();
     StorageObjectStorageSource::ObjectInfo object_info(manifest_list_file);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
-    auto manifest_list_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
+    auto manifest_list_file_reader
+        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
     auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
     Block header{{data_type->createColumn(), data_type, "manifest_path"}};
@@ -698,17 +685,13 @@ Strings IcebergMetadata::getDataFiles() const
         String schema_json_string = String(reinterpret_cast<char *>(schema_json.data()), schema_json.size());
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(schema_json_string);
-        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-        Int32 schema_object_id = schema_object->getValue<int>("schema-id");
         avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
         size_t leaves_num = root_node->leaves();
         size_t expected_min_num = format_version == 1 ? 3 : 2;
         if (leaves_num < expected_min_num)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected number of columns {}. Expected at least {}",
-                root_node->leaves(), expected_min_num);
+                ErrorCodes::BAD_ARGUMENTS, "Unexpected number of columns {}. Expected at least {}", root_node->leaves(), expected_min_num);
         }
 
         avro::NodePtr status_node = root_node->leafAt(0);
@@ -801,7 +784,8 @@ Strings IcebergMetadata::getDataFiles() const
             {
                 Int32 content_type = content_int_column->getElement(i);
                 if (DataFileContent(content_type) != DataFileContent::DATA)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
+                    throw Exception(
+                        ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
             }
 
             const auto status = status_int_column->getInt(i);
@@ -820,18 +804,32 @@ Strings IcebergMetadata::getDataFiles() const
             else
             {
                 LOG_TEST(log, "Processing data file for path: {}", file_path);
-                schema_id_by_data_file[file_path] = schema_object_id;
+                data_files.push_back(file_path);
             }
         }
-
-        schema_processor.addIcebergTableSchema(schema_object);
+        ColumnPtr big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));
+        if (big_partition_column->getDataType() != TypeIndex::Tuple)
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "The parsed column from Avro file of `file_path` field should be Tuple type, got {}",
+                columns.at(1)->getFamilyName());
+        }
+        const auto * big_partition_tuple = assert_cast<const ColumnTuple *>(big_partition_column.get());
+        std::vector<uint8_t> partition_spec_json_bytes = avro_metadata["partition-spec"];
+        String partition_spec_json_string
+            = String(reinterpret_cast<char *>(partition_spec_json_bytes.data()), partition_spec_json_bytes.size());
+        Poco::Dynamic::Var partition_spec_json = parser.parse(partition_spec_json_string);
+        const Poco::JSON::Array::Ptr & partition_spec = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
+        ColumnPtr status_column = std::move(columns.at(0));
+        common_partition_infos.push_back(
+            pruning_processor.getCommonPartitionInfo(partition_spec, big_partition_tuple, file_path_column, status_column, manifest_file));
+        specific_partition_infos.push_back(
+            pruning_processor.getSpecificPartitionInfo(common_partition_infos.back(), current_schema_id, name_and_type_by_source_id));
     }
 
-    for (const auto & [file_path, schema_object_id] : schema_id_by_data_file)
-    {
-        data_files.emplace_back(file_path);
-    }
-    return data_files;
+    return pruning_processor.getDataFiles(
+        common_partition_infos, specific_partition_infos, nullptr, getContext(), configuration_ptr->getPath());
 }
 
 }
