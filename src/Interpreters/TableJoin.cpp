@@ -34,6 +34,7 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <ranges>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -149,6 +150,54 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
 {
 }
 
+
+TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness, const Names & key_names_right)
+    : size_limits(limits)
+    , default_max_bytes(0)
+    , join_use_nulls(use_nulls)
+    , join_algorithm({JoinAlgorithm::DEFAULT})
+{
+    clauses.emplace_back().key_names_right = key_names_right;
+    table_join.kind = kind;
+    table_join.strictness = strictness;
+}
+
+
+JoinKind TableJoin::kind() const
+{
+    if (join_info)
+        return join_info->kind;
+    return table_join.kind;
+}
+
+void TableJoin::setKind(JoinKind kind)
+{
+    if (join_info)
+        join_info->kind = kind;
+    table_join.kind = kind;
+}
+
+JoinStrictness TableJoin::strictness() const
+{
+    if (join_info)
+        return join_info->strictness;
+    return table_join.strictness;
+}
+
+bool TableJoin::hasUsing() const
+{
+    if (join_info)
+        return join_info->expression.is_using;
+    return table_join.using_expression_list != nullptr;
+}
+
+bool TableJoin::hasOn() const
+{
+    if (join_info)
+        return !join_info->expression.is_using;
+    return table_join.on_expression != nullptr;
+}
+
 void TableJoin::resetKeys()
 {
     clauses.clear();
@@ -213,7 +262,6 @@ void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndT
     columns_from_left_table = std::move(left_output_columns);
     columns_from_joined_table = std::move(right_output_columns);
 }
-
 
 const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
 {
@@ -370,13 +418,36 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
     return forceNullableRight() && JoinCommon::canBecomeNullable(column_type);
 }
 
+void TableJoin::setUsedColumns(const Names & column_names)
+{
+    std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> left_columns_idx;
+    for (auto it = columns_from_left_table.begin(); it != columns_from_left_table.end(); ++it)
+        left_columns_idx[it->name] = it;
+
+    std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> right_columns_idx;
+    for (auto it = columns_from_joined_table.begin(); it != columns_from_joined_table.end(); ++it)
+        right_columns_idx[it->name] = it;
+
+    for (const auto & column_name : column_names)
+    {
+        if (auto lit = left_columns_idx.find(column_name); lit != left_columns_idx.end())
+            setUsedColumn(*lit->second, JoinTableSide::Left);
+        else if (auto rit = right_columns_idx.find(column_name); rit != right_columns_idx.end())
+            setUsedColumn(*rit->second, JoinTableSide::Right);
+        else
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
+                fmt::join(columns_from_left_table | std::views::transform([](const auto & col) { return col.name; }), ", "),
+                fmt::join(columns_from_joined_table | std::views::transform([](const auto & col) { return col.name; }), ", "));
+    }
+}
+
 void TableJoin::setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side)
 {
     if (side == JoinTableSide::Left)
         result_columns_from_left_table.push_back(joined_column);
     else
         columns_added_by_join.push_back(joined_column);
-
 }
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
@@ -1003,9 +1074,9 @@ bool TableJoin::allowParallelHashJoin() const
         return false;
     if (!right_storage_name.empty())
         return false;
-    if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
+    if (kind() != JoinKind::Left && kind() != JoinKind::Inner)
         return false;
-    if (table_join.strictness == JoinStrictness::Asof)
+    if (strictness() == JoinStrictness::Asof)
         return false;
     if (isSpecialStorage() || !oneDisjunct())
         return false;

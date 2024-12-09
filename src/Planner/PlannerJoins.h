@@ -6,8 +6,11 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/IJoin.h>
-
+#include <Interpreters/JoinInfo.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/JoinNode.h>
 
 namespace DB
 {
@@ -222,9 +225,23 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
   */
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
-    const QueryTreeNodePtr & right_table_expression,
+    const PreparedJoinStorage & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info);
+    ContextPtr query_context,
+    IQueryTreeNode::HashState hash_table_key_hash);
+
+using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
+TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);
+
+std::set<JoinTableSide> extractJoinTableSidesFromExpression(
+    const IQueryTreeNode * expression_root_node,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node);
+
+QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node);
+
+void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join);
+
 }

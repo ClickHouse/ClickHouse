@@ -126,11 +126,6 @@ String JoinClause::dump() const
     return buffer.str();
 }
 
-namespace
-{
-
-using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
-
 TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
 {
     TableExpressionSet res;
@@ -140,7 +135,7 @@ TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
     return res;
 }
 
-std::set<JoinTableSide> extractJoinTableSidesFromExpression(//const ActionsDAG::Node * expression_root_node,
+std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     const IQueryTreeNode * expression_root_node,
     const TableExpressionSet & left_table_expressions,
     const TableExpressionSet & right_table_expressions,
@@ -205,6 +200,9 @@ const ActionsDAG::Node * appendExpression(
 
     return join_expression_dag_node_raw_pointers[0];
 }
+
+namespace
+{
 
 void buildJoinClause(
     ActionsDAG & left_dag,
@@ -404,18 +402,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
     }
     ActionsDAG post_join_actions(result_relation_columns);
 
-    /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
-      * If we do not ignore it, this function will be replaced by underlying constant.
-      * For example ASOF JOIN does not support JOIN with constants, and we should process it like ordinary JOIN.
-      *
-      * Example: SELECT * FROM (SELECT 1 AS id, 1 AS value) AS t1 ASOF LEFT JOIN (SELECT 1 AS id, 1 AS value) AS t2
-      * ON (t1.id = t2.id) AND 1 != 1 AND (t1.value >= t1.value);
-      */
-    auto join_expression = join_node.getJoinExpression();
-    auto * constant_join_expression = join_expression->as<ConstantNode>();
-
-    if (constant_join_expression && constant_join_expression->hasSourceExpression())
-        join_expression = constant_join_expression->getSourceExpression();
+    auto join_expression = getJoinExpressionFromNode(join_node);
 
     auto * function_node = join_expression->as<FunctionNode>();
     if (!function_node)
@@ -682,9 +669,6 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     return tryExtractConstantFromConditionNode(join_node_typed.getJoinExpression());
 }
 
-namespace
-{
-
 void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join)
 {
     StoragePtr storage;
@@ -712,9 +696,8 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
 }
 
 std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
-    const QueryTreeNodePtr & right_table_expression,
-    const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context)
+    const PreparedJoinStorage & right_table_expression,
+    const Block & right_table_expression_header)
 {
     if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
         return {};
@@ -745,12 +728,10 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     const String & key_name = clauses[0].key_names_right[0];
 
-    auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
-
-    if (const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(key_name))
+    if (auto table_column_name_it = right_table_expression.column_mapping.find(key_name); table_column_name_it != right_table_expression.column_mapping.end())
     {
         const auto & storage_primary_key = storage->getPrimaryKey();
-        if (storage_primary_key.size() != 1 || storage_primary_key[0] != *table_column_name)
+        if (storage_primary_key.size() != 1 || storage_primary_key[0] != table_column_name_it->second)
             return {};
     }
     else
@@ -774,34 +755,51 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
     for (const auto & right_table_expression_column : right_table_expression_header)
     {
-        const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(right_table_expression_column.name);
-        if (!table_column_name)
+        auto table_column_name_it = right_table_expression.column_mapping.find(right_table_expression_column.name);
+        if (table_column_name_it == right_table_expression.column_mapping.end())
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
-        right_table_expression_column_with_storage_column_name.name = *table_column_name;
+        right_table_expression_column_with_storage_column_name.name = table_column_name_it->second;
         right_table_expression_header_with_storage_column_names.insert(right_table_expression_column_with_storage_column_name);
     }
 
     return std::make_shared<DirectKeyValueJoin>(table_join, right_table_expression_header, storage, right_table_expression_header_with_storage_column_names);
 }
+
+QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
+{
+    /** It is possible to have constant value in JOIN ON section, that we need to ignore during DAG construction.
+      * If we do not ignore it, this function will be replaced by underlying constant.
+      * For example ASOF JOIN does not support JOIN with constants, and we should process it like ordinary JOIN.
+      *
+      * Example: SELECT * FROM (SELECT 1 AS id, 1 AS value) AS t1 ASOF LEFT JOIN (SELECT 1 AS id, 1 AS value) AS t2
+      * ON (t1.id = t2.id) AND 1 != 1 AND (t1.value >= t1.value);
+      */
+    const auto & join_expression = join_node.getJoinExpression();
+    if (!join_expression)
+        return nullptr;
+    const auto * constant_join_expression = join_expression->as<ConstantNode>();
+    if (constant_join_expression && constant_join_expression->hasSourceExpression())
+        return constant_join_expression->getSourceExpression();
+    return join_expression;
 }
 
 static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
-    const QueryTreeNodePtr & right_table_expression,
+    const PreparedJoinStorage & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info)
+    ContextPtr query_context,
+    IQueryTreeNode::HashState hash_table_key_hash)
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
-        JoinPtr direct_join = tryDirectJoin(table_join, right_table_expression, right_table_expression_header, planner_context);
+        JoinPtr direct_join = tryDirectJoin(table_join, right_table_expression, right_table_expression_header);
         if (direct_join)
             return direct_join;
     }
@@ -819,12 +817,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        auto query_context = planner_context->getQueryContext();
         if (table_join->allowParallelHashJoin())
         {
             const auto & settings = query_context->getSettingsRef();
             StatsCollectingParams params{
-                calculateCacheKey(table_join, right_table_expression, select_query_info),
+                calculateCacheKey(table_join, hash_table_key_hash),
                 settings[Setting::collect_hash_table_stats_during_joins],
                 query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
                 settings[Setting::max_size_to_preallocate_for_joins]};
@@ -846,7 +843,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         if (GraceHashJoin::isSupported(table_join))
         {
-            auto query_context = planner_context->getQueryContext();
             return std::make_shared<GraceHashJoin>(
                 query_context,
                 table_join,
@@ -868,11 +864,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
-    const QueryTreeNodePtr & right_table_expression,
+    const PreparedJoinStorage & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info)
+    ContextPtr query_context,
+    IQueryTreeNode::HashState hash_table_key_hash)
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
@@ -882,26 +878,22 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             "JOIN with mixed conditions supports only hash join or grace hash join");
     }
 
-    trySetStorageInTableJoin(right_table_expression, table_join);
-
-    auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
-
-    /// JOIN with JOIN engine.
+    /// JOIN with Join engine.
     if (auto storage = table_join->getStorageJoin())
     {
         Names required_column_names;
         for (const auto & result_column : right_table_expression_header)
         {
-            const auto * source_column_name = right_table_expression_data.getColumnNameOrNull(result_column.name);
-            if (!source_column_name)
+            auto source_column_name_it = right_table_expression.column_mapping.find(result_column.name);
+            if (source_column_name_it == right_table_expression.column_mapping.end())
                 throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
                     "JOIN with 'Join' table engine should be performed by storage keys [{}], but column '{}' was found",
                     fmt::join(storage->getKeyNames(), ", "), result_column.name);
 
-            table_join->setRename(*source_column_name, result_column.name);
-            required_column_names.push_back(*source_column_name);
+            table_join->setRename(source_column_name_it->second, result_column.name);
+            required_column_names.push_back(source_column_name_it->second);
         }
-        return storage->getJoinLocked(table_join, planner_context->getQueryContext(), required_column_names);
+        return storage->getJoinLocked(table_join, query_context, required_column_names);
     }
 
     /** JOIN with constant.
@@ -934,8 +926,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             right_table_expression,
             left_table_expression_header,
             right_table_expression_header,
-            planner_context,
-            select_query_info);
+            query_context,
+            hash_table_key_hash);
         if (join)
             return join;
     }
