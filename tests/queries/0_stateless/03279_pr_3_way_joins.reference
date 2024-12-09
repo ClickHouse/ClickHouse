@@ -9,20 +9,6 @@ ORDER BY ALL
 SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
 SELECT 'First JOIN INNER second JOIN LEFT';
 First JOIN INNER second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -32,20 +18,6 @@ ORDER BY ALL
 SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
 SELECT 'First JOIN INNER second JOIN RIGHT';
 First JOIN INNER second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -56,22 +28,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
 SELECT 'First JOIN INNER second JOIN FULL';
 First JOIN INNER second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -82,22 +38,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
 SELECT 'First JOIN LEFT second JOIN INNER';
 First JOIN LEFT second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -107,20 +47,6 @@ ORDER BY ALL
 SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
 SELECT 'First JOIN LEFT second JOIN LEFT';
 First JOIN LEFT second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -131,22 +57,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-Join_1_Value_2	String		String		String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
 SELECT 'First JOIN LEFT second JOIN RIGHT';
 First JOIN LEFT second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -157,22 +67,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
 SELECT 'First JOIN LEFT second JOIN FULL';
 First JOIN LEFT second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -184,24 +78,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-Join_1_Value_2	String		String		String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
-1
 SELECT 'First JOIN RIGHT second JOIN INNER';
 First JOIN RIGHT second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -211,20 +87,6 @@ ORDER BY ALL
 SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
 SELECT 'First JOIN RIGHT second JOIN LEFT';
 First JOIN RIGHT second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -235,22 +97,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 3	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String	Join_2_Value_3	String		String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
 SELECT 'First JOIN RIGHT second JOIN RIGHT';
 First JOIN RIGHT second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -261,22 +107,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
 SELECT 'First JOIN RIGHT second JOIN FULL';
 First JOIN RIGHT second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -288,24 +118,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 3	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String		String	Join_3_Value_4	String
-	String	Join_2_Value_3	String		String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
-1
 SELECT 'First JOIN FULL second JOIN INNER';
 First JOIN FULL second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -316,20 +128,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64	Join_3_Value_0	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
 SELECT 'First JOIN FULL second JOIN LEFT';
 First JOIN FULL second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -341,24 +139,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String	Join_2_Value_3	String		String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-Join_1_Value_2	String		String		String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
-1
 SELECT 'First JOIN FULL second JOIN RIGHT';
 First JOIN FULL second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -370,22 +150,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
 SELECT 'First JOIN FULL second JOIN FULL';
 First JOIN FULL second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -398,26 +162,6 @@ SETTINGS parallel_replicas_local_plan=0;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=0;
-	String		String	Join_3_Value_4	String
-	String	Join_2_Value_3	String		String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-Join_1_Value_2	String		String		String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=0;
-1
-1
-1
-1
-1
 SELECT 'First JOIN INNER second JOIN INNER';
 First JOIN INNER second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -427,20 +171,6 @@ ORDER BY ALL
 SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
 SELECT 'First JOIN INNER second JOIN LEFT';
 First JOIN INNER second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -450,20 +180,6 @@ ORDER BY ALL
 SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
 SELECT 'First JOIN INNER second JOIN RIGHT';
 First JOIN INNER second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -474,22 +190,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
 SELECT 'First JOIN INNER second JOIN FULL';
 First JOIN INNER second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -500,22 +200,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
 SELECT 'First JOIN LEFT second JOIN INNER';
 First JOIN LEFT second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -525,20 +209,6 @@ ORDER BY ALL
 SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
 SELECT 'First JOIN LEFT second JOIN LEFT';
 First JOIN LEFT second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -549,22 +219,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-Join_1_Value_2	String		String		String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
 SELECT 'First JOIN LEFT second JOIN RIGHT';
 First JOIN LEFT second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -575,22 +229,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
 SELECT 'First JOIN LEFT second JOIN FULL';
 First JOIN LEFT second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -602,24 +240,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-Join_1_Value_2	String		String		String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
-1
 SELECT 'First JOIN RIGHT second JOIN INNER';
 First JOIN RIGHT second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -629,20 +249,6 @@ ORDER BY ALL
 SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
 SELECT 'First JOIN RIGHT second JOIN LEFT';
 First JOIN RIGHT second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -653,22 +259,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 3	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String	Join_2_Value_3	String		String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
 SELECT 'First JOIN RIGHT second JOIN RIGHT';
 First JOIN RIGHT second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -679,22 +269,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
 SELECT 'First JOIN RIGHT second JOIN FULL';
 First JOIN RIGHT second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -706,24 +280,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 3	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String		String	Join_3_Value_4	String
-	String	Join_2_Value_3	String		String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
-1
 SELECT 'First JOIN FULL second JOIN INNER';
 First JOIN FULL second JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -734,20 +290,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64	Join_3_Value_0	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
 SELECT 'First JOIN FULL second JOIN LEFT';
 First JOIN FULL second JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -759,24 +301,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String	Join_2_Value_3	String		String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-Join_1_Value_2	String		String		String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
-1
 SELECT 'First JOIN FULL second JOIN RIGHT';
 First JOIN FULL second JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -788,22 +312,6 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String		String	Join_3_Value_4	String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
 SELECT 'First JOIN FULL second JOIN FULL';
 First JOIN FULL second JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
@@ -816,23 +324,3 @@ SETTINGS parallel_replicas_local_plan=1;
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
-SELECT '--';
---
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan=1;
-	String		String	Join_3_Value_4	String
-	String	Join_2_Value_3	String		String
-Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
-Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
-Join_1_Value_2	String		String		String
-SELECT '--';
---
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
-SETTINGS parallel_replicas_local_plan=1;
-1
-1
-1
-1
-1

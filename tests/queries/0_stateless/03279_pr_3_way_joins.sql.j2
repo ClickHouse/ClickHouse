@@ -1,6 +1,5 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-SET parallel_replicas_mark_segment_size=1;
 
 DROP TABLE IF EXISTS test_table_join_1 SYNC;
 CREATE TABLE test_table_join_1
@@ -47,18 +46,6 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id)
 ORDER BY ALL
-SETTINGS parallel_replicas_local_plan={{ parallel_replicas_local_plan }};
-
-SELECT '--';
-
-SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
-FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id)
-ORDER BY ALL
-SETTINGS parallel_replicas_local_plan={{ parallel_replicas_local_plan }};
-
-SELECT '--';
-
-SELECT 1 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id)
 SETTINGS parallel_replicas_local_plan={{ parallel_replicas_local_plan }};
 
 {% endfor %}
