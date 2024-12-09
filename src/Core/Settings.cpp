@@ -5563,6 +5563,9 @@ Only available in ClickHouse Cloud. If a merged part is less than this many seco
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
+    DECLARE(Bool, use_iceberg_partition_pruning, false, R"(
+Use Iceberg partition pruning for Iceberg tables
+)", 0) \
     DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
 Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
 Please use functions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, and `dateTime64ToSnowflakeID` instead.

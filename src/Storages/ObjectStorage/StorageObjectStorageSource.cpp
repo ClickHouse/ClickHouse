@@ -46,6 +46,7 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
+    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -96,7 +97,7 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 void StorageObjectStorageSource::setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_)
 {
     setKeyConditionImpl(filter_actions_dag, context_, read_from_format_info.format_header);
-    if (filter_actions_dag.has_value())
+    if (filter_actions_dag.has_value() && context_->getSettingsRef()[Setting::use_iceberg_partition_pruning])
     {
         configuration->implementPartitionPruning(filter_actions_dag.value());
     }

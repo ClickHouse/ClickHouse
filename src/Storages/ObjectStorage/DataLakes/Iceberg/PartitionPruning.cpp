@@ -38,6 +38,12 @@
 #    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #    include <DataFile.hh>
 
+#    include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+extern const Event IcebergPartitionPrunnedFiles;
+}
 
 namespace DB
 {
@@ -192,6 +198,7 @@ Strings PartitionPruningProcessor::getDataFiles(
         {
             if (!filter_dag || pruning_mask.empty() || pruning_mask[i])
             {
+                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
                 const auto status = manifest_partition_info.status_column->getInt(i);
                 const auto data_path = std::string(manifest_partition_info.file_path_column->getDataAt(i).toView());
                 const auto pos = data_path.find(common_path);
