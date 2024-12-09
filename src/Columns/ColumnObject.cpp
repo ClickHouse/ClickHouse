@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -1224,14 +1225,14 @@ bool ColumnObject::structureEquals(const IColumn & rhs) const
     return true;
 }
 
-ColumnPtr ColumnObject::compress(bool force_compression) const
+ColumnPtr ColumnObject::compress() const
 {
     std::unordered_map<String, ColumnPtr> compressed_typed_paths;
     compressed_typed_paths.reserve(typed_paths.size());
     size_t byte_size = 0;
     for (const auto & [path, column] : typed_paths)
     {
-        auto compressed_column = column->compress(force_compression);
+        auto compressed_column = column->compress();
         byte_size += compressed_column->byteSize();
         compressed_typed_paths[path] = std::move(compressed_column);
     }
@@ -1240,12 +1241,12 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
     compressed_dynamic_paths.reserve(dynamic_paths_ptrs.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
     {
-        auto compressed_column = column->compress(force_compression);
+        auto compressed_column = column->compress();
         byte_size += compressed_column->byteSize();
         compressed_dynamic_paths[path] = std::move(compressed_column);
     }
 
-    auto compressed_shared_data = shared_data->compress(force_compression);
+    auto compressed_shared_data = shared_data->compress();
     byte_size += compressed_shared_data->byteSize();
 
     auto decompress =

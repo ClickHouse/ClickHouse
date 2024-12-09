@@ -3,6 +3,8 @@
 #include <Parsers/IAST.h>
 #include <base/types.h>
 
+class SipHash;
+
 namespace DB
 {
 

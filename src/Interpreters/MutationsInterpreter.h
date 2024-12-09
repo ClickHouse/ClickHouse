@@ -172,7 +172,12 @@ private:
     Source source;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
+
+    /// List of columns in table or in data part that can be updated by mutation.
+    /// If mutation affects all columns (e.g. DELETE), all of this columns
+    /// must be returned by pipeline created in MutationsInterpreter.
     Names available_columns;
+
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
