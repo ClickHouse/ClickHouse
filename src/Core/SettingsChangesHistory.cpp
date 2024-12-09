@@ -98,7 +98,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
             {"s3_skip_empty_files", false, true, "We hope it will provide better UX"},
             {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
-            {"push_external_roles_in_interserver_queries", false, false, "New setting."},
+            {"push_external_roles_in_interserver_queries", false, true, "New setting."},
             {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
             {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
             {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},

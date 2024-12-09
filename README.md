@@ -43,7 +43,6 @@ Keep an eye out for upcoming meetups and events around the world. Somewhere else
 
 Upcoming meetups
 
-* [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/303638814) - December 3
 * [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/304382411) - December 9
 * [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/304268174) - December 9
 * [Kuala Lampur Meetup](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/304576472/) - December 11
@@ -52,6 +51,7 @@ Upcoming meetups
 
 Recently completed meetups
 
+* [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/303638814) - December 3
 * [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/303096434) - November 26
 * [Ghent Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/303049405/) - November 19
 * [Barcelona Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096876/) - November 12
