@@ -225,7 +225,7 @@ if (TARGET ch_contrib::nuraft)
     clickhouse_program_install(clickhouse-keeper-data-dumper keeper-data-dumper)
 endif ()
 
-if (TARGET ch_contrib::rapidjson)
+if (TARGET ch_contrib::rapidjson AND TARGET ch_contrib::nuraft)
     clickhouse_program_install(clickhouse-keeper-bench keeper-bench)
 endif ()
 

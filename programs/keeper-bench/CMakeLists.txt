@@ -1,5 +1,5 @@
-if (NOT TARGET ch_contrib::rapidjson)
-    message (WARNING "Not building keeper-bench due to rapidjson is disabled")
+if (NOT TARGET ch_contrib::rapidjson OR NOT TARGET ch_contrib::nuraft)
+    message (WARNING "Not building keeper-bench due to rapidjson or nuraft is disabled")
     return()
 endif ()
 
