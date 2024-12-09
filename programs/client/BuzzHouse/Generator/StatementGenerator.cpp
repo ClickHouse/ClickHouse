@@ -59,7 +59,9 @@ int StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateD
     SQLDatabase next;
     const uint32_t dname = this->database_counter++;
     DatabaseEngine * deng = cd->mutable_dengine();
-    DatabaseEngineValues val = rg.nextBool() ? DatabaseEngineValues::DAtomic : DatabaseEngineValues::DReplicated;
+    std::uniform_int_distribution<uint32_t> dengines(
+        1, static_cast<uint32_t>(supports_cloud_features ? DatabaseEngineValues::DShared : DatabaseEngineValues::DReplicated));
+    DatabaseEngineValues val = static_cast<DatabaseEngineValues>(dengines(rg.generator));
 
     next.deng = val;
     deng->set_engine(val);

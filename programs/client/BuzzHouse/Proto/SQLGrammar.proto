@@ -2570,8 +2570,11 @@ message Select {
 
 enum DatabaseEngineValues {
     DAtomic = 1;
-    DLazy = 2;
-    DReplicated = 3;
+    DOrdinary = 2;
+    DMemory = 3;
+    DReplicated = 4;
+    DShared = 5;
+    DLazy = 6;
 }
 
 message DatabaseEngine {
