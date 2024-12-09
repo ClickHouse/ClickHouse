@@ -2473,6 +2473,7 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
     ProjectionNames frame_begin_offset_projection_names;
     ProjectionNames frame_end_offset_projection_names;
+    ProjectionNames frame_session_window_threshold_projection_names;
 
     if (window_node.hasFrameBeginOffset())
     {
