@@ -378,7 +378,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
 void PipelineExecutor::spawnThreads()
 {
-    if (!spawn_lock.try_lock())
+    std::unique_lock lock(spawn_lock, std::try_to_lock);
+    if (!lock.owns_lock())
     {
         /// Someone is already spawning threads, skip.
         return;
@@ -417,8 +418,6 @@ void PipelineExecutor::spawnThreads()
             }
         });
     }
-
-    spawn_lock.unlock();
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
