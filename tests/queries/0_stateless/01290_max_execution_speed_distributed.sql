@@ -1,15 +1,12 @@
 -- Tags: distributed
 
-SET max_execution_speed = 1000000;
-SET timeout_before_checking_execution_speed = 0;
-SET max_block_size = 100;
-
 SET log_queries=1;
 
 CREATE TEMPORARY TABLE times (t DateTime);
 
 INSERT INTO times SELECT now();
-SELECT count('special query for 01290_max_execution_speed_distributed') FROM remote('127.0.0.{2,3}', numbers(1000000));
+SELECT count('special query for 01290_max_execution_speed_distributed') FROM remote('127.0.0.{2,3}', numbers(1000000))
+SETTINGS max_execution_speed = 1000000, timeout_before_checking_execution_speed = 0, max_block_size = 100;
 INSERT INTO times SELECT now();
 
 SELECT max(t) - min(t) >= 1 FROM times;
