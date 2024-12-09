@@ -34,7 +34,6 @@ public:
         size_t max_total_size_to_merge) const override;
 
 private:
-    bool canIncludeToRange(Iterator part_it, time_t part_ttl, size_t usable_memory) const;
     Iterator findLeftRangeBorder(Iterator left, Iterator begin, size_t & usable_memory) const;
     Iterator findRightRangeBorder(Iterator right, Iterator end, size_t & usable_memory) const;
 
@@ -51,7 +50,7 @@ private:
     time_t getTTLForPart(const PartProperties & part) const override;
 
     /// Actually does not check anything. Allows to use any part.
-    bool canConsiderPart(const PartProperties &) const override;
+    bool canConsiderPart(const PartProperties & part) const override;
 };
 
 /// Select parts that has some expired ttls.
@@ -65,7 +64,7 @@ private:
 
     /// Checks that part has at least one unfinished ttl. Because if all ttls
     /// are finished for part - it will be considered by TTLPartDeleteMergeSelector.
-    bool canConsiderPart(const PartProperties &) const override;
+    bool canConsiderPart(const PartProperties & part) const override;
 };
 
 /// Select parts to merge using information about recompression TTL and compression codec of existing parts.

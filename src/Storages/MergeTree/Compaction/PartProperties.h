@@ -1,19 +1,16 @@
 #pragma once
 
-#include <ctime>
-#include <cstddef>
-#include <string>
-#include <vector>
+#include <optional>
 
-#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 
 namespace DB
 {
 
 struct PartProperties
 {
-    const std::string name;
-    const std::string partition_id;
+    const MergeTreePartInfo part_info;
+    const std::string part_compression_codec;
     const bool shall_participate_in_merges = true;
 
     /// Size of data part in bytes.
@@ -25,12 +22,21 @@ struct PartProperties
     /// Depth of tree of merges by which this part was created. New parts has zero level.
     const uint32_t level = 0;
 
-    /// Information about different TTLs for part. Can be used by
-    /// TTLSelector to assign merges with TTL.
-    const MergeTreeDataPartTTLInfos * ttl_infos = nullptr;
+    /// Information about different TTLs for part. Used by Part/Row Delete Merge Selectors.
+    struct GeneralTTLInfo
+    {
+        const bool has_any_non_finished_ttls = false;
+        const time_t part_min_ttl = 0;
+        const time_t part_max_ttl = 0;
+    };
+    const std::optional<GeneralTTLInfo> general_ttl_info;
 
-    /// Part compression codec definition.
-    ASTPtr compression_codec_desc;
+    struct RecompressTTLInfo
+    {
+        const time_t next_max_recompress_border = 0;
+        const std::optional<std::string> next_recompression_codec;
+    };
+    const std::optional<RecompressTTLInfo> recompression_ttl_info;
 };
 
 /// Parts are belong to partitions. Only parts within same partition could be merged.
