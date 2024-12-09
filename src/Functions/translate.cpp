@@ -1,11 +1,15 @@
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/UTF8Helpers.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/iota.h>
+
 #include <numeric>
 
 
@@ -28,17 +32,31 @@ struct TranslateImpl
         const std::string & map_from,
         const std::string & map_to)
     {
-        if (map_from.size() != map_to.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
+        iota(map.data(), map.size(), UInt8(0));
 
-        std::iota(map.begin(), map.end(), 0);
+        size_t min_size = std::min(map_from.size(), map_to.size());
 
-        for (size_t i = 0; i < map_from.size(); ++i)
+        // Map characters from map_from to map_to for the overlapping range
+        for (size_t i = 0; i < min_size; ++i)
         {
             if (!isASCII(map_from[i]) || !isASCII(map_to[i]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be ASCII strings");
+            map[static_cast<unsigned char>(map_from[i])] = static_cast<UInt8>(map_to[i]);
+        }
 
-            map[map_from[i]] = map_to[i];
+        // Handle any remaining characters in map_from by assigning a default value
+        for (size_t i = min_size; i < map_from.size(); ++i)
+        {
+            if (!isASCII(map_from[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be ASCII strings");
+            map[static_cast<unsigned char>(map_from[i])] = ascii_upper_bound + 1;
+        }
+
+        // Validate any extra characters in map_to to ensure they are ASCII
+        for (size_t i = min_size; i < map_to.size(); ++i)
+        {
+            if (!isASCII(map_to[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be ASCII strings");
         }
     }
 
@@ -48,35 +66,43 @@ struct TranslateImpl
         const std::string & map_from,
         const std::string & map_to,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         Map map;
         fillMapWithValues(map, map_from, map_to);
 
         res_data.resize(data.size());
-        res_offsets.assign(offsets);
+        res_offsets.resize(input_rows_count);
 
         UInt8 * dst = res_data.data();
 
-        for (UInt64 i = 0; i < offsets.size(); ++i)
+        UInt64 data_size = 0;
+        for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
             const UInt8 * src_end = data.data() + offsets[i] - 1;
 
             while (src < src_end)
             {
-                if (*src <= ascii_upper_bound)
-                    *dst = map[*src];
-                else
-                    *dst = *src;
+                if (*src <= ascii_upper_bound && map[*src] != ascii_upper_bound + 1)
+                {
+                    *dst++ = map[*src];
+                    ++data_size;
+                }
+                else if (*src > ascii_upper_bound)
+                {
+                    *dst++ = *src;
+                    ++data_size;
+                }
 
                 ++src;
-                ++dst;
             }
 
             /// Technically '\0' can be mapped into other character,
             ///  so we need to process '\0' delimiter separately
             *dst++ = 0;
+            res_offsets[i] = ++data_size;
         }
     }
 
@@ -87,6 +113,9 @@ struct TranslateImpl
         const std::string & map_to,
         ColumnString::Chars & res_data)
     {
+        if (map_from.size() != map_to.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
+
         std::array<UInt8, 128> map;
         fillMapWithValues(map, map_from, map_to);
 
@@ -123,45 +152,51 @@ struct TranslateUTF8Impl
         const std::string & map_from,
         const std::string & map_to)
     {
-        auto map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
-        auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
-
-        if (map_from_size != map_to_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
-
-        std::iota(map_ascii.begin(), map_ascii.end(), 0);
+        iota(map_ascii.data(), map_ascii.size(), UInt32(0));
 
         const UInt8 * map_from_ptr = reinterpret_cast<const UInt8 *>(map_from.data());
         const UInt8 * map_from_end = map_from_ptr + map_from.size();
         const UInt8 * map_to_ptr = reinterpret_cast<const UInt8 *>(map_to.data());
         const UInt8 * map_to_end = map_to_ptr + map_to.size();
 
-        while (map_from_ptr < map_from_end && map_to_ptr < map_to_end)
+        while (map_from_ptr < map_from_end)
         {
             size_t len_from = UTF8::seqLength(*map_from_ptr);
-            size_t len_to = UTF8::seqLength(*map_to_ptr);
 
             std::optional<UInt32> res_from, res_to;
 
             if (map_from_ptr + len_from <= map_from_end)
                 res_from = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_from);
 
-            if (map_to_ptr + len_to <= map_to_end)
-                res_to = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_to);
-
             if (!res_from)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be a valid UTF-8 string");
 
-            if (!res_to)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be a valid UTF-8 string");
+            if (map_to_ptr < map_to_end)
+            {
+                size_t len_to = UTF8::seqLength(*map_to_ptr);
 
-            if (*map_from_ptr <= ascii_upper_bound)
-                map_ascii[*map_from_ptr] = *res_to;
+                if (map_to_ptr + len_to <= map_to_end)
+                    res_to = UTF8::convertUTF8ToCodePoint(map_to_ptr, len_to);
+
+                if (!res_to)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be a valid UTF-8 string");
+
+                if (*map_from_ptr <= ascii_upper_bound)
+                    map_ascii[*map_from_ptr] = *res_to;
+                else
+                    map[*res_from] = *res_to;
+
+                map_to_ptr += len_to;
+            }
             else
-                map[*res_from] = *res_to;
+            {
+                if (*map_from_ptr <= ascii_upper_bound)
+                    map_ascii[*map_from_ptr] = max_uint32;
+                else
+                    map[*res_from] = max_uint32;
+            }
 
             map_from_ptr += len_from;
-            map_to_ptr += len_to;
         }
     }
 
@@ -171,19 +206,20 @@ struct TranslateUTF8Impl
         const std::string & map_from,
         const std::string & map_to,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         MapASCII map_ascii;
         MapUTF8 map;
         fillMapWithValues(map_ascii, map, map_from, map_to);
 
         res_data.resize(data.size());
-        res_offsets.resize(offsets.size());
+        res_offsets.resize(input_rows_count);
 
         UInt8 * dst = res_data.data();
         UInt64 data_size = 0;
 
-        for (UInt64 i = 0; i < offsets.size(); ++i)
+        for (UInt64 i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * src = data.data() + offsets[i - 1];
             const UInt8 * src_end = data.data() + offsets[i] - 1;
@@ -199,6 +235,12 @@ struct TranslateUTF8Impl
 
                 if (*src <= ascii_upper_bound)
                 {
+                    if (map_ascii[*src] == max_uint32)
+                    {
+                        src += 1;
+                        continue;
+                    }
+
                     size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], dst, 4);
                     assert(0 < dst_len && dst_len <= 4);
 
@@ -220,10 +262,13 @@ struct TranslateUTF8Impl
                         auto * it = map.find(*src_code_point);
                         if (it != map.end())
                         {
+                            src += src_len;
+                            if (it->getMapped() == max_uint32)
+                                continue;
+
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), dst, 4);
                             assert(0 < dst_len && dst_len <= 4);
 
-                            src += src_len;
                             dst += dst_len;
                             data_size += dst_len;
                             continue;
@@ -264,6 +309,7 @@ struct TranslateUTF8Impl
 
 private:
     static constexpr auto ascii_upper_bound = '\x7f';
+    static constexpr auto max_uint32 = 0xffffffff;
 };
 
 
@@ -297,10 +343,15 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}",
                 arguments[2]->getName(), getName());
 
-        return std::make_shared<DataTypeString>();
+        if (isString(arguments[0]))
+            return std::make_shared<DataTypeString>();
+
+        const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+        chassert(ptr);
+        return std::make_shared<DataTypeFixedString>(ptr->getN());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column_src = arguments[0].column;
         const ColumnPtr column_map_from = arguments[1].column;
@@ -319,18 +370,17 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector(col->getChars(), col->getOffsets(), map_from, map_to, col_res->getChars(), col_res->getOffsets());
+            Impl::vector(col->getChars(), col->getOffsets(), map_from, map_to, col_res->getChars(), col_res->getOffsets(), input_rows_count);
             return col_res;
         }
-        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
+        if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
             Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), map_from, map_to, col_res->getChars());
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

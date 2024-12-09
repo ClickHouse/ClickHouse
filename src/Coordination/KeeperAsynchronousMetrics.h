@@ -13,12 +13,17 @@ class KeeperAsynchronousMetrics : public AsynchronousMetrics
 {
 public:
     KeeperAsynchronousMetrics(
-        ContextPtr context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        ContextPtr context_,
+        unsigned update_period_seconds,
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
+        bool update_jemalloc_epoch_,
+        bool update_rss_);
 
+    ~KeeperAsynchronousMetrics() override;
 private:
     ContextPtr context;
 
-    void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) override;
+    void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) override;
 };
 
 

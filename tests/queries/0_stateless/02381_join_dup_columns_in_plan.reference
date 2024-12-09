@@ -1,52 +1,283 @@
+-- { echoOn }
+
+SET join_algorithm = 'hash';
+EXPLAIN actions=0, description=0, header=1
+SELECT * FROM ( SELECT 'key2' AS key ) AS s1
+JOIN ( SELECT 'key1' AS key, '1' AS value UNION ALL SELECT 'key2' AS key, '1' AS value ) AS s2
+USING (key);
 Expression
 Header: key String
         value String
   Join
-  Header: key_0 String
-          value_1 String
+  Header: __table1.key String
+          __table3.value String
     Expression
-    Header: key_0 String
+    Header: __table1.key String
       ReadFromStorage
       Header: dummy UInt8
     Union
-    Header: key_2 String
-            value_1 String
+    Header: __table3.key String
+            __table3.value String
       Expression
-      Header: key_2 String
-              value_1 String
+      Header: __table3.key String
+              __table3.value String
         ReadFromStorage
         Header: dummy UInt8
       Expression
-      Header: key_2 String
-              value_1 String
+      Header: __table3.key String
+              __table3.value String
         ReadFromStorage
         Header: dummy UInt8
+SELECT * FROM ( SELECT 1 AS k ) as t1 FULL JOIN ( SELECT 1 AS k, k ) as t2 ON t1.k = t2.k ORDER BY 1;
+1	1	1
+SELECT * FROM ( SELECT 1 AS k, 1 as n ) as t1 FULL JOIN ( SELECT 1 AS k, k, 1 as n ) as t2 ON t1.n = t2.n ORDER BY 1;
+1	1	1	1	1
+SELECT *
+FROM ( SELECT number, number, number, number, number FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, FROM numbers(3, 8) ) as t2
+ON t1.number = t2.number
+ORDER BY t1.number, t2.number
+;
+0	0	0	0	0	0	0	0
+0	0	0	0	0	5	5	5
+0	0	0	0	0	6	6	6
+0	0	0	0	0	7	7	7
+0	0	0	0	0	8	8	8
+0	0	0	0	0	9	9	9
+0	0	0	0	0	10	10	10
+1	1	1	1	1	0	0	0
+2	2	2	2	2	0	0	0
+3	3	3	3	3	3	3	3
+4	4	4	4	4	4	4	4
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+ON t1.number = t2.number
+ORDER BY t1.number, t2.number
+;
+0	0	0	0	0	1	1	1	0	0	0	0	0	0	0	0
+0	0	0	0	0	0	0	0	5	5	5	6	6	6	6	6
+0	0	0	0	0	0	0	0	6	6	6	7	7	7	7	7
+0	0	0	0	0	0	0	0	7	7	7	8	8	8	8	8
+0	0	0	0	0	0	0	0	8	8	8	9	9	9	9	9
+0	0	0	0	0	0	0	0	9	9	9	10	10	10	10	10
+0	0	0	0	0	0	0	0	10	10	10	11	11	11	11	11
+1	1	1	1	1	2	2	2	0	0	0	0	0	0	0	0
+2	2	2	2	2	3	3	3	0	0	0	0	0	0	0	0
+3	3	3	3	3	4	4	4	3	3	3	4	4	4	4	4
+4	4	4	4	4	5	5	5	4	4	4	5	5	5	5	5
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+ON t1.k = t2.k
+ORDER BY t1.k, t2.k
+;
+0	0	0	0	0	0	0	0	5	5	5	6	6	6	6	6
+0	0	0	0	0	0	0	0	6	6	6	7	7	7	7	7
+0	0	0	0	0	0	0	0	7	7	7	8	8	8	8	8
+0	0	0	0	0	0	0	0	8	8	8	9	9	9	9	9
+0	0	0	0	0	0	0	0	9	9	9	10	10	10	10	10
+0	0	0	0	0	0	0	0	10	10	10	11	11	11	11	11
+0	0	0	0	0	1	1	1	0	0	0	0	0	0	0	0
+1	1	1	1	1	2	2	2	0	0	0	0	0	0	0	0
+2	2	2	2	2	3	3	3	0	0	0	0	0	0	0	0
+3	3	3	3	3	4	4	4	3	3	3	4	4	4	4	4
+4	4	4	4	4	5	5	5	4	4	4	5	5	5	5	5
+SELECT * FROM ( SELECT 1 AS k ) as t1 FULL JOIN ( SELECT 1 AS k, k ) as t2 USING (k) ORDER BY 1;
+1
+SELECT * FROM ( SELECT 1 AS k, 1 as n ) as t1 FULL JOIN ( SELECT 1 AS k, k, 1 as n ) as t2 USING (n) ORDER BY 1;
+1	1	1	1
+SELECT *
+FROM ( SELECT number, number, number, number, number FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, FROM numbers(3, 8) ) as t2
+USING (number)
+ORDER BY number
+;
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+USING (number)
+ORDER BY number
+;
+0	1	1	1	0	0	0	0	0
+1	2	2	2	0	0	0	0	0
+2	3	3	3	0	0	0	0	0
+3	4	4	4	4	4	4	4	4
+4	5	5	5	5	5	5	5	5
+5	0	0	0	6	6	6	6	6
+6	0	0	0	7	7	7	7	7
+7	0	0	0	8	8	8	8	8
+8	0	0	0	9	9	9	9	9
+9	0	0	0	10	10	10	10	10
+10	0	0	0	11	11	11	11	11
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+USING (k)
+ORDER BY k
+;
+1	0	0	0	0	0	0	0	0
+2	1	1	1	1	1	0	0	0
+3	2	2	2	2	2	0	0	0
+4	3	3	3	3	3	3	3	3
+5	4	4	4	4	4	4	4	4
+6	0	0	0	0	0	5	5	5
+7	0	0	0	0	0	6	6	6
+8	0	0	0	0	0	7	7	7
+9	0	0	0	0	0	8	8	8
+10	0	0	0	0	0	9	9	9
+11	0	0	0	0	0	10	10	10
+SET join_algorithm = 'full_sorting_merge', max_rows_in_set_to_optimize_join = 0;
+EXPLAIN actions=0, description=0, header=1
+SELECT * FROM ( SELECT 'key2' AS key ) AS s1
+JOIN ( SELECT 'key1' AS key, '1' AS value UNION ALL SELECT 'key2' AS key, '1' AS value ) AS s2
+USING (key);
 Expression
 Header: key String
         value String
   Join
-  Header: key_0 String
-          key_2 String
-          value_1 String
+  Header: __table1.key String
+          __table3.value String
     Sorting
-    Header: key_0 String
+    Header: __table1.key String
       Expression
-      Header: key_0 String
+      Header: __table1.key String
         ReadFromStorage
         Header: dummy UInt8
     Sorting
-    Header: key_2 String
-            value_1 String
+    Header: __table3.key String
+            __table3.value String
       Union
-      Header: key_2 String
-              value_1 String
+      Header: __table3.key String
+              __table3.value String
         Expression
-        Header: key_2 String
-                value_1 String
+        Header: __table3.key String
+                __table3.value String
           ReadFromStorage
           Header: dummy UInt8
         Expression
-        Header: key_2 String
-                value_1 String
+        Header: __table3.key String
+                __table3.value String
           ReadFromStorage
           Header: dummy UInt8
+SELECT * FROM ( SELECT 1 AS k ) as t1 FULL JOIN ( SELECT 1 AS k, k ) as t2 ON t1.k = t2.k ORDER BY 1;
+1	1	1
+SELECT * FROM ( SELECT 1 AS k, 1 as n ) as t1 FULL JOIN ( SELECT 1 AS k, k, 1 as n ) as t2 ON t1.n = t2.n ORDER BY 1;
+1	1	1	1	1
+SELECT *
+FROM ( SELECT number, number, number, number, number FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, FROM numbers(3, 8) ) as t2
+ON t1.number = t2.number
+ORDER BY t1.number, t2.number
+;
+0	0	0	0	0	0	0	0
+0	0	0	0	0	5	5	5
+0	0	0	0	0	6	6	6
+0	0	0	0	0	7	7	7
+0	0	0	0	0	8	8	8
+0	0	0	0	0	9	9	9
+0	0	0	0	0	10	10	10
+1	1	1	1	1	0	0	0
+2	2	2	2	2	0	0	0
+3	3	3	3	3	3	3	3
+4	4	4	4	4	4	4	4
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+ON t1.number = t2.number
+ORDER BY t1.number, t2.number
+;
+0	0	0	0	0	1	1	1	0	0	0	0	0	0	0	0
+0	0	0	0	0	0	0	0	5	5	5	6	6	6	6	6
+0	0	0	0	0	0	0	0	6	6	6	7	7	7	7	7
+0	0	0	0	0	0	0	0	7	7	7	8	8	8	8	8
+0	0	0	0	0	0	0	0	8	8	8	9	9	9	9	9
+0	0	0	0	0	0	0	0	9	9	9	10	10	10	10	10
+0	0	0	0	0	0	0	0	10	10	10	11	11	11	11	11
+1	1	1	1	1	2	2	2	0	0	0	0	0	0	0	0
+2	2	2	2	2	3	3	3	0	0	0	0	0	0	0	0
+3	3	3	3	3	4	4	4	3	3	3	4	4	4	4	4
+4	4	4	4	4	5	5	5	4	4	4	5	5	5	5	5
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+ON t1.k = t2.k
+ORDER BY t1.k, t2.k
+;
+0	0	0	0	0	0	0	0	5	5	5	6	6	6	6	6
+0	0	0	0	0	0	0	0	6	6	6	7	7	7	7	7
+0	0	0	0	0	0	0	0	7	7	7	8	8	8	8	8
+0	0	0	0	0	0	0	0	8	8	8	9	9	9	9	9
+0	0	0	0	0	0	0	0	9	9	9	10	10	10	10	10
+0	0	0	0	0	0	0	0	10	10	10	11	11	11	11	11
+0	0	0	0	0	1	1	1	0	0	0	0	0	0	0	0
+1	1	1	1	1	2	2	2	0	0	0	0	0	0	0	0
+2	2	2	2	2	3	3	3	0	0	0	0	0	0	0	0
+3	3	3	3	3	4	4	4	3	3	3	4	4	4	4	4
+4	4	4	4	4	5	5	5	4	4	4	5	5	5	5	5
+SELECT * FROM ( SELECT 1 AS k ) as t1 FULL JOIN ( SELECT 1 AS k, k ) as t2 USING (k) ORDER BY 1;
+1
+SELECT * FROM ( SELECT 1 AS k, 1 as n ) as t1 FULL JOIN ( SELECT 1 AS k, k, 1 as n ) as t2 USING (n) ORDER BY 1;
+1	1	1	1
+SELECT *
+FROM ( SELECT number, number, number, number, number FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, FROM numbers(3, 8) ) as t2
+USING (number)
+ORDER BY number
+;
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+USING (number)
+ORDER BY number
+;
+0	1	1	1	0	0	0	0	0
+1	2	2	2	0	0	0	0	0
+2	3	3	3	0	0	0	0	0
+3	4	4	4	4	4	4	4	4
+4	5	5	5	5	5	5	5	5
+5	0	0	0	6	6	6	6	6
+6	0	0	0	7	7	7	7	7
+7	0	0	0	8	8	8	8	8
+8	0	0	0	9	9	9	9	9
+9	0	0	0	10	10	10	10	10
+10	0	0	0	11	11	11	11	11
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+USING (k)
+ORDER BY k
+;
+1	0	0	0	0	0	0	0	0
+2	1	1	1	1	1	0	0	0
+3	2	2	2	2	2	0	0	0
+4	3	3	3	3	3	3	3	3
+5	4	4	4	4	4	4	4	4
+6	0	0	0	0	0	5	5	5
+7	0	0	0	0	0	6	6	6
+8	0	0	0	0	0	7	7	7
+9	0	0	0	0	0	8	8	8
+10	0	0	0	0	0	9	9	9
+11	0	0	0	0	0	10	10	10

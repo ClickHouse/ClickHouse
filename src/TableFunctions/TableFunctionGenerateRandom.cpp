@@ -4,11 +4,11 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionGenerateRandom.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -27,6 +27,36 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
+
+/* generateRandom([structure, max_array_length, max_string_length, random_seed])
+ * - creates a temporary storage that generates columns with random data
+ */
+class TableFunctionGenerateRandom : public ITableFunction
+{
+public:
+    static constexpr auto name = "generateRandom";
+    std::string getName() const override { return name; }
+    bool hasStaticStructure() const override { return structure != "auto"; }
+
+    bool needStructureHint() const override { return structure == "auto"; }
+    void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    const char * getStorageTypeName() const override { return "GenerateRandom"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    String structure = "auto";
+    UInt64 max_string_length = 10;
+    UInt64 max_array_length = 10;
+    std::optional<UInt64> random_seed;
+    ColumnsDescription structure_hint;
+};
 
 void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
@@ -59,7 +89,11 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
     // All the arguments must be literals.
     for (const auto & arg : args)
     {
-        if (!arg->as<const ASTLiteral>())
+        const IAST * arg_raw = arg.get();
+        if (const auto * func = arg_raw->as<const ASTFunction>(); func && func->name == "_CAST")
+            arg_raw = func->arguments->children.at(0).get();
+
+        if (!arg_raw->as<const ASTLiteral>())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "All arguments of table function '{}' except structure argument must be literals. "
@@ -78,7 +112,11 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
 
     if (args.size() >= arg_index + 1)
     {
-        const auto & literal = args[arg_index]->as<const ASTLiteral &>();
+        const IAST * arg_raw = args[arg_index].get();
+        if (const auto * func = arg_raw->as<const ASTFunction>(); func && func->name == "_CAST")
+            arg_raw = func->arguments->children.at(0).get();
+
+        const auto & literal = arg_raw->as<const ASTLiteral &>();
         ++arg_index;
         if (!literal.value.isNull())
             random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
@@ -122,11 +160,11 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_functio
     return res;
 }
 
+}
+
 void registerTableFunctionGenerate(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionGenerateRandom>({.documentation = {}, .allow_readonly = true});
 }
 
 }
-
-

@@ -7,15 +7,9 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <numeric>
 
-namespace CurrentMetrics
-{
-    extern const Metric TablesLoaderThreads;
-    extern const Metric TablesLoaderThreadsActive;
-}
 
 namespace DB
 {
@@ -32,18 +26,18 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , referential_dependencies("ReferentialDeps")
     , loading_dependencies("LoadingDeps")
     , all_loading_dependencies("LoadingDeps")
-    , pool(CurrentMetrics::TablesLoaderThreads, CurrentMetrics::TablesLoaderThreadsActive)
+    , async_loader(global_context->getAsyncLoader())
 {
     metadata.default_database = global_context->getCurrentDatabase();
-    log = &Poco::Logger::get("TablesLoader");
+    log = getLogger("TablesLoader");
 }
 
-
-void TablesLoader::loadTables()
+LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
 {
     bool need_resolve_dependencies = !global_context->getConfigRef().has("ignore_table_dependencies_on_metadata_loading");
 
-    /// Load all Lazy, MySQl, PostgreSQL, SQLite, etc databases first.
+    /// Load all Lazy, MySQL, PostgreSQL, SQLite, etc databases first.
+    /// Note that this loading is NOT async because it should be fast and it cannot have any dependencies
     for (auto & database : databases)
     {
         if (need_resolve_dependencies && database.second->supportsLoadingInTopologicalOrder())
@@ -53,7 +47,9 @@ void TablesLoader::loadTables()
     }
 
     if (databases_to_load.empty())
-        return;
+        return {};
+
+    LoadTaskPtrs result;
 
     /// Read and parse metadata from Ordinary, Atomic, Materialized*, Replicated, etc databases. Build dependency graph.
     for (auto & database_name : databases_to_load)
@@ -76,23 +72,72 @@ void TablesLoader::loadTables()
     /// Remove tables that do not exist
     removeUnresolvableDependencies();
 
-    loadTablesInTopologicalOrder(pool);
+    /// Compatibility setting which should be enabled by default on attach
+    /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types of columns
+    ContextMutablePtr load_context = Context::createCopy(global_context);
+    load_context->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
+
+    for (const auto & table_id : all_loading_dependencies.getTablesSortedByDependency())
+    {
+        /// Gather tasks to load before this table
+        LoadTaskPtrs load_dependency_tasks;
+        for (const StorageID & dependency_id : all_loading_dependencies.getDependencies(table_id))
+            load_dependency_tasks.push_back(load_table[dependency_id.getFullTableName()]);
+
+        // Make load table task
+        auto table_name = table_id.getQualifiedName();
+        const auto & path_and_query = metadata.parsed_tables[table_name];
+        auto task = databases[table_name.database]->loadTableFromMetadataAsync(
+            async_loader,
+            getGoals(load_dependency_tasks, load_after),
+            load_context,
+            path_and_query.path,
+            table_name,
+            path_and_query.ast,
+            strictness_mode);
+        load_table[table_id.getFullTableName()] = task;
+        result.push_back(task);
+    }
+
+    return result;
 }
 
-
-void TablesLoader::startupTables()
+LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
 {
-    /// Startup tables after all tables are loaded. Background tasks (merges, mutations, etc) may slow down data parts loading.
-    for (auto & database : databases)
-        database.second->startupTables(pool, strictness_mode);
-}
+    LoadTaskPtrs result;
+    std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
 
+    for (const auto & table_id : all_loading_dependencies.getTables())
+    {
+        // Make startup table task
+        auto table_name = table_id.getQualifiedName();
+        auto task = databases[table_name.database]->startupTableAsync(
+            async_loader,
+            joinJobs(load_table[table_id.getFullTableName()]->goals(), startup_after),
+            table_name,
+            strictness_mode);
+        startup_database[table_name.database].push_back(task);
+        result.push_back(task);
+    }
+
+    /// Make startup database tasks
+    for (auto & database_name : databases_to_load)
+    {
+        auto task = databases[database_name]->startupDatabaseAsync(
+            async_loader,
+            getGoals(startup_database[database_name], startup_after),
+            strictness_mode);
+        result.push_back(task);
+    }
+
+    return result;
+}
 
 void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase());
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
         if (!new_ref_dependencies.empty())
@@ -109,7 +154,6 @@ void TablesLoader::buildDependencyGraph()
     referential_dependencies.log();
     all_loading_dependencies.log();
 }
-
 
 void TablesLoader::removeUnresolvableDependencies()
 {
@@ -155,48 +199,13 @@ void TablesLoader::removeUnresolvableDependencies()
         return true; /// Exclude this dependency.
     };
 
-    all_loading_dependencies.removeTablesIf(need_exclude_dependency);
+    all_loading_dependencies.removeTablesIf(need_exclude_dependency); // NOLINT
 
     if (all_loading_dependencies.getNumberOfTables() != metadata.parsed_tables.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be loaded is not as expected. It's a bug");
 
     /// Cannot load tables with cyclic dependencies.
     all_loading_dependencies.checkNoCyclicDependencies();
-}
-
-
-void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool_)
-{
-    /// Compatibility setting which should be enabled by default on attach
-    /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types of columns
-    ContextMutablePtr load_context = Context::createCopy(global_context);
-    load_context->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
-
-    /// Load tables in parallel.
-    auto tables_to_load = all_loading_dependencies.getTablesSortedByDependencyForParallel();
-
-    for (size_t level = 0; level != tables_to_load.size(); ++level)
-    {
-        startLoadingTables(pool_, load_context, tables_to_load[level], level);
-        pool_.wait();
-    }
-}
-
-void TablesLoader::startLoadingTables(ThreadPool & pool_, ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level)
-{
-    size_t total_tables = metadata.parsed_tables.size();
-
-    LOG_INFO(log, "Loading {} tables with dependency level {}", tables_to_load.size(), level);
-
-    for (const auto & table_id : tables_to_load)
-    {
-        pool_.scheduleOrThrowOnError([this, load_context, total_tables, table_name = table_id.getQualifiedName()]()
-        {
-            const auto & path_and_query = metadata.parsed_tables[table_name];
-            databases[table_name.database]->loadTableFromMetadata(load_context, path_and_query.path, table_name, path_and_query.ast, strictness_mode);
-            logAboutProgress(log, ++tables_processed, total_tables, stopwatch);
-        });
-    }
 }
 
 }

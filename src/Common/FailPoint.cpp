@@ -6,7 +6,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <optional>
+
 
 namespace DB
 {
@@ -16,7 +16,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 };
 
-#if FIU_ENABLE
+#if USE_LIBFIU
 static struct InitFiu
 {
     InitFiu()
@@ -28,18 +28,60 @@ static struct InitFiu
 
 /// We should define different types of failpoints here. There are four types of them:
 /// - ONCE: the failpoint will only be triggered once.
-/// - REGULAR: the failpoint will always be triggered util disableFailPoint is called.
-/// - PAUSAEBLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
-/// - PAUSAEBLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
+/// - REGULAR: the failpoint will always be triggered until disableFailPoint is called.
+/// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
+/// - PAUSEABLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
+    ONCE(replicated_queue_fail_next_entry) \
+    REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
+    REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(use_delayed_remote_source) \
     REGULAR(cluster_discovery_faults) \
+    REGULAR(replicated_sends_failpoint) \
+    REGULAR(stripe_log_sink_write_fallpoint) \
+    ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
+    ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
+    ONCE(smt_commit_write_zk_fail_after_op) \
+    ONCE(smt_commit_write_zk_fail_before_op) \
+    ONCE(smt_commit_merge_change_version_before_op) \
+    ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
+    ONCE(smt_add_part_sleep_after_add_before_commit) \
+    ONCE(smt_sleep_in_constructor) \
+    ONCE(meta_in_keeper_create_metadata_failure) \
+    ONCE(smt_insert_retry_timeout) \
+    ONCE(smt_insert_fake_hardware_error) \
+    ONCE(smt_sleep_after_hardware_in_insert) \
+    ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    REGULAR(smt_dont_merge_first_part) \
+    REGULAR(smt_sleep_in_schedule_data_processing_job) \
+    REGULAR(cache_warmer_stall) \
+    REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
-    PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
-    PAUSEABLE(dummy_pausable_failpoint)
+    REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(shared_set_sleep_during_update) \
+    REGULAR(smt_outdated_parts_exception_response) \
+    PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
+    PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
+    PAUSEABLE(dummy_pausable_failpoint) \
+    ONCE(execute_query_calling_empty_set_result_func_on_exception) \
+    ONCE(receive_timeout_on_table_status_response) \
+    REGULAR(keepermap_fail_drop_data) \
+    REGULAR(lazy_pipe_fds_fail_close) \
+    PAUSEABLE(infinite_sleep) \
+    PAUSEABLE(stop_moving_part_before_swap_with_active) \
+    REGULAR(slowdown_index_analysis) \
+    REGULAR(replicated_merge_tree_all_replicas_stale) \
+    REGULAR(zero_copy_lock_zk_fail_before_op) \
+    REGULAR(zero_copy_lock_zk_fail_after_op) \
+    REGULAR(plain_object_storage_write_fail_on_directory_create) \
+    REGULAR(plain_object_storage_write_fail_on_directory_move) \
+    REGULAR(zero_copy_unlock_zk_fail_before_op) \
+    REGULAR(zero_copy_unlock_zk_fail_after_op) \
+
 
 namespace FailPoints
 {
@@ -50,6 +92,7 @@ APPLY_FOR_FAILPOINTS(M, M, M, M)
 
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
+
 class FailPointChannel : private boost::noncopyable
 {
 public:
@@ -113,7 +156,7 @@ void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
-#if FIU_ENABLE
+#if USE_LIBFIU
 #define SUB_M(NAME, flags, pause)                                                                               \
     if (fail_point_name == FailPoints::NAME)                                                                    \
     {                                                                                                           \
@@ -157,14 +200,13 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
 void FailPointInjection::wait(const String & fail_point_name)
 {
     std::unique_lock lock(mu);
-    if (auto iter = fail_point_wait_channels.find(fail_point_name); iter == fail_point_wait_channels.end())
+    auto iter = fail_point_wait_channels.find(fail_point_name);
+    if (iter == fail_point_wait_channels.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find channel for fail point {}", fail_point_name);
-    else
-    {
-        lock.unlock();
-        auto ptr = iter->second;
-        ptr->wait();
-    }
+
+    lock.unlock();
+    auto ptr = iter->second;
+    ptr->wait();
 }
 
 void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)

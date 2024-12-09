@@ -1,17 +1,25 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowColumnsQuery.h>
 
 #include <Common/quoteString.h>
 #include <Common/escapeString.h>
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/formatAST.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool mysql_map_fixed_string_to_text_in_show_columns;
+    extern const SettingsBool mysql_map_string_to_text_in_show_columns;
+}
 
 
 InterpreterShowColumnsQuery::InterpreterShowColumnsQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
@@ -25,10 +33,12 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
 
+    ClientInfo::Interface client_interface = getContext()->getClientInfo().interface;
+    const bool use_mysql_types = (client_interface == ClientInfo::Interface::MYSQL); // connection made through MySQL wire protocol
+
     const auto & settings = getContext()->getSettingsRef();
-    const bool use_mysql_types = settings.use_mysql_types_in_show_columns;
-    const bool remap_string_as_text = settings.mysql_map_string_to_text_in_show_columns;
-    const bool remap_fixed_string_as_text = settings.mysql_map_fixed_string_to_text_in_show_columns;
+    const bool remap_string_as_text = settings[Setting::mysql_map_string_to_text_in_show_columns];
+    const bool remap_fixed_string_as_text = settings[Setting::mysql_map_fixed_string_to_text_in_show_columns];
 
     WriteBufferFromOwnString buf_database;
     String resolved_database = getContext()->resolveDatabase(query.database);
@@ -39,7 +49,6 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     if (use_mysql_types)
     {
         /// Cheapskate SQL-based mapping from native types to MySQL types, see https://dev.mysql.com/doc/refman/8.0/en/data-types.html
-        /// Only used with setting 'use_mysql_types_in_show_columns = 1'
         /// Known issues:
         /// - Enums are translated to TEXT
         rewritten_query += fmt::format(
@@ -64,6 +73,7 @@ WITH map(
         'Map',         'JSON',
         'Tuple',       'JSON',
         'Object',      'JSON',
+        'JSON',        'JSON',
         'String',      '{}',
         'FixedString', '{}') AS native_to_mysql_mapping,
         )",
@@ -104,7 +114,7 @@ SELECT
     '' AS extra )";
 
     // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
-    // IStorage::getVirtuals(). We can't easily do that via SQL.
+    // IStorage::getVirtualsList(). We can't easily do that via SQL.
 
     if (query.full)
     {
@@ -159,8 +169,16 @@ WHERE
 
 BlockIO InterpreterShowColumnsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
+void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowColumnsQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowColumnsQuery", create_fn);
+}
 
 }

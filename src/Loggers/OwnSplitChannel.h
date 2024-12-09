@@ -1,11 +1,12 @@
 #pragma once
+
 #include <atomic>
-#include <vector>
+#include <memory>
 #include <map>
-#include <mutex>
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include "ExtendedLogChannel.h"
+
 
 #ifndef WITHOUT_TEXT_LOG
 namespace DB
@@ -43,7 +44,7 @@ private:
     void tryLogSplit(const Poco::Message & msg);
 
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
-    /// Handler and its pointer casted to extended interface
+    /// Handler and its pointer cast to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::map<std::string, ExtendedChannelPtrPair> channels;
 

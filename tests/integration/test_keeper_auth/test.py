@@ -1,14 +1,17 @@
-import pytest
 import time
-from helpers.cluster import ClickHouseCluster
+
+import pytest
 from kazoo.client import KazooClient, KazooState
-from kazoo.security import ACL, make_digest_acl, make_acl
 from kazoo.exceptions import (
     AuthFailedError,
     InvalidACLError,
-    NoAuthError,
     KazooException,
+    NoAuthError,
 )
+from kazoo.security import ACL, make_acl, make_digest_acl
+
+from helpers import keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -26,6 +29,7 @@ SUPERAUTH = "super:admin"
 def started_cluster():
     try:
         cluster.start()
+        keeper_utils.wait_until_connected(cluster, node)
 
         yield cluster
 

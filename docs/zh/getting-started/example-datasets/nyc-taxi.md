@@ -196,7 +196,7 @@ real    75m56.214s
 
 （也可以直接使用`COPY ... TO PROGRAM`从Postgres中导入数据）
 
-数据中所有与天气相关的字段(precipitation……average_wind_speed)都填充了NULL。 所以，我们将从最终数据集中删除它们
+数据中所有与天气相关的字段(precipitation...average_wind_speed)都填充了NULL。 所以，我们将从最终数据集中删除它们
 
 首先，我们使用单台服务器创建表，后面我们将在多台节点上创建这些表。
 

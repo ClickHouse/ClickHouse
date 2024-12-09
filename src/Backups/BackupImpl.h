@@ -40,7 +40,9 @@ public:
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupReader> reader_,
         const ContextPtr & context_,
-        bool use_same_s3_credentials_for_base_backup_);
+        bool is_internal_backup_,
+        bool use_same_s3_credentials_for_base_backup_,
+        bool use_same_password_for_base_backup_);
 
     BackupImpl(
         const BackupInfo & backup_info_,
@@ -52,7 +54,8 @@ public:
         const std::shared_ptr<IBackupCoordination> & coordination_,
         const std::optional<UUID> & backup_uuid_,
         bool deduplicate_files_,
-        bool use_same_s3_credentials_for_base_backup_);
+        bool use_same_s3_credentials_for_base_backup_,
+        bool use_same_password_for_base_backup_);
 
     ~BackupImpl() override;
 
@@ -60,7 +63,7 @@ public:
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
-    BackupPtr getBaseBackup() const override { return base_backup; }
+    BackupPtr getBaseBackup() const override;
     size_t getNumFiles() const override;
     UInt64 getTotalSize() const override;
     size_t getNumEntries() const override;
@@ -81,19 +84,24 @@ public:
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
-    void finalizeWriting() override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
+    void finalizeWriting() override;
+    bool setIsCorrupted() noexcept override;
+    bool tryRemoveAllFiles() noexcept override;
 
 private:
-    void open(const ContextPtr & context);
+    void open();
     void close();
 
     void openArchive();
-    void closeArchive();
+    void closeArchive(bool finalize);
 
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata() TSA_REQUIRES(mutex);
     void readBackupMetadata() TSA_REQUIRES(mutex);
+
+    /// Returns the base backup or null if there is no base backup.
+    std::shared_ptr<const IBackup> getBaseBackupUnlocked() const TSA_REQUIRES(mutex);
 
     /// Checks that a new backup doesn't exist yet.
     void checkBackupDoesntExist() const;
@@ -103,8 +111,6 @@ private:
     void createLockFile();
     bool checkLockFile(bool throw_if_failed) const;
     void removeLockFile();
-
-    void removeAllFilesAfterFailure();
 
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
@@ -118,6 +124,7 @@ private:
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
+    const ContextPtr context;
     const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
 
@@ -138,18 +145,20 @@ private:
     mutable size_t num_read_files = 0;
     mutable UInt64 num_read_bytes = 0;
     int version;
-    std::optional<BackupInfo> base_backup_info;
-    std::shared_ptr<const IBackup> base_backup;
-    std::optional<UUID> base_backup_uuid;
+    mutable std::optional<BackupInfo> base_backup_info;
+    mutable std::shared_ptr<const IBackup> base_backup;
+    mutable std::optional<UUID> base_backup_uuid;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
+    bool corrupted = false;
     bool deduplicate_files = true;
     bool use_same_s3_credentials_for_base_backup = false;
-    const Poco::Logger * log;
+    bool use_same_password_for_base_backup = false;
+    const LoggerPtr log;
 };
 
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, distributed
+# Tags: no-fasttest, distributed, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,12 +8,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # This function takes 4 arguments:
 # $1 - OpenTelemetry Trace Id
-# $2 - value of insert_distributed_sync
+# $2 - value of distributed_foreground_insert
 # $3 - value of prefer_localhost_replica
 # $4 - a String that helps to debug
 function insert()
 {
-    echo "INSERT INTO ${CLICKHOUSE_DATABASE}.dist_opentelemetry SETTINGS insert_distributed_sync=$2, prefer_localhost_replica=$3 VALUES(1),(2)" |
+    echo "INSERT INTO ${CLICKHOUSE_DATABASE}.dist_opentelemetry SETTINGS distributed_foreground_insert=$2, prefer_localhost_replica=$3 VALUES(1),(2)" |
         ${CLICKHOUSE_CURL} \
             -X POST \
             -H "traceparent: 00-$1-5150000000000515-01" \
@@ -27,7 +27,7 @@ function insert()
 
 function check_span()
 {
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} -q "
     SYSTEM FLUSH LOGS;
 
     SELECT operation_name,
@@ -47,10 +47,10 @@ ${CLICKHOUSE_CLIENT} -nq "
 
 #
 # $1 - OpenTelemetry Trace Id
-# $2 - value of insert_distributed_sync
+# $2 - value of distributed_foreground_insert
 function check_span_kind()
 {
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} -q "
     SYSTEM FLUSH LOGS;
 
     SELECT count()
@@ -65,7 +65,7 @@ ${CLICKHOUSE_CLIENT} -nq "
 #
 # Prepare tables for tests
 #
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} -q "
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 
@@ -122,7 +122,7 @@ check_span_kind $trace_id 'CLIENT'
 #
 # Cleanup
 #
-${CLICKHOUSE_CLIENT} -nq "
+${CLICKHOUSE_CLIENT} -q "
 DROP TABLE ${CLICKHOUSE_DATABASE}.dist_opentelemetry;
 DROP TABLE ${CLICKHOUSE_DATABASE}.local_opentelemetry;
 "

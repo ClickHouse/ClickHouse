@@ -7,9 +7,9 @@
 namespace DB
 {
 
-void ASTQueryParameter::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTQueryParameter::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr
+    ostr
         << (settings.hilite ? hilite_substitution : "") << '{'
         << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(name)
         << (settings.hilite ? hilite_substitution : "") << ':'
@@ -21,6 +21,11 @@ void ASTQueryParameter::formatImplWithoutAlias(const FormatSettings & settings, 
 void ASTQueryParameter::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     writeString(name, ostr);
+}
+
+void ASTQueryParameter::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 }

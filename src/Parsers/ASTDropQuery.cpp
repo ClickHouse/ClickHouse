@@ -1,4 +1,6 @@
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -16,12 +18,11 @@ String ASTDropQuery::getID(char delim) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
         return "DropQuery" + (delim + getDatabase()) + delim + getTable();
-    else if (kind == ASTDropQuery::Kind::Detach)
+    if (kind == ASTDropQuery::Kind::Detach)
         return "DetachQuery" + (delim + getDatabase()) + delim + getTable();
-    else if (kind == ASTDropQuery::Kind::Truncate)
+    if (kind == ASTDropQuery::Kind::Truncate)
         return "TruncateQuery" + (delim + getDatabase()) + delim + getTable();
-    else
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
+    throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 }
 
 ASTPtr ASTDropQuery::clone() const
@@ -32,51 +33,121 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
-        settings.ostr << "DROP ";
+        ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
-        settings.ostr << "DETACH ";
+        ostr << "DETACH ";
     else if (kind == ASTDropQuery::Kind::Truncate)
-        settings.ostr << "TRUNCATE ";
+        ostr << "TRUNCATE ";
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
     if (temporary)
-        settings.ostr << "TEMPORARY ";
+        ostr << "TEMPORARY ";
 
-
-    if (!table && database)
-        settings.ostr << "DATABASE ";
+    if (has_all_tables)
+        ostr << "ALL TABLES FROM ";
+    else if (!table && !database_and_tables && database)
+        ostr << "DATABASE ";
     else if (is_dictionary)
-        settings.ostr << "DICTIONARY ";
+        ostr << "DICTIONARY ";
     else if (is_view)
-        settings.ostr << "VIEW ";
+        ostr << "VIEW ";
     else
-        settings.ostr << "TABLE ";
+        ostr << "TABLE ";
 
     if (if_exists)
-        settings.ostr << "IF EXISTS ";
+        ostr << "IF EXISTS ";
 
     if (if_empty)
-        settings.ostr << "IF EMPTY ";
+        ostr << "IF EMPTY ";
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_none : "");
 
-    if (!table && database)
-        settings.ostr << backQuoteIfNeed(getDatabase());
+    if (!table && !database_and_tables && database)
+    {
+        database->formatImpl(ostr, settings, state, frame);
+    }
+    else if (database_and_tables)
+    {
+        auto & list = database_and_tables->as<ASTExpressionList &>();
+        for (auto * it = list.children.begin(); it != list.children.end(); ++it)
+        {
+            if (it != list.children.begin())
+                ostr << ", ";
+
+            auto identifier = dynamic_pointer_cast<ASTTableIdentifier>(*it);
+            if (!identifier)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
+
+            if (auto db = identifier->getDatabase())
+            {
+                db->formatImpl(ostr, settings, state, frame);
+                ostr << '.';
+            }
+
+            auto tb = identifier->getTable();
+            chassert(tb);
+            tb->formatImpl(ostr, settings, state, frame);
+        }
+    }
     else
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    {
+        if (database)
+        {
+            database->formatImpl(ostr, settings, state, frame);
+            ostr << '.';
+        }
 
-    formatOnCluster(settings);
+        chassert(table);
+        table->formatImpl(ostr, settings, state, frame);
+    }
+
+    formatOnCluster(ostr, settings);
 
     if (permanently)
-        settings.ostr << " PERMANENTLY";
+        ostr << " PERMANENTLY";
 
     if (sync)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+}
+
+ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()
+{
+    ASTs res;
+    if (database_and_tables == nullptr)
+    {
+        res.push_back(shared_from_this());
+        return res;
+    }
+
+    auto & list = database_and_tables->as<ASTExpressionList &>();
+    for (const auto & child : list.children)
+    {
+        auto cloned = clone();
+        auto & query = cloned->as<ASTDropQuery &>();
+        query.database_and_tables = nullptr;
+        query.children.clear();
+
+        auto database_and_table = dynamic_pointer_cast<ASTTableIdentifier>(child);
+        if (!database_and_table)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected type for list of table names.");
+
+        query.database = database_and_table->getDatabase();
+        query.table = database_and_table->getTable();
+
+        if (query.database)
+            query.children.push_back(query.database);
+
+        if (query.table)
+            query.children.push_back(query.table);
+
+        res.push_back(cloned);
+    }
+    return res;
 }
 
 }

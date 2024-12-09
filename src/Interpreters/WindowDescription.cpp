@@ -1,10 +1,10 @@
-#include <Interpreters/WindowDescription.h>
-
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Field.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
+#include <Interpreters/WindowDescription.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 
 namespace DB
@@ -94,8 +94,8 @@ void WindowFrame::checkValid() const
     if (begin_type == BoundaryType::Offset
         && !((begin_offset.getType() == Field::Types::UInt64
                 || begin_offset.getType() == Field::Types::Int64)
-            && begin_offset.get<Int64>() >= 0
-            && begin_offset.get<Int64>() < INT_MAX))
+            && begin_offset.safeGet<Int64>() >= 0
+            && begin_offset.safeGet<Int64>() < INT_MAX))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
@@ -107,8 +107,8 @@ void WindowFrame::checkValid() const
     if (end_type == BoundaryType::Offset
         && !((end_offset.getType() == Field::Types::UInt64
                 || end_offset.getType() == Field::Types::Int64)
-            && end_offset.get<Int64>() >= 0
-            && end_offset.get<Int64>() < INT_MAX))
+            && end_offset.safeGet<Int64>() >= 0
+            && end_offset.safeGet<Int64>() < INT_MAX))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",

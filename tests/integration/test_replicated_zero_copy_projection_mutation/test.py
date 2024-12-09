@@ -1,12 +1,12 @@
 import logging
+import pathlib
 import time
 from contextlib import contextmanager
-import pathlib
 
 import pytest
 
-from helpers.mock_servers import start_s3_mock
 from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_s3_mock
 from helpers.test_tools import assert_eq_with_retry
 
 
@@ -131,14 +131,13 @@ def test_all_projection_files_are_dropped_when_part_is_dropped(
             """
         )
 
-        objects_empty_table = list_objects(cluster)
-
         node.query(
             "ALTER TABLE test_all_projection_files_are_dropped ADD projection b_order (SELECT a, b ORDER BY b)"
         )
         node.query(
             "ALTER TABLE test_all_projection_files_are_dropped MATERIALIZE projection b_order"
         )
+        objects_empty_table = list_objects(cluster)
 
         node.query(
             """
@@ -174,20 +173,13 @@ def test_hardlinks_preserved_when_projection_dropped(
             )
             ENGINE ReplicatedMergeTree('/clickhouse/tables/test_projection', '{instance}')
             ORDER BY a
+            SETTINGS cleanup_delay_period=1, max_cleanup_delay_period=3
         """
 
-        first_node_settings = """
-            SETTINGS
-                storage_policy='s3',
-                old_parts_lifetime=0
-        """
+        first_node_settings = ", storage_policy='s3', old_parts_lifetime=0"
 
         # big old_parts_lifetime value makes second node to hold outdated part for us, we make it as broken_on_start
-        second_node_settings = """
-            SETTINGS
-                storage_policy='s3',
-                old_parts_lifetime=10000
-        """
+        second_node_settings = ", storage_policy='s3', old_parts_lifetime=10000"
 
         first_cluster_node.query(create_query + first_node_settings)
         second_cluster_node.query(create_query + second_node_settings)

@@ -1,0 +1,3 @@
+<clickhouse>
+    <cannot_allocate_thread_fault_injection_probability>0.01</cannot_allocate_thread_fault_injection_probability>
+</clickhouse>

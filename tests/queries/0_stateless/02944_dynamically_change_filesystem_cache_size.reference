@@ -1,0 +1,20 @@
+100	10	10	1	10	0	0	0	0	/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	5	5000	0	16
+0
+10
+98
+set max_size from 100 to 10
+10	10	10	1	10	0	0	8	1	/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	5	5000	0	16
+1
+8
+set max_size from 10 to 100
+100	10	10	1	10	0	0	8	1	/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	5	5000	0	16
+10
+98
+set max_elements from 10 to 2
+100	2	10	1	10	0	0	18	2	/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	5	5000	0	16
+2
+18
+set max_elements from 2 to 10
+100	10	10	1	10	0	0	18	2	/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	5	5000	0	16
+10
+98

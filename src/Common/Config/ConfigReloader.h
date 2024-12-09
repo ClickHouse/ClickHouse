@@ -17,8 +17,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class Context;
-
 /** Every two seconds checks configuration files for update.
   * If configuration is changed, then config will be reloaded by ConfigProcessor
   *  and the reloaded config will be applied via Updater functor.
@@ -27,6 +25,8 @@ class Context;
 class ConfigReloader
 {
 public:
+    static constexpr auto DEFAULT_RELOAD_INTERVAL = std::chrono::milliseconds(2000);
+
     using Updater = std::function<void(ConfigurationPtr, bool)>;
 
     ConfigReloader(
@@ -35,8 +35,7 @@ public:
         const std::string & preprocessed_dir,
         zkutil::ZooKeeperNodeCache && zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
-        Updater && updater,
-        bool already_loaded);
+        Updater && updater);
 
     ~ConfigReloader();
 
@@ -53,7 +52,7 @@ public:
 private:
     void run();
 
-    void reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading);
+    std::optional<ConfigProcessor::LoadedConfig> reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading);
 
     struct FileWithTimestamp;
 
@@ -67,9 +66,7 @@ private:
 
     FilesChangesTracker getNewFileList() const;
 
-    static constexpr auto reload_interval = std::chrono::seconds(2);
-
-    Poco::Logger * log = &Poco::Logger::get("ConfigReloader");
+    LoggerPtr log = getLogger("ConfigReloader");
 
     std::string config_path;
     std::vector<std::string> extra_paths;
@@ -84,6 +81,8 @@ private:
 
     std::atomic<bool> quit{false};
     ThreadFromGlobalPool thread;
+
+    std::chrono::milliseconds reload_interval = DEFAULT_RELOAD_INTERVAL;
 
     /// Locked inside reloadIfNewer.
     std::mutex reload_mutex;

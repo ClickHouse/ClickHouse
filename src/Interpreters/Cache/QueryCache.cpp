@@ -2,11 +2,17 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IParser.h>
+#include <Parsers/TokenIterator.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
@@ -24,6 +30,10 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString query_cache_tag;
+}
 
 namespace
 {
@@ -52,7 +62,83 @@ struct HasNonDeterministicFunctionsMatcher
     }
 };
 
+struct HasSystemTablesMatcher
+{
+    struct Data
+    {
+        const ContextPtr context;
+        bool has_system_tables = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.has_system_tables)
+            return;
+
+        String database_table; /// or whatever else we get, e.g. just a table
+
+        /// SELECT [...] FROM <table>
+        if (const auto * table_identifier = node->as<ASTTableIdentifier>())
+        {
+            database_table = table_identifier->name();
+        }
+        /// SELECT [...] FROM clusterAllReplicas(<cluster>, <table>)
+        else if (const auto * identifier = node->as<ASTIdentifier>())
+        {
+            database_table = identifier->name();
+        }
+        /// SELECT [...] FROM clusterAllReplicas(<cluster>, '<table>')
+        /// This SQL syntax is quite common but we need to be careful. A naive attempt to cast 'node' to an ASTLiteral will be too general
+        /// and introduce false positives in queries like
+        ///     'SELECT * FROM users WHERE name = 'system.metrics' SETTINGS use_query_cache = true;'
+        /// Therefore, make sure we are really in `clusterAllReplicas`. EXPLAIN AST for
+        ///     'SELECT * FROM clusterAllReplicas('default', system.one) SETTINGS use_query_cache = 1'
+        /// returns:
+        ///     [...]
+        ///     Function clusterAllReplicas (children 1)
+        ///       ExpressionList (children 2)
+        ///         Literal 'test_shard_localhost'
+        ///         Literal 'system.one'
+        ///     [...]
+        else if (const auto * function = node->as<ASTFunction>())
+        {
+            if (function->name == "clusterAllReplicas")
+            {
+                const ASTs & function_children = function->children;
+                if (!function_children.empty())
+                {
+                    if (const auto * expression_list = function_children[0]->as<ASTExpressionList>())
+                    {
+                        const ASTs & expression_list_children = expression_list->children;
+                        if (expression_list_children.size() >= 2)
+                        {
+                            if (const auto * literal = expression_list_children[1]->as<ASTLiteral>())
+                            {
+                                const auto & value = literal->value;
+                                database_table = toString(value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Tokens tokens(database_table.c_str(), database_table.c_str() + database_table.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
+        IParser::Pos pos(tokens, /*max_depth*/ 42, /*max_backtracks*/ 42);
+        Expected expected;
+        String database;
+        String table;
+        bool successfully_parsed = parseDatabaseAndTableName(pos, expected, database, table);
+        if (successfully_parsed)
+            if (DatabaseCatalog::isPredefinedDatabase(database))
+                data.has_system_tables = true;
+    }
+};
+
 using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterministicFunctionsMatcher, true>;
+using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
@@ -63,8 +149,20 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
     return finder_data.has_non_deterministic_functions;
 }
 
+bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+{
+    HasSystemTablesMatcher::Data finder_data{context};
+    HasSystemTablesVisitor(finder_data).visit(ast);
+    return finder_data.has_system_tables;
+}
+
 namespace
 {
+
+bool isQueryCacheRelatedSetting(const String & setting_name)
+{
+    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
+}
 
 class RemoveQueryCacheSettingsMatcher
 {
@@ -81,7 +179,7 @@ public:
 
             auto is_query_cache_related_setting = [](const auto & change)
             {
-                return change.name.starts_with("query_cache_") || change.name.ends_with("_query_cache");
+                return isQueryCacheRelatedSetting(change.name);
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
@@ -117,6 +215,39 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+{
+    ast = removeQueryCacheSettings(ast);
+
+    /// Hash the AST, we must consider aliases (issue #56258)
+    SipHash hash;
+    ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
+
+    /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
+    /// tables (issue #64136)
+    hash.update(current_database);
+
+    /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
+    /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
+    ///       Therefore, collect and sort the settings first, then hash them.
+    auto changed_settings = settings.changes();
+    std::vector<std::pair<String, String>> changed_settings_sorted; /// (name, value)
+    for (const auto & change : changed_settings)
+    {
+        const String & name = change.name;
+        if (!isQueryCacheRelatedSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
+            changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
+    }
+    std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
+    for (const auto & setting : changed_settings_sorted)
+    {
+        hash.update(setting.first);
+        hash.update(setting.second);
+    }
+
+    return getSipHash128AsPair(hash);
+}
+
 String queryStringFromAST(ASTPtr ast)
 {
     WriteBufferFromOwnString buf;
@@ -128,36 +259,45 @@ String queryStringFromAST(ASTPtr ast)
 
 QueryCache::Key::Key(
     ASTPtr ast_,
+    const String & current_database,
+    const Settings & settings,
     Block header_,
-    const String & user_name_, bool is_shared_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_,
+    bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast(removeQueryCacheSettings(ast_))
+    : ast_hash(calculateAstHash(ast_, current_database, settings))
     , header(header_)
-    , user_name(user_name_)
+    , user_id(user_id_)
+    , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
+    , tag(settings[Setting::query_cache_tag])
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, const String & user_name_)
-    : QueryCache::Key(ast_, {}, user_name_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+QueryCache::Key::Key(
+    ASTPtr ast_,
+    const String & current_database,
+    const Settings & settings,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    /// ^^ dummy values for everything != AST, current database, user name/roles
 {
 }
 
 bool QueryCache::Key::operator==(const Key & other) const
 {
-    return ast->getTreeHash() == other.ast->getTreeHash();
+    return ast_hash == other.ast_hash;
 }
 
 size_t QueryCache::KeyHasher::operator()(const Key & key) const
 {
-    SipHash hash;
-    hash.update(key.ast->getTreeHash());
-    auto res = hash.get64();
-    return res;
+    return key.ast_hash.low64;
 }
 
 size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
@@ -400,7 +540,9 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
     const auto & entry_key = entry->key;
     const auto & entry_mapped = entry->mapped;
 
-    if (!entry_key.is_shared && entry_key.user_name != key.user_name)
+    const bool is_same_user_id = ((!entry_key.user_id.has_value() && !key.user_id.has_value()) || (entry_key.user_id.has_value() && key.user_id.has_value() && *entry_key.user_id == *key.user_id));
+    const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
+    if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
     {
         LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
         return;
@@ -502,15 +644,26 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
     /// users.xml change.
-    cache.setQuotaForUser(key.user_name, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
+    /// user_id == std::nullopt is the internal user for which no quota can be configured
+    if (key.user_id.has_value())
+        cache.setQuotaForUser(*key.user_id, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
 
     std::lock_guard lock(mutex);
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::clear()
+void QueryCache::clear(const std::optional<String> & tag)
 {
-    cache.clear();
+    if (tag)
+    {
+        auto predicate = [tag](const Key & key, const Cache::MappedPtr &) { return key.tag == tag.value(); };
+        cache.remove(predicate);
+    }
+    else
+    {
+        cache.clear();
+    }
+
     std::lock_guard lock(mutex);
     times_executed.clear();
 }

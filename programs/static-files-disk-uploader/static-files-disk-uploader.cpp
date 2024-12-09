@@ -1,8 +1,10 @@
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
+#include <Common/re2.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromFile.h>
@@ -11,15 +13,7 @@
 
 #include <boost/program_options.hpp>
 #include <filesystem>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#include <iostream>
 
 namespace fs = std::filesystem;
 
@@ -39,7 +33,7 @@ namespace ErrorCodes
  * If test-mode option is added, files will be put by given url via PUT request.
  */
 
-void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
+static void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
 {
     String remote_path;
     RE2::FullMatch(file_path.string(), EXTRACT_PATH_PATTERN, &remote_path);
@@ -73,7 +67,7 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
 
         /// test mode for integration tests.
         if (test_mode)
-            dst_buf = std::make_shared<WriteBufferFromHTTP>(Poco::URI(dst_file_path), Poco::Net::HTTPRequest::HTTP_PUT);
+            dst_buf = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_file_path), Poco::Net::HTTPRequest::HTTP_PUT);
         else
             dst_buf = std::make_shared<WriteBufferFromFile>(dst_file_path);
 
@@ -84,7 +78,7 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
 }
 
 
-void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
+static void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
 {
     std::cerr << "Data path: " << data_path << ", destination path: " << dst_path << std::endl;
 
@@ -96,7 +90,7 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
     {
         dst_path /= "store";
         auto files_root = dst_path / prefix;
-        root_meta = std::make_shared<WriteBufferFromHTTP>(Poco::URI(files_root / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+        root_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(files_root / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
     }
     else
     {
@@ -119,13 +113,11 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                auto files_root = dst_path / prefix;
-                directory_meta = std::make_shared<WriteBufferFromHTTP>(Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+                directory_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
             }
             else
             {
                 dst_path = fs::canonical(dst_path);
-                auto files_root = dst_path / prefix;
                 fs::create_directories(dst_path / directory_prefix);
                 directory_meta = std::make_shared<WriteBufferFromFile>(dst_path / directory_prefix / ".index");
             }

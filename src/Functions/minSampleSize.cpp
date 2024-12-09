@@ -79,9 +79,9 @@ static bool isBetweenZeroAndOne(Float64 v)
     return v >= 0.0 && v <= 1.0 && fabs(v - 0.0) >= DBL_EPSILON && fabs(v - 1.0) >= DBL_EPSILON;
 }
 
-struct ContinousImpl
+struct ContinuousImpl
 {
-    static constexpr auto name = "minSampleSizeContinous";
+    static constexpr auto name = "minSampleSizeContinuous";
     static constexpr size_t num_args = 5;
     static constexpr size_t const_args[] = {2, 3, 4};
 
@@ -102,14 +102,14 @@ struct ContinousImpl
         auto baseline_argument = arguments[0];
         baseline_argument.column = baseline_argument.column->convertToFullColumnIfConst();
         auto baseline_column_untyped = castColumnAccurate(baseline_argument, float_64_type);
-        const auto * baseline_column = checkAndGetColumn<ColumnVector<Float64>>(*baseline_column_untyped);
-        const auto & baseline_column_data = baseline_column->getData();
+        const auto & baseline_column = checkAndGetColumn<ColumnVector<Float64>>(*baseline_column_untyped);
+        const auto & baseline_column_data = baseline_column.getData();
 
         auto sigma_argument = arguments[1];
         sigma_argument.column = sigma_argument.column->convertToFullColumnIfConst();
         auto sigma_column_untyped = castColumnAccurate(sigma_argument, float_64_type);
-        const auto * sigma_column = checkAndGetColumn<ColumnVector<Float64>>(*sigma_column_untyped);
-        const auto & sigma_column_data = sigma_column->getData();
+        const auto & sigma_column = checkAndGetColumn<ColumnVector<Float64>>(*sigma_column_untyped);
+        const auto & sigma_column_data = sigma_column.getData();
 
         const IColumn & col_mde = *arguments[2].column;
         const IColumn & col_power = *arguments[3].column;
@@ -197,14 +197,12 @@ struct ConversionImpl
             const Float64 left_value = col_p1_const->template getValue<Float64>();
             return process<true>(arguments, &left_value, input_rows_count);
         }
-        else if (const ColumnVector<Float64> * const col_p1 = checkAndGetColumn<ColumnVector<Float64>>(first_argument_column.get()))
+        if (const ColumnVector<Float64> * const col_p1 = checkAndGetColumn<ColumnVector<Float64>>(first_argument_column.get()))
         {
             return process<false>(arguments, col_p1->getData().data(), input_rows_count);
         }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must be a float.", name);
-        }
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must be a float.", name);
     }
 
     template <bool const_p1>
@@ -284,7 +282,9 @@ struct ConversionImpl
 
 REGISTER_FUNCTION(MinSampleSize)
 {
-    factory.registerFunction<FunctionMinSampleSize<ContinousImpl>>();
+    factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>();
+    /// Needed for backward compatibility
+    factory.registerAlias("minSampleSizeContinous", FunctionMinSampleSize<ContinuousImpl>::name);
     factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>();
 }
 

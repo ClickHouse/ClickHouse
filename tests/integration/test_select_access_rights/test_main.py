@@ -1,6 +1,8 @@
+import re
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance("instance")
@@ -185,25 +187,39 @@ def test_select_join():
     )
 
     select_query = "SELECT * FROM table1 JOIN table2 USING(d)"
-    assert (
-        "it's necessary to have the grant SELECT(d, x, y) ON default.table2"
-        in instance.query_and_get_error(select_query, user="A")
-    )
+
+    def match_error(err, columns, table):
+        """Check if the error message contains the expected table and columns"""
+
+        match = re.search(
+            r"it's necessary to have the grant SELECT\((.*)\) ON default\.(\w+)", err
+        )
+        if not match:
+            return False
+        if match.group(2) != table:
+            return False
+        assert set(match.group(1).split(", ")) == set(
+            columns.split(", ")
+        ), f"expected {columns} in {err}"
+        return True
+
+    response = instance.query_and_get_error(select_query, user="A")
+    table1_match = match_error(response, "d, a, b", "table1")
+    table2_match = match_error(response, "d, x, y", "table2")
+    assert table1_match or table2_match, response
 
     instance.query("GRANT SELECT(d, x, y) ON default.table2 TO A")
-    assert (
-        "it's necessary to have the grant SELECT(d, a, b) ON default.table1"
-        in instance.query_and_get_error(select_query, user="A")
-    )
+    response = instance.query_and_get_error(select_query, user="A")
+    assert match_error(response, "d, a, b", "table1")
 
+    response = instance.query_and_get_error(select_query, user="A")
     instance.query("GRANT SELECT(d, a, b) ON default.table1 TO A")
+
     assert instance.query(select_query, user="A") == ""
 
     instance.query("REVOKE SELECT ON default.table2 FROM A")
-    assert (
-        "it's necessary to have the grant SELECT(d, x, y) ON default.table2"
-        in instance.query_and_get_error(select_query, user="A")
-    )
+    response = instance.query_and_get_error(select_query, user="A")
+    assert match_error(response, "d, x, y", "table2")
 
 
 def test_select_union():

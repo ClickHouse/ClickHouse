@@ -23,13 +23,15 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
         > /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-# In case of test hung it is convenient to use pytest --pdb to debug it,
-# and on hung you can simply press Ctrl-C and it will spawn a python pdb,
-# but on SIGINT dockerd will exit, so ignore it to preserve the daemon.
-trap '' INT
 # Binding to an IP address without --tlsverify is deprecated. Startup is intentionally being slowed
 # unless --tls=false or --tlsverify=false is set
-dockerd --host=unix:///var/run/docker.sock --tls=false --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
+#
+# In case of test hung it is convenient to use pytest --pdb to debug it,
+# and on hung you can simply press Ctrl-C and it will spawn a python pdb,
+# but on SIGINT dockerd will exit, so we spawn new session to ignore SIGINT by
+# docker.
+# Note, that if you will run it via runner, it will send SIGINT to docker anyway.
+setsid dockerd --host=unix:///var/run/docker.sock --tls=false --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
 
 set +e
 reties=0

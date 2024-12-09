@@ -18,16 +18,37 @@ template <typename T>
 static inline String formatQuoted(T x)
 {
     WriteBufferFromOwnString wb;
-    writeQuoted(x, wb);
-    return wb.str();
-}
 
-template <typename T>
-static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeText(x.getValue(), x.getScale(), buf, {});
-    writeChar('\'', buf);
+    if constexpr (is_decimal_field<T>)
+    {
+        writeChar('\'', wb);
+        writeText(x.getValue(), x.getScale(), wb, {});
+        writeChar('\'', wb);
+    }
+    else if constexpr (is_big_int_v<T>)
+    {
+        writeChar('\'', wb);
+        writeText(x, wb);
+        writeChar('\'', wb);
+    }
+    else
+    {
+        /// While `writeQuoted` sounds like it will always write the value in quotes,
+        /// in fact it means: write according to the rules of the quoted format, like VALUES,
+        /// where strings, dates, date-times, UUID are in quotes, and numbers are not.
+
+        /// That's why we take extra care to put Decimal and big integers inside quotes
+        /// when formatting literals in SQL language,
+        /// because it is different from the quoted formats like VALUES.
+
+        /// In fact, there are no Decimal and big integer literals in SQL,
+        /// but they can appear if we format the query from a modified AST.
+
+        /// We can fix this idiosyncrasy later.
+
+        writeQuoted(x, wb);
+    }
+    return wb.str();
 }
 
 /** In contrast to writeFloatText (and writeQuoted),
@@ -151,7 +172,7 @@ String FieldVisitorToString::operator() (const Object & x) const
 String convertFieldToString(const Field & field)
 {
     if (field.getType() == Field::Types::Which::String)
-        return field.get<String>();
+        return field.safeGet<String>();
     return applyVisitor(FieldVisitorToString(), field);
 }
 

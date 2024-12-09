@@ -2,6 +2,7 @@
 
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/re2.h>
 
 #include <chrono>
 #include <filesystem>
@@ -10,15 +11,6 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace fs = std::filesystem;
 
@@ -46,7 +38,7 @@ String FileRenamer::generateNewFilename(const String & filename) const
 
     // Get current timestamp in microseconds
     String timestamp;
-    if (rule.find("%t") != String::npos)
+    if (rule.contains("%t"))
     {
         auto now = std::chrono::system_clock::now();
         timestamp = std::to_string(timeInMicroseconds(now));

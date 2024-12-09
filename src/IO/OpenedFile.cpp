@@ -30,8 +30,8 @@ void OpenedFile::open() const
     fd = ::open(file_name.c_str(), (flags == -1 ? 0 : flags) | O_RDONLY | O_CLOEXEC);
 
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
-            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        DB::ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
 }
 
 int OpenedFile::getFD() const
@@ -67,11 +67,13 @@ void OpenedFile::close()
         return;
 
     if (0 != ::close(fd))
+    {
+        fd = -1;
         throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
+    }
 
     fd = -1;
     metric_increment.destroy();
 }
 
 }
-

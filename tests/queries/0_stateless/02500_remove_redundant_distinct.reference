@@ -9,7 +9,7 @@ Expression (Projection)
               Distinct
                 Distinct (Preliminary DISTINCT)
                   Expression (Before ORDER BY)
-                    ReadFromStorage (SystemNumbers)
+                    ReadFromSystemNumbers
 -- Enabled query_plan_remove_redundant_distinct
 -- DISTINCT is only in most inner subquery
 -- query
@@ -28,7 +28,7 @@ Expression ((Projection + (Before ORDER BY + (Projection + (Before ORDER BY + Pr
   Distinct
     Distinct (Preliminary DISTINCT)
       Expression (Before ORDER BY)
-        ReadFromStorage (SystemNumbers)
+        ReadFromSystemNumbers
 -- execute
 0
 1
@@ -46,18 +46,17 @@ ORDER BY number
 Expression (Projection)
   Distinct
     Sorting (Sorting for ORDER BY)
-      Distinct (Preliminary DISTINCT)
-        Union
-          Expression ((Before ORDER BY + Projection))
-            Distinct
-              Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
-                  ReadFromStorage (SystemNumbers)
-          Expression (( + Projection))
-            Distinct
-              Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
-                  ReadFromStorage (SystemNumbers)
+      Union
+        Expression ((Before ORDER BY + Projection))
+          Distinct
+            Distinct (Preliminary DISTINCT)
+              Expression (Before ORDER BY)
+                ReadFromSystemNumbers
+        Expression ((Before ORDER BY + Projection))
+          Distinct
+            Distinct (Preliminary DISTINCT)
+              Expression (Before ORDER BY)
+                ReadFromSystemNumbers
 -- execute
 0
 1
@@ -73,22 +72,24 @@ FROM
     SELECT DISTINCT number AS n
     FROM numbers(2)
 ) as y
+ORDER BY x.n, y.n
 -- explain
 Expression (Projection)
   Distinct
-    Distinct (Preliminary DISTINCT)
-      Expression (Before ORDER BY)
-        Join (JOIN FillRightFirst)
-          Expression ((Before JOIN + Projection))
-            Distinct
-              Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
-                  ReadFromStorage (SystemNumbers)
-          Expression ((Joined actions + (Rename joined columns + Projection)))
-            Distinct
-              Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
-                  ReadFromStorage (SystemNumbers)
+    Sorting (Sorting for ORDER BY)
+      Distinct (Preliminary DISTINCT)
+        Expression (Before ORDER BY)
+          Join (JOIN FillRightFirst)
+            Expression ((Before JOIN + Projection))
+              Distinct
+                Distinct (Preliminary DISTINCT)
+                  Expression (Before ORDER BY)
+                    ReadFromSystemNumbers
+            Expression ((Joined actions + (Rename joined columns + Projection)))
+              Distinct
+                Distinct (Preliminary DISTINCT)
+                  Expression (Before ORDER BY)
+                    ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -106,12 +107,15 @@ FROM
         FROM numbers(3)
     )
 )
+ORDER BY a, b
 -- explain
-Expression ((Projection + (Before ORDER BY + (Projection + (Before ORDER BY + Projection)))))
-  Distinct
-    Distinct (Preliminary DISTINCT)
-      Expression (Before ORDER BY)
-        ReadFromStorage (SystemNumbers)
+Expression (Projection)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + (Before ORDER BY + Projection))))
+      Distinct
+        Distinct (Preliminary DISTINCT)
+          Expression (Before ORDER BY)
+            ReadFromSystemNumbers
 -- execute
 0	0
 1	2
@@ -128,12 +132,15 @@ FROM
         FROM numbers(3)
     )
 )
+ORDER BY a, b
 -- explain
-Expression ((Projection + (Before ORDER BY + (Projection + (Before ORDER BY + Projection)))))
-  Distinct
-    Distinct (Preliminary DISTINCT)
-      Expression (Before ORDER BY)
-        ReadFromStorage (SystemNumbers)
+Expression (Projection)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + (Before ORDER BY + Projection))))
+      Distinct
+        Distinct (Preliminary DISTINCT)
+          Expression (Before ORDER BY)
+            ReadFromSystemNumbers
 -- execute
 2	0	0
 2	1	2
@@ -147,21 +154,23 @@ FROM
     FROM VALUES('Hello', 'World', 'Goodbye')
 ) AS words
 ARRAY JOIN [0, 1] AS arr
+ORDER BY c1, arr
 -- explain
 Expression (Projection)
   Distinct
-    Distinct (Preliminary DISTINCT)
-      Expression (Before ORDER BY)
-        ArrayJoin (ARRAY JOIN)
-          Expression ((Before ARRAY JOIN + Projection))
-            Distinct
-              Distinct (Preliminary DISTINCT)
-                Expression (Before ORDER BY)
-                  ReadFromStorage (Values)
+    Sorting (Sorting for ORDER BY)
+      Distinct (Preliminary DISTINCT)
+        Expression (Before ORDER BY)
+          ArrayJoin (ARRAY JOIN)
+            Expression ((Before ARRAY JOIN + Projection))
+              Distinct
+                Distinct (Preliminary DISTINCT)
+                  Expression (Before ORDER BY)
+                    ReadFromStorage (Values)
 -- execute
+Goodbye
 Hello
 World
-Goodbye
 -- WITH FILL: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs
 -- query
 SELECT DISTINCT *
@@ -194,16 +203,18 @@ FROM
     SELECT DISTINCT ['Istanbul', 'Berlin', 'Bensheim'] AS cities
 )
 WHERE arrayJoin(cities) IN ['Berlin', 'Bensheim']
+ORDER BY cities
 -- explain
 Expression (( + Projection))
   Distinct
-    Distinct (Preliminary DISTINCT)
-      Expression (Before ORDER BY)
-        Filter ((WHERE + Projection))
-          Distinct
-            Distinct (Preliminary DISTINCT)
-              Expression (Before ORDER BY)
-                ReadFromStorage (SystemOne)
+    Sorting (Sorting for ORDER BY)
+      Distinct (Preliminary DISTINCT)
+        Expression (Before ORDER BY)
+          Filter ((WHERE + Projection))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromStorage (SystemOne)
 -- execute
 ['Istanbul','Berlin','Bensheim']
 -- GROUP BY before DISTINCT with on the same columns => remove DISTINCT
@@ -222,20 +233,23 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a
+    ORDER BY a
 )
 -- explain
-Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
-  Aggregating
-    Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-      Join (JOIN FillRightFirst)
-        Expression (Before JOIN)
-          ReadFromStorage (SystemNumbers)
-        Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-          ReadFromStorage (SystemNumbers)
+Expression ((Projection + (Before ORDER BY + Projection)))
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Aggregating
+        Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+          Join (JOIN FillRightFirst)
+            Expression (Before JOIN)
+              ReadFromSystemNumbers
+            Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+              ReadFromSystemNumbers
 -- execute
 0
-2
 1
+2
 -- GROUP BY before DISTINCT with on different columns => do _not_ remove DISTINCT
 -- query
 SELECT DISTINCT c
@@ -252,19 +266,22 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a
+    ORDER BY a
 )
 -- explain
 Expression (Projection)
   Distinct
     Distinct (Preliminary DISTINCT)
-      Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-        Aggregating
-          Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-            Join (JOIN FillRightFirst)
-              Expression (Before JOIN)
-                ReadFromStorage (SystemNumbers)
-              Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-                ReadFromStorage (SystemNumbers)
+      Expression ((Before ORDER BY + Projection))
+        Sorting (Sorting for ORDER BY)
+          Expression (Before ORDER BY)
+            Aggregating
+              Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+                Join (JOIN FillRightFirst)
+                  Expression (Before JOIN)
+                    ReadFromSystemNumbers
+                  Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+                    ReadFromSystemNumbers
 -- execute
 12
 -- GROUP BY WITH ROLLUP before DISTINCT with on different columns => do _not_ remove DISTINCT
@@ -283,20 +300,23 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH ROLLUP
+    ORDER BY a
 )
 -- explain
 Expression (Projection)
   Distinct
     Distinct (Preliminary DISTINCT)
-      Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-        Rollup
-          Aggregating
-            Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-              Join (JOIN FillRightFirst)
-                Expression (Before JOIN)
-                  ReadFromStorage (SystemNumbers)
-                Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-                  ReadFromStorage (SystemNumbers)
+      Expression ((Before ORDER BY + Projection))
+        Sorting (Sorting for ORDER BY)
+          Expression (Before ORDER BY)
+            Rollup
+              Aggregating
+                Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+                  Join (JOIN FillRightFirst)
+                    Expression (Before JOIN)
+                      ReadFromSystemNumbers
+                    Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+                      ReadFromSystemNumbers
 -- execute
 12
 36
@@ -316,22 +336,25 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH ROLLUP
+    ORDER BY a
 )
 -- explain
-Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
-  Rollup
-    Aggregating
-      Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-        Join (JOIN FillRightFirst)
-          Expression (Before JOIN)
-            ReadFromStorage (SystemNumbers)
-          Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemNumbers)
+Expression ((Projection + (Before ORDER BY + Projection)))
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Rollup
+        Aggregating
+          Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+            Join (JOIN FillRightFirst)
+              Expression (Before JOIN)
+                ReadFromSystemNumbers
+              Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+                ReadFromSystemNumbers
 -- execute
 0
-2
-1
 0
+1
+2
 -- GROUP BY WITH CUBE before DISTINCT with on different columns => do _not_ remove DISTINCT
 -- query
 SELECT DISTINCT c
@@ -348,20 +371,23 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH CUBE
+    ORDER BY a
 )
 -- explain
 Expression (Projection)
   Distinct
     Distinct (Preliminary DISTINCT)
-      Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-        Cube
-          Aggregating
-            Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-              Join (JOIN FillRightFirst)
-                Expression (Before JOIN)
-                  ReadFromStorage (SystemNumbers)
-                Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-                  ReadFromStorage (SystemNumbers)
+      Expression ((Before ORDER BY + Projection))
+        Sorting (Sorting for ORDER BY)
+          Expression (Before ORDER BY)
+            Cube
+              Aggregating
+                Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+                  Join (JOIN FillRightFirst)
+                    Expression (Before JOIN)
+                      ReadFromSystemNumbers
+                    Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+                      ReadFromSystemNumbers
 -- execute
 12
 36
@@ -381,22 +407,25 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH CUBE
+    ORDER BY a
 )
 -- explain
-Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
-  Cube
-    Aggregating
-      Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-        Join (JOIN FillRightFirst)
-          Expression (Before JOIN)
-            ReadFromStorage (SystemNumbers)
-          Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemNumbers)
+Expression ((Projection + (Before ORDER BY + Projection)))
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      Cube
+        Aggregating
+          Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+            Join (JOIN FillRightFirst)
+              Expression (Before JOIN)
+                ReadFromSystemNumbers
+              Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+                ReadFromSystemNumbers
 -- execute
 0
-2
-1
 0
+1
+2
 -- GROUP BY WITH TOTALS before DISTINCT with on different columns => do _not_ remove DISTINCT
 -- query
 SELECT DISTINCT c
@@ -413,20 +442,23 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH TOTALS
+    ORDER BY a
 )
 -- explain
 Expression (Projection)
   Distinct
     Distinct (Preliminary DISTINCT)
-      Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-        TotalsHaving
-          Aggregating
-            Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-              Join (JOIN FillRightFirst)
-                Expression (Before JOIN)
-                  ReadFromStorage (SystemNumbers)
-                Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-                  ReadFromStorage (SystemNumbers)
+      Expression ((Before ORDER BY + Projection))
+        Sorting (Sorting for ORDER BY)
+          Expression (Before ORDER BY)
+            TotalsHaving
+              Aggregating
+                Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+                  Join (JOIN FillRightFirst)
+                    Expression (Before JOIN)
+                      ReadFromSystemNumbers
+                    Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+                      ReadFromSystemNumbers
 -- execute
 12
 
@@ -447,21 +479,24 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH TOTALS
+    ORDER BY a
 )
 -- explain
-Expression ((Projection + (Before ORDER BY + (Projection + Before ORDER BY))))
-  TotalsHaving
-    Aggregating
-      Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
-        Join (JOIN FillRightFirst)
-          Expression (Before JOIN)
-            ReadFromStorage (SystemNumbers)
-          Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemNumbers)
+Expression ((Projection + (Before ORDER BY + Projection)))
+  Sorting (Sorting for ORDER BY)
+    Expression (Before ORDER BY)
+      TotalsHaving
+        Aggregating
+          Expression ((Before GROUP BY + (Projection + Before ORDER BY)))
+            Join (JOIN FillRightFirst)
+              Expression (Before JOIN)
+                ReadFromSystemNumbers
+              Expression ((Joined actions + (Rename joined columns + (Projection + Before ORDER BY))))
+                ReadFromSystemNumbers
 -- execute
 0
-2
 1
+2
 
 0
 -- DISTINCT COUNT() with GROUP BY => do _not_ remove DISTINCT
@@ -474,7 +509,7 @@ Expression (Projection)
       Expression (Before ORDER BY)
         Aggregating
           Expression (Before GROUP BY)
-            ReadFromStorage (SystemNumbers)
+            ReadFromSystemNumbers
 -- execute
 1
 -- UNION ALL with DISTINCT => do _not_ remove DISTINCT
@@ -488,21 +523,22 @@ FROM
     SELECT DISTINCT number
     FROM numbers(2)
 )
+ORDER BY number
 -- explain
 Expression (Projection)
   Distinct
-    Distinct (Preliminary DISTINCT)
+    Sorting (Sorting for ORDER BY)
       Union
         Expression ((Before ORDER BY + Projection))
           Distinct
             Distinct (Preliminary DISTINCT)
               Expression (Before ORDER BY)
-                ReadFromStorage (SystemNumbers)
-        Expression (( + Projection))
+                ReadFromSystemNumbers
+        Expression ((Before ORDER BY + Projection))
           Distinct
             Distinct (Preliminary DISTINCT)
               Expression (Before ORDER BY)
-                ReadFromStorage (SystemNumbers)
+                ReadFromSystemNumbers
 -- execute
 0
 1

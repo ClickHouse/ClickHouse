@@ -53,7 +53,7 @@ memcpy(&buf[place_value], &x, sizeof(x));
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
-**7.** 在二元运算符（`+`，`-`，`*`，`/`，`％`，…）和三元运算符 `?:` 周围添加空格。
+**7.** 在二元运算符（`+`，`-`，`*`，`/`，`％`，...）和三元运算符 `?:` 周围添加空格。
 
 ``` cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -82,7 +82,7 @@ dst.ClickGoodEvent     = click.GoodEvent;
 
 如有必要，运算符可以包裹到下一行。 在这种情况下，它前面的偏移量增加。
 
-**11.** 不要使用空格来分开一元运算符 (`--`, `++`, `*`, `&`, …) 和参数。
+**11.** 不要使用空格来分开一元运算符 (`--`, `++`, `*`, `&`, ...) 和参数。
 
 **12.** 在逗号后面加一个空格，而不是在之前。同样的规则也适合 `for` 循环中的分号。
 
@@ -111,7 +111,7 @@ public:
 
 **16.** 如果对整个文件使用相同的 `namespace`，并且没有其他重要的东西，则 `namespace` 中不需要偏移量。
 
-**17.** 在 `if`, `for`, `while` 中包裹的代码块中，若代码是一个单行的 `statement`，那么大括号是可选的。 可以将 `statement` 放到一行中。这个规则同样适用于嵌套的 `if`， `for`， `while`， …
+**17.** 在 `if`, `for`, `while` 中包裹的代码块中，若代码是一个单行的 `statement`，那么大括号是可选的。 可以将 `statement` 放到一行中。这个规则同样适用于嵌套的 `if`， `for`， `while`， ...
 
 但是如果内部 `statement` 包含大括号或 `else`，则外部块应该用大括号括起来。
 
@@ -262,7 +262,7 @@ void executeQuery(
 
 这个示例来源于 http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/。
 
-**7.** 不要在每个文件的开头写入垃圾注释（作者，创建日期…）。
+**7.** 不要在每个文件的开头写入垃圾注释（作者，创建日期...）。
 
 **8.** 单行注释用三个斜杆： `///` ，多行注释以 `/**`开始。 这些注释会当做文档。
 
@@ -485,7 +485,7 @@ catch (const DB::Exception & e)
 
 ``` cpp
 if (0 != close(fd))
-    throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+    throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", file_name);
 ```
 
 `不要使用断言`。

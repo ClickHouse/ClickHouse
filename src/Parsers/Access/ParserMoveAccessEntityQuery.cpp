@@ -18,8 +18,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.name}.ignore(pos, expected)
-                || (!type_info.alias.empty() && ParserKeyword{type_info.alias}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.name).ignore(pos, expected)
+                || (!type_info.alias.empty() && ParserKeyword::createDeprecated(type_info.alias).ignore(pos, expected)))
             {
                 type = i;
                 return true;
@@ -33,7 +33,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -41,7 +41,7 @@ namespace
 
 bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"MOVE"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::MOVE}.ignore(pos, expected))
         return false;
 
     AccessEntityType type;
@@ -74,7 +74,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    if (!ParserKeyword{"TO"}.ignore(pos, expected) || !parseAccessStorageName(pos, expected, storage_name))
+    if (!ParserKeyword{Keyword::TO}.ignore(pos, expected) || !parseAccessStorageName(pos, expected, storage_name))
         return false;
 
     if (cluster.empty())

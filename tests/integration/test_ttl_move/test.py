@@ -1,13 +1,15 @@
+import inspect
 import random
-import string
 import threading
 import time
 from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_logs_contain_with_retry
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 # FIXME: each sleep(1) is a time bomb, and not only this cause false positive
 # it also makes the test not reliable (i.e. assertions may be wrong, due timing issues)
@@ -26,6 +28,7 @@ node1 = cluster.add_instance(
     with_zookeeper=True,
     tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 1},
+    stay_alive=True,
 )
 
 node2 = cluster.add_instance(
@@ -73,7 +76,7 @@ def get_used_disks_for_table(node, table_name, partition=None):
     )
 
 
-def check_used_disks_with_retry(node, table_name, expected_disks, retries):
+def check_used_disks_with_retry(node, table_name, expected_disks, retries=1):
     for _ in range(retries):
         used_disks = get_used_disks_for_table(node, table_name)
         if set(used_disks).issubset(expected_disks):
@@ -299,7 +302,8 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
         node1.query(
             """ALTER TABLE {name} MODIFY TTL now()-3600 TO DISK 'jbod1', d1 TO DISK 'external'""".format(
                 name=name
-            )
+            ),
+            settings={"allow_suspicious_ttl_expressions": 1},
         )
 
         wait_expire_1 = 12
@@ -1609,7 +1613,7 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
             ALTER TABLE {name} MODIFY
             TTL d1 + INTERVAL 0 SECOND TO DISK 'jbod2',
                 d1 + INTERVAL 5 SECOND TO VOLUME 'external',
-                d1 + INTERVAL 10 SECOND DELETE
+                d1 + INTERVAL 30 SECOND DELETE
         """.format(
                 name=name
             )
@@ -1631,11 +1635,19 @@ def test_alter_with_merge_work(started_cluster, name, engine, positive):
         optimize_table(20)
 
         if positive:
-            assert check_used_disks_with_retry(node1, name, set(["external"]), 50)
+            assert check_used_disks_with_retry(
+                node1, name, set(["external"])
+            ), "Parts: " + node1.query(
+                f"SELECT disk_name, name FROM system.parts WHERE table = '{name}' AND active = 1"
+            )
         else:
-            assert check_used_disks_with_retry(node1, name, set(["jbod1", "jbod2"]), 50)
+            assert check_used_disks_with_retry(
+                node1, name, set(["jbod1", "jbod2"])
+            ), "Parts: " + node1.query(
+                f"SELECT disk_name, name FROM system.parts WHERE table = '{name}' AND active = 1"
+            )
 
-        time.sleep(5)
+        time.sleep(25)
 
         optimize_table(20)
 
@@ -1813,3 +1825,117 @@ def test_ttl_move_if_exists(started_cluster, name, dest_type):
             node2.query("DROP TABLE IF EXISTS {} SYNC".format(name))
         except:
             pass
+
+
+class TestCancelBackgroundMoving:
+    @pytest.fixture()
+    def prepare_table(self, request, started_cluster):
+        name = unique_table_name(request.node.name)
+        engine = f"ReplicatedMergeTree('/clickhouse/{name}', '1')"
+
+        node1.query(
+            f"""
+            CREATE TABLE {name} (
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY tuple()
+            TTL d1 + interval 5 second TO DISK 'external'
+            SETTINGS storage_policy='small_jbod_with_external'
+            """
+        )
+
+        node1.query("SYSTEM STOP MOVES")
+
+        # Insert part which is about to move
+        node1.query(
+            "INSERT INTO {} (s1, d1) VALUES (randomPrintableASCII({}), toDateTime({}))".format(
+                name, 10 * 1024 * 1024, time.time()
+            )
+        )
+
+        # Set low bandwidth to have enough time to cancel part moving
+        config = inspect.cleandoc(
+            f"""
+            <clickhouse>
+                <max_local_write_bandwidth_for_server>{256 * 1024}</max_local_write_bandwidth_for_server>
+            </clickhouse>
+            """
+        )
+        node1.replace_config(
+            "/etc/clickhouse-server/config.d/disk_throttling.xml", config
+        )
+        node1.restart_clickhouse()
+
+        try:
+            yield name
+        finally:
+            node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+    def test_cancel_background_moving_on_stop_moves_query(self, prepare_table):
+        name = prepare_table
+
+        # Wait for background moving task to be started
+        node1.query("SYSTEM START MOVES")
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.moves WHERE table = '{name}'".strip(),
+            "1",
+        )
+
+        # Wait for background moving task to be cancelled
+        node1.query("SYSTEM STOP MOVES")
+        assert_logs_contain_with_retry(
+            node1, "MergeTreeBackgroundExecutor.*Cancelled moving parts"
+        )
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.moves WHERE table = '{name}'".strip(),
+            "0",
+        )
+
+        # Ensure that part was not moved
+        assert set(get_used_disks_for_table(node1, name)) == {"jbod1"}
+
+    def test_cancel_background_moving_on_table_detach(self, prepare_table):
+        name = prepare_table
+
+        # Wait for background moving task to be started
+        node1.query("SYSTEM START MOVES")
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.moves WHERE table = '{name}'".strip(),
+            "1",
+        )
+
+        # Wait for background moving task to be cancelled
+        node1.query(f"DETACH Table {name}")
+        assert_logs_contain_with_retry(
+            node1, "MergeTreeBackgroundExecutor.*Cancelled moving parts"
+        )
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.moves WHERE table = '{name}'".strip(),
+            "0",
+        )
+
+    def test_cancel_background_moving_on_zookeeper_disconnect(self, prepare_table):
+        name = prepare_table
+
+        # Wait for background moving task to be started
+        node1.query("SYSTEM START MOVES")
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.moves WHERE table = '{name}'".strip(),
+            "1",
+        )
+
+        with PartitionManager() as pm:
+            pm.drop_instance_zk_connections(node1)
+            # Wait for background moving task to be cancelled
+            assert_logs_contain_with_retry(
+                node1,
+                "MergeTreeBackgroundExecutor.*Cancelled moving parts",
+                retry_count=30,
+                sleep_time=1,
+            )

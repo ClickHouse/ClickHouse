@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <base/types.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -17,11 +17,20 @@ class ReadBuffer;
  */
 struct ReplicatedMergeTreeTableMetadata
 {
+    static constexpr int REPLICATED_MERGE_TREE_METADATA_LEGACY_VERSION = 1;
+    static constexpr int REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS = 2;
+
     String date_column;
     String sampling_expression;
     UInt64 index_granularity;
+    /// Merging related params
     int merging_params_mode;
+    int merge_params_version = REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS;
     String sign_column;
+    String version_column;
+    String is_deleted_column;
+    String columns_to_sum;
+    String graphite_params_hash;
     String primary_key;
     MergeTreeDataFormatVersion data_format_version;
     String partition_key;

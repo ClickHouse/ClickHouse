@@ -30,7 +30,7 @@
     </create_query>
 
     <create_query>
-        CREATE TABLE jit_test_merge_tree_nullable (
+        CREATE TABLE jit_test_memory_nullable (
             key UInt64,
             value_1 Nullable(UInt64),
             value_2 Nullable(UInt64),
@@ -42,7 +42,7 @@
     </create_query>
 
     <create_query>
-        CREATE TABLE jit_test_memory_nullable (
+        CREATE TABLE jit_test_merge_tree_nullable (
             key UInt64,
             value_1 Nullable(UInt64),
             value_2 Nullable(UInt64),

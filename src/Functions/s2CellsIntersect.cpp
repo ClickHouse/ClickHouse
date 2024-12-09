@@ -64,6 +64,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
@@ -100,10 +105,12 @@ public:
             const UInt64 id_second = data_id_second[row];
 
             auto first_cell = S2CellId(id_first);
-            auto second_cell = S2CellId(id_second);
+            if (!first_cell.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "First cell (id {}) is not valid in function {}", id_first, getName());
 
-            if (!first_cell.is_valid() || !second_cell.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell is not valid");
+            auto second_cell = S2CellId(id_second);
+            if (!second_cell.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second cell (id {}) is not valid in function {}", id_second, getName());
 
             dst_data.emplace_back(S2CellId(id_first).intersects(S2CellId(id_second)));
         }

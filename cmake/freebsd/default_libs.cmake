@@ -1,10 +1,30 @@
 set (DEFAULT_LIBS "-nodefaultlibs")
 
 if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "amd64")
-    execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-x86_64.a OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
+    set(system_processor "x86_64")
 else ()
-    execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
+    set(system_processor "${CMAKE_SYSTEM_PROCESSOR}")
 endif ()
+
+file(GLOB bprefix "/usr/local/llvm${COMPILER_VERSION_MAJOR}/lib/clang/${COMPILER_VERSION_MAJOR}/lib/${system_processor}-portbld-freebsd*/")
+message(STATUS "-Bprefix: ${bprefix}")
+
+execute_process(COMMAND
+    ${CMAKE_CXX_COMPILER} -Bprefix=${bprefix} --print-file-name=libclang_rt.builtins-${system_processor}.a
+    OUTPUT_VARIABLE BUILTINS_LIBRARY
+    COMMAND_ERROR_IS_FATAL ANY
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+# --print-file-name simply prints what you passed in case of nothing was resolved, so let's try one other possible option
+if (BUILTINS_LIBRARY STREQUAL "libclang_rt.builtins-${system_processor}.a")
+    execute_process(COMMAND
+        ${CMAKE_CXX_COMPILER} -Bprefix=${bprefix} --print-file-name=libclang_rt.builtins.a
+        OUTPUT_VARIABLE BUILTINS_LIBRARY
+        COMMAND_ERROR_IS_FATAL ANY
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+if (BUILTINS_LIBRARY STREQUAL "libclang_rt.builtins.a")
+    message(FATAL_ERROR "libclang_rt.builtins had not been found")
+endif()
 
 set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread")
 
@@ -24,10 +44,4 @@ link_libraries(global-group)
 
 target_link_libraries(global-group INTERFACE
     $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>
-)
-
-# FIXME: remove when all contribs will get custom cmake lists
-install(
-    TARGETS global-group global-libs
-    EXPORT global
 )

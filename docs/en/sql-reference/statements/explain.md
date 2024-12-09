@@ -161,6 +161,8 @@ Settings:
 - `actions` — Prints detailed information about step actions. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
+When `json=1` step names will contain an additional suffix with unique step identifier.
+
 Example:
 
 ```sql
@@ -194,30 +196,25 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
   {
     "Plan": {
       "Node Type": "Union",
+      "Node Id": "Union_10",
       "Plans": [
         {
           "Node Type": "Expression",
+          "Node Id": "Expression_13",
           "Plans": [
             {
-              "Node Type": "SettingQuotaAndLimits",
-              "Plans": [
-                {
-                  "Node Type": "ReadFromStorage"
-                }
-              ]
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_0"
             }
           ]
         },
         {
           "Node Type": "Expression",
+          "Node Id": "Expression_16",
           "Plans": [
             {
-              "Node Type": "SettingQuotaAndLimits",
-              "Plans": [
-                {
-                  "Node Type": "ReadFromStorage"
-                }
-              ]
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_4"
             }
           ]
         }
@@ -249,6 +246,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
   {
     "Plan": {
       "Node Type": "Expression",
+      "Node Id": "Expression_5",
       "Header": [
         {
           "Name": "1",
@@ -261,22 +259,12 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
       ],
       "Plans": [
         {
-          "Node Type": "SettingQuotaAndLimits",
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0",
           "Header": [
             {
               "Name": "dummy",
               "Type": "UInt8"
-            }
-          ],
-          "Plans": [
-            {
-              "Node Type": "ReadFromStorage",
-              "Header": [
-                {
-                  "Name": "dummy",
-                  "Type": "UInt8"
-                }
-              ]
             }
           ]
         }
@@ -351,17 +339,31 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
   {
     "Plan": {
       "Node Type": "Expression",
+      "Node Id": "Expression_5",
       "Expression": {
-        "Inputs": [],
+        "Inputs": [
+          {
+            "Name": "dummy",
+            "Type": "UInt8"
+          }
+        ],
         "Actions": [
           {
-            "Node Type": "Column",
+            "Node Type": "INPUT",
             "Result Type": "UInt8",
-            "Result Type": "Column",
+            "Result Name": "dummy",
+            "Arguments": [0],
+            "Removed Arguments": [0],
+            "Result": 0
+          },
+          {
+            "Node Type": "COLUMN",
+            "Result Type": "UInt8",
+            "Result Name": "1",
             "Column": "Const(UInt8)",
             "Arguments": [],
             "Removed Arguments": [],
-            "Result": 0
+            "Result": 1
           }
         ],
         "Outputs": [
@@ -370,17 +372,12 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
             "Type": "UInt8"
           }
         ],
-        "Positions": [0],
-        "Project Input": true
+        "Positions": [1]
       },
       "Plans": [
         {
-          "Node Type": "SettingQuotaAndLimits",
-          "Plans": [
-            {
-              "Node Type": "ReadFromStorage"
-            }
-          ]
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0"
         }
       ]
     }
@@ -395,6 +392,8 @@ Settings:
 - `header` — Prints header for each output port. Default: 0.
 - `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
 - `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
+
+When `compact=0` and `graph=1` processor names will contain an additional suffix with unique processor identifier.
 
 Example:
 
@@ -415,7 +414,7 @@ ExpressionTransform
         ExpressionTransform × 2
           (SettingQuotaAndLimits)
             (ReadFromStorage)
-            NumbersMt × 2 0 → 1
+            NumbersRange × 2 0 → 1
 ```
 ### EXPLAIN ESTIMATE
 

@@ -14,8 +14,8 @@ select count() from tbl where _partition_value.3 = 4 settings max_rows_to_read =
 
 create table tbl2(i int) engine MergeTree order by i;
 insert into tbl2 values (1);
-select _partition_value from tbl2; -- { serverError 16 }
-select _partition_value from tbl2 group by 1; -- { serverError 16 }
+select _partition_value from tbl2; -- { serverError UNKNOWN_IDENTIFIER }
+select _partition_value from tbl2 group by 1; -- { serverError UNKNOWN_IDENTIFIER }
 
 drop table tbl;
 drop table tbl2;

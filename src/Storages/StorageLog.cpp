@@ -1,9 +1,11 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageLogSettings.h>
 
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -21,7 +23,6 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <Interpreters/Context.h>
-#include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
@@ -35,10 +36,11 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Storages/BlockNumberColumn.h>
 
 #include <cassert>
 #include <chrono>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -47,8 +49,12 @@
 
 namespace DB
 {
-
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -104,6 +110,8 @@ protected:
     Chunk generate() override;
 
 private:
+    NameAndTypePair getColumnOnDisk(const NameAndTypePair & column) const;
+
     const size_t block_size;
     const NamesAndTypesList columns;
     const StorageLog & storage;
@@ -126,7 +134,7 @@ private:
 
             if (limited_by_file_size)
             {
-                limited.emplace(*plain, file_size - offset, /* trow_exception */ false, /* exact_limit */ std::optional<size_t>());
+                limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
                 compressed.emplace(*limited);
             }
             else
@@ -149,6 +157,22 @@ private:
     bool isFinished();
 };
 
+NameAndTypePair LogSource::getColumnOnDisk(const NameAndTypePair & column) const
+{
+    const auto & storage_columns = storage.columns_with_collected_nested;
+
+    /// A special case when we read subcolumn of shared offsets of Nested.
+    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
+    auto name_in_storage = column.getNameInStorage();
+    if (column.getSubcolumnName() == "size0" && Nested::isSubcolumnOfNested(name_in_storage, storage_columns))
+    {
+        auto nested_name_in_storage = Nested::splitName(name_in_storage).first;
+        auto new_name = Nested::concatenateName(nested_name_in_storage, column.getSubcolumnName());
+        return storage_columns.getColumnOrSubcolumn(GetColumnsOptions::All, new_name);
+    }
+
+    return column;
+}
 
 Chunk LogSource::generate()
 {
@@ -169,19 +193,21 @@ Chunk LogSource::generate()
     for (const auto & name_type : columns)
     {
         ColumnPtr column;
+        auto name_type_on_disk = getColumnOnDisk(name_type);
+
         try
         {
-            column = name_type.type->createColumn();
-            readData(name_type, column, max_rows_to_read, caches[name_type.getNameInStorage()]);
+            column = name_type_on_disk.type->createColumn();
+            readData(name_type_on_disk, column, max_rows_to_read, caches[name_type_on_disk.getNameInStorage()]);
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
+            e.addMessage("while reading column " + name_type_on_disk.name + " at " + fullPath(storage.disk, storage.table_path));
             throw;
         }
 
         if (!column->empty())
-            res.insert(ColumnWithTypeAndName(column, name_type.type, name_type.name));
+            res.insert(ColumnWithTypeAndName(column, name_type_on_disk.type, name_type_on_disk.name));
     }
 
     if (res)
@@ -221,7 +247,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
             const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
             if (data_file_it == storage.data_files_by_names.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no information about file {} in StorageLog", data_file_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
             const auto & data_file = *data_file_it->second;
 
             size_t offset = stream_for_prefix ? 0 : offsets[data_file.index];
@@ -235,7 +261,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     if (!deserialize_states.contains(name))
     {
         settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name], nullptr);
     }
 
     settings.getter = create_stream_getter(false);
@@ -279,6 +305,7 @@ public:
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(std::make_shared<StorageSnapshot>(storage, metadata_snapshot))
         , lock(std::move(lock_))
     {
         if (!lock)
@@ -302,6 +329,10 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
+                for (auto & [_, stream] : streams)
+                {
+                    stream.cancel();
+                }
                 streams.clear();
 
                 /// Truncate files to the older sizes.
@@ -317,12 +348,13 @@ public:
         }
     }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
     StorageLog & storage;
     StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     WriteLock lock;
     bool done = false;
 
@@ -352,6 +384,12 @@ private:
             plain->next();
             plain->finalize();
         }
+
+        void cancel()
+        {
+            compressed.cancel();
+            plain->cancel();
+        }
     };
 
     using FileStreams = std::map<String, Stream>;
@@ -367,9 +405,9 @@ private:
 };
 
 
-void LogSink::consume(Chunk chunk)
+void LogSink::consume(Chunk & chunk)
 {
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.getColumns());
     metadata_snapshot->check(block, true);
 
     for (auto & stream : streams | boost::adaptors::map_values)
@@ -428,7 +466,7 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
         auto it = streams.find(data_file_name);
         if (it == streams.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: stream was not created when writing data in LogSink");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream was not created when writing data in LogSink");
 
         Stream & stream = it->second;
         if (stream.written)
@@ -453,16 +491,10 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
         {
             const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
             if (data_file_it == storage.data_files_by_names.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no information about file {} in StorageLog", data_file_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            const auto & columns = metadata_snapshot->getColumns();
-
-            CompressionCodecPtr compression;
-            if (name_and_type.name == BlockNumberColumn::name)
-                compression = BlockNumberColumn::compression_codec;
-            else
-                compression = columns.getCodecOrDefault(name_and_type.name);
+            auto compression = storage_snapshot->getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
@@ -549,7 +581,7 @@ StorageLog::StorageLog(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    bool attach,
+    LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
     : IStorage(table_id_)
     , WithMutableContext(context_)
@@ -559,7 +591,7 @@ StorageLog::StorageLog(
     , use_marks_file(engine_name == "Log")
     , marks_file_path(table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME)
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef().max_compress_block_size)
+    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -583,7 +615,7 @@ StorageLog::StorageLog(
             file_checker.setEmpty(marks_file_path);
     }
 
-    if (!attach)
+    if (mode < LoadingStrictnessLevel::ATTACH)
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
@@ -600,6 +632,7 @@ StorageLog::StorageLog(
         }
     }
 
+    columns_with_collected_nested = ColumnsDescription{Nested::collect(columns_.getAll())};
     total_bytes = file_checker.getTotalSize();
 }
 
@@ -650,7 +683,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         return;
 
     size_t num_marks = 0;
-    if (disk->exists(marks_file_path))
+    if (disk->existsFile(marks_file_path))
     {
         size_t file_size = disk->getFileSize(marks_file_path);
         if (file_size % (num_data_files * sizeof(Mark)) != 0)
@@ -661,7 +694,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         for (auto & data_file : data_files)
             data_file.marks.resize(num_marks);
 
-        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, ReadSettings().adjustBufferSize(32768));
+        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, getReadSettings().adjustBufferSize(32768));
         for (size_t i = 0; i != num_marks; ++i)
         {
             for (auto & data_file : data_files)
@@ -761,9 +794,9 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 static std::chrono::seconds getLockTimeout(ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
-    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
-    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
-        lock_timeout = settings.max_execution_time.totalSeconds();
+    Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
+    if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
+        lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
 }
 
@@ -817,12 +850,7 @@ Pipe StorageLog::read(
     size_t num_marks = marks_with_real_row_count.size();
 
     size_t max_streams = use_marks_file ? num_marks : 1;
-    if (num_streams > max_streams)
-        num_streams = max_streams;
-
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
-    all_columns = Nested::convertToSubcolumns(all_columns);
+    num_streams = std::min(num_streams, max_streams);
 
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);
@@ -839,6 +867,12 @@ Pipe StorageLog::read(
 
     ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
+
+    /// Converting to subcolumns of Nested is needed for
+    /// correct reading of parts of Nested with shared offsets.
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
+    all_columns = Nested::convertToSubcolumns(all_columns);
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
@@ -877,10 +911,10 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(const ASTPtr & query, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(
+    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
-    const auto * check_query = query->as<ASTCheckQuery>();
-    if (check_query->partition || !check_query->part_name.empty())
+    if (!std::holds_alternative<std::monostate>(check_task_filter))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CHECK PART/PARTITION are not supported for {}", getName());
 
     ReadLock lock{rwlock, getLockTimeout(local_context)};
@@ -1140,7 +1174,7 @@ void registerStorageLog(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.attach,
+            args.mode,
             args.getContext());
     };
 

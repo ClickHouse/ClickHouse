@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <vector>
-#include <cstdint>
+#include "Common/MultiVersion.h"
 
 namespace Poco
 {
@@ -45,7 +45,8 @@ class SensitiveDataMasker
 private:
     class MaskingRule;
     std::vector<std::unique_ptr<MaskingRule>> all_masking_rules;
-    static std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
+    using MaskerMultiVersion = MultiVersion<SensitiveDataMasker>;
+    static MaskerMultiVersion sensitive_data_masker;
 
 public:
     SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
@@ -56,8 +57,8 @@ public:
 
     /// setInstance is not thread-safe and should be called once in single-thread mode.
     /// https://github.com/ClickHouse/ClickHouse/pull/6810#discussion_r321183367
-    static void setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_);
-    static SensitiveDataMasker * getInstance();
+    static void setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_);
+    static MaskerMultiVersion::Version getInstance();
 
     /// Used in tests.
     void addMaskingRule(const std::string & name, const std::string & regexp_string, const std::string & replacement_string);

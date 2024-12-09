@@ -3,13 +3,14 @@
 #include <Server/IServer.h>
 
 #include <Compression/CompressedWriteBuffer.h>
+#include <Core/ServerSettings.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -20,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int REQUIRED_PASSWORD;
 }
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
@@ -40,7 +41,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
         Poco::Net::HTTPBasicCredentials credentials(info);
         return server_credentials->isValidUser(credentials.getUsername(), credentials.getPassword());
     }
-    else if (request.hasCredentials())
+    if (request.hasCredentials())
     {
         return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
     }
@@ -48,7 +49,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
-void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr output)
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
 
@@ -67,95 +68,61 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 
     if (compress)
     {
-        CompressedWriteBuffer compressed_out(*used_output.out);
+        CompressedWriteBuffer compressed_out(*output);
         endpoint->processQuery(params, body, compressed_out, response);
+        compressed_out.finalize();
     }
     else
     {
-        endpoint->processQuery(params, body, *used_output.out, response);
+        endpoint->processQuery(params, body, *output, response);
     }
 }
 
 
-void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     setThreadName("IntersrvHandler");
-    ThreadStatus thread_status;
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    Output used_output;
-    const auto & config = server.config();
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
-
-    auto write_response = [&](const std::string & message)
-    {
-        auto & out = *used_output.out;
-        if (response.sent())
-        {
-            out.finalize();
-            return;
-        }
-
-        try
-        {
-            writeString(message, out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            out.finalize();
-        }
-    };
+    auto output = std::make_shared<WriteBufferFromHTTPServerResponse>(
+        response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
 
     try
     {
-        if (auto [message, success] = checkAuthentication(request); success)
+        auto [message, success] = checkAuthentication(request);
+        if (success)
         {
-            processQuery(request, response, used_output);
-            used_output.out->finalize();
+            processQuery(request, response, output);
+            output->finalize();
             LOG_DEBUG(log, "Done processing query");
         }
         else
         {
-            response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
-            write_response(message);
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
+            output->cancelWithException(request, ErrorCodes::REQUIRED_PASSWORD, message, nullptr);
         }
     }
     catch (Exception & e)
     {
-        if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
-        {
-            used_output.out->finalize();
-            return;
-        }
-
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
-
         /// Sending to remote server was cancelled due to server shutdown or drop table.
         bool is_real_error = e.code() != ErrorCodes::ABORTED;
-
-        PreformattedMessage message = getCurrentExceptionMessageAndPattern(is_real_error);
-        write_response(message.text);
-
+        PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ is_real_error);
         if (is_real_error)
             LOG_ERROR(log, message);
         else
             LOG_INFO(log, message);
+
+        output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
     }
     catch (...)
     {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
-        write_response(message.text);
-
         LOG_ERROR(log, message);
+
+        output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
     }
 }
 

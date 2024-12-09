@@ -1,8 +1,13 @@
 #pragma once
+#include <Core/Settings.h>
 #include <Functions/IFunctionCustomWeek.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_extended_results_for_datetime_functions;
+}
 
 namespace ErrorCodes
 {
@@ -22,7 +27,7 @@ public:
     }
 
     explicit FunctionCustomWeekToDateOrDate32(ContextPtr context)
-        : enable_extended_results_for_datetime_functions(context->getSettingsRef().enable_extended_results_for_datetime_functions)
+        : enable_extended_results_for_datetime_functions(context->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
     {
     }
 
@@ -34,8 +39,7 @@ public:
         WhichDataType which(from_type);
         if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
             return std::make_shared<DataTypeDate32>();
-        else
-            return std::make_shared<DataTypeDate>();
+        return std::make_shared<DataTypeDate>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -45,31 +49,37 @@ public:
 
         if (which.isDate())
             return CustomWeekTransformImpl<DataTypeDate, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
-        else if (which.isDate32())
+        if (which.isDate32())
         {
             if (enable_extended_results_for_datetime_functions)
-                return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count, Transform{});
-            else
-                return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
+                return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate32, /*is_extended_result*/ true>::execute(
+                    arguments, result_type, input_rows_count, Transform{});
+            return CustomWeekTransformImpl<DataTypeDate32, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
         }
-        else if (which.isDateTime())
-            return CustomWeekTransformImpl<DataTypeDateTime, DataTypeDate>::execute(
-                arguments, result_type, input_rows_count, Transform{});
-        else if (which.isDateTime64())
+        if (which.isDateTime())
+            return CustomWeekTransformImpl<DataTypeDateTime, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{});
+        if (which.isDateTime64())
         {
             if (enable_extended_results_for_datetime_functions)
-                return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate32, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count,
+                return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate32, /*is_extended_result*/ true>::execute(
+                    arguments,
+                    result_type,
+                    input_rows_count,
                     TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
-            else
-                return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate>::execute(arguments, result_type, input_rows_count,
-                    TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
+            return CustomWeekTransformImpl<DataTypeDateTime64, DataTypeDate>::execute(
+                arguments,
+                result_type,
+                input_rows_count,
+                TransformDateTime64<Transform>{assert_cast<const DataTypeDateTime64 *>(from_type)->getScale()});
         }
-        else if (Transform::value_may_be_string && which.isString())
-            return CustomWeekTransformImpl<DataTypeString, DataTypeDate>::execute(arguments, result_type, input_rows_count, Transform{}); // TODO
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
-                arguments[0].type->getName(), this->getName());
+        if (Transform::value_may_be_string && which.isString())
+            return CustomWeekTransformImpl<DataTypeString, DataTypeDate>::execute(
+                arguments, result_type, input_rows_count, Transform{}); // TODO
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument of function {}",
+            arguments[0].type->getName(),
+            this->getName());
     }
 
 };

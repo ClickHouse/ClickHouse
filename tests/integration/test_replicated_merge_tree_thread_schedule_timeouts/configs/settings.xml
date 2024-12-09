@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- Run with a small thread pool size so it's easier to saturate -->
+    <max_thread_pool_size>300</max_thread_pool_size>
+    <thread_pool_queue_size>1</thread_pool_queue_size>
+    <background_schedule_pool_size>128</background_schedule_pool_size>
+</clickhouse>

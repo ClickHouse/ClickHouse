@@ -4,60 +4,92 @@ sidebar_position: 36
 sidebar_label: DELETE
 description: Lightweight deletes simplify the process of deleting data from the database.
 keywords: [delete]
-title: DELETE Statement
+title: The Lightweight DELETE Statement
 ---
 
+The lightweight `DELETE` statement removes rows from the table `[db.]table` that match the expression `expr`. It is only available for the *MergeTree table engine family.
+
 ``` sql
-DELETE FROM [db.]table [ON CLUSTER cluster] WHERE expr
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
 ```
 
-`DELETE FROM` removes rows from the table `[db.]table` that match the expression `expr`. The deleted rows are marked as deleted immediately and will be automatically filtered out of all subsequent queries. Cleanup of data happens asynchronously in the background. This feature is only available for the MergeTree table engine family.
+It is called "lightweight `DELETE`" to contrast it to the [ALTER TABLE ... DELETE](/en/sql-reference/statements/alter/delete) command, which is a heavyweight process.
 
-For example, the following query deletes all rows from the `hits` table where the `Title` column contains the text `hello`:
+## Examples
 
 ```sql
+-- Deletes all rows from the `hits` table where the `Title` column contains the text `hello`
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-Lightweight deletes are asynchronous by default. Set `mutations_sync` equal to 1 to wait for one replica to process the statement, and set `mutations_sync` to 2 to wait for all replicas.
+## Lightweight `DELETE` does not delete data immediately
 
-:::note
-`DELETE FROM` requires the `ALTER DELETE` privilege:
+Lightweight `DELETE` is implemented as a [mutation](/en/sql-reference/statements/alter#mutations) that marks rows as deleted but does not immediately physically delete them.
+
+By default, `DELETE` statements wait until marking the rows as deleted is completed before returning. This can take a long time if the amount of data is large. Alternatively, you can run it asynchronously in the background using the setting [`lightweight_deletes_sync`](/en/operations/settings/settings#lightweight_deletes_sync). If disabled, the `DELETE` statement is going to return immediately, but the data can still be visible to queries until the background mutation is finished.
+
+The mutation does not physically delete the rows that have been marked as deleted, this will only happen during the next merge. As a result, it is possible that for an unspecified period, data is not actually deleted from storage and is only marked as deleted.
+
+If you need to guarantee that your data is deleted from storage in a predictable time, consider using the table setting [`min_age_to_force_merge_seconds`](https://clickhouse.com/docs/en/operations/settings/merge-tree-settings#min_age_to_force_merge_seconds). Or you can use the [ALTER TABLE ... DELETE](/en/sql-reference/statements/alter/delete) command. Note that deleting data using `ALTER TABLE ... DELETE` may consume significant resources as it recreates all affected parts.
+
+## Deleting large amounts of data
+
+Large deletes can negatively affect ClickHouse performance. If you are attempting to delete all rows from a table, consider using the [`TRUNCATE TABLE`](/en/sql-reference/statements/truncate) command.
+
+If you anticipate frequent deletes, consider using a [custom partitioning key](/en/engines/table-engines/mergetree-family/custom-partitioning-key). You can then use the [`ALTER TABLE ... DROP PARTITION`](/en/sql-reference/statements/alter/partition#drop-partitionpart) command to quickly drop all rows associated with that partition.
+
+## Limitations of lightweight `DELETE`
+
+### Lightweight `DELETE`s with projections
+
+By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. But there is a [MergeTree setting](https://clickhouse.com/docs/en/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` to change the behavior.
+
+## Performance considerations when using lightweight `DELETE`
+
+**Deleting large volumes of data with the lightweight `DELETE` statement can negatively affect SELECT query performance.**
+
+The following can also negatively impact lightweight `DELETE` performance:
+
+- A heavy `WHERE` condition in a `DELETE` query.
+- If the mutations queue is filled with many other mutations, this can possibly lead to performance issues as all mutations on a table are executed sequentially.
+- The affected table has a very large number of data parts.
+- Having a lot of data in compact parts. In a Compact part, all columns are stored in one file.
+
+## Delete permissions
+
+`DELETE` requires the `ALTER DELETE` privilege. To enable `DELETE` statements on a specific table for a given user, run the following command:
+
 ```sql
-grant ALTER DELETE ON db.table to username;
+GRANT ALTER DELETE ON db.table to username;
 ```
-:::
 
-## Lightweight Delete Internals
+## How lightweight DELETEs work internally in ClickHouse
 
-The idea behind Lightweight Delete is that when a `DELETE FROM table ...` query is executed ClickHouse only saves a mask where each row is marked as either “existing” or as “deleted”. Those “deleted” rows become invisible for subsequent queries, but physically the rows are removed only later by subsequent merges. Writing this mask is usually much more lightweight than what is done by `ALTER table DELETE ...` query.
+1. **A "mask" is applied to affected rows**
 
-### How it is implemented
-The mask is implemented as a hidden `_row_exists` system column that stores True for all visible rows and False for deleted ones. This column is only present in a part if some rows in this part were deleted. In other words, the column is not persisted when it has all values equal to True.
+   When a `DELETE FROM table ...` query is executed, ClickHouse saves a mask where each row is marked as either “existing” or as “deleted”. Those “deleted” rows are omitted for subsequent queries. However, rows are actually only removed later by subsequent merges. Writing this mask is much more lightweight than what is done by an `ALTER TABLE ... DELETE` query.
 
-## SELECT query
-When the column is present `SELECT ... FROM table WHERE condition` query internally is extended by an additional predicate on `_row_exists` and becomes similar to
-```sql
-    SELECT ... FROM table PREWHERE _row_exists WHERE condition
-```
-At execution time the column `_row_exists` is read to figure out which rows are not visible and if there are many deleted rows it can figure out which granules can be fully skipped when reading the rest of the columns.
+   The mask is implemented as a hidden `_row_exists` system column that stores `True` for all visible rows and `False` for deleted ones. This column is only present in a part if some rows in the part were deleted. This column does not exist when a part has all values equal to `True`.
 
-## DELETE query
-`DELETE FROM table WHERE condition` is translated into `ALTER table UPDATE _row_exists = 0 WHERE condition` mutation. Internally this mutation is executed in 2 steps:
-1. `SELECT count() FROM table WHERE condition` for each individual part to figure out if the part is affected.
-2. Mutate affected parts, and make hardlinks for unaffected parts. Mutating a part in fact only writes `_row_exists` column and just hardlinks all other columns’ files in the case of Wide parts. But for Compact parts, all columns are rewritten because they all are stored together in one file.
+2. **`SELECT` queries are transformed to include the mask**
 
-So if we compare Lightweight Delete to `ALTER DELETE` in the first step they both do the same thing to figure out which parts are affected, but in the second step `ALTER DELETE` does much more work because it reads and rewrites all columns’ files for the affected parts.
+   When a masked column is used in a query, the `SELECT ... FROM table WHERE condition` query internally is extended by the predicate on `_row_exists` and is transformed to:
+   ```sql
+   SELECT ... FROM table PREWHERE _row_exists WHERE condition
+   ```
+   At execution time, the column `_row_exists` is read to determine which rows should not be returned. If there are many deleted rows, ClickHouse can determine which granules can be fully skipped when reading the rest of the columns.
 
-With the described implementation now we can see what can negatively affect 'DELETE FROM' execution time:
-- Heavy WHERE condition in DELETE query
-- Mutations queue filled with other mutations, because all mutations on a table are executed sequentially
-- Table having a very large number of data parts
-- Having a lot of data in Compact parts—in a Compact part, all columns are stored in one file.
+3. **`DELETE` queries are transformed to `ALTER TABLE ... UPDATE` queries**
 
-:::note
-Currently, Lightweight delete does not work for tables with projection as rows in projection may be affected and require the projection to be rebuilt. Rebuilding projection makes the deletion not lightweight, so this is not supported. 
-:::
+   The `DELETE FROM table WHERE condition` is translated into an `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` mutation.
+
+   Internally, this mutation is executed in two steps:
+
+   1. A `SELECT count() FROM table WHERE condition` command is executed for each individual part to determine if the part is affected.
+
+   2. Based on the commands above, affected parts are then mutated, and hardlinks are created for unaffected parts. In the case of wide parts, the `_row_exists` column for each row is updated, and all other columns' files are hardlinked. For compact parts, all columns are re-written because they are all stored together in one file.
+
+   From the steps above, we can see that lightweight `DELETE` using the masking technique improves performance over traditional `ALTER TABLE ... DELETE` because it does not re-write all the columns' files for affected parts.
 
 ## Related content
 

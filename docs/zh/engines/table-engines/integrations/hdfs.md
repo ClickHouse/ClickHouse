@@ -103,7 +103,7 @@ CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs
 
 **示例**
 
-创建具有名为文件的表 `file000`, `file001`, … , `file999`:
+创建具有名为文件的表 `file000`, `file001`, ... , `file999`:
 
 ``` sql
 CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')

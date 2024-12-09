@@ -1,5 +1,7 @@
-import pytest
 import itertools
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -41,7 +43,7 @@ def test_default_column():
     )
 
     for insert_sync in [0, 1]:
-        settings = {"insert_distributed_sync": insert_sync}
+        settings = {"distributed_foreground_insert": insert_sync}
 
         # INSERT INTO TABLE dist (x)
         node1.query("TRUNCATE TABLE local ON CLUSTER 'test_cluster'")
@@ -86,7 +88,7 @@ def test_materialized_column_allow_insert_materialized():
 
     for insert_sync in [0, 1]:
         settings = {
-            "insert_distributed_sync": insert_sync,
+            "distributed_foreground_insert": insert_sync,
             "insert_allow_materialized_columns": 1,
         }
 
@@ -133,7 +135,7 @@ def test_materialized_column_disallow_insert_materialized():
 
     for insert_sync in [0, 1]:
         settings = {
-            "insert_distributed_sync": insert_sync,
+            "distributed_foreground_insert": insert_sync,
             "insert_allow_materialized_columns": 0,
         }
 
@@ -173,7 +175,7 @@ def test_materialized_column_disallow_insert_materialized_different_shards():
 
     for insert_sync in [0, 1]:
         settings = {
-            "insert_distributed_sync": insert_sync,
+            "distributed_foreground_insert": insert_sync,
             "insert_allow_materialized_columns": 0,
         }
 

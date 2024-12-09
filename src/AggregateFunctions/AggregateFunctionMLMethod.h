@@ -157,7 +157,7 @@ public:
 
     void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
-    virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
+    void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
     void write(WriteBuffer & buf) const override;
 
@@ -189,7 +189,7 @@ public:
 
     void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
-    virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
+    void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
     void write(WriteBuffer & buf) const override;
 
@@ -204,7 +204,7 @@ private:
 class Adam : public IWeightsUpdater
 {
 public:
-    Adam(size_t num_params)
+    explicit Adam(size_t num_params)
     {
         beta1_powered = beta1;
         beta2_powered = beta2;
@@ -226,7 +226,7 @@ public:
 
     void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
-    virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
+    void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override;
 
     void write(WriteBuffer & buf) const override;
 
@@ -384,7 +384,7 @@ public:
         auto * column = typeid_cast<ColumnFloat64 *>(&to);
         if (!column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cast of column of predictions is incorrect. "
-                            "getReturnTypeToPredict must return same value as it is casted to");
+                            "getReturnTypeToPredict must return same value as it is cast to");
 
         this->data(place).predict(column->getData(), arguments, offset, limit, context);
     }

@@ -9,8 +9,8 @@ if [ -z ${ENABLE_ANALYZER+x} ]; then
 fi
 
 OPTIMIZATION_SETTING="query_plan_remove_redundant_distinct"
-DISABLE_OPTIMIZATION="set allow_experimental_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="set allow_experimental_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="set enable_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="set enable_analyzer=$ENABLE_ANALYZER;SET $OPTIMIZATION_SETTING=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled $OPTIMIZATION_SETTING"
 query="SELECT DISTINCT *
@@ -24,15 +24,15 @@ FROM
     )
 )"
 
-$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN $query"
+$CLICKHOUSE_CLIENT -q "$DISABLE_OPTIMIZATION;EXPLAIN $query"
 
 function run_query {
     echo "-- query"
     echo "$1"
     echo "-- explain"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN $1"
+    $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;EXPLAIN $1"
     echo "-- execute"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;$1"
+    $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;$1"
 }
 
 echo "-- Enabled $OPTIMIZATION_SETTING"
@@ -59,7 +59,8 @@ FROM
 (
     SELECT DISTINCT number AS n
     FROM numbers(2)
-) as y"
+) as y
+ORDER BY x.n, y.n"
 run_query "$query"
 
 echo "-- DISTINCT duplicates with several columns"
@@ -72,7 +73,8 @@ FROM
         SELECT DISTINCT number as a, 2*number as b
         FROM numbers(3)
     )
-)"
+)
+ORDER BY a, b"
 run_query "$query"
 
 echo "-- DISTINCT duplicates with constant columns"
@@ -85,7 +87,8 @@ FROM
         SELECT DISTINCT 1, number as a, 2*number as b
         FROM numbers(3)
     )
-)"
+)
+ORDER BY a, b"
 run_query "$query"
 
 echo "-- ARRAY JOIN: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs"
@@ -95,7 +98,8 @@ FROM
     SELECT DISTINCT *
     FROM VALUES('Hello', 'World', 'Goodbye')
 ) AS words
-ARRAY JOIN [0, 1] AS arr"
+ARRAY JOIN [0, 1] AS arr
+ORDER BY c1, arr"
 run_query "$query"
 
 echo "-- WITH FILL: do _not_ remove outer DISTINCT because new rows are generated between inner and outer DISTINCTs"
@@ -114,7 +118,8 @@ FROM
 (
     SELECT DISTINCT ['Istanbul', 'Berlin', 'Bensheim'] AS cities
 )
-WHERE arrayJoin(cities) IN ['Berlin', 'Bensheim']"
+WHERE arrayJoin(cities) IN ['Berlin', 'Bensheim']
+ORDER BY cities"
 run_query "$query"
 
 echo "-- GROUP BY before DISTINCT with on the same columns => remove DISTINCT"
@@ -132,6 +137,7 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a
+    ORDER BY a
 )"
 run_query "$query"
 
@@ -150,6 +156,7 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a
+    ORDER BY a
 )"
 run_query "$query"
 
@@ -168,6 +175,7 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH ROLLUP
+    ORDER BY a
 )"
 run_query "$query"
 
@@ -186,6 +194,7 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH ROLLUP
+    ORDER BY a
 )"
 run_query "$query"
 
@@ -204,6 +213,7 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH CUBE
+    ORDER BY a
 )"
 run_query "$query"
 
@@ -222,6 +232,7 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH CUBE
+    ORDER BY a
 )"
 run_query "$query"
 
@@ -240,6 +251,7 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH TOTALS
+    ORDER BY a
 )"
 run_query "$query"
 
@@ -258,6 +270,7 @@ FROM
         FROM numbers(3) AS x, numbers(3, 3) AS y
     )
     GROUP BY a WITH TOTALS
+    ORDER BY a
 )"
 run_query "$query"
 
@@ -274,5 +287,6 @@ FROM
     UNION ALL
     SELECT DISTINCT number
     FROM numbers(2)
-)"
+)
+ORDER BY number"
 run_query "$query"

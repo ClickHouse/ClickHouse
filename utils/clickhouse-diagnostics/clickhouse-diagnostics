@@ -12,12 +12,12 @@ from datetime import datetime
 from typing import MutableMapping
 
 import jinja2
-from pandas import describe_option
 import requests
 import sqlparse
 import tenacity
 import xmltodict
 import yaml
+from pandas import describe_option
 
 SELECT_VERSION = r"SELECT version()"
 
@@ -453,10 +453,10 @@ LIMIT 10
 SELECT_STACK_TRACES = r"""SELECT
     '\n' || arrayStringConcat(
        arrayMap(
-           x,
-           y -> concat(x, ': ', y),
+           x, y, z -> concat(x, ': ', y, ' @ ', z),
            arrayMap(x -> addressToLine(x), trace),
-           arrayMap(x -> demangle(addressToSymbol(x)), trace)),
+           arrayMap(x -> demangle(addressToSymbol(x)), trace),
+           arrayMap(x -> '0x' || hex(x), trace)),
        '\n') AS trace
 FROM system.stack_trace
 """

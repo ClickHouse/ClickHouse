@@ -17,12 +17,8 @@
 
 - The issue may be happened when the GPG key is changed.
 
-Please use the following scripts to resolve the issue:
+Please use the manual from the [setup](../getting-started/install.md#setup-the-debian-repository) page to update the repository configuration.
 
-```bash
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-sudo apt-get update
-```
 
 ### You Get Different Warnings with `apt-get update` {#you-get-different-warnings-with-apt-get-update}
 
@@ -68,6 +64,34 @@ sudo rm -f /etc/yum.repos.d/clickhouse.repo
 ```
 
 After that follow the [install guide](../getting-started/install.md#from-rpm-packages)
+
+### You Can't Run Docker Container
+
+You are running a simple `docker run clickhouse/clickhouse-server` and it crashes with a stack trace similar to following:
+
+```
+$ docker run -it clickhouse/clickhouse-server
+........
+2024.11.06 21:04:48.912036 [ 1 ] {} <Information> SentryWriter: Sending crash reports is disabled
+Poco::Exception. Code: 1000, e.code() = 0, System exception: cannot start thread, Stack trace (when copying this message, always include the lines below):
+
+0. Poco::ThreadImpl::startImpl(Poco::SharedPtr<Poco::Runnable, Poco::ReferenceCounter, Poco::ReleasePolicy<Poco::Runnable>>) @ 0x00000000157c7b34
+1. Poco::Thread::start(Poco::Runnable&) @ 0x00000000157c8a0e
+2. BaseDaemon::initializeTerminationAndSignalProcessing() @ 0x000000000d267a14
+3. BaseDaemon::initialize(Poco::Util::Application&) @ 0x000000000d2652cb
+4. DB::Server::initialize(Poco::Util::Application&) @ 0x000000000d128b38
+5. Poco::Util::Application::run() @ 0x000000001581cfda
+6. DB::Server::run() @ 0x000000000d1288f0
+7. Poco::Util::ServerApplication::run(int, char**) @ 0x0000000015825e27
+8. mainEntryClickHouseServer(int, char**) @ 0x000000000d125b38
+9. main @ 0x0000000007ea4eee
+10. ? @ 0x00007f67ff946d90
+11. ? @ 0x00007f67ff946e40
+12. _start @ 0x00000000062e802e
+ (version 24.10.1.2812 (official build))
+```
+
+The reason is an old docker daemon with version lower than `20.10.10`. A way to fix it either upgrading it, or running `docker run [--privileged | --security-opt seccomp=unconfined]`. The latter has security implications.
 
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
@@ -155,7 +179,7 @@ Check:
 
 - Endpoint settings.
 
-    Check [listen_host](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-listen_host) and [tcp_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) settings.
+    Check [listen_host](../operations/server-configuration-parameters/settings.md#listen_host) and [tcp_port](../operations/server-configuration-parameters/settings.md#tcp_port) settings.
 
     ClickHouse server accepts localhost connections only by default.
 
@@ -167,8 +191,8 @@ Check:
 
     Check:
 
-    - The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) setting.
-    - Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
+    - The [tcp_port_secure](../operations/server-configuration-parameters/settings.md#tcp_port_secure) setting.
+    - Settings for [SSL certificates](../operations/server-configuration-parameters/settings.md#openssl).
 
     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 

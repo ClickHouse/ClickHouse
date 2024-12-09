@@ -19,8 +19,8 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
-    MergeTreeData & storage,
     MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context
@@ -32,13 +32,14 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ContextPtr context
 );
 
+MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command);
+
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter
 {
 private:
     struct Stage;
-
 public:
     struct Settings
     {
@@ -69,6 +70,7 @@ public:
     MutationsInterpreter(
         MergeTreeData & storage_,
         MergeTreeData::DataPartPtr source_part_,
+        AlterConversionsPtr alter_conversions_,
         StorageMetadataPtr metadata_snapshot_,
         MutationCommands commands_,
         Names available_columns_,
@@ -91,6 +93,8 @@ public:
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
+    NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
+
     NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
 
     struct MutationKind
@@ -98,7 +102,7 @@ public:
         enum MutationKindEnum
         {
             MUTATE_UNKNOWN,
-            MUTATE_INDEX_PROJECTION,
+            MUTATE_INDEX_STATISTICS_PROJECTION,
             MUTATE_OTHER,
         } mutation_kind = MUTATE_UNKNOWN;
 
@@ -118,10 +122,10 @@ public:
         const MergeTreeData * getMergeTreeData() const;
 
         bool supportsLightweightDelete() const;
-        bool hasLightweightDeleteMask() const;
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;
         bool hasProjection(const String & name) const;
+        bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
 
         void read(
@@ -133,7 +137,7 @@ public:
             bool can_execute_) const;
 
         explicit Source(StoragePtr storage_);
-        Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_);
+        Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_, AlterConversionsPtr alter_conversions_);
 
     private:
         StoragePtr storage;
@@ -141,6 +145,7 @@ public:
         /// Special case for *MergeTree.
         MergeTreeData * data = nullptr;
         MergeTreeData::DataPartPtr part;
+        AlterConversionsPtr alter_conversions;
     };
 
 private:
@@ -165,10 +170,17 @@ private:
     Source source;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
+
+    /// List of columns in table or in data part that can be updated by mutation.
+    /// If mutation affects all columns (e.g. DELETE), all of this columns
+    /// must be returned by pipeline created in MutationsInterpreter.
     Names available_columns;
+
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
+
+    LoggerPtr logger;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
@@ -211,9 +223,11 @@ private:
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
+    bool deleted_mask_updated = false;
 
     NameSet materialized_indices;
     NameSet materialized_projections;
+    NameSet materialized_statistics;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

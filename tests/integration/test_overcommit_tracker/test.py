@@ -6,6 +6,7 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
+    main_configs=["configs/config.d/config.xml"],
     user_configs=[
         "configs/users.d/users.xml",
     ],

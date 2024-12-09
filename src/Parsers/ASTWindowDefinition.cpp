@@ -58,15 +58,15 @@ String ASTWindowDefinition::getID(char) const
     return "WindowDefinition";
 }
 
-void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
-    FormatState & state, FormatStateStacked format_frame) const
+void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
+                                     FormatState & state, FormatStateStacked format_frame) const
 {
     format_frame.expression_list_prepend_whitespace = false;
     bool need_space = false;
 
     if (!parent_window_name.empty())
     {
-        settings.ostr << backQuoteIfNeed(parent_window_name);
+        ostr << backQuoteIfNeed(parent_window_name);
 
         need_space = true;
     }
@@ -75,11 +75,11 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     {
         if (need_space)
         {
-            settings.ostr << " ";
+            ostr << " ";
         }
 
-        settings.ostr << "PARTITION BY ";
-        partition_by->formatImpl(settings, state, format_frame);
+        ostr << "PARTITION BY ";
+        partition_by->formatImpl(ostr, settings, state, format_frame);
 
         need_space = true;
     }
@@ -88,11 +88,11 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     {
         if (need_space)
         {
-            settings.ostr << " ";
+            ostr << " ";
         }
 
-        settings.ostr << "ORDER BY ";
-        order_by->formatImpl(settings, state, format_frame);
+        ostr << "ORDER BY ";
+        order_by->formatImpl(ostr, settings, state, format_frame);
 
         need_space = true;
     }
@@ -100,45 +100,45 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
     if (!frame_is_default)
     {
         if (need_space)
-        {
-            settings.ostr << " ";
-        }
+            ostr << " ";
+
+        format_frame.need_parens = true;
 
         if (frame_type == WindowFrame::FrameType::SESSION)
         {
-            settings.ostr << frame_type << " ";
-            session_window_threshold->formatImpl(settings, state, format_frame);
+            ostr << frame_type << " ";
+            session_window_threshold->formatImpl(ostr, settings, state, format_frame);
             return;
         }
 
-        settings.ostr << frame_type << " BETWEEN ";
+        ostr << frame_type << " BETWEEN ";
         if (frame_begin_type == WindowFrame::BoundaryType::Current)
         {
-            settings.ostr << "CURRENT ROW";
+            ostr << "CURRENT ROW";
         }
         else if (frame_begin_type == WindowFrame::BoundaryType::Unbounded)
         {
-            settings.ostr << "UNBOUNDED PRECEDING";
+            ostr << "UNBOUNDED PRECEDING";
         }
         else
         {
-            frame_begin_offset->formatImpl(settings, state, format_frame);
-            settings.ostr << " "
+            frame_begin_offset->formatImpl(ostr, settings, state, format_frame);
+            ostr << " "
                 << (!frame_begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
-        settings.ostr << " AND ";
+        ostr << " AND ";
         if (frame_end_type == WindowFrame::BoundaryType::Current)
         {
-            settings.ostr << "CURRENT ROW";
+            ostr << "CURRENT ROW";
         }
         else if (frame_end_type == WindowFrame::BoundaryType::Unbounded)
         {
-            settings.ostr << "UNBOUNDED FOLLOWING";
+            ostr << "UNBOUNDED FOLLOWING";
         }
         else
         {
-            frame_end_offset->formatImpl(settings, state, format_frame);
-            settings.ostr << " "
+            frame_end_offset->formatImpl(ostr, settings, state, format_frame);
+            ostr << " "
                 << (!frame_end_preceding ? "FOLLOWING" : "PRECEDING");
         }
     }
@@ -147,10 +147,10 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
 std::string ASTWindowDefinition::getDefaultWindowName() const
 {
     WriteBufferFromOwnString ostr;
-    FormatSettings settings{ostr, true /* one_line */};
+    FormatSettings settings{true /* one_line */};
     FormatState state;
     FormatStateStacked format_frame;
-    formatImpl(settings, state, format_frame);
+    formatImpl(ostr, settings, state, format_frame);
     return ostr.str();
 }
 
@@ -170,13 +170,13 @@ String ASTWindowListElement::getID(char) const
     return "WindowListElement";
 }
 
-void ASTWindowListElement::formatImpl(const FormatSettings & settings,
-    FormatState & state, FormatStateStacked frame) const
+void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
+                                      FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << backQuoteIfNeed(name);
-    settings.ostr << " AS (";
-    definition->formatImpl(settings, state, frame);
-    settings.ostr << ")";
+    ostr << backQuoteIfNeed(name);
+    ostr << " AS (";
+    definition->formatImpl(ostr, settings, state, frame);
+    ostr << ")";
 }
 
 }

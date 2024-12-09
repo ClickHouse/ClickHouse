@@ -1,15 +1,14 @@
-import logging
-import sys
-import threading
-import random
-import time
-import urllib.parse
 import http.server
+import logging
+import random
+import socket
 import socketserver
 import string
-import socket
 import struct
-
+import sys
+import threading
+import time
+import urllib.parse
 
 INF_COUNT = 100000000
 
@@ -165,11 +164,50 @@ class _ServerRuntime:
                 '<?xml version="1.0" encoding="UTF-8"?>'
                 "<Error>"
                 "<Code>ExpectedError</Code>"
-                "<Message>mock s3 injected error</Message>"
+                "<Message>mock s3 injected unretryable error</Message>"
                 "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
                 "</Error>"
             )
-            request_handler.write_error(data)
+            request_handler.write_error(500, data)
+
+    class SlowDownAction:
+        def inject_error(self, request_handler):
+            data = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Error>"
+                "<Code>SlowDown</Code>"
+                "<Message>Slow Down.</Message>"
+                "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
+                "</Error>"
+            )
+            request_handler.write_error(429, data)
+
+    # make sure that Alibaba errors (QpsLimitExceeded, TotalQpsLimitExceededAction) are retriable
+    # we patched contrib/aws to achive it: https://github.com/ClickHouse/aws-sdk-cpp/pull/22 https://github.com/ClickHouse/aws-sdk-cpp/pull/23
+    # https://www.alibabacloud.com/help/en/oss/support/http-status-code-503
+    class QpsLimitExceededAction:
+        def inject_error(self, request_handler):
+            data = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Error>"
+                "<Code>QpsLimitExceeded</Code>"
+                "<Message>Please reduce your request rate.</Message>"
+                "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
+                "</Error>"
+            )
+            request_handler.write_error(429, data)
+
+    class TotalQpsLimitExceededAction:
+        def inject_error(self, request_handler):
+            data = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Error>"
+                "<Code>TotalQpsLimitExceeded</Code>"
+                "<Message>Please reduce your request rate.</Message>"
+                "<RequestId>txfbd566d03042474888193-00608d7537</RequestId>"
+                "</Error>"
+            )
+            request_handler.write_error(429, data)
 
     class RedirectAction:
         def __init__(self, host="localhost", port=1):
@@ -239,6 +277,16 @@ class _ServerRuntime:
                 self.error_handler = _ServerRuntime.BrokenPipeAction()
             elif self.action == "redirect_to":
                 self.error_handler = _ServerRuntime.RedirectAction(*self.action_args)
+            elif self.action == "slow_down":
+                self.error_handler = _ServerRuntime.SlowDownAction(*self.action_args)
+            elif self.action == "qps_limit_exceeded":
+                self.error_handler = _ServerRuntime.QpsLimitExceededAction(
+                    *self.action_args
+                )
+            elif self.action == "total_qps_limit_exceeded":
+                self.error_handler = _ServerRuntime.TotalQpsLimitExceededAction(
+                    *self.action_args
+                )
             else:
                 self.error_handler = _ServerRuntime.Expected500ErrorAction()
 
@@ -344,12 +392,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"Redirected")
 
-    def write_error(self, data, content_length=None):
+    def write_error(self, http_code, data, content_length=None):
         if content_length is None:
             content_length = len(data)
         self.log_message("write_error %s", data)
         self.read_all_input()
-        self.send_response(500)
+        self.send_response(http_code)
         self.send_header("Content-Type", "text/xml")
         self.send_header("Content-Length", str(content_length))
         self.end_headers()
@@ -418,7 +466,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         path = [x for x in parts.path.split("/") if x]
         assert path[0] == "mock_settings", path
         if len(path) < 2:
-            return self.write_error("_mock_settings: wrong command")
+            return self.write_error(400, "_mock_settings: wrong command")
 
         if path[1] == "at_part_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
@@ -477,7 +525,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("reset")
             return self._ok()
 
-        return self.write_error("_mock_settings: wrong command")
+        return self.write_error(400, "_mock_settings: wrong command")
 
     def do_GET(self):
         if self.path == "/":

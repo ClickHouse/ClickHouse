@@ -30,28 +30,28 @@ SELECT 'join_algorithm = {{ join_algorithm }}, join_use_nulls = {{ join_use_null
 SELECT '--';
 
 SELECT {{ t1 }}.a, {{ t1 }}.val, {{ t2 }}.a, {{ t2 }}.val FROM {{ t1 }} FULL JOIN {{ t2 }}
-ON isNotDistinctFrom({{ t1 }}.a, {{ t2 }}.a)
+ON {{ t1 }}.a <=> {{ t2 }}.a
 ORDER BY {{ t1 }}.val NULLS FIRST, {{ t2 }}.val NULLS FIRST
 ;
 
 SELECT '--';
 
 SELECT * FROM {{ t1 }} FULL JOIN {{ t2 }}
-ON isNotDistinctFrom({{ t1 }}.a, {{ t2 }}.a) AND isNotDistinctFrom({{ t1 }}.b, {{ t2 }}.b)
+ON {{ t1 }}.a <=> {{ t2 }}.a AND {{ t1 }}.b <=> {{ t2 }}.b
 ORDER BY {{ t1 }}.val NULLS FIRST, {{ t2 }}.val NULLS FIRST
 ;
 
 SELECT '--';
 
 SELECT * FROM {{ t1 }} FULL JOIN {{ t2 }}
-ON {{ t1 }}.a == {{ t2 }}.a AND isNotDistinctFrom({{ t1 }}.b, {{ t2 }}.b)
+ON {{ t1 }}.a == {{ t2 }}.a AND {{ t1 }}.b <=> {{ t2 }}.b
 ORDER BY {{ t1 }}.val NULLS FIRST, {{ t2 }}.val NULLS FIRST
 ;
 
 SELECT '--';
 
 SELECT * FROM {{ t1 }} FULL JOIN {{ t2 }}
-ON isNotDistinctFrom({{ t1 }}.a, {{ t2 }}.a) AND {{ t1 }}.b == {{ t2 }}.b
+ON {{ t1 }}.a <=> {{ t2 }}.a AND {{ t1 }}.b == {{ t2 }}.b
 ORDER BY {{ t1 }}.val NULLS FIRST, {{ t2 }}.val NULLS FIRST
 ;
 
@@ -62,7 +62,14 @@ SELECT '--';
 SET join_use_nulls = 0;
 SET join_algorithm = 'hash';
 SELECT t1.a, t1.val, t2.a, t2.val FROM t1 FULL JOIN t2
-ON isNotDistinctFrom(t1.a, t2.a) AND t1.b < 2 OR t1.a == t2.a
+ON t1.a <=> t2.a AND t1.b < 2 OR t1.a == t2.a
+ORDER BY t1.val NULLS FIRST, t2.val NULLS FIRST
+;
+
+SELECT '--';
+
+SELECT t1.a, t1.val, t2.a, t2.val FROM t1 FULL JOIN t2
+ON t1.a IS NOT DISTINCT FROM t2.a AND t1.b < 2 OR t1.a == t2.a
 ORDER BY t1.val NULLS FIRST, t2.val NULLS FIRST
 ;
 
@@ -76,7 +83,7 @@ SET join_use_nulls = 1;
 SELECT *
 FROM (SELECT a, 42 as `__wrapNullsafe(a)`, 420 as `tuple(a)`, val FROM t1) t1
 JOIN (SELECT a, 43 as `__wrapNullsafe(t2.a)`, 430 as `tuple(t2.a)`, val FROM t2) t2
-ON isNotDistinctFrom(t1.a, t2.a)
+ON t1.a <=> t2.a
 ORDER BY t1.val NULLS FIRST, t2.val NULLS FIRST
 LIMIT 10;
 
@@ -85,7 +92,7 @@ SELECT '--';
 SELECT a, 42 as `__wrapNullsafe(a)`, 420 as `tuple(a)`, val, t2.a, 43 as `__wrapNullsafe(t2.a)`, 430 as `tuple(t2.a)`, t2.val
 FROM (SELECT a, val, 111 as `__wrapNullsafe(a)_0` FROM t1) t1
 JOIN (SELECT a, val, 111 as `__wrapNullsafe(t2.a)_0` FROM t2) t2
-ON isNotDistinctFrom(t1.a, t2.a)
+ON t1.a <=> t2.a
 ORDER BY t1.val NULLS FIRST, t2.val NULLS FIRST
 LIMIT 10;
 
@@ -99,3 +106,5 @@ SELECT * FROM t1 JOIN t2 ON isNotDistinctFrom(t1.a, t2.a, t2.b); -- { serverErro
 
 SELECT isNotDistinctFrom(a) from t1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT isNotDistinctFrom(a, b) from t1; -- { serverError NOT_IMPLEMENTED }
+SELECT a <=> b from t1; -- { serverError NOT_IMPLEMENTED }
+SELECT a IS NOT DISTINCT FROM b from t1; -- { serverError NOT_IMPLEMENTED }

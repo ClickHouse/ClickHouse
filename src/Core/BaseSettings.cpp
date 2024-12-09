@@ -8,6 +8,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -31,24 +32,31 @@ void BaseSettingsHelpers::writeFlags(Flags flags, WriteBuffer & out)
 }
 
 
-BaseSettingsHelpers::Flags BaseSettingsHelpers::readFlags(ReadBuffer & in)
+UInt64 BaseSettingsHelpers::readFlags(ReadBuffer & in)
 {
     UInt64 res;
     readVarUInt(res, in);
-    return static_cast<Flags>(res);
+    return res;
+}
+
+SettingsTierType BaseSettingsHelpers::getTier(UInt64 flags)
+{
+    int8_t tier = static_cast<int8_t>(flags & Flags::TIER);
+    if (tier > SettingsTierType::BETA)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown tier value: '{}'", tier);
+    return SettingsTierType{tier};
 }
 
 
 void BaseSettingsHelpers::throwSettingNotFound(std::string_view name)
 {
-    throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", String{name});
+    throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}'", String{name});
 }
 
 
 void BaseSettingsHelpers::warningSettingNotFound(std::string_view name)
 {
-    static auto * log = &Poco::Logger::get("Settings");
-    LOG_WARNING(log, "Unknown setting {}, skipping", name);
+    LOG_WARNING(getLogger("Settings"), "Unknown setting '{}', skipping", name);
 }
 
 }

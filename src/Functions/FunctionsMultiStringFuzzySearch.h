@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
@@ -17,6 +18,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_hyperscan;
+    extern const SettingsUInt64 max_hyperscan_regexp_length;
+    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
+    extern const SettingsBool reject_expensive_hyperscan_regexps;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -39,7 +48,7 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         const auto & settings = context->getSettingsRef();
-        return std::make_shared<FunctionsMultiStringFuzzySearch>(settings.allow_hyperscan, settings.max_hyperscan_regexp_length, settings.max_hyperscan_regexp_total_length, settings.reject_expensive_hyperscan_regexps);
+        return std::make_shared<FunctionsMultiStringFuzzySearch>(settings[Setting::allow_hyperscan], settings[Setting::max_hyperscan_regexp_length], settings[Setting::max_hyperscan_regexp_total_length], settings[Setting::reject_expensive_hyperscan_regexps]);
     }
 
     FunctionsMultiStringFuzzySearch(bool allow_hyperscan_, size_t max_hyperscan_regexp_length_, size_t max_hyperscan_regexp_total_length_, bool reject_expensive_hyperscan_regexps_)
@@ -60,7 +69,7 @@ public:
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-        if (!isUnsignedInteger(arguments[1]))
+        if (!isUInt(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[2].get());
@@ -70,7 +79,7 @@ public:
         return Impl::getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & haystack_ptr = arguments[0].column;
         const ColumnPtr & edit_distance_ptr = arguments[1].column;
@@ -113,14 +122,16 @@ public:
                 col_needles_const->getValue<Array>(),
                 vec_res, offsets_res,
                 edit_distance,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
+                input_rows_count);
         else
             Impl::vectorVector(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(),
                 col_needles_vector->getData(), col_needles_vector->getOffsets(),
                 vec_res, offsets_res,
                 edit_distance,
-                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
+                allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps,
+                input_rows_count);
 
         // the combination of const haystack + const needle is not implemented because
         // useDefaultImplementationForConstants() == true makes upper layers convert both to

@@ -88,8 +88,7 @@ public:
     {
         if (isSmall())
             return small.size();
-        else
-            return roaring_bitmap->cardinality();
+        return roaring_bitmap->cardinality();
     }
 
     void merge(const RoaringBitmapWithSmallSet & r1)
@@ -151,10 +150,12 @@ public:
         }
         else if (BitmapKind::Bitmap == kind)
         {
-            auto size = roaring_bitmap->getSizeInBytes();
+            std::unique_ptr<RoaringBitmap> bitmap = std::make_unique<RoaringBitmap>(*roaring_bitmap);
+            bitmap->runOptimize();
+            auto size = bitmap->getSizeInBytes();
             writeVarUInt(size, out);
             std::unique_ptr<char[]> buf(new char[size]);
-            roaring_bitmap->write(buf.get());
+            bitmap->write(buf.get());
             out.write(buf.get(), size);
         }
     }
@@ -452,8 +453,7 @@ public:
 
         if (isSmall())
             return small.find(static_cast<T>(x)) != small.end();
-        else
-            return roaring_bitmap->contains(static_cast<Value>(x));
+        return roaring_bitmap->contains(static_cast<Value>(x));
     }
 
     /**
@@ -552,24 +552,22 @@ public:
                 r1.add(elem);
             return answer.size();
         }
-        else
-        {
-            UInt64 count = 0;
-            for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
-            {
-                if (*it < range_start)
-                    continue;
 
-                if (count < limit)
-                {
-                    r1.add(*it);
-                    ++count;
-                }
-                else
-                    break;
+        UInt64 count = 0;
+        for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
+        {
+            if (*it < range_start)
+                continue;
+
+            if (count < limit)
+            {
+                r1.add(*it);
+                ++count;
             }
-            return count;
+            else
+                break;
         }
+        return count;
     }
 
     UInt64 rb_offset_limit(UInt64 offset, UInt64 limit, RoaringBitmapWithSmallSet & r1) const /// NOLINT
@@ -589,18 +587,16 @@ public:
                 r1.add(it->getValue());
             return count;
         }
-        else
-        {
-            UInt64 count = 0;
-            UInt64 offset_count = 0;
-            auto it = roaring_bitmap->begin();
-            for (;it != roaring_bitmap->end() && offset_count < offset; ++it)
-                ++offset_count;
 
-            for (;it != roaring_bitmap->end() && count < limit; ++it, ++count)
-                r1.add(*it);
-            return count;
-        }
+        UInt64 count = 0;
+        UInt64 offset_count = 0;
+        auto it = roaring_bitmap->begin();
+        for (; it != roaring_bitmap->end() && offset_count < offset; ++it)
+            ++offset_count;
+
+        for (; it != roaring_bitmap->end() && count < limit; ++it, ++count)
+            r1.add(*it);
+        return count;
     }
 
     UInt64 rb_min() const /// NOLINT
@@ -618,8 +614,7 @@ public:
             }
             return min_val;
         }
-        else
-            return roaring_bitmap->minimum();
+        return roaring_bitmap->minimum();
     }
 
     UInt64 rb_max() const /// NOLINT
@@ -637,8 +632,7 @@ public:
             }
             return max_val;
         }
-        else
-            return roaring_bitmap->maximum();
+        return roaring_bitmap->maximum();
     }
 
     /**

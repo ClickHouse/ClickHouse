@@ -13,16 +13,16 @@ namespace DB
 class PrettyCompactBlockOutputFormat : public PrettyBlockOutputFormat
 {
 public:
-    PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_);
+    PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_, bool color);
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 
 private:
-    void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths);
+    void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths, bool write_footer);
     void writeBottom(const Widths & max_widths);
     void writeRow(
         size_t row_num,
         const Block & header,
-        const Columns & columns,
+        const Chunk & chunk,
         const WidthsPerColumn & widths,
         const Widths & max_widths);
 

@@ -1,11 +1,14 @@
 import os
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=["configs/remote_servers.xml"],
     user_configs=[
         "configs/another_user.xml",
     ],

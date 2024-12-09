@@ -1,5 +1,4 @@
 #include <TableFunctions/ITableFunction.h>
-#include <TableFunctions/TableFunctionZeros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -15,8 +14,31 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+namespace
+{
+
+/* zeros(limit), zeros_mt(limit)
+ * - the same as SELECT zero FROM system.zeros LIMIT limit.
+ * Used for testing purposes, as a simple example of table function.
+ */
+template <bool multithreaded>
+class TableFunctionZeros : public ITableFunction
+{
+public:
+    static constexpr auto name = multithreaded ? "zeros_mt" : "zeros";
+    std::string getName() const override { return name; }
+    bool hasStaticStructure() const override { return true; }
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    const char * getStorageTypeName() const override { return "SystemZeros"; }
+
+    UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+};
 
 
 template <bool multithreaded>
@@ -33,17 +55,32 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
     {
         auto arguments = function->arguments->children;
 
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length'.", getName());
+        if (arguments.size() > 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' cannot have more than one params", getName());
 
+        if (!arguments.empty())
+        {
+            UInt64 length = evaluateArgument(context, arguments[0]);
 
-        UInt64 length = evaluateArgument(context, arguments[0]);
+            auto res = std::make_shared<StorageSystemZeros>(StorageID(getDatabaseName(), table_name), multithreaded, length);
+            res->startup();
+            return res;
+        }
 
-        auto res = std::make_shared<StorageSystemZeros>(StorageID(getDatabaseName(), table_name), multithreaded, length);
+        /// zero-argument, the same as system.zeros
+        auto res = std::make_shared<StorageSystemZeros>(StorageID(getDatabaseName(), table_name), multithreaded);
         res->startup();
         return res;
     }
     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit'.", getName());
+}
+
+template <bool multithreaded>
+UInt64 TableFunctionZeros<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
+{
+    return checkAndGetLiteralArgument<UInt64>(evaluateConstantExpressionOrIdentifierAsLiteral(argument, context), "length");
+}
+
 }
 
 void registerTableFunctionZeros(TableFunctionFactory & factory)
@@ -71,13 +108,7 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
                 See also the `system.zeros` table.
                 )",
             .examples={{"1", "SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}}
-}});
-}
-
-template <bool multithreaded>
-UInt64 TableFunctionZeros<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
-{
-    return checkAndGetLiteralArgument<UInt64>(evaluateConstantExpressionOrIdentifierAsLiteral(argument, context), "length");
+    }});
 }
 
 }

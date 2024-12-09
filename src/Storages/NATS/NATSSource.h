@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
 #include <Storages/NATS/NATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
@@ -16,7 +17,8 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         const Names & columns,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        StreamingHandleErrorMode handle_error_mode_);
 
     ~NATSSource() override;
 
@@ -37,6 +39,7 @@ private:
     ContextPtr context;
     Names column_names;
     const size_t max_block_size;
+    StreamingHandleErrorMode handle_error_mode;
 
     bool is_finished = false;
     const Block non_virtual_header;
@@ -53,7 +56,8 @@ private:
         std::pair<Block, Block> headers,
         ContextPtr context_,
         const Names & columns,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        StreamingHandleErrorMode handle_error_mode_);
 };
 
 }

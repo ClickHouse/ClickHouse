@@ -192,14 +192,23 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     - `addressToSymbol`
     - `demangle`
 - [SOURCES](#grant-sources)
+    - `AZURE`
     - `FILE`
-    - `URL`
-    - `REMOTE`
-    - `MYSQL`
-    - `ODBC`
-    - `JDBC`
     - `HDFS`
+    - `HIVE`
+    - `JDBC`
+    - `KAFKA`
+    - `MONGO`
+    - `MYSQL`
+    - `NATS`
+    - `ODBC`
+    - `POSTGRES`
+    - `RABBITMQ`
+    - `REDIS`
+    - `REMOTE`
     - `S3`
+    - `SQLITE`
+    - `URL`
 - [dictGet](#grant-dictget)
 
 Примеры того, как трактуется данная иерархия:
@@ -461,14 +470,23 @@ GRANT INSERT(x,y) ON db.table TO john
 Разрешает использовать внешние источники данных. Применяется к [движкам таблиц](../../engines/table-engines/index.md) и [табличным функциям](../table-functions/index.md#table-functions).
 
 - `SOURCES`. Уровень: `GROUP`
+    - `AZURE`. Уровень: `GLOBAL`
     - `FILE`. Уровень: `GLOBAL`
-    - `URL`. Уровень: `GLOBAL`
-    - `REMOTE`. Уровень: `GLOBAL`
-    - `YSQL`. Уровень: `GLOBAL`
-    - `ODBC`. Уровень: `GLOBAL`
-    - `JDBC`. Уровень: `GLOBAL`
     - `HDFS`. Уровень: `GLOBAL`
+    - `HIVE`. Уровень: `GLOBAL`
+    - `JDBC`. Уровень: `GLOBAL`
+    - `KAFKA`. Уровень: `GLOBAL`
+    - `MONGO`. Уровень: `GLOBAL`
+    - `MYSQL`. Уровень: `GLOBAL`
+    - `NATS`. Уровень: `GLOBAL`
+    - `ODBC`. Уровень: `GLOBAL`
+    - `POSTGRES`. Уровень: `GLOBAL`
+    - `RABBITMQ`. Уровень: `GLOBAL`
+    - `REDIS`. Уровень: `GLOBAL`
+    - `REMOTE`. Уровень: `GLOBAL`
     - `S3`. Уровень: `GLOBAL`
+    - `SQLITE`. Уровень: `GLOBAL`
+    - `URL`. Уровень: `GLOBAL`
 
 Привилегия `SOURCES` разрешает использование всех источников. Также вы можете присвоить привилегию для каждого источника отдельно. Для использования источников необходимы дополнительные привилегии.
 

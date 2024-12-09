@@ -1,0 +1,12 @@
+After insert
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(less(b, 10_UInt8), less(a, 10_UInt8)) (removed)
+After merge
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)
+After truncate, insert, and materialize
+        Prewhere info
+          Prewhere filter
+          Prewhere filter column: and(less(a, 10_UInt8), less(b, 10_UInt8)) (removed)

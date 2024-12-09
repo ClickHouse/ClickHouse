@@ -1,1 +1,78 @@
-Hello, world!
+-- Const string + non-const arbitrary type
+With 42
+With 43
+With 44
+With 45
+With 46
+With 47
+With 48
+With 49
+With 50
+With 51
+With 52
+With 53
+With 42.42
+With 43.43
+With 44
+With true
+With false
+With foo
+With bar
+With foo
+With bar
+With foo
+With bar
+With foo
+With bar
+With 42
+With 42
+With fae310ca-d52a-4923-9e9b-02bf67f4b009
+With 2023-11-14
+With 2123-11-14
+With 2023-11-14 05:50:12
+With 2023-11-14 05:50:12.123
+With hallo
+With [\'foo\',\'bar\']
+With {"foo":"bar"}
+With {"foo":"bar"}
+With (42,\'foo\')
+With {42:\'foo\'}
+With 122.233.64.201
+With 2001:1:130f:2:3:9c0:876a:130b
+With (42,43)
+With [(0,0),(10,0),(10,10),(0,10)]
+With [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]
+With [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]]
+-- SimpleAggregateFunction
+With 42
+With 4
+-- Nested
+With [\'foo\',\'bar\'][\'qaz\',\'qux\']
+-- NULL arguments
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+-- Various arguments tests
+Non-const strings
+Two arguments test
+Three arguments test
+3 arguments test with int type
+42144
+42144255
+42144
+42144255
+-- Single argument tests
+42
+42
+foo
+foo
+\N
+\N
+Testing the alias
+-- Empty argument tests
+
+String

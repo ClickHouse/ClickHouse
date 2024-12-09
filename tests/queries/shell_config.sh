@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2120
 
-# Don't check for ODR violation, since we may test shared build with ASAN
-export ASAN_OPTIONS=detect_odr_violation=0
+# If ClickHouse was built with coverage - dump the coverage information at exit
+# (in other cases this environment variable has no effect)
+export CLICKHOUSE_WRITE_COVERAGE="coverage"
 
 export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
@@ -39,14 +40,27 @@ export CLICKHOUSE_LOCAL=${CLICKHOUSE_LOCAL:="${CLICKHOUSE_BINARY}-local"}
 [ -x "${CLICKHOUSE_BINARY}-server" ] && CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY}-server"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY} server"}
 export CLICKHOUSE_SERVER_BINARY=${CLICKHOUSE_SERVER_BINARY:="${CLICKHOUSE_BINARY}-server"}
+# benchmark
+[ -x "${CLICKHOUSE_BINARY}-benchmark" ] && CLICKHOUSE_BENCHMARK_BINARY=${CLICKHOUSE_BENCHMARK_BINARY:="${CLICKHOUSE_BINARY}-benchmark"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_BENCHMARK_BINARY=${CLICKHOUSE_BENCHMARK_BINARY:="${CLICKHOUSE_BINARY} benchmark"}
+export CLICKHOUSE_BENCHMARK_BINARY="${CLICKHOUSE_BENCHMARK_BINARY:=${CLICKHOUSE_BINARY}-benchmark}"
+export CLICKHOUSE_BENCHMARK_OPT="${CLICKHOUSE_BENCHMARK_OPT0:-} ${CLICKHOUSE_BENCHMARK_OPT:-}"
+export CLICKHOUSE_BENCHMARK=${CLICKHOUSE_BENCHMARK:="$CLICKHOUSE_BENCHMARK_BINARY ${CLICKHOUSE_BENCHMARK_OPT:-}"}
 # others
 export CLICKHOUSE_OBFUSCATOR=${CLICKHOUSE_OBFUSCATOR:="${CLICKHOUSE_BINARY}-obfuscator"}
 export CLICKHOUSE_COMPRESSOR=${CLICKHOUSE_COMPRESSOR:="${CLICKHOUSE_BINARY}-compressor"}
-export CLICKHOUSE_BENCHMARK=${CLICKHOUSE_BENCHMARK:="${CLICKHOUSE_BINARY}-benchmark ${CLICKHOUSE_BENCHMARK_OPT0:-}"}
 export CLICKHOUSE_GIT_IMPORT=${CLICKHOUSE_GIT_IMPORT="${CLICKHOUSE_BINARY}-git-import"}
 
+export CLICKHOUSE_CONFIG_DIR=${CLICKHOUSE_CONFIG_DIR:="/etc/clickhouse-server"}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:="/etc/clickhouse-server/config.xml"}
 export CLICKHOUSE_CONFIG_CLIENT=${CLICKHOUSE_CONFIG_CLIENT:="/etc/clickhouse-client/config.xml"}
+
+export CLICKHOUSE_USER_FILES=${CLICKHOUSE_USER_FILES:="/var/lib/clickhouse/user_files"}
+export CLICKHOUSE_USER_FILES_UNIQUE=${CLICKHOUSE_USER_FILES_UNIQUE:="${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"}
+# synonym
+export USER_FILES_PATH=$CLICKHOUSE_USER_FILES
+
+export CLICKHOUSE_SCHEMA_FILES=${CLICKHOUSE_SCHEMA_FILES:="/var/lib/clickhouse/format_schemas"}
 
 [ -x "${CLICKHOUSE_BINARY}-extract-from-config" ] && CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="$CLICKHOUSE_BINARY-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="$CLICKHOUSE_BINARY extract-from-config --config=$CLICKHOUSE_CONFIG"}
@@ -81,7 +95,7 @@ export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 
 # keeper-client
 [ -x "${CLICKHOUSE_BINARY}-keeper-client" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client"}
-[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY} keeper-client"}
+[ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY} keeper-client --port $CLICKHOUSE_PORT_KEEPER"}
 export CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client --port $CLICKHOUSE_PORT_KEEPER"}
 
 export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --accept-invalid-certificate --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
@@ -115,7 +129,7 @@ export CLICKHOUSE_URL_INTERSERVER=${CLICKHOUSE_URL_INTERSERVER:="${CLICKHOUSE_PO
 export CLICKHOUSE_CURL_COMMAND=${CLICKHOUSE_CURL_COMMAND:="curl"}
 # The queries in CI are prone to sudden delays, and we often don't check for curl
 # errors, so it makes sense to set a relatively generous timeout.
-export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="60"}
+export CLICKHOUSE_CURL_TIMEOUT=${CLICKHOUSE_CURL_TIMEOUT:="120"}
 export CLICKHOUSE_CURL=${CLICKHOUSE_CURL:="${CLICKHOUSE_CURL_COMMAND} -q -s --max-time ${CLICKHOUSE_CURL_TIMEOUT}"}
 export CLICKHOUSE_TMP=${CLICKHOUSE_TMP:="."}
 mkdir -p ${CLICKHOUSE_TMP}
@@ -161,7 +175,7 @@ function random_str()
     tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
-function query_with_retry
+function query_with_retry()
 {
     local query="$1" && shift
 
@@ -179,4 +193,21 @@ function query_with_retry
         fi
     done
     echo "Query '$query' failed with '$result'"
+}
+
+function run_with_error()
+{
+    local cmd="$1"; shift
+
+    local stdout_tmp=""
+    stdout_tmp=$(mktemp -p ${CLICKHOUSE_TMP})
+    local stderr_tmp=""
+    stderr_tmp=$(mktemp -p ${CLICKHOUSE_TMP})
+
+    local retval=0
+    $cmd "$@" 1>${stdout_tmp} 2>${stderr_tmp} || retval="$?"
+
+    echo "${retval}" "${stdout_tmp}" "${stderr_tmp}"
+
+    return 0
 }

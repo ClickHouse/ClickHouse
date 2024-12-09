@@ -1,6 +1,7 @@
 #include "MySQLGtid.h"
 #include <boost/algorithm/string.hpp>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -24,9 +25,7 @@ void GTIDSet::tryMerge(size_t i)
 void GTIDSets::parse(String gtid_format)
 {
     if (gtid_format.empty())
-    {
         return;
-    }
 
     std::vector<String> gtid_sets;
     boost::split(gtid_sets, gtid_format, [](char c) { return c == ','; });
@@ -186,6 +185,48 @@ String GTIDSets::toPayload() const
         }
     }
     return buffer.str();
+}
+
+bool GTIDSet::contains(const GTIDSet & gtid_set) const
+{
+    //we contain the other set if each of its intervals are contained in any of our intervals.
+    //use the fact that intervals are sorted to make this linear instead of quadratic.
+    if (uuid != gtid_set.uuid) { return false; }
+
+    auto mine = intervals.begin(), other = gtid_set.intervals.begin();
+    auto my_end = intervals.end(), other_end = gtid_set.intervals.end();
+    while (mine != my_end && other != other_end)
+    {
+        bool mine_contains_other = mine->start <= other->start && mine->end >= other->end;
+        if (mine_contains_other)
+        {
+            ++other;
+        }
+        else
+        {
+            ++mine;
+        }
+    }
+
+    return other == other_end; //if we've iterated through all intervals in the argument, all its intervals are contained in this
+}
+
+bool GTIDSets::contains(const GTIDSet & gtid_set) const
+{
+    for (const auto & my_gtid_set : sets)
+    {
+        if (my_gtid_set.contains(gtid_set)) { return true; }
+    }
+    return false;
+}
+
+bool GTIDSets::contains(const GTIDSets & gtid_sets) const
+{
+    for (const auto & gtid_set : gtid_sets.sets)
+    {
+        if (!this->contains(gtid_set)) { return false; }
+    }
+    return true;
 }
 
 }

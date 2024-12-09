@@ -16,13 +16,13 @@ SELECT a.* APPLY(toDate) EXCEPT(i, j) APPLY(any) from columns_transformers a;
 
 SELECT * EXCEPT STRICT i from columns_transformers;
 SELECT * EXCEPT STRICT (i, j) from columns_transformers;
-SELECT * EXCEPT STRICT i, j1 from columns_transformers; -- { serverError 47 }
+SELECT * EXCEPT STRICT i, j1 from columns_transformers; -- { serverError UNKNOWN_IDENTIFIER }
 SELECT * EXCEPT STRICT(i, j1) from columns_transformers; -- { serverError NO_SUCH_COLUMN_IN_TABLE , BAD_ARGUMENTS }
 SELECT * REPLACE STRICT i + 1 AS i from columns_transformers;
 SELECT * REPLACE STRICT(i + 1 AS col) from columns_transformers; -- { serverError NO_SUCH_COLUMN_IN_TABLE, BAD_ARGUMENTS }
 SELECT * REPLACE(i + 1 AS i) APPLY(sum) from columns_transformers;
 SELECT columns_transformers.* REPLACE(j + 2 AS j, i + 1 AS i) APPLY(avg) from columns_transformers;
-SELECT columns_transformers.* REPLACE(j + 1 AS j, j + 2 AS j) APPLY(avg) from columns_transformers; -- { serverError 43 }
+SELECT columns_transformers.* REPLACE(j + 1 AS j, j + 2 AS j) APPLY(avg) from columns_transformers; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 -- REPLACE after APPLY will not match anything
 SELECT a.* APPLY(toDate) REPLACE(i + 1 AS i) APPLY(any) from columns_transformers a;
 SELECT a.* APPLY(toDate) REPLACE STRICT(i + 1 AS i) APPLY(any) from columns_transformers a; -- { serverError NO_SUCH_COLUMN_IN_TABLE, BAD_ARGUMENTS }
@@ -35,6 +35,9 @@ EXPLAIN SYNTAX SELECT * EXCEPT(i) APPLY(sum) from columns_transformers;
 EXPLAIN SYNTAX SELECT columns_transformers.* EXCEPT(j) APPLY(avg) from columns_transformers;
 EXPLAIN SYNTAX SELECT a.* APPLY(toDate) EXCEPT(i, j) APPLY(any) from columns_transformers a;
 EXPLAIN SYNTAX SELECT * REPLACE(i + 1 AS i) APPLY(sum) from columns_transformers;
+EXPLAIN AST SELECT * REPLACE(i + 1 AS i) APPLY(sum) from columns_transformers;
+EXPLAIN SYNTAX SELECT sum(i + 1 AS m) from columns_transformers;
+EXPLAIN AST SELECT sum(i + 1 AS m) from columns_transformers;
 EXPLAIN SYNTAX SELECT columns_transformers.* REPLACE(j + 2 AS j, i + 1 AS i) APPLY(avg) from columns_transformers;
 EXPLAIN SYNTAX SELECT a.* APPLY(toDate) REPLACE(i + 1 AS i) APPLY(any) from columns_transformers a;
 

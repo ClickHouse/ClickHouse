@@ -1,8 +1,10 @@
 <clickhouse>
     <profiles>
         <default>
-            <insert_keeper_max_retries>20</insert_keeper_max_retries>
+            <insert_keeper_max_retries>100</insert_keeper_max_retries>
             <insert_keeper_fault_injection_probability>0.01</insert_keeper_fault_injection_probability>
+            <insert_keeper_retry_initial_backoff_ms>1</insert_keeper_retry_initial_backoff_ms>
+            <insert_keeper_retry_max_backoff_ms>10</insert_keeper_retry_max_backoff_ms>
         </default>
     </profiles>
 </clickhouse>

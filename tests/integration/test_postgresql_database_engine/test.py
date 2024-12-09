@@ -1,10 +1,10 @@
-import pytest
 import psycopg2
+import pytest
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 from helpers.postgres_utility import get_postgres_conn
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -287,7 +287,7 @@ def test_predefined_connection_configuration(started_cluster):
     )
     print(f"kssenii: {result}")
     assert result.strip().endswith(
-        "ENGINE = PostgreSQL(postgres1, table = \\'test_table\\')"
+        "ENGINE = PostgreSQL(postgres1, `table` = \\'test_table\\')"
     )
 
     node1.query(
@@ -431,6 +431,38 @@ def test_postgresql_password_leak(started_cluster):
 
     cursor.execute("DROP SCHEMA test_schema CASCADE")
     cursor.execute("DROP TABLE table2")
+
+
+# PostgreSQL database engine is created async in ClickHouse (first create the object then another thread
+# do the connection), causing a created database object with an inaccessible URI, and access of system.tables
+# timed out when touching the inaccessible database. We add the filter engine ability so we add a test here.
+def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
+    started_cluster,
+):
+    # This query takes some time depending on the trial times and conn timeout setting.
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('google.com:5432', 'dummy', 'dummy', 'dummy')"
+    )
+    assert "postgres_database" in node1.query("SHOW DATABASES")
+
+    # Should quickly return result instead of wasting time in connection since it gets filtered.
+    assert (
+        node1.query(
+            "SELECT DISTINCT(name) FROM system.tables WHERE engine!='PostgreSQL' AND name='COLUMNS'"
+        )
+        == "COLUMNS\n"
+    )
+
+    # Enigne of system.tables in fact means storage name, so View should not get filtered.
+    assert (
+        node1.query(
+            "SELECT DISTINCT(name) FROM system.tables WHERE engine='View' and name='COLUMNS'"
+        )
+        == "COLUMNS\n"
+    )
+
+    node1.query("DROP DATABASE postgres_database")
+    assert "postgres_database" not in node1.query("SHOW DATABASES")
 
 
 if __name__ == "__main__":

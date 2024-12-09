@@ -13,7 +13,7 @@ concat(\'Value_1\', \'Value_2\')	String
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)'));
-CAST(tuple(1, \'Value\'), \'Tuple (id UInt64, value String)\')	Tuple(id UInt64, value String)					
+CAST((1, \'Value\'), \'Tuple (id UInt64, value String)\')	Tuple(\n    id UInt64,\n    value String)					
 SELECT 'Columns';
 Columns
 DESCRIBE (SELECT test_table.id, test_table.id, id FROM test_table);
@@ -77,45 +77,45 @@ e	String
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.id, a.value);
-a	Tuple(id UInt64, value String)					
+a	Tuple(\n    id UInt64,\n    value String)					
 a.id	UInt64					
 a.value	String					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.*);
-a	Tuple(id UInt64, value String)					
+a	Tuple(\n    id UInt64,\n    value String)					
 a.id	UInt64					
 a.value	String					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.* EXCEPT id);
-a	Tuple(id UInt64, value String)					
+a	Tuple(\n    id UInt64,\n    value String)					
 a.value	String					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.* EXCEPT value);
-a	Tuple(id UInt64, value String)					
+a	Tuple(\n    id UInt64,\n    value String)					
 a.id	UInt64					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.* EXCEPT value APPLY toString);
-a	Tuple(id UInt64, value String)					
+a	Tuple(\n    id UInt64,\n    value String)					
 toString(a.id)	String					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, a.* EXCEPT value APPLY x -> toString(x));
-a	Tuple(id UInt64, value String)					
+a	Tuple(\n    id UInt64,\n    value String)					
 toString(a.id)	String					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, untuple(a));
-a	Tuple(id UInt64, value String)					
+a	Tuple(\n    id UInt64,\n    value String)					
 tupleElement(a, \'id\')	UInt64					
 tupleElement(a, \'value\')	String					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS a, untuple(a) AS b);
-a	Tuple(id UInt64, value String)					
+a	Tuple(\n    id UInt64,\n    value String)					
 b.id	UInt64					
 b.value	String					
 SELECT 'Columns with aliases';
@@ -199,63 +199,63 @@ arrayMap(lambda(tuple(x), toString(id)), [1, 2, 3])	Array(String)
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS compound_value, arrayMap(x -> compound_value.*, [1,2,3]));
-compound_value	Tuple(id UInt64)					
+compound_value	Tuple(\n    id UInt64)					
 arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS compound_value, arrayMap(x -> compound_value.* APPLY x -> x, [1,2,3]));
-compound_value	Tuple(id UInt64)					
+compound_value	Tuple(\n    id UInt64)					
 arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS compound_value, arrayMap(x -> compound_value.* APPLY toString, [1,2,3]));
-compound_value	Tuple(id UInt64)					
+compound_value	Tuple(\n    id UInt64)					
 arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS compound_value, arrayMap(x -> compound_value.* APPLY x -> toString(x), [1,2,3]));
-compound_value	Tuple(id UInt64)					
+compound_value	Tuple(\n    id UInt64)					
 arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value, [1,2,3]));
-compound_value	Tuple(id UInt64, value String)					
+compound_value	Tuple(\n    id UInt64,\n    value String)					
 arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value APPLY x -> x, [1,2,3]));
-compound_value	Tuple(id UInt64, value String)					
+compound_value	Tuple(\n    id UInt64,\n    value String)					
 arrayMap(lambda(tuple(x), compound_value.id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value APPLY toString, [1,2,3]));
-compound_value	Tuple(id UInt64, value String)					
+compound_value	Tuple(\n    id UInt64,\n    value String)					
 arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1, 'Value'), 'Tuple (id UInt64, value String)') AS compound_value, arrayMap(x -> compound_value.* EXCEPT value APPLY x -> toString(x), [1,2,3]));
-compound_value	Tuple(id UInt64, value String)					
+compound_value	Tuple(\n    id UInt64,\n    value String)					
 arrayMap(lambda(tuple(x), toString(compound_value.id)), [1, 2, 3])	Array(String)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, arrayMap(x -> untuple(a), [1,2,3]) FROM test_table);
-a	Tuple(id UInt64)					
+a	Tuple(\n    id UInt64)					
 arrayMap(lambda(tuple(x), tupleElement(a, \'id\')), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, arrayMap(x -> untuple(a) AS untupled_value, [1,2,3]) FROM test_table);
-a	Tuple(id UInt64)					
+a	Tuple(\n    id UInt64)					
 arrayMap(untupled_value, [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, untuple(a) AS untupled_value, arrayMap(x -> untupled_value, [1,2,3]) FROM test_table);
-a	Tuple(id UInt64)					
+a	Tuple(\n    id UInt64)					
 untupled_value.id	UInt64					
 arrayMap(lambda(tuple(x), untupled_value.id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
 DESCRIBE (SELECT cast(tuple(1), 'Tuple (id UInt64)') AS a, untuple(a) AS untupled_value, arrayMap(x -> untupled_value AS untupled_value_in_lambda, [1,2,3]) FROM test_table);
-a	Tuple(id UInt64)					
+a	Tuple(\n    id UInt64)					
 untupled_value.id	UInt64					
 arrayMap(untupled_value_in_lambda, [1, 2, 3])	Array(UInt64)					
 SELECT 'Standalone lambda';
@@ -285,13 +285,13 @@ arrayMap(lambda(tuple(x), _subquery_3), [1, 2, 3])	Array(Nullable(UInt8))
 SELECT '--';
 --
 DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b) AS c, c.a, c.b);
-c	Tuple(a UInt8, b UInt8)					
+c	Tuple(\n    a UInt8,\n    b UInt8)					
 c.a	UInt8					
 c.b	UInt8					
 SELECT '--';
 --
 DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b) AS c, c.*);
-c	Tuple(a UInt8, b UInt8)					
+c	Tuple(\n    a UInt8,\n    b UInt8)					
 c.a	UInt8					
 c.b	UInt8					
 SELECT '--';
@@ -311,13 +311,13 @@ arrayMap(lambda(tuple(x), _subquery_3), [1, 2, 3])	Array(Nullable(UInt8))
 SELECT '--';
 --
 DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b UNION DISTINCT SELECT 1, 2) AS c, c.a, c.b);
-c	Tuple(a UInt8, b UInt8)					
+c	Tuple(\n    a UInt8,\n    b UInt8)					
 c.a	UInt8					
 c.b	UInt8					
 SELECT '--';
 --
 DESCRIBE (SELECT (SELECT 1 AS a, 2 AS b UNION DISTINCT SELECT 1, 2) AS c, c.*);
-c	Tuple(a UInt8, b UInt8)					
+c	Tuple(\n    a UInt8,\n    b UInt8)					
 c.a	UInt8					
 c.b	UInt8					
 SELECT '--';
@@ -443,6 +443,18 @@ SELECT '--';
 --
 DESCRIBE (WITH test_table_in_cte AS (SELECT id FROM test_table) SELECT id IN test_table_in_cte FROM test_table);
 in(id, test_table_in_cte)	UInt8					
+SELECT '--';
+--
+DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1) SELECT *
+FROM test_table_in_cte_1 INNER JOIN test_table_in_cte_2 as test_table_in_cte_2 ON test_table_in_cte_1.c1 = test_table_in_cte_2.c1);
+test_table_in_cte_1.c1	UInt8					
+test_table_in_cte_2.c1	UInt8					
+SELECT '--';
+--
+DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1 UNION ALL SELECT 1 AS c1) SELECT *
+FROM test_table_in_cte_1 INNER JOIN test_table_in_cte_2 as test_table_in_cte_2 ON test_table_in_cte_1.c1 = test_table_in_cte_2.c1);
+test_table_in_cte_1.c1	UInt8					
+test_table_in_cte_2.c1	UInt8					
 SELECT 'Joins';
 Joins
 DESCRIBE (SELECT * FROM test_table_join_1, test_table_join_2);
@@ -737,3 +749,18 @@ t2.id	UInt64
 t2.value	String					
 t3.id	UInt64					
 t3.value	String					
+SELECT 'Special functions array, tuple';
+Special functions array, tuple
+DESCRIBE (SELECT [], array(), [1], array(1), [1, 2], array(1, 2), tuple(1), (1, 2), [[], []], [([], [])], ([], []), ([([], []), ([], [])]));
+[]	Array(Nothing)					
+[]	Array(Nothing)					
+[1]	Array(UInt8)					
+[1]	Array(UInt8)					
+[1, 2]	Array(UInt8)					
+[1, 2]	Array(UInt8)					
+(1)	Tuple(UInt8)					
+(1, 2)	Tuple(UInt8, UInt8)					
+[[], []]	Array(Array(Nothing))					
+[([], [])]	Array(Tuple(Array(Nothing), Array(Nothing)))					
+([], [])	Tuple(Array(Nothing), Array(Nothing))					
+[([], []), ([], [])]	Array(Tuple(Array(Nothing), Array(Nothing)))					

@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -69,7 +70,7 @@ def started_cluster():
         node1.query(
             "INSERT INTO replica_1.replicated FORMAT TSV",
             stdin=to_insert,
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
         yield cluster
 

@@ -74,11 +74,11 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
 /// Our objective is to replace injective function nodes in `actions` results with its children
 /// until only the irreducible subset of nodes remains. Against these set of nodes we will match partition key expression
 /// to determine if it maps all rows with the same value of group by key to the same partition.
-NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAGPtr & actions)
+NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions)
 {
     NodeSet irreducible;
     NodeSet visited;
-    for (const auto & node : actions->getOutputs())
+    for (const auto & node : actions.getOutputs())
         removeInjectiveFunctionsFromResultsRecursively(node, irreducible, visited);
     return irreducible;
 }
@@ -95,7 +95,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     {
         const auto & match = matches.at(node);
         /// Function could be mapped into its argument. In this case .monotonicity != std::nullopt (see matchTrees)
-        if (match.node && match.node->result_name == node->result_name && !match.monotonicity)
+        if (match.node && !match.monotonicity)
             res = irreducible_nodes.contains(match.node);
     }
 
@@ -146,18 +146,19 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 /// 3. We match partition key actions with group by key actions to find col1', ..., coln' in partition key actions.
 /// 4. We check that partition key is indeed a deterministic function of col1', ..., coln'.
 bool isPartitionKeySuitsGroupByKey(
-    const ReadFromMergeTree & reading, const ActionsDAGPtr & group_by_actions, const AggregatingStep & aggregating)
+    const ReadFromMergeTree & reading, const ActionsDAG & group_by_actions, const AggregatingStep & aggregating)
 {
     if (aggregating.isGroupingSets())
         return false;
 
-    if (group_by_actions->hasArrayJoin() || group_by_actions->hasStatefulFunctions() || group_by_actions->hasNonDeterministic())
+    if (group_by_actions.hasArrayJoin() || group_by_actions.hasStatefulFunctions() || group_by_actions.hasNonDeterministic())
         return false;
 
     /// We are interested only in calculations required to obtain group by keys (and not aggregate function arguments for example).
-    group_by_actions->removeUnusedActions(aggregating.getParams().keys);
+    auto key_nodes = group_by_actions.findInOutputs(aggregating.getParams().keys);
+    auto group_by_key_actions = ActionsDAG::cloneSubDAG(key_nodes, /*remove_aliases=*/ true);
 
-    const auto & gb_key_required_columns = group_by_actions->getRequiredColumnsNames();
+    const auto & gb_key_required_columns = group_by_key_actions.getRequiredColumnsNames();
 
     const auto & partition_actions = reading.getStorageMetadata()->getPartitionKey().expression->getActionsDAG();
 
@@ -166,9 +167,9 @@ bool isPartitionKeySuitsGroupByKey(
         if (std::ranges::find(gb_key_required_columns, col) == gb_key_required_columns.end())
             return false;
 
-    const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(group_by_actions);
+    const auto irreducibe_nodes = removeInjectiveFunctionsFromResultsRecursively(group_by_key_actions);
 
-    const auto matches = matchTrees(*group_by_actions, partition_actions);
+    const auto matches = matchTrees(group_by_key_actions.getOutputs(), partition_actions);
 
     return allOutputsDependsOnlyOnAllowedNodes(partition_actions, irreducibe_nodes, matches);
 }
@@ -193,7 +194,7 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 
     auto * maybe_reading_step = expression_node->children.front()->step.get();
 
-    if (const auto * filter = typeid_cast<const FilterStep *>(maybe_reading_step))
+    if (const auto * /*filter*/ _ = typeid_cast<const FilterStep *>(maybe_reading_step))
     {
         const auto * filter_node = expression_node->children.front();
         if (filter_node->children.size() != 1 || !filter_node->children.front()->step)
@@ -206,7 +207,7 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
         return 0;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeySuitsGroupByKey(*reading, expression_step->getExpression()->clone(), *aggregating_step))
+        && isPartitionKeySuitsGroupByKey(*reading, expression_step->getExpression(), *aggregating_step))
     {
         if (reading->requestOutputEachPartitionThroughSeparatePort())
             aggregating_step->skipMerging();

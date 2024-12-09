@@ -16,17 +16,23 @@ public:
     DataPartStoragePtr getProjection(const std::string & name) const override;
 
     bool exists() const override;
-    bool exists(const std::string & name) const override;
-    bool isDirectory(const std::string & name) const override;
+    bool existsFile(const std::string & name) const override;
+    bool existsDirectory(const std::string & name) const override;
 
     DataPartStorageIteratorPtr iterate() const override;
     Poco::Timestamp getFileLastModified(const String & file_name) const override;
     size_t getFileSize(const std::string & file_name) const override;
     UInt32 getRefCount(const std::string & file_name) const override;
-    std::string getRemotePath(const std::string & file_name) const override;
+    std::vector<std::string> getRemotePaths(const std::string & file_name) const override;
     String getUniqueId() const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
@@ -48,6 +54,7 @@ public:
     void removeFileIfExists(const String & name) override;
 
     void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
+    void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
 
     void beginTransaction() override;
     void commitTransaction() override;

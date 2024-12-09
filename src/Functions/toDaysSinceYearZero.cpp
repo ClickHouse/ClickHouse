@@ -20,7 +20,7 @@ The calculation is the same as in MySQL's TO_DAYS() function.
         .categories{"Dates and Times"}});
 
     /// MySQL compatibility alias.
-    factory.registerAlias("TO_DAYS", FunctionToDaysSinceYearZero::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("TO_DAYS", FunctionToDaysSinceYearZero::name, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -4,6 +4,7 @@
 #include <Coordination/Defines.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -14,6 +15,19 @@
 
 namespace DB
 {
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsBool async_replication;
+    extern const CoordinationSettingsUInt64 commit_logs_cache_size_threshold;
+    extern const CoordinationSettingsBool compress_logs;
+    extern const CoordinationSettingsBool force_sync;
+    extern const CoordinationSettingsUInt64 latest_logs_cache_size_threshold;
+    extern const CoordinationSettingsUInt64 log_file_overallocate_size;
+    extern const CoordinationSettingsUInt64 max_flush_batch_size;
+    extern const CoordinationSettingsUInt64 max_log_file_size;
+    extern const CoordinationSettingsUInt64 rotate_log_storage_interval;
+}
 
 namespace ErrorCodes
 {
@@ -30,7 +44,7 @@ bool isLocalhost(const std::string & hostname)
 {
     try
     {
-        return isLocalAddress(DNSResolver::instance().resolveHost(hostname));
+        return isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(hostname).front());
     }
     catch (...)
     {
@@ -157,22 +171,21 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
                 check_duplicated_hostnames[endpoint],
                 new_server_id);
         }
-        else
+
+        /// Fullscan to check duplicated ids
+        for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
         {
-            /// Fullscan to check duplicated ids
-            for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
-            {
-                if (new_server_id == id)
-                    throw Exception(
-                        ErrorCodes::RAFT_ERROR,
-                        "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
-                        "but going to add it one more time with endpoint {}",
-                        id,
-                        id_endpoint,
-                        endpoint);
-            }
-            check_duplicated_hostnames.emplace(endpoint, new_server_id);
+            if (new_server_id == id)
+                throw Exception(
+                    ErrorCodes::RAFT_ERROR,
+                    "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
+                    "but going to add it one more time with endpoint {}",
+                    id,
+                    id_endpoint,
+                    endpoint);
         }
+        check_duplicated_hostnames.emplace(endpoint, new_server_id);
+
 
         auto peer_config = nuraft::cs_new<nuraft::srv_config>(new_server_id, 0, endpoint, "", !can_become_leader, priority);
         if (my_server_id == new_server_id)
@@ -227,7 +240,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
           keeper_context_))
     , server_state_file_name("state")
     , keeper_context(keeper_context_)
-    , logger(&Poco::Logger::get("KeeperStateManager"))
+    , logger(getLogger("KeeperStateManager"))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -241,34 +254,37 @@ KeeperStateManager::KeeperStateManager(
     const std::string & config_prefix_,
     const std::string & server_state_file_name_,
     const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings,
     KeeperContextPtr keeper_context_)
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
-    , configuration_wrapper(parseServersConfiguration(config, false, coordination_settings->async_replication))
+    , configuration_wrapper(parseServersConfiguration(config, false, keeper_context_->getCoordinationSettings()[CoordinationSetting::async_replication]))
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings
           {
-              .force_sync = coordination_settings->force_sync,
-              .compress_logs = coordination_settings->compress_logs,
-              .rotate_interval = coordination_settings->rotate_log_storage_interval,
-              .max_size = coordination_settings->max_log_file_size,
-              .overallocate_size = coordination_settings->log_file_overallocate_size},
+              .force_sync = keeper_context_->getCoordinationSettings()[CoordinationSetting::force_sync],
+              .compress_logs = keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_logs],
+              .rotate_interval = keeper_context_->getCoordinationSettings()[CoordinationSetting::rotate_log_storage_interval],
+              .max_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_log_file_size],
+              .overallocate_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_file_overallocate_size],
+              .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_size_threshold],
+              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_size_threshold]
+          },
           FlushSettings
           {
-              .max_flush_batch_size = coordination_settings->max_flush_batch_size,
+              .max_flush_batch_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_flush_batch_size],
           },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
     , keeper_context(keeper_context_)
-    , logger(&Poco::Logger::get("KeeperStateManager"))
+    , logger(getLogger("KeeperStateManager"))
 {
 }
 
 void KeeperStateManager::loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep)
 {
     log_store->init(last_commited_index, logs_to_keep);
+    log_store_initialized = true;
 }
 
 void KeeperStateManager::system_exit(const int /* exit_code */)
@@ -332,11 +348,11 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
     auto disk = getStateFileDisk();
 
-    if (disk->exists(server_state_file_name))
+    if (disk->existsFile(server_state_file_name))
     {
         auto buf = disk->writeFile(copy_lock_file);
         buf->finalize();
-        disk->copyFile(server_state_file_name, *disk, old_path);
+        disk->copyFile(server_state_file_name, *disk, old_path, ReadSettings{});
         disk->removeFile(copy_lock_file);
         disk->removeFile(old_path);
     }
@@ -361,6 +377,8 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
 nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 {
+    chassert(log_store_initialized);
+
     const auto & old_path = getOldServerStatePath();
 
     auto disk = getStateFileDisk();
@@ -369,7 +387,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     {
         try
         {
-            auto read_buf = disk->readFile(path);
+            auto read_buf = disk->readFile(path, getReadSettings());
             auto content_size = read_buf->getFileSize();
 
             if (content_size == 0)
@@ -418,7 +436,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         }
     };
 
-    if (disk->exists(server_state_file_name))
+    if (disk->existsFile(server_state_file_name))
     {
         auto state = try_read_file(server_state_file_name);
 
@@ -431,9 +449,9 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         disk->removeFile(server_state_file_name);
     }
 
-    if (disk->exists(old_path))
+    if (disk->existsFile(old_path))
     {
-        if (disk->exists(copy_lock_file))
+        if (disk->existsFile(copy_lock_file))
         {
             disk->removeFile(old_path);
             disk->removeFile(copy_lock_file);
@@ -449,19 +467,24 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             disk->removeFile(old_path);
         }
     }
-    else if (disk->exists(copy_lock_file))
+    else if (disk->existsFile(copy_lock_file))
     {
         disk->removeFile(copy_lock_file);
     }
 
-    LOG_WARNING(logger, "No state was read");
+    if (log_store->next_slot() != 1)
+        LOG_ERROR(
+            logger,
+            "No state was read but Keeper contains data which indicates that the state file was lost. This is dangerous and can lead to "
+            "data loss.");
+
     return nullptr;
 }
 
 ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
-    const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const
+    const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const
 {
-    auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings->async_replication);
+    auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]);
 
     std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
     for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())
@@ -487,7 +510,7 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
             if (old_endpoint != server_config->get_endpoint())
             {
                 LOG_WARNING(
-                    &Poco::Logger::get("RaftConfiguration"),
+                    getLogger("RaftConfiguration"),
                     "Config will be ignored because a server with ID {} is already present in the cluster on a different endpoint ({}). "
                     "The endpoint of the current servers should not be changed. For servers on a new endpoint, please use a new ID.",
                     new_id,
@@ -498,7 +521,7 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
     }
 
     /// After that remove old ones
-    for (auto [old_id, server_config] : old_ids)
+    for (const auto & [old_id, server_config] : old_ids)
         if (!new_ids.contains(old_id))
             result.emplace_back(RemoveRaftServer{old_id});
 

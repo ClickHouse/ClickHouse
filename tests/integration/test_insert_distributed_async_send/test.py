@@ -7,25 +7,25 @@
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-# n1 -- distributed_directory_monitor_batch_inserts=1
+# n1 -- distributed_background_insert_batch=1
 n1 = cluster.add_instance(
     "n1",
     main_configs=["configs/remote_servers.xml"],
     user_configs=["configs/users.d/batch.xml"],
 )
-# n2 -- distributed_directory_monitor_batch_inserts=0
+# n2 -- distributed_background_insert_batch=0
 n2 = cluster.add_instance(
     "n2",
     main_configs=["configs/remote_servers.xml"],
     user_configs=["configs/users.d/no_batch.xml"],
 )
 
-# n3 -- distributed_directory_monitor_batch_inserts=1/distributed_directory_monitor_split_batch_on_failure=1
+# n3 -- distributed_background_insert_batch=1/distributed_background_insert_split_batch_on_failure=1
 n3 = cluster.add_instance(
     "n3",
     main_configs=["configs/remote_servers_split.xml"],
@@ -34,7 +34,7 @@ n3 = cluster.add_instance(
         "configs/users.d/split.xml",
     ],
 )
-# n4 -- distributed_directory_monitor_batch_inserts=0/distributed_directory_monitor_split_batch_on_failure=1
+# n4 -- distributed_background_insert_batch=0/distributed_background_insert_split_batch_on_failure=1
 n4 = cluster.add_instance(
     "n4",
     main_configs=["configs/remote_servers_split.xml"],

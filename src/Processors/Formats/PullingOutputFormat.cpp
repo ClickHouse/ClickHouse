@@ -1,5 +1,5 @@
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <IO/WriteBuffer.h>
+#include <IO/NullWriteBuffer.h>
 
 namespace DB
 {
@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-WriteBufferFromPointer PullingOutputFormat::out(nullptr, 0);
+NullWriteBuffer PullingOutputFormat::out;
 
 PullingOutputFormat::PullingOutputFormat(const Block & header, std::atomic_bool & consume_data_flag_)
     : IOutputFormat(header, out)
@@ -42,5 +42,8 @@ void PullingOutputFormat::setRowsBeforeLimit(size_t rows_before_limit)
 {
     info.setRowsBeforeLimit(rows_before_limit);
 }
-
+void PullingOutputFormat::setRowsBeforeAggregation(size_t rows_before_aggregation)
+{
+    info.setRowsBeforeAggregation(rows_before_aggregation);
+}
 }

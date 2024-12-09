@@ -8,8 +8,8 @@ if [ -z ${ENABLE_ANALYZER+x} ]; then
     ENABLE_ANALYZER=0
 fi
 
-DISABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET allow_experimental_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
+ENABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
 
 echo "-- Disabled query_plan_remove_redundant_sorting"
 echo "-- ORDER BY clauses in subqueries are untouched"
@@ -26,15 +26,15 @@ FROM
     ORDER BY number DESC
 )
 ORDER BY number ASC"
-$CLICKHOUSE_CLIENT -nq "$DISABLE_OPTIMIZATION;EXPLAIN $query"
+$CLICKHOUSE_CLIENT -q "$DISABLE_OPTIMIZATION;EXPLAIN $query"
 
 function run_query {
     echo "-- query"
     echo "$1"
     echo "-- explain"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;EXPLAIN $1"
+    $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;EXPLAIN $1"
     echo "-- execute"
-    $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;$1"
+    $CLICKHOUSE_CLIENT -q "$ENABLE_OPTIMIZATION;$1"
 }
 
 echo "-- Enabled query_plan_remove_redundant_sorting"
@@ -96,7 +96,8 @@ FROM
         ORDER BY number ASC
     )
     ORDER BY number DESC
-) AS t2"
+) AS t2
+ORDER BY t1.number, t2.number"
 run_query "$query"
 
 echo "-- CROSS JOIN with subqueries, ORDER BY in main query -> all ORDER BY clauses will be removed in subqueries"
@@ -138,7 +139,8 @@ FROM
     )
     ORDER BY number DESC
 )
-GROUP BY number"
+GROUP BY number
+ORDER BY number"
 run_query "$query"
 
 echo "-- GROUP BY with aggregation function which depends on order -> keep ORDER BY in first subquery, and eliminate in second subquery"
@@ -154,7 +156,9 @@ FROM
     )
     ORDER BY number DESC
 )
-GROUP BY number"
+GROUP BY number
+ORDER BY number
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test"
 run_query "$query"
 
 echo "-- query with aggregation function but w/o GROUP BY -> remove sorting"
@@ -197,7 +201,8 @@ FROM
     )
     GROUP BY number
 )
-ORDER BY a ASC"
+ORDER BY a ASC
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test"
 run_query "$query"
 
 echo "-- Check that optimization works for subqueries as well, - main query have neither ORDER BY nor GROUP BY"
@@ -218,7 +223,9 @@ FROM
     )
     GROUP BY number
 )
-WHERE a > 0"
+WHERE a > 0
+ORDER BY a
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test"
 run_query "$query"
 
 echo "-- GROUP BY in most inner query makes execution parallelized, and removing inner sorting steps will keep it that way. But need to correctly update data streams sorting properties after removing sorting steps"
@@ -295,6 +302,27 @@ FROM
 )"
 run_query "$query"
 
+echo "-- presence of an inner OFFSET retains the ORDER BY"
+query="WITH
+  t1 AS (
+    SELECT a, b
+    FROM
+      VALUES (
+        'b UInt32, a Int32',
+        (1, 1),
+        (2, 0)
+      )
+  )
+SELECT
+  SUM(a)
+FROM (
+  SELECT a, b
+  FROM t1
+  ORDER BY 1 DESC, 2
+  OFFSET 1
+) t2"
+run_query "$query"
+
 echo "-- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function"
 ENABLE_OPTIMIZATION="SET query_plan_enable_optimizations=0;$ENABLE_OPTIMIZATION"
 echo "-- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order"
@@ -307,7 +335,8 @@ FROM
     FROM numbers(10)
     ORDER BY number DESC
 )
-ORDER BY number ASC"
+ORDER BY number ASC
+SETTINGS allow_deprecated_error_prone_window_functions = 1"
 run_query "$query"
 
 echo "-- non-stateful function does _not_ prevent removing inner ORDER BY"

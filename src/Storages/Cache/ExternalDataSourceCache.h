@@ -7,14 +7,13 @@
 #include <mutex>
 #include <set>
 #include <Core/BackgroundSchedulePool.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Storages/Cache/IRemoteFileMetadata.h>
 #include <Storages/Cache/RemoteCacheController.h>
@@ -53,7 +52,7 @@ public:
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    size_t getFileSize() override { return remote_file_size; }
+    std::optional<size_t> tryGetFileSize() override { return remote_file_size; }
 
 private:
     std::unique_ptr<LocalFileHolder> local_file_holder;
@@ -70,7 +69,7 @@ public:
 
     void initOnce(ContextPtr context, const String & root_dir_, size_t limit_size_, size_t bytes_read_before_flush_);
 
-    inline bool isInitialized() const { return initialized; }
+    bool isInitialized() const { return initialized; }
 
     std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>>
     createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer, bool is_random_accessed);
@@ -91,7 +90,7 @@ private:
     std::mutex mutex;
     std::unique_ptr<RemoteFileCacheType> lru_caches;
 
-    Poco::Logger * log = &Poco::Logger::get("ExternalDataSourceCache");
+    LoggerPtr log = getLogger("ExternalDataSourceCache");
 
     String calculateLocalPath(IRemoteFileMetadataPtr meta) const;
 

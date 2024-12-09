@@ -10,6 +10,9 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <Backups/IBackup.h>
+#include <Backups/WithRetries.h>
+
 #include <span>
 
 namespace DB
@@ -47,13 +50,12 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
     void drop() override;
 
-    NamesAndTypesList getVirtuals() const override;
-
     std::string getName() const override { return "KeeperMap"; }
     Names getPrimaryKey() const override { return {primary_key}; }
 
     Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
-    Chunk getBySerializedKeys(std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version) const;
+    Chunk getBySerializedKeys(
+        std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const;
 
     Block getSampleBlock(const Names &) const override;
 
@@ -64,13 +66,10 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     bool supportsParallelInsert() const override { return true; }
-    bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(
-        const ASTPtr & node, ContextPtr /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
-    {
-        return node->getColumnName() == primary_key;
-    }
     bool supportsDelete() const override { return true; }
+
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     zkutil::ZooKeeperPtr getClient() const;
     const std::string & dataPath() const;
@@ -79,10 +78,10 @@ public:
     UInt64 keysLimit() const;
 
     template <bool throw_on_error>
-    void checkTable() const
+    void checkTable(const ContextPtr & local_context) const
     {
-        auto is_table_valid = isTableValid();
-        if (!is_table_valid.has_value())
+        auto current_table_status = getTableStatus(local_context);
+        if (table_status == TableStatus::UNKNOWN)
         {
             static constexpr auto error_msg = "Failed to activate table because of connection issues. It will be activated "
                                                           "once a connection is established and metadata is verified";
@@ -95,10 +94,10 @@ public:
             }
         }
 
-        if (!*is_table_valid)
+        if (current_table_status != TableStatus::VALID)
         {
             static constexpr auto error_msg
-                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DETACH table";
+                = "Failed to activate table because of invalid metadata in ZooKeeper. Please DROP/DETACH table";
             if constexpr (throw_on_error)
                 throw Exception(ErrorCodes::INVALID_STATE, error_msg);
             else
@@ -112,20 +111,35 @@ public:
 private:
     bool dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
 
-    std::optional<bool> isTableValid() const;
+    enum class TableStatus : uint8_t
+    {
+        UNKNOWN,
+        INVALID_METADATA,
+        INVALID_KEEPER_STRUCTURE,
+        VALID
+    };
 
-    std::string root_path;
+    TableStatus getTableStatus(const ContextPtr & context) const;
+
+    void restoreDataImpl(
+        const BackupPtr & backup,
+        const String & data_path_in_backup,
+        std::shared_ptr<WithRetries> with_retries,
+        bool allow_non_empty_tables,
+        const DiskPtr & temporary_disk);
+
+    std::string zk_root_path;
     std::string primary_key;
 
-    std::string data_path;
+    std::string zk_data_path;
+    std::string zk_metadata_path;
+    std::string zk_tables_path;
 
-    std::string metadata_path;
+    std::string table_unique_id;
+    std::string zk_table_path;
 
-    std::string tables_path;
-    std::string table_path;
-
-    std::string dropped_path;
-    std::string dropped_lock_path;
+    std::string zk_dropped_path;
+    std::string zk_dropped_lock_path;
 
     std::string zookeeper_name;
 
@@ -137,9 +151,10 @@ private:
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
 
     mutable std::mutex init_mutex;
-    mutable std::optional<bool> table_is_valid;
 
-    Poco::Logger * log;
+    mutable TableStatus table_status{TableStatus::UNKNOWN};
+
+    LoggerPtr log;
 };
 
 }

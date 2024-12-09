@@ -6,7 +6,13 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
+#include "DataTypes/Native.h"
 #include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <Core/ValuesWithType.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
 
 
 namespace DB
@@ -15,7 +21,41 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
+    extern const int LOGICAL_ERROR;
 }
+
+#if USE_EMBEDDED_COMPILER
+
+template <typename F>
+static llvm::Value * compileWithNullableValues(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed, F && compile_func)
+{
+    auto * left_type = left->getType();
+    auto * right_type = right->getType();
+
+    if (!left_type->isStructTy() && !right_type->isStructTy())
+    {
+        // Both arguments are not nullable.
+        return compile_func(b, left, right, is_signed);
+    }
+
+    auto * denull_left = left_type->isStructTy() ? b.CreateExtractValue(left, {1}) : left;
+    auto * denull_right = right_type->isStructTy() ? b.CreateExtractValue(right, {1}) : right;
+    auto * denull_result = compile_func(b, denull_left, denull_right, is_signed);
+
+    auto * nullable_result_type = toNullableType(b, denull_result->getType());
+    llvm::Value * nullable_result = llvm::Constant::getNullValue(nullable_result_type);
+    nullable_result = b.CreateInsertValue(nullable_result, denull_result, {0});
+
+    auto * result_is_null = b.CreateExtractValue(nullable_result, {1});
+    if (left_type->isStructTy())
+        result_is_null = b.CreateOr(result_is_null, b.CreateExtractValue(left, {1}));
+    if (right_type->isStructTy())
+        result_is_null = b.CreateOr(result_is_null, b.CreateExtractValue(right, {1}));
+
+    return b.CreateInsertValue(nullable_result, result_is_null, {1});
+}
+
+#endif
 
 template <typename A, typename B>
 inline void throwIfDivisionLeadsToFPE(A a, B b)
@@ -47,9 +87,9 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
+    if constexpr (is_big_int_v<A> && is_floating_point<B>)
         return static_cast<B>(a) / b;
-    else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
+    else if constexpr (is_big_int_v<B> && is_floating_point<A>)
         return a / static_cast<A>(b);
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
@@ -68,7 +108,7 @@ struct DivideIntegralImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
         using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
@@ -84,19 +124,19 @@ struct DivideIntegralImpl
         }
         else
         {
-            /// Comparisons are not strict to avoid rounding issues when operand is implicitly casted to float.
+            /// Comparisons are not strict to avoid rounding issues when operand is implicitly cast to float.
 
-            if constexpr (std::is_floating_point_v<A>)
+            if constexpr (is_floating_point<A>)
                 if (isNaN(a) || a >= std::numeric_limits<CastA>::max() || a <= std::numeric_limits<CastA>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
-            if constexpr (std::is_floating_point_v<B>)
+            if constexpr (is_floating_point<B>)
                 if (isNaN(b) || b >= std::numeric_limits<CastB>::max() || b <= std::numeric_limits<CastB>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
             auto res = checkedDivision(CastA(a), CastB(b));
 
-            if constexpr (std::is_floating_point_v<decltype(res)>)
+            if constexpr (is_floating_point<decltype(res)>)
                 if (isNaN(res) || res >= static_cast<double>(std::numeric_limits<Result>::max()) || res <= std::numeric_limits<Result>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division, because it will produce infinite or too large number");
 
@@ -120,20 +160,20 @@ struct ModuloImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
-        if constexpr (std::is_floating_point_v<ResultType>)
+        if constexpr (is_floating_point<ResultType>)
         {
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
             return static_cast<ResultType>(a) - trunc(static_cast<ResultType>(a) / static_cast<ResultType>(b)) * static_cast<ResultType>(b);
         }
         else
         {
-            if constexpr (std::is_floating_point_v<A>)
+            if constexpr (is_floating_point<A>)
                 if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
-            if constexpr (std::is_floating_point_v<B>)
+            if constexpr (is_floating_point<B>)
                 if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
@@ -158,14 +198,39 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
-#endif
+    static constexpr bool compilable = true; /// Ignore exceptions in LLVM IR
+
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        return compileWithNullableValues(
+            b,
+            left,
+            right,
+            is_signed,
+            [](auto & b_, auto * left_, auto * right_, auto is_signed_) { return compileImpl(b_, left_, right_, is_signed_); });
+    }
+
+    static llvm::Value * compileImpl(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        if (left->getType()->isFloatingPointTy())
+            return b.CreateFRem(left, right);
+        else if (left->getType()->isIntegerTy())
+            return is_signed ? b.CreateSRem(left, right) : b.CreateURem(left, right);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ModuloImpl compilation expected native integer or floating point type");
+    }
+
+    #endif
 };
 
 template <typename A, typename B>
 struct ModuloLegacyImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// moduloLegacy is only used in partition key expression
+#endif
 };
 
 template <typename A, typename B>
@@ -175,7 +240,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
         if constexpr (is_signed_v<A>)
@@ -194,6 +259,36 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
         }
         return static_cast<ResultType>(res);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true; /// Ignore exceptions in LLVM IR
+
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        return compileWithNullableValues(
+            b,
+            left,
+            right,
+            is_signed,
+            [](auto & b_, auto * left_, auto * right_, auto is_signed_) { return compileImpl(b_, left_, right_, is_signed_); });
+    }
+
+    static llvm::Value * compileImpl(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        auto * result = ModuloImpl<A, B>::compileImpl(b, left, right, is_signed);
+        if (is_signed)
+        {
+            /// If result is negative, result += abs(right).
+            auto * zero = llvm::Constant::getNullValue(result->getType());
+            auto * is_negative = b.CreateICmpSLT(result, zero);
+            auto * abs_right = b.CreateSelect(b.CreateICmpSLT(right, zero), b.CreateNeg(right), right);
+            return b.CreateSelect(is_negative, b.CreateAdd(result, abs_right), result);
+        }
+        else
+            return result;
+    }
+#endif
+
 };
 
 }

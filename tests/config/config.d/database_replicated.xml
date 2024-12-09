@@ -44,9 +44,18 @@
             <election_timeout_upper_bound_ms>5000</election_timeout_upper_bound_ms>
             <raft_logs_level>information</raft_logs_level>
             <force_sync>false</force_sync>
+            <async_replication>1</async_replication>
             <!-- we want all logs for complex problems investigation -->
             <reserved_log_items>1000000000000000</reserved_log_items>
         </coordination_settings>
+
+        <feature_flags>
+            <filtered_list>1</filtered_list>
+            <multi_read>1</multi_read>
+            <check_not_exists>1</check_not_exists>
+            <create_if_not_exists>1</create_if_not_exists>
+            <remove_recursive>1</remove_recursive>
+        </feature_flags>
 
         <raft_configuration>
             <server>
@@ -97,4 +106,5 @@
     </remote_servers>
 
     <_functional_tests_helper_database_replicated_replace_args_macros>1</_functional_tests_helper_database_replicated_replace_args_macros>
+    <max_database_replicated_create_table_thread_pool_size>50</max_database_replicated_create_table_thread_pool_size>
 </clickhouse>
