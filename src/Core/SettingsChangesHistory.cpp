@@ -67,8 +67,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"object_storage_remove_recursive_file_limit", 0, 1000, "Added new setting to limit number of files stored in memory while removing from object storage. Zero value means unlimited."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
-            {"enable_minmax_index_for_all_numeric_columns", false, false, "New setting to enable secondary indices for all numeric columns"},
-            {"enable_minmax_index_for_all_string_columns", false, false, "New setting to enable secondary indices for all string columns"},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
@@ -625,6 +623,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"use_primary_key_cache", false, false, "New setting"},
             {"prewarm_primary_key_cache", false, false, "New setting"},
             {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},
+            {"enable_minmax_index_for_all_numeric_columns", false, false, "New setting to enable secondary indices for all numeric columns"},
+            {"enable_minmax_index_for_all_string_columns", false, false, "New setting to enable secondary indices for all string columns"},
         }
     },
     {"24.11",

@@ -582,7 +582,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == DROP_COLUMN)
     {
-        auto column = metadata.columns.tryGet(column_name);
+        const auto * column = metadata.columns.tryGet(column_name);
         if (column)
         {
             if (isNumber(column->type) && metadata.settings_changes
