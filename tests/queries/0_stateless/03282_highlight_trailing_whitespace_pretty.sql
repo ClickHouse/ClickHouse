@@ -1,5 +1,6 @@
 SET output_format_pretty_display_footer_column_names = 0;
 SET output_format_pretty_color = 1;
+SET output_format_pretty_highlight_trailing_whitespace = 1;
 
 DROP TABLE IF EXISTS strings_whitespace;
 CREATE TABLE strings_whitespace (str String) ENGINE = Memory;
@@ -17,6 +18,7 @@ INSERT INTO strings_whitespace VALUES ('string9   \n');
 INSERT INTO strings_whitespace VALUES ('string10\t\n\r');
 INSERT INTO strings_whitespace VALUES ('string11                                                                      ');
 INSERT INTO strings_whitespace VALUES ('');
+INSERT INTO strings_whitespace VALUES (' ');
 INSERT INTO strings_whitespace VALUES ('\n');
 INSERT INTO strings_whitespace VALUES ('\r');
 INSERT INTO strings_whitespace VALUES ('\t');
