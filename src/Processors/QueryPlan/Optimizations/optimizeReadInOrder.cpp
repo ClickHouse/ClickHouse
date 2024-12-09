@@ -391,8 +391,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
     }
 
     /// This is a result direction we will read from MergeTree
-    ///  1 - in order,
-    /// -1 - in reverse order,
+    ///  1 - in same order of keys,
+    /// -1 - in reverse order of keys,
     ///  0 - usual read, don't apply optimization
     ///
     /// So far, 0 means any direction is possible. It is ok for constant prefix.
@@ -415,6 +415,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     while (next_description_column < description.size() && next_sort_key < sorting_key.column_names.size())
     {
         const auto & sorting_key_column = sorting_key.column_names[next_sort_key];
+        int reverse_indicator = (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[next_sort_key]) ? -1 : 1;
         const auto & sort_column_description = description[next_description_column];
 
         /// If required order depend on collation, it cannot be matched with primary key order.
@@ -425,7 +426,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         /// Since sorting key columns are always sorted with NULLS LAST, reading in order
         /// supported only for ASC NULLS LAST ("in order"), and DESC NULLS FIRST ("reverse")
         const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable();
-        if (column_is_nullable && sort_column_description.nulls_direction != 1)
+        if (column_is_nullable && sort_column_description.nulls_direction != sort_column_description.direction)
             break;
 
         /// Direction for current sort key.
@@ -448,8 +449,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
             if (sort_column_description.column_name != sorting_key_column)
                 break;
 
-            current_direction = sort_column_description.direction;
-
+            current_direction = sort_column_description.direction * reverse_indicator;
 
             //std::cerr << "====== (no dag) Found direct match" << std::endl;
 
@@ -477,7 +477,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
                 /// Here, 'x + 1' would be a fixed point. But it is reasonable to read-in-order.
 
-                current_direction = sort_column_description.direction;
+                current_direction = sort_column_description.direction * reverse_indicator;
                 if (match.monotonicity)
                 {
                     current_direction *= match.monotonicity->direction;
