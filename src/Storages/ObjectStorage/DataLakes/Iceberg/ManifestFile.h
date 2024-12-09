@@ -1,11 +1,11 @@
 #pragma once
-#include <memory>
+
 #include "config.h"
 
 #if USE_AVRO
 
-#    include <cstdint>
-#    include <Common/Exception.h>
+#include <cstdint>
+#include <Common/Exception.h>
 
 
 namespace DB

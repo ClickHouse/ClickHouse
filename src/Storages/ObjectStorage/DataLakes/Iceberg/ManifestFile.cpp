@@ -3,26 +3,12 @@
 #if USE_AVRO
 
 
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
 
 
-#    include <Core/Types.h>
-#    include <Disks/ObjectStorages/IObjectStorage.h>
-#    include <Interpreters/Context_fwd.h>
-#    include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#    include <Storages/ObjectStorage/StorageObjectStorage.h>
-#    include <DataFile.hh>
-
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
-
-#    include <Common/Exception.h>
-#    include "DataTypes/DataTypeTuple.h"
-#    include "Formats/FormatSettings.h"
-
-#    include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#include <Columns/ColumnTuple.h>
+#include "DataTypes/DataTypeTuple.h"
 
 
 namespace DB

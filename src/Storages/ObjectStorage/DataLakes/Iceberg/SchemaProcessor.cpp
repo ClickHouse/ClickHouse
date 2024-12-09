@@ -1,4 +1,4 @@
-#include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -21,14 +21,18 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
+#include <IO/ReadHelpers.h>
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int UNSUPPORTED_METHOD;
+}
 namespace Iceberg
 {
 

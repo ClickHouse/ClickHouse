@@ -1,45 +1,25 @@
-#include <memory>
-#include <Poco/Logger.h>
-#include "Common/Config/ConfigProcessor.h"
-#include "Common/DateLUT.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 #include "config.h"
 
 #if USE_AVRO
 
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/IColumn.h>
-#    include <Core/Settings.h>
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeDate.h>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeFactory.h>
-#    include <DataTypes/DataTypeFixedString.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <DataTypes/DataTypeUUID.h>
-#    include <DataTypes/DataTypesDecimal.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#    include <Storages/ObjectStorage/DataLakes/Common.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#    include <Common/logger_useful.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/IColumn.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Common/logger_useful.h>
 
-#    include <filesystem>
-#    include <sstream>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
 
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
-
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
 namespace DB
 {
@@ -255,12 +235,15 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
 
+    if (metadata_version == current_metadata_version)
+        return false;
+
+    current_metadata_version = metadata_version;
+
     auto metadata_object = readJson(metadata_file_path, local_context);
 
     chassert(format_version == metadata_object->getValue<int>("format-version"));
 
-    if (metadata_version == current_metadata_version)
-        return false;
 
     auto manifest_list_file = getRelevantManifestList(metadata_object);
     if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value() != current_snapshot->getName())))

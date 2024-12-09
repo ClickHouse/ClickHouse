@@ -11,7 +11,6 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
-#include "Common/DateLUT.h"
 #include <Common/logger_useful.h>
 #include "Storages/ColumnsDescription.h"
 
@@ -47,9 +46,11 @@ public:
     {
         BaseStorageConfiguration::update(object_storage, local_context);
 
+        bool existed = current_metadata != nullptr;
+
         if (updateMetadataObjectIfNeeded(object_storage, local_context))
         {
-            if (hasExternalDynamicMetadata())
+            if (hasExternalDynamicMetadata() && existed)
             {
                 throw Exception(
                     ErrorCodes::FORMAT_VERSION_TOO_OLD,
@@ -103,6 +104,7 @@ public:
             BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
             BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
         }
+
         return ColumnsDescription{current_metadata->getTableSchema()};
     }
 
