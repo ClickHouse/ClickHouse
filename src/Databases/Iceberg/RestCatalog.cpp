@@ -577,11 +577,11 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-        const auto & settings = getContext()->getSettingsRef();
-        int format_version = metadata_object->getValue<int>("format-version");
-        auto schema = DB::IcebergMetadata::parseTableSchema(
-            metadata_object, log, format_version, settings[DB::Setting::iceberg_engine_ignore_schema_evolution]).first;
-        result.setSchema(schema);
+        // int format_version = metadata_object->getValue<int>("format-version");
+        auto schema_processor = DB::IcebergSchemaProcessor();
+        auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
+        auto schema = schema_processor.getClickhouseTableSchemaById(id);
+        result.setSchema(*schema);
     }
 
     if (result.requiresCredentials() && object->has("config"))

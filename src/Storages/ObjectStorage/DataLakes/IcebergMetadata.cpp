@@ -52,9 +52,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Int32 parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
-
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     ConfigurationObserverPtr configuration_,
@@ -124,7 +121,6 @@ bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
 bool operator!=(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
 {
     return !(first == second);
-}
 }
 
 

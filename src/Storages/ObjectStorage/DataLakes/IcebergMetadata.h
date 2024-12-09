@@ -207,11 +207,8 @@ public:
 
     bool supportsExternalMetadataChange() const override { return true; }
 
-    static std::pair<NamesAndTypesList, Int32> parseTableSchema(
-        const Poco::JSON::Object::Ptr & metadata_object,
-        LoggerPtr metadata_logger,
-        int format_version,
-        bool ignore_schema_evolution);
+    static Int32 parseTableSchema(
+        const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
 private:
     mutable std::unordered_map<String, Int32> schema_id_by_data_file;

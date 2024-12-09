@@ -104,10 +104,12 @@ StorageObjectStorage::StorageObjectStorage(
     try
     {
         if (!lazy_init)
-        if (configuration->hasExternalDynamicMetadata())
-            configuration->updateAndGetCurrentSchema(object_storage, context);
-        else
-            configuration->update(object_storage, context);
+        {
+            if (configuration->hasExternalDynamicMetadata())
+                configuration->updateAndGetCurrentSchema(object_storage, context);
+            else
+                configuration->update(object_storage, context);
+        }
     }
     catch (...)
     {

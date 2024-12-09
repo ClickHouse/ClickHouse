@@ -229,10 +229,11 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
         storage_type = table_metadata.getStorageType();
 
     const auto configuration = getConfiguration(storage_type);
+    auto storage_settings = std::make_unique<StorageObjectStorageSettings>();
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false);
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, std::move(storage_settings));
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
