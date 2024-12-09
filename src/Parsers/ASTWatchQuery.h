@@ -40,30 +40,30 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "WATCH " << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_keyword : "") << "WATCH " << (settings.hilite ? hilite_none : "");
 
         if (database)
         {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
+            database->formatImpl(ostr, settings, state, frame);
+            ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(settings, state, frame);
+        table->formatImpl(ostr, settings, state, frame);
 
         if (is_watch_events)
         {
-            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "EVENTS" << (settings.hilite ? hilite_none : "");
+            ostr << " " << (settings.hilite ? hilite_keyword : "") << "EVENTS" << (settings.hilite ? hilite_none : "");
         }
 
         if (limit_length)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str << "LIMIT " << (settings.hilite ? hilite_none : "");
-            limit_length->formatImpl(settings, state, frame);
+            ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str << "LIMIT " << (settings.hilite ? hilite_none : "");
+            limit_length->formatImpl(ostr, settings, state, frame);
         }
     }
 };

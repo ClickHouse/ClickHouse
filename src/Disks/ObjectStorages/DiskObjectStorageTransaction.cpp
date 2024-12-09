@@ -911,8 +911,11 @@ void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
     operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
+        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path, this](MetadataTransactionPtr tx)
         {
+            if (object_storage.isPlain() && !object_storage.isWriteOnce())
+                tx->createEmptyFile(path);
+
             tx->createEmptyMetadataFile(path);
         }));
 }

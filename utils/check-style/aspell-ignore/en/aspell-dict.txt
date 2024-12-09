@@ -1272,6 +1272,7 @@ arrayPartialShuffle
 arrayPartialSort
 arrayPopBack
 arrayPopFront
+arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront
@@ -1954,6 +1955,7 @@ ilike
 incrementing
 indexHint
 indexOf
+indexOfAssumeSorted
 inequal
 infi
 inflight

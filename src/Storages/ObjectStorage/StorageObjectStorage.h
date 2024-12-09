@@ -5,16 +5,25 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include "Interpreters/ActionsDAG.h"
 #include "Storages/ColumnsDescription.h"
 
+#include <memory>
 namespace DB
 {
 
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 /**
  * A general class containing implementation for external table engines
@@ -123,8 +132,12 @@ public:
         std::string & sample_path,
         const ContextPtr & context);
 
+    bool hasExternalDynamicMetadata() const override;
+
+    void updateExternalDynamicMetadata(ContextPtr) override;
+
 protected:
-    String getPathSample(StorageInMemoryMetadata metadata, ContextPtr context);
+    String getPathSample(ContextPtr context);
 
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         const ObjectStoragePtr & object_storage,
@@ -156,7 +169,8 @@ public:
         Configuration & configuration,
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure);
+        bool with_table_structure,
+        std::unique_ptr<StorageObjectStorageSettings> settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -205,6 +219,17 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
+    virtual bool hasExternalDynamicMetadata() { return false; }
+
+    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String&) const { return {}; }
+
+    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String&) const { return {}; }
+
+    virtual ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAndGetCurrentSchema is not supported by storage {}", getEngineName());
+    }
+
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
         const Strings & requested_columns,
@@ -230,6 +255,8 @@ protected:
 
     bool initialized = false;
     DataLakePartitionColumns partition_columns;
+
+    bool allow_dynamic_metadata_for_data_lakes;
 };
 
 }
