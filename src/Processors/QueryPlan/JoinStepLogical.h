@@ -64,6 +64,7 @@ public:
     const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
     const JoinSettings & getJoinSettings() const { return join_settings; }
     const JoinInfo & getJoinInfo() const { return join_info; }
+    JoinInfo & getJoinInfo() { return join_info; }
 
     JoinPtr convertToPhysical(JoinActionRef & left_filter, JoinActionRef & right_filter, JoinActionRef & post_filter, bool is_explain_logical);
 

@@ -77,6 +77,8 @@ struct JoinActionRef
         : node(node_) , column_name(node_ ? node_->result_name : "")
     {}
 
+    ColumnWithTypeAndName getColumn() const { return {node->column, node->result_type, column_name}; }
+
     operator bool() const { return node != nullptr; } /// NOLINT
 };
 

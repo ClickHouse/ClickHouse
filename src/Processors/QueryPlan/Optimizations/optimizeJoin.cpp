@@ -205,7 +205,7 @@ void addSortingForMergeJoin(
     add_sorting(right_node, join_clause.key_names_right, JoinTableSide::Right);
 }
 
-bool optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());

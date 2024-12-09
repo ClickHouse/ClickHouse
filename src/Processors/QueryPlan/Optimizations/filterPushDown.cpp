@@ -198,6 +198,25 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::N
     return 0;
 }
 
+static void buildEquialentSetsForJoinStepLogical(
+    std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_column,
+    std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_column,
+    const JoinInfo & join_info)
+{
+    if (!join_info.expression.disjunctive_conditions.empty())
+        return;
+
+    for (const auto & predicate : join_info.expression.condition.predicates)
+    {
+        if (predicate.op != PredicateOperator::Equals && predicate.op != PredicateOperator::NullSafeEquals)
+            continue;
+        if (!predicate.left_node.node->result_type->equals(*predicate.right_node.node->result_type))
+            continue;
+        equivalent_left_column[predicate.left_node.column_name] = predicate.right_node.getColumn();
+        equivalent_right_column[predicate.right_node.column_name] = predicate.left_node.getColumn();
+    }
+}
+
 static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
 {
     auto & parent = parent_node->step;
@@ -267,6 +286,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_left_stream_column_to_right_stream_column[left_table_key_name] = right_table_column;
             equivalent_right_stream_column_to_left_stream_column[right_table_key_name] = left_table_column;
         }
+    }
+    else if (logical_join)
+    {
+        buildEquialentSetsForJoinStepLogical(
+            equivalent_left_stream_column_to_right_stream_column,
+            equivalent_right_stream_column_to_left_stream_column,
+            logical_join->getJoinInfo());
     }
 
     auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)

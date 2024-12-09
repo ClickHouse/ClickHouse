@@ -104,7 +104,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     }
 }
 
-bool optimizeTreeSimple(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, OptimizeStepFunc func)
+bool optimizeTreeWithDFS(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, OptimizeStepFunc func)
 {
     std::stack<QueryPlan::Node *> stack;
     stack.push(&root);
