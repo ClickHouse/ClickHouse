@@ -1,3 +1,5 @@
+#pragma once
+
 #include "config.h"
 
 #if USE_AVRO
