@@ -260,7 +260,6 @@ std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON:
 
     auto snapshots = metadata->get("snapshots").extract<Poco::JSON::Array::Ptr>();
 
-    String manifest_list_file;
     auto current_snapshot_id = metadata->getValue<Int64>("current-snapshot-id");
 
     LOG_DEBUG(&Poco::Logger::get("IcebergMetadata initialize"), "Current snapshot id {}", current_snapshot_id);
