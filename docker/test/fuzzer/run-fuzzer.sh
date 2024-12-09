@@ -254,15 +254,46 @@ function fuzz
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually, I need word splitting.
     # shellcheck disable=SC2012,SC2046
+
+    # Setup arguments for the fuzzer
+    FUZZER_OUTPUT_SQL_FILE=''
+
+    if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
+    then
+        QUERIES_FILE=$(find ch/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+    elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
+    then
+        touch fuzzer_out.sql fuzz.json
+        FUZZER_OUTPUT_SQL_FILE=$(realpath fuzzer_out.sql)
+        BUZZHOUSE_CONFIG_FILE=$(realpath fuzz.json)
+cat << EOF > $BUZZHOUSE_CONFIG_FILE
+{
+    "db_file_path": "/var/lib/clickhouse/user_files",
+    "log_path": "$FUZZER_OUTPUT_SQL_FILE",
+    "seed": 0,
+    "read_log": false,
+    "fuzz_floating_points": false,
+    "time_to_run": 180
+}
+EOF
+        FUZZER_ARGS="--buzz-house-config=$BUZZHOUSE_CONFIG_FILE"
+    else
+        >&2 echo "Fuzzer \"$FUZZER_TO_RUN\" unknown, provide either \"AST Fuzzer\" or \"BuzzHouse\""
+        exit 1
+    fi
+
+    # Workaround to pass that many arguments through the command line. While it works without this
+    # when running the process in the foreground, it fails when we run it in the background, for
+    # some reason.
+    echo $FUZZER_ARGS > fuzzer_args.txt
+
     timeout -s TERM --preserve-status 30m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
-        --query-fuzzer-runs=1000 \
-        --create-query-fuzzer-runs=50 \
-        --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
-        $NEW_TESTS_OPT \
+        $(< fuzzer_args.txt) \
         > fuzzer.log \
         2>&1 &
     fuzzer_pid=$!
@@ -429,6 +460,11 @@ dmesg -T > dmesg.log ||:
 zstd --threads=0 --rm server.log
 zstd --threads=0 --rm fuzzer.log
 
+SQL_LOG_LINK=''
+if [ -f $FUZZER_OUTPUT_SQL_FILE ]; then
+    zstd --threads=0 --rm $FUZZER_OUTPUT_SQL_FILE
+fi
+
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
 <html lang="en">
@@ -443,15 +479,14 @@ table { border: 0; }
 p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
 
   </style>
-  <title>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</title>
+  <title>${FUZZER_TO_RUN} for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</title>
 </head>
 <body>
 <div class="main">
 
-<h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
+<h1>${FUZZER_TO_RUN} for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
 <p class="links">
   <a href="run.log">run.log</a>
-  <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
   <a href="stderr.log">stderr.log</a>
   <a href="main.log">main.log</a>
@@ -466,7 +501,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
   <th>Description</th>
 </tr>
 <tr>
-  <td>AST Fuzzer</td>
+  <td>${FUZZER_TO_RUN}</td>
   <td>$(cat status.txt)</td>
   <td>$(
     clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt

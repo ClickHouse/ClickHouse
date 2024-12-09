@@ -1,5 +1,6 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
+    FuzzLoop.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK
@@ -15,9 +16,50 @@ set (CLICKHOUSE_CLIENT_LINK
 if (TARGET ch_rust::skim)
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_rust::skim)
 endif()
-
 # Always use internal readpassphrase
 list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE readpassphrase)
+
+if (ENABLE_BUZZHOUSE)
+    add_subdirectory(BuzzHouse/Proto)
+
+    list(APPEND CLICKHOUSE_CLIENT_SOURCES
+        BuzzHouse/AST/SQLProtoStr.cpp
+        BuzzHouse/Generator/SQLQuery.cpp
+        BuzzHouse/Generator/SQLExpression.cpp
+        BuzzHouse/Generator/SQLTable.cpp
+        BuzzHouse/Generator/SQLTypes.cpp
+        BuzzHouse/Generator/StatementGenerator.cpp
+        BuzzHouse/Generator/RandomSettings.cpp
+        BuzzHouse/Generator/QueryOracle.cpp
+        BuzzHouse/Generator/ExternalIntegrations.cpp
+        BuzzHouse/Utils/Hugeint.cpp
+        BuzzHouse/Utils/UHugeint.cpp
+    )
+
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_buzzhouse_proto)
+    if (TARGET OpenSSL::Crypto)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE OpenSSL::Crypto)
+    endif()
+    if (TARGET ch_contrib::mysqlxx)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::mysqlxx)
+    endif()
+    if (TARGET ch_contrib::libpqxx)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::libpqxx)
+    endif()
+    if (TARGET ch_contrib::sqlite)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::sqlite)
+    endif()
+    if (TARGET ch_contrib::mongocxx)
+        list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_contrib::mongocxx)
+    endif()
+
+    set (CLICKHOUSE_CLIENT_INCLUDE
+        PRIVATE
+        BuzzHouse/AST
+        BuzzHouse/Generator
+        BuzzHouse/Utils
+    )
+endif()
 
 clickhouse_program_add(client)
 
