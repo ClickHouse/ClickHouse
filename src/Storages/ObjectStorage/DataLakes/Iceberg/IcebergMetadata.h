@@ -107,6 +107,8 @@ private:
     Int32 current_schema_id;
     std::optional<IcebergSnapshot> current_snapshot;
 
+    mutable std::optional<Strings> cached_files_for_current_snapshot;
+
     ManifestList initializeManifestList(const String & manifest_list_file) const;
 
     IcebergSnapshot getSnapshot(const String & manifest_list_file) const;

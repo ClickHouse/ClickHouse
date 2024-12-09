@@ -248,6 +248,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value() != current_snapshot->getName())))
     {
         current_snapshot = getSnapshot(manifest_list_file.value());
+        cached_files_for_current_snapshot = std::nullopt;
     }
     current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
     return true;
@@ -396,13 +397,17 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) 
 
 Strings IcebergMetadata::getDataFiles() const
 {
-    Strings data_files;
-
     if (!current_snapshot)
     {
         return {};
     }
 
+    if (cached_files_for_current_snapshot.has_value())
+    {
+        return cached_files_for_current_snapshot.value();
+    }
+
+    Strings data_files;
     for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
     {
         for (const auto & data_file : manifest_entry.getContent().getDataFiles())
@@ -414,9 +419,10 @@ Strings IcebergMetadata::getDataFiles() const
         }
     }
 
-    return data_files;
-}
+    cached_files_for_current_snapshot.emplace(std::move(data_files));
 
+    return cached_files_for_current_snapshot.value();
+}
 }
 
 }
