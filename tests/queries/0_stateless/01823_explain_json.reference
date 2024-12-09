@@ -74,7 +74,7 @@
 --------
           "Node Type": "ArrayJoin",
           "Left": false,
-          "Columns": ["__table1.x", "__table1.y"],
+          "Columns": ["__array_join_exp_1", "__array_join_exp_2"],
 --------
           "Node Type": "Distinct",
           "Columns": ["intDiv(__table1.number, 2_UInt8)", "intDiv(__table1.number, 3_UInt8)"],
