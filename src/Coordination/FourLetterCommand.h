@@ -35,7 +35,7 @@ public:
     int32_t code();
 
     static String toName(int32_t code);
-    static inline int32_t toCode(const String & name);
+    static int32_t toCode(const String & name);
 
 protected:
     KeeperDispatcher & keeper_dispatcher;
