@@ -2698,7 +2698,7 @@ def do_run_tests(jobs, test_suite: TestSuite):
     if test_suite.sequential_tests:
         run_tests_array(
             (
-                test_suite.sequential_tests,
+                list(test_suite.sequential_tests),
                 len(test_suite.sequential_tests),
                 test_suite,
                 False,

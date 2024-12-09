@@ -42,6 +42,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -1110,7 +1111,12 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     if (prepared_stages.back().isAffectingAllColumns(storage_columns))
     {
         for (const auto & column_name : available_columns)
+        {
+            if (column_name == RowExistsColumn::name && has_filters && !deleted_mask_updated)
+                continue;
+
             prepared_stages.back().output_columns.insert(column_name);
+        }
     }
 
     /// Now, calculate `expressions_chain` for each stage except the first.

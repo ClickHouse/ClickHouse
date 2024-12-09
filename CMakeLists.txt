@@ -592,6 +592,20 @@ endif()
 
 include (cmake/sanitize_targets.cmake)
 
+if (COMPILER_CACHE STREQUAL "chcache")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+
+    get_all_targets(all_targets)
+    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+    foreach(target ${all_targets})
+        if (target IN_LIST chcache_targets)
+            continue()
+        endif()
+
+        add_dependencies(${target} cargo-build_chcache)
+    endforeach()
+endif()
+
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
 if (NATIVE_BUILD_TARGETS
