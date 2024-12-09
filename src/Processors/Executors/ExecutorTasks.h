@@ -45,6 +45,8 @@ class ExecutorTasks
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
 
+    const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
+
 public:
     using Stack = std::stack<UInt64>;
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
@@ -66,6 +68,11 @@ public:
     void upscale(size_t use_threads_);
 
     void processAsyncTasks();
+
+    bool shouldSpawn() {
+        std::lock_guard lock(mutex);
+        return threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD;
+    }
 
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
 };

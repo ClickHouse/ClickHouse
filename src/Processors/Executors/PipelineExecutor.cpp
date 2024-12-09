@@ -364,13 +364,12 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
         /// To avoid counting them in ConcurrencyControl, we create dummy slot allocation.
         cpu_slots = grantSlots(num_threads);
     }
-    size_t use_threads = cpu_slots->grantedCount();
 
     Queue queue;
     Queue async_queue;
     graph->initializeExecution(queue, async_queue);
 
-    tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get());
+    tasks.init(num_threads, 1, profile_processors, trace_processors, read_progress_callback.get());
     tasks.fill(queue, async_queue);
 
     if (num_threads > 1)
@@ -385,7 +384,8 @@ void PipelineExecutor::spawnThreads()
         return;
     }
 
-    while (auto slot = cpu_slots->tryAcquire())
+    AcquiredSlotPtr slot;
+    while (tasks.shouldSpawn() && (slot = cpu_slots->tryAcquire()))
     {
         size_t thread_num = threads.fetch_add(1);
 
