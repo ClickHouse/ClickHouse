@@ -1990,17 +1990,32 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
     }
 
+    size_t joins_count = 0;
+    bool is_full_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
         auto table_expression_type = table_expression->getNodeType();
-        if (table_expression_type == QueryTreeNodeType::JOIN ||
-            table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
+        if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             continue;
+
+        if (table_expression_type == QueryTreeNodeType::JOIN)
+        {
+            ++joins_count;
+            const auto & join_node = table_expression->as<const JoinNode &>();
+            if (join_node.getKind() == JoinKind::Full)
+                is_full_join = true;
+
+            continue;
+        }
 
         prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
     }
+
+    /// disable parallel replicas for n-way join with FULL JOIN involved
+    if (joins_count > 1 && is_full_join)
+        planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
 
     /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
       * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
