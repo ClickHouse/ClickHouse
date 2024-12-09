@@ -2185,6 +2185,8 @@ Calculate AUC (Area Under the Curve) for the Precision Recall curve.
 arrayPrAUC(arr_scores, arr_labels)
 ```
 
+Alias: `arrayPRAUC`
+
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
