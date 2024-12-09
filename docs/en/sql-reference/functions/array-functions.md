@@ -2153,7 +2153,7 @@ arrayAUC(arr_scores, arr_labels[, scale])
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
-- `scale` - Optional. Wether to return the normalized area. Default value: true. [Bool]
+- `scale` - Optional. Whether to return the normalized area. Default value: true. []
 
 **Returned value**
 
@@ -2182,13 +2182,17 @@ Calculate AUC (Area Under the Curve) for the Precision Recall curve.
 **Syntax**
 
 ``` sql
-arrayPrAUC(arr_scores, arr_labels)
+arrayPrAUC(arr_scores, arr_labels[, arr_partial_offsets])
 ```
 
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `arr_partial_offsets` - Optional. Array of three integers to calculate partial AUC instead of the whole AUC. [`higher_partitions_tp`, `higher_partitions_total`, `total_positives`]
+    - `higher_partitions_tp`: how many positive labels are there on higher scores partitions.
+    - `higher_partitions_total`: how many labels are there on higher scores partitions.
+    - `total_positives`: how many positive labels are there in the whole dataset.
 
 **Returned value**
 
