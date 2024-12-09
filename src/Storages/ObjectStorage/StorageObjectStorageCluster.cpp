@@ -114,18 +114,15 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             configuration->getEngineName());
     }
 
-    if (table_function->name == configuration->getTypeName())
+    if (endsWith(table_function->name, "Cluster"))
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
-    else if (table_function->name == fmt::format("{}Cluster", configuration->getTypeName()))
+    else
     {
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
         args.insert(args.begin(), cluster_name_arg);
     }
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table function name: {}", table_function->name);
-
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
