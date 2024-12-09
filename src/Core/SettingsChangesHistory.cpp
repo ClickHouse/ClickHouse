@@ -623,6 +623,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"use_primary_key_cache", false, false, "New setting"},
             {"prewarm_primary_key_cache", false, false, "New setting"},
             {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},
+            {"allow_experimental_reverse_key", false, false, "New setting"},
         }
     },
     {"24.11",
