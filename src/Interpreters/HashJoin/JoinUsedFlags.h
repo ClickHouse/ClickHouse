@@ -1,10 +1,13 @@
 #pragma once
-#include <vector>
 #include <atomic>
+#include <shared_mutex>
 #include <unordered_map>
-#include <Core/Joins.h>
+#include <vector>
 #include <Core/Block.h>
+#include <Core/Joins.h>
 #include <Interpreters/joinDispatch.h>
+#include "Common/Exception.h"
+#include "Common/SharedMutex.h"
 
 namespace DB
 {
@@ -16,9 +19,11 @@ class JoinUsedFlags
     using RawBlockPtr = const Block *;
     using UsedFlagsForBlock = std::vector<std::atomic_bool>;
 
+    mutable SharedMutex mutex;
+
     /// For multiple dijuncts each empty in hashmap stores flags for particular block
     /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
-    std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags;
+    std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags TSA_GUARDED_BY(mutex);
 
     bool need_flags;
 
@@ -31,6 +36,7 @@ public:
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
+            std::lock_guard shared(mutex);
             assert(flags[nullptr].size() <= size);
             need_flags = true;
             // For one disjunct clause case, we don't need to reinit each time we call addBlockToJoin.
@@ -48,6 +54,7 @@ public:
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
+            std::lock_guard shared(mutex);
             assert(flags[block_ptr].size() <= block_ptr->rows());
             need_flags = true;
             flags[block_ptr] = std::vector<std::atomic_bool>(block_ptr->rows());
@@ -58,8 +65,10 @@ public:
     {
         return getUsedSafe(nullptr, i);
     }
+
     bool getUsedSafe(const Block * block_ptr, size_t row_idx) const
     {
+        SharedLockGuard shared(mutex);
         if (auto it = flags.find(block_ptr); it != flags.end())
             return it->second[row_idx].load();
         return !need_flags;
@@ -71,14 +80,21 @@ public:
         if constexpr (!use_flags)
             return;
 
+        SharedLockGuard shared(mutex);
         /// Could be set simultaneously from different threads.
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
+            if (flags[mapped.block].size() <= mapped.row_num)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Invalid row number {} in block with {} rows", mapped.row_num, flags[mapped.block].size());
             flags[mapped.block][mapped.row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
+            if (flags[nullptr].size() <= f.getOffset())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Invalid row number {} in block with {} rows", f.getOffset(), flags[nullptr].size());
             flags[nullptr][f.getOffset()].store(true, std::memory_order_relaxed);
         }
     }
@@ -89,13 +105,18 @@ public:
         if constexpr (!use_flags)
             return;
 
+        SharedLockGuard shared(mutex);
         /// Could be set simultaneously from different threads.
         if constexpr (flag_per_row)
         {
+            if (flags[block].size() <= row_num)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid row number {} in block with {} rows", row_num, flags[block].size());
             flags[block][row_num].store(true, std::memory_order_relaxed);
         }
         else
         {
+            if (flags[nullptr].size() <= offset)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid row number {} in block with {} rows", offset, flags[nullptr].size());
             flags[nullptr][offset].store(true, std::memory_order_relaxed);
         }
     }
@@ -106,6 +127,7 @@ public:
         if constexpr (!use_flags)
             return true;
 
+        SharedLockGuard shared(mutex);
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
@@ -124,6 +146,7 @@ public:
         if constexpr (!use_flags)
             return true;
 
+        SharedLockGuard shared(mutex);
         if constexpr (flag_per_row)
         {
             auto & mapped = f.getMapped();
@@ -148,12 +171,14 @@ public:
         }
 
     }
+
     template <bool use_flags, bool flag_per_row>
     bool setUsedOnce(const Block * block, size_t row_num, size_t offset)
     {
         if constexpr (!use_flags)
             return true;
 
+        SharedLockGuard shared(mutex);
         if constexpr (flag_per_row)
         {
             /// fast check to prevent heavy CAS with seq_cst order

@@ -20,8 +20,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/SelectQueryInfo.h>
-#include "Common/BitHelpers.h"
-#include "Common/Stopwatch.h"
+#include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -31,18 +30,14 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
-#include <Common/ElapsedTimeProfileEventIncrement.h>
-#include "Interpreters/HashJoin/HashJoin.h"
-#include "Interpreters/HashJoin/KeyGetter.h"
-#include "Interpreters/NullableUtils.h"
-#include "base/defines.h"
-#include "base/scope_guard.h"
-#include "base/types.h"
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/KeyGetter.h>
+#include <Interpreters/NullableUtils.h>
+#include <base/defines.h>
+#include <base/types.h>
 
 #include <algorithm>
 #include <numeric>
-#include <thread>
-#include <vector>
 
 using namespace DB;
 
