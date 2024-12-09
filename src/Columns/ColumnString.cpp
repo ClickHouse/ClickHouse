@@ -648,7 +648,7 @@ ColumnPtr ColumnString::compress(bool force_compression) const
         return ColumnCompressed::wrap(this->getPtr());
     }
 
-    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, /*force_compression=*/true);
+    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, force_compression);
     const bool offsets_were_compressed = !!offsets_compressed;
 
     /// Offsets are not compressible. Use the source data.
