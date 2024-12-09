@@ -13,7 +13,7 @@ select arrayJoin([1, 2.0, 2.1, 2.2, 10.0, 10.1])::float n, groupArray(n) over (o
 select 1 n, count() over (order by n session 0.5); -- { serverError 69 }
 select 1 n, count() over (order by n session -1); -- { serverError 69 }
 select 1 n, count() over (order by n session 0); -- { serverError 36 }
-select 1 n, count() over (order by n session 'what'); -- { serverError 53 }
+select 1 n, count() over (order by n session 'what'); -- { serverError BAD_ARGUMENTS }
 select 1 n, count() over (session 1); -- { serverError 36 }
 select 1 n, count() over (order by n, n+1 session 1); -- { serverError 36 }
 select 'a' n, count() over (order by n session 1); -- { serverError 48 }
