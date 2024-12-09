@@ -74,6 +74,8 @@ IcebergMetadata::IcebergMetadata(
     current_schema_id = schema_id;
 }
 
+namespace
+{
 enum class ManifestEntryStatus : uint8_t
 {
     EXISTING = 0,
@@ -121,6 +123,8 @@ bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
 bool operator!=(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
 {
     return !(first == second);
+}
+
 }
 
 
