@@ -60,12 +60,7 @@ grouped_scores AS (
     countIf(label > 0) as group_tp,
     count(label) as group_total,
     COALESCE (SUM(group_tp) OVER (ORDER BY group DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prev_group_tp,
-    COALESCE (SUM(group_total) OVER (ORDER BY group DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prev_group_total
-  FROM score_with_group
-  GROUP BY group
-),
-partial_pr_aucs AS (
-  SELECT 
+    COALESCE (SUM(group_total) OVER (ORDER BY group DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prev_group_total,
     arrayPrAUC(
       scores, 
       labels, 
@@ -75,6 +70,7 @@ partial_pr_aucs AS (
         COALESCE((SELECT total_positives FROM total_positives), 0)
       ]
     ) as partial_pr_auc
-  FROM grouped_scores
+  FROM score_with_group
+  GROUP BY group
 )
-SELECT sum(partial_pr_auc) as pr_auc FROM partial_pr_aucs
+SELECT sum(partial_pr_auc) as pr_auc FROM grouped_scores
