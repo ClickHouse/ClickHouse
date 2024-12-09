@@ -9923,17 +9923,13 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             /// But during mutation we can have hardlinks to another part. So it's not Ok to remove blobs of this part if it was mutated.
             if (ec == Coordination::Error::ZNONODE)
             {
-                if (has_parent)
-                {
-                    LOG_INFO(logger, "Lock on path {} for part {} doesn't exist, refuse to remove blobs", zookeeper_part_replica_node, part_name);
-                    return {false, {}};
-                }
-
                 LOG_INFO(
                     logger,
-                    "Lock on path {} for part {} doesn't exist, but we don't have mutation parent, can remove blobs",
+                    "Lock on path {} for part {}, which {} a parent, doesn't exist, refuse to remove blobs",
                     zookeeper_part_replica_node,
-                    part_name);
+                    part_name,
+                    (has_parent ? "has" : "doesn't have"));
+                return {false, {}};
             }
             else
             {
