@@ -1,7 +1,7 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO /// StorageIceberg depending on Avro to parse metadata with Avro format.
+#if USE_AVRO
 
 #include <Core/Types.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>

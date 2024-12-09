@@ -7,13 +7,12 @@
 #include <cstdint>
 #include <Common/Exception.h>
 
-
 namespace DB
 {
 
-
 namespace Iceberg
 {
+
 class ManifestFileContentImpl;
 
 enum class ManifestEntryStatus : uint8_t
@@ -37,6 +36,7 @@ struct DataFileEntry
     ManifestEntryStatus status;
     DataFileContent content;
 };
+
 
 class ManifestFileContent
 {

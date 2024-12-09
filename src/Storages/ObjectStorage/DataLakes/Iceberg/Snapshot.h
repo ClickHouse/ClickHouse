@@ -10,7 +10,6 @@ namespace DB
 namespace Iceberg
 {
 
-
 class ManifestList
 {
 public:
@@ -33,7 +32,6 @@ public:
 
 
 private:
-    // Int32 snapshot_id;
     ManifestListsByName::const_iterator reference;
 };
 
