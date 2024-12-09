@@ -10,6 +10,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/quoteString.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
