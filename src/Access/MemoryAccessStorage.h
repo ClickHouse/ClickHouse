@@ -1,19 +1,24 @@
 #pragma once
 
-#include <Access/AccessStorageBase.h>
+#include <Access/IAccessStorage.h>
+#include <Access/AccessChangesNotifier.h>
+#include <Common/CurrentMetrics.h>
 #include <base/defines.h>
-#include <list>
-#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <boost/container/flat_set.hpp>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric AttachedAccessEntity;
+}
+
 namespace DB
 {
 
 /// Implementation of IAccessStorage which keeps all data in memory.
-class MemoryAccessStorage : public AccessStorageBase
+class MemoryAccessStorage : public IAccessStorage
 {
 public:
     static constexpr char STORAGE_TYPE[] = "memory";
@@ -34,6 +39,30 @@ public:
 
     bool isBackupAllowed() const override { return backup_allowed; }
 
+protected:
+    struct Entry
+    {
+        UUID id;
+        String name;
+        AccessEntityType type;
+        mutable AccessEntityPtr entity; /// may be nullptr, if the entity hasn't been loaded yet.
+    };
+
+    /// Insert or remove entires in maps, notify changes_notifier, count attached entities.
+    void insertEntry(UUID id, String name, AccessEntityType type, AccessEntityPtr entity);
+    void removeEntry(UUID id, String name, AccessEntityType type);
+
+    bool entityLimitReached(UInt64 entity_count) const
+    {
+        return access_entities_num_limit > 0 && entity_count >= access_entities_num_limit;
+    }
+
+    AccessChangesNotifier & changes_notifier;
+    std::unordered_map<UUID, Entry> entries_by_id;
+    std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
+
+    mutable std::recursive_mutex mutex; // Note: Reentrace possible via LDAPAccessStorage
+
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
@@ -49,7 +78,6 @@ private:
     void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep);
     void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep);
 
-    mutable std::recursive_mutex mutex; // Note: Reentrace possible via LDAPAccessStorage
     const bool backup_allowed = false;
 };
 }

@@ -161,7 +161,7 @@ namespace
 
 
 DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_, UInt64 access_entities_num_limit_)
-    : AccessStorageBase(access_entities_num_limit_, storage_name_, changes_notifier_)
+    : MemoryAccessStorage(storage_name_, changes_notifier_, allow_backup_, access_entities_num_limit_)
 {
     directory_path = makeDirectoryPathCanonical(directory_path_);
     readonly = readonly_;
@@ -454,12 +454,6 @@ std::vector<UUID> DiskAccessStorage::findAllImpl(AccessEntityType type) const
     for (const auto * entry : entries_by_name | boost::adaptors::map_values)
         res.emplace_back(entry->id);
     return res;
-}
-
-bool DiskAccessStorage::exists(const UUID & id) const
-{
-    std::lock_guard lock{mutex};
-    return entries_by_id.contains(id);
 }
 
 

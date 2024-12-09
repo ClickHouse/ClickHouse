@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Access/AccessStorageBase.h>
+#include <condition_variable>
+#include <Access/MemoryAccessStorage.h>
 #include <Common/ThreadPool_fwd.h>
 #include <boost/container/flat_set.hpp>
 
@@ -10,7 +11,7 @@ namespace DB
 class AccessChangesNotifier;
 
 /// Loads and saves access entities on a local disk to a specified directory.
-class DiskAccessStorage : public AccessStorageBase
+class DiskAccessStorage : public MemoryAccessStorage
 {
 public:
     static constexpr char STORAGE_TYPE[] = "local_directory";
@@ -31,8 +32,6 @@ public:
 
     void reload(ReloadMode reload_mode) override;
 
-    bool exists(const UUID & id) const override;
-
     bool isBackupAllowed() const override { return backup_allowed; }
 
 private:
@@ -44,19 +43,19 @@ private:
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool readLists() TSA_REQUIRES(mutex);
-    void writeLists() TSA_REQUIRES(mutex);
-    void scheduleWriteLists(AccessEntityType type) TSA_REQUIRES(mutex);
-    void reloadAllAndRebuildLists() TSA_REQUIRES(mutex);
-    void setAllInMemory(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities) TSA_REQUIRES(mutex);
-    void removeAllExceptInMemory(const boost::container::flat_set<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
+    bool readLists();
+    void writeLists();
+    void scheduleWriteLists(AccessEntityType type);
+    void reloadAllAndRebuildLists();
+    void setAllInMemory(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities);
+    void removeAllExceptInMemory(const boost::container::flat_set<UUID> & ids_to_keep);
 
     void listsWritingThreadFunc() TSA_NO_THREAD_SAFETY_ANALYSIS;
     void stopListsWritingThread();
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool write_on_disk) TSA_REQUIRES(mutex);
-    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool write_on_disk) TSA_REQUIRES(mutex);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists, bool write_on_disk) TSA_REQUIRES(mutex);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool write_on_disk);
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool write_on_disk);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists, bool write_on_disk);
 
     AccessEntityPtr readAccessEntityFromDisk(const UUID & id) const;
     void writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const;
@@ -66,21 +65,20 @@ private:
 
     String directory_path;
 
-    boost::container::flat_set<AccessEntityType> types_of_lists_to_write TSA_GUARDED_BY(mutex);
+    boost::container::flat_set<AccessEntityType> types_of_lists_to_write;
 
     /// Whether writing of the list files has been failed since the recent restart of the server.
-    bool failed_to_write_lists TSA_GUARDED_BY(mutex) = false;
+    bool failed_to_write_lists = false;
 
     /// List files are written in a separate thread.
     std::unique_ptr<ThreadFromGlobalPool> lists_writing_thread;
 
     /// Signals `lists_writing_thread` to exit.
-    std::condition_variable lists_writing_thread_should_exit;
+    std::condition_variable_any lists_writing_thread_should_exit;
 
     bool lists_writing_thread_is_waiting = false;
 
     std::atomic<bool> readonly;
     std::atomic<bool> backup_allowed;
-    mutable std::mutex mutex;
 };
 }

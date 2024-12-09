@@ -7,7 +7,7 @@
 namespace DB
 {
 MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_, UInt64 access_entities_num_limit_)
-    : AccessStorageBase(access_entities_num_limit_, storage_name_, changes_notifier_), backup_allowed(allow_backup_)
+    : IAccessStorage(access_entities_num_limit_, storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_)
 {
 }
 
@@ -273,6 +273,38 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
     /// Insert or update entities.
     for (const auto & [id, entity] : entities_without_conflicts)
         insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr);
+}
+
+void MemoryAccessStorage::insertEntry(UUID id, String name, AccessEntityType type, AccessEntityPtr entity)
+{
+    auto attached_count = CurrentMetrics::get(CurrentMetrics::AttachedAccessEntity) + 1;
+    if (entityLimitReached(attached_count))
+        throwTooManyEntities(attached_count);
+
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+
+    auto & entry = entries_by_id[id];
+    entry.id = id;
+    entry.type = type;
+    entry.name = name;
+    entry.entity = entity;
+    entries_by_name[entry.name] = &entry;
+
+    if (entity)
+        changes_notifier.onEntityAdded(id, entity);
+
+    CurrentMetrics::add(CurrentMetrics::AttachedAccessEntity);
+}
+
+void MemoryAccessStorage::removeEntry(UUID id, String name, AccessEntityType type)
+{
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+    entries_by_name.erase(name);
+    entries_by_id.erase(id);
+
+    changes_notifier.onEntityRemoved(id, type);
+
+    CurrentMetrics::sub(CurrentMetrics::AttachedAccessEntity);
 }
 
 }
