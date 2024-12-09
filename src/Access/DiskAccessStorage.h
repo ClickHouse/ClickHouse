@@ -35,8 +35,6 @@ public:
     bool isBackupAllowed() const override { return backup_allowed; }
 
 private:
-    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
@@ -80,5 +78,8 @@ private:
 
     std::atomic<bool> readonly;
     std::atomic<bool> backup_allowed;
+
+    using MemoryAccessStorage::setAll;
+    using MemoryAccessStorage::removeAllExcept;
 };
 }

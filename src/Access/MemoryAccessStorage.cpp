@@ -28,14 +28,13 @@ std::optional<UUID> MemoryAccessStorage::findImpl(AccessEntityType type, const S
 std::vector<UUID> MemoryAccessStorage::findAllImpl(AccessEntityType type) const
 {
     std::lock_guard lock{mutex};
-    std::vector<UUID> result;
-    result.reserve(entries_by_id.size());
-    for (const auto & [id, entry] : entries_by_id)
-        if (entry.entity->isTypeOf(type))
-            result.emplace_back(id);
-    return result;
+    const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+    std::vector<UUID> res;
+    res.reserve(entries_by_name.size());
+    for (const auto * entry : entries_by_name | boost::adaptors::map_values)
+        res.emplace_back(entry->id);
+    return res;
 }
-
 
 bool MemoryAccessStorage::exists(const UUID & id) const
 {

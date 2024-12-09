@@ -63,9 +63,10 @@ protected:
 
     mutable std::recursive_mutex mutex; // Note: Reentrace possible via LDAPAccessStorage
 
-private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
+
+private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;

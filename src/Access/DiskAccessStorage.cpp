@@ -433,30 +433,6 @@ void DiskAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-std::optional<UUID> DiskAccessStorage::findImpl(AccessEntityType type, const String & name) const
-{
-    std::lock_guard lock{mutex};
-    const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    auto it = entries_by_name.find(name);
-    if (it == entries_by_name.end())
-        return {};
-
-    return it->second->id;
-}
-
-
-std::vector<UUID> DiskAccessStorage::findAllImpl(AccessEntityType type) const
-{
-    std::lock_guard lock{mutex};
-    const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    std::vector<UUID> res;
-    res.reserve(entries_by_name.size());
-    for (const auto * entry : entries_by_name | boost::adaptors::map_values)
-        res.emplace_back(entry->id);
-    return res;
-}
-
-
 AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
     std::lock_guard lock{mutex};
