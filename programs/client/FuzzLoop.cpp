@@ -448,7 +448,7 @@ bool Client::buzzHouse()
             "allow_drop_detached = 1, allow_execute_multiif_columnar = 1, allow_experimental_analyzer = 1, allow_experimental_codecs = 1, "
             "allow_experimental_database_materialized_mysql = 1, allow_experimental_database_materialized_postgresql = 1, "
             "allow_experimental_dynamic_type = 1, allow_experimental_full_text_index = 1, allow_experimental_funnel_functions = 1, "
-            "allow_experimental_hash_functions = 1, allow_experimental_inverted_index = 1, allow_experimental_join_condition = 1, "
+            "allow_experimental_hash_functions = 1, allow_experimental_inverted_index = 1, "
             "allow_experimental_join_right_table_sorting = 1, allow_experimental_json_type = 1, "
             "allow_experimental_kafka_offsets_storage_in_keeper = 1, allow_experimental_live_view = 1, "
             "allow_experimental_materialized_postgresql_table = 1, allow_experimental_nlp_functions = 1, "

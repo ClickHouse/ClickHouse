@@ -39,6 +39,8 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
      [](RandomGenerator & rg, std::string & ret)
      { ret += std::to_string(rg.RandomInt<uint32_t>(0, std::thread::hardware_concurrency())); }},
     {"async_insert_use_adaptive_busy_timeout", trueOrFalse},
+    {"async_query_sending_for_remote", trueOrFalse},
+    {"async_socket_for_remote", trueOrFalse},
     {"cast_keep_nullable", trueOrFalse},
     {"cast_string_to_dynamic_use_inference", trueOrFalse},
     {"check_query_single_value_result", trueOrFalse},
@@ -571,6 +573,14 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"query_plan_enable_optimizations", trueOrFalse},
     {"query_plan_execute_functions_after_sorting", trueOrFalse},
     {"query_plan_filter_push_down", trueOrFalse},
+    {"query_plan_join_swap_table",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         const std::vector<std::string> & choices = {"false", "true", "auto"};
+         ret += "'";
+         ret += rg.pickRandomlyFromVector(choices);
+         ret += "'";
+     }},
     {"query_plan_lift_up_array_join", trueOrFalse},
     {"query_plan_lift_up_union", trueOrFalse},
     {"query_plan_merge_expressions", trueOrFalse},

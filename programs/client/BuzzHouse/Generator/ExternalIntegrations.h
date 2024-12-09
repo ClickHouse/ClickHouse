@@ -100,12 +100,9 @@ public:
                 buf += std::to_string(entry.cname1);
                 buf += " ";
                 getTypeString(rg, entry.tp, buf);
-                if (entry.nullable.has_value())
-                {
-                    buf += " ";
-                    buf += entry.nullable.value() ? "" : "NOT ";
-                    buf += "NULL";
-                }
+                buf += " ";
+                buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable, false, false>(entry.tp)) ? "" : "NOT ";
+                buf += "NULL";
                 assert(!entry.cname2.has_value());
                 first = false;
             }

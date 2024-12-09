@@ -196,6 +196,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         this->enforceFinal(true);
     }
     this->levels[this->current_level] = QueryLevel(this->current_level);
+    this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
     generateSelect(
         rg,
         false,
@@ -203,6 +204,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         next.ncols,
         next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
         cv->mutable_select());
+    this->allow_in_expression_alias = true;
     if (next.is_deterministic)
     {
         this->setAllowNotDetermistic(true);
@@ -274,10 +276,13 @@ int StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     {
         assert(0);
     }
-    dp->set_sync(rg.nextSmallNumber() < 3);
-    if (rg.nextSmallNumber() < 3)
+    if (dp->sobject() != SQLObject::FUNCTION)
     {
-        generateSettingValues(rg, serverSettings, dp->mutable_setting_values());
+        dp->set_sync(rg.nextSmallNumber() < 3);
+        if (rg.nextSmallNumber() < 3)
+        {
+            generateSettingValues(rg, serverSettings, dp->mutable_setting_values());
+        }
     }
     return 0;
 }
@@ -756,6 +761,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                     this->enforceFinal(true);
                 }
                 this->levels[this->current_level] = QueryLevel(this->current_level);
+                this->allow_in_expression_alias = rg.nextSmallNumber() < 3;
                 generateSelect(
                     rg,
                     false,
@@ -763,6 +769,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                     v.staged_ncols,
                     v.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
                     ati->mutable_modify_query());
+                this->allow_in_expression_alias = true;
                 if (v.is_deterministic)
                 {
                     this->setAllowNotDetermistic(true);

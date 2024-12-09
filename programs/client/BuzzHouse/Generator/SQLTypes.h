@@ -434,17 +434,14 @@ public:
     void MySQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->MySQLtypeName(rg, ret, escape);
-        ret += " NULL";
     }
     void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->PostgreSQLtypeName(rg, ret, escape);
-        ret += " NULL";
     }
     void SQLitetypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
         subtype->SQLitetypeName(rg, ret, escape);
-        ret += " NULL";
     }
 
     ~Nullable() override { delete subtype; }
