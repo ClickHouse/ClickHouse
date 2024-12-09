@@ -238,9 +238,9 @@ static void splitAndModifyMutationCommands(
         /// from disk we just don't read dropped columns
         for (const auto & column : part_columns)
         {
-            if (!mutated_columns.contains(column.name) && !ignored_columns.contains(column.name))
+            if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name))
+                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name) && !ignored_columns.contains(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
