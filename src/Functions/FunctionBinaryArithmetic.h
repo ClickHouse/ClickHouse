@@ -41,6 +41,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context.h>
@@ -230,6 +231,27 @@ public:
 
 namespace impl_
 {
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
 
 /** Arithmetic operations: +, -, *, /, %,
   * intDiv (integer division)
@@ -788,6 +810,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
+    static constexpr bool is_positive_modulo = IsOperation<Op>::positive_modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
 
@@ -1166,7 +1189,7 @@ class FunctionBinaryArithmetic : public IFunction
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         auto function = function_builder->build(new_arguments);
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeDateTimeTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1180,7 +1203,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         auto function = function_builder->build(new_arguments);
 
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeIntervalTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1188,7 +1211,7 @@ class FunctionBinaryArithmetic : public IFunction
     {
         auto function = function_builder->build(arguments);
 
-        return function->execute(arguments, result_type, input_rows_count);
+        return function->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     ColumnPtr executeArraysImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -1323,7 +1346,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         auto function = function_builder->build(new_arguments);
 
-        return function->execute(new_arguments, result_type, input_rows_count);
+        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     template <typename T, typename ResultDataType>
@@ -2225,7 +2248,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
         {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
@@ -2365,59 +2388,105 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
             return false;
 
-        WhichDataType data_type_lhs(arguments[0]);
-        WhichDataType data_type_rhs(arguments[1]);
+        auto denull_left_type = removeNullable(arguments[0]);
+        auto denull_right_type = removeNullable(arguments[1]);
+        WhichDataType data_type_lhs(denull_left_type);
+        WhichDataType data_type_rhs(denull_right_type);
         if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
             (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
             return false;
 
-        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                !std::is_same_v<DataTypeFixedString, RightDataType> &&
-                !std::is_same_v<DataTypeString, LeftDataType> &&
-                !std::is_same_v<DataTypeString, RightDataType>)
+        return castBothTypes(
+            denull_left_type.get(),
+            denull_right_type.get(),
+            [&](const auto & left, const auto & right)
             {
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
-                    return true;
-            }
-            return false;
-        });
+                using LeftDataType = std::decay_t<decltype(left)>;
+                using RightDataType = std::decay_t<decltype(right)>;
+                if constexpr (
+                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
+                {
+                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+
+                    if constexpr (
+                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
+                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
+                    {
+                        if constexpr (is_modulo || is_positive_modulo)
+                        {
+                            using LeftType = typename LeftDataType::FieldType;
+                            using RightType = typename RightDataType::FieldType;
+                            using PromotedType = typename NumberTraits::ResultOfModuloNativePromotion<LeftType, RightType>::Type;
+                            if constexpr (std::is_arithmetic_v<PromotedType>)
+                            {
+                                return true;
+                            }
+                        }
+                        else
+                            return true;
+                    }
+                }
+                return false;
+            });
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
         assert(2 == arguments.size());
 
+        auto denull_left_type = removeNullable(arguments[0].type);
+        auto denull_right_type = removeNullable(arguments[1].type);
         llvm::Value * result = nullptr;
-        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
-                !std::is_same_v<DataTypeFixedString, RightDataType> &&
-                !std::is_same_v<DataTypeString, LeftDataType> &&
-                !std::is_same_v<DataTypeString, RightDataType>)
+
+        castBothTypes(
+            denull_left_type.get(),
+            denull_right_type.get(),
+            [&](const auto & left, const auto & right)
             {
-                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
+                using LeftDataType = std::decay_t<decltype(left)>;
+                using RightDataType = std::decay_t<decltype(right)>;
+                if constexpr (
+                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
                 {
-                    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    auto * lval = nativeCast(b, arguments[0], result_type);
-                    auto * rval = nativeCast(b, arguments[1], result_type);
-                    result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                    if constexpr (
+                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
+                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
+                    {
+                        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                        if constexpr (is_modulo || is_positive_modulo)
+                        {
+                            using LeftType = typename LeftDataType::FieldType;
+                            using RightType = typename RightDataType::FieldType;
+                            using PromotedType = typename NumberTraits::ResultOfModuloNativePromotion<LeftType, RightType>::Type;
+                            if constexpr (std::is_arithmetic_v<PromotedType>)
+                            {
+                                DataTypePtr promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
+                                if (result_type->isNullable())
+                                    promoted_type = std::make_shared<DataTypeNullable>(promoted_type);
 
-                    return true;
+                                auto * lval = nativeCast(b, arguments[0], promoted_type);
+                                auto * rval = nativeCast(b, arguments[1], promoted_type);
+                                result = nativeCast(
+                                    b, promoted_type, OpSpec::compile(b, lval, rval, std::is_signed_v<PromotedType>), result_type);
+                                return true;
+                            }
+                        }
+                        else
+                        {
+                            auto * lval = nativeCast(b, arguments[0], result_type);
+                            auto * rval = nativeCast(b, arguments[1], result_type);
+                            result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                            return true;
+                        }
+                    }
                 }
-            }
-
-            return false;
-        });
+                return false;
+            });
 
         return result;
     }

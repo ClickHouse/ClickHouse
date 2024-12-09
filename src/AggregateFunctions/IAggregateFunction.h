@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
 
+#include <IO/ReadBuffer.h>
 #include "config.h"
 
 #include <cstddef>
@@ -176,8 +177,14 @@ public:
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
+    /// Devirtualize serialize call.
+    virtual void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
+
     /// Deserializes state. This function is called only for empty (just created) states.
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0; /// NOLINT
+
+    /// Devirtualize create and deserialize calls. Used in deserialization of ColumnAggregateFunction.
+    virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -471,6 +478,43 @@ public:
         }
     }
 
+    void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const override // NOLINT
+    {
+        for (size_t i = start; i < size; ++i)
+            static_cast<const Derived *>(this)->serialize(data[i], buf, version);
+    }
+
+    void createAndDeserializeBatch(
+        PaddedPODArray<AggregateDataPtr> & data,
+        AggregateDataPtr __restrict place,
+        size_t total_size_of_state,
+        size_t limit,
+        ReadBuffer & buf,
+        std::optional<size_t> version,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < limit; ++i)
+        {
+            if (buf.eof())
+                break;
+
+            static_cast<const Derived *>(this)->create(place);
+
+            try
+            {
+                static_cast<const Derived *>(this)->deserialize(place, buf, version, arena);
+            }
+            catch (...)
+            {
+                static_cast<const Derived *>(this)->destroy(place);
+                throw;
+            }
+
+            data.push_back(place);
+            place += total_size_of_state;
+        }
+    }
+
     void addBatchSparse(
         size_t row_begin,
         size_t row_end,
@@ -694,7 +738,7 @@ class IAggregateFunctionDataHelper : public IAggregateFunctionHelper<Derived>
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
 public:

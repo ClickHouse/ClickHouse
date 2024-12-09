@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -9,6 +12,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 static ITransformingStep::Traits getTraits(bool has_filter)
 {
@@ -33,7 +41,7 @@ TotalsHavingStep::TotalsHavingStep(
     const std::string & filter_column_,
     bool remove_filter_,
     TotalsMode totals_mode_,
-    double auto_include_threshold_,
+    float auto_include_threshold_,
     bool final_)
     : ITransformingStep(
         input_header_,
@@ -141,5 +149,75 @@ void TotalsHavingStep::updateOutputHeader()
             getAggregatesMask(input_headers.front(), aggregates));
 }
 
+void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings.totals_mode = totals_mode;
+    settings.totals_auto_threshold = auto_include_threshold;
+}
+
+void TotalsHavingStep::serialize(Serialization & ctx) const
+{
+    UInt8 flags = 0;
+    if (final)
+        flags |= 1;
+    if (overflow_row)
+        flags |= 2;
+    if (actions_dag)
+        flags |= 4;
+    if (actions_dag && remove_filter)
+        flags |= 8;
+
+    writeIntBinary(flags, ctx.out);
+
+    serializeAggregateDescriptions(aggregates, ctx.out);
+
+    if (actions_dag)
+    {
+        writeStringBinary(filter_column_name, ctx.out);
+        actions_dag->serialize(ctx.out, ctx.registry);
+    }
+}
+
+std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
+
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+
+    bool final = bool(flags & 1);
+    bool overflow_row = bool(flags & 2);
+    bool has_actions_dag = bool(flags & 4);
+    bool remove_filter_column = bool(flags & 8);
+
+    AggregateDescriptions aggregates;
+    deserializeAggregateDescriptions(aggregates, ctx.in);
+
+    std::optional<ActionsDAG> actions_dag;
+    String filter_column_name;
+    if (has_actions_dag)
+    {
+        readStringBinary(filter_column_name, ctx.in);
+
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    }
+
+    return std::make_unique<TotalsHavingStep>(
+        ctx.input_headers.front(),
+        std::move(aggregates),
+        overflow_row,
+        std::move(actions_dag),
+        std::move(filter_column_name),
+        remove_filter_column,
+        ctx.settings.totals_mode,
+        ctx.settings.totals_auto_threshold,
+        final);
+}
+
+void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);
+}
 
 }

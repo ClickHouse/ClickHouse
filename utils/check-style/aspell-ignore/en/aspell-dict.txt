@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2984
+personal_ws-1.1 en 2985
 AArch
 ACLs
 ALTERs
@@ -244,7 +244,10 @@ Deduplication
 DefaultTableEngine
 DelayedInserts
 DeliveryTag
+Deltalake
 DeltaLake
+deltalakeCluster
+deltaLakeCluster
 Denormalize
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
@@ -377,10 +380,15 @@ Homebrew's
 HorizontalDivide
 Hostname
 HouseOps
+hudi
 Hudi
+hudiCluster
+HudiCluster
 HyperLogLog
 Hypot
 IANA
+icebergCluster
+IcebergCluster
 IDE
 IDEs
 IDNA
@@ -1264,6 +1272,7 @@ arrayPartialShuffle
 arrayPartialSort
 arrayPopBack
 arrayPopFront
+arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront
@@ -1380,7 +1389,6 @@ bools
 boringssl
 boundingRatio
 bozerkins
-broadcasted
 brotli
 bson
 bsoneachrow
@@ -1406,7 +1414,6 @@ cardinalities
 cardinality
 cartesian
 cassandra
-casted
 catboost
 catboostEvaluate
 categoricalInformationValue
@@ -1817,6 +1824,7 @@ geoip
 geospatial
 getClientHTTPHeader
 getMacro
+getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1947,6 +1955,7 @@ ilike
 incrementing
 indexHint
 indexOf
+indexOfAssumeSorted
 inequal
 infi
 inflight
@@ -2819,6 +2828,7 @@ summapwithoverflow
 summingmergetree
 sumwithoverflow
 superaggregates
+superset
 supertype
 supremum
 symlink

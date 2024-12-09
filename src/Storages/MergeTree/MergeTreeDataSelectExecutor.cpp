@@ -42,6 +42,7 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/quoteString.h>
 #include <base/sleep.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -80,6 +81,8 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
 }
 
 namespace MergeTreeSetting
@@ -631,9 +634,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes,
     bool find_exact_ranges)
 {
-    RangesInDataParts parts_with_ranges;
-    parts_with_ranges.resize(parts.size());
     const Settings & settings = context->getSettingsRef();
+
+    if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
+    {
+        // Skip index analysis and return parts with all marks
+        // The coordinator will chose ranges to read for workers based on index analysis on its side
+        RangesInDataParts parts_with_ranges;
+        parts_with_ranges.reserve(parts.size());
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        {
+            const auto & part = parts[part_index];
+            parts_with_ranges.emplace_back(part, part_index, MarkRanges{{0, part->getMarksCount()}});
+        }
+        return parts_with_ranges;
+    }
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
@@ -672,6 +688,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
+
+    RangesInDataParts parts_with_ranges(parts.size());
 
     /// Let's find what range to read from each part.
     {
@@ -1075,7 +1093,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     DataTypes key_types;
     if (!key_indices.empty())
     {
-        const auto & index = part->getIndex();
+        const auto index = part->getIndex();
 
         for (size_t i : key_indices)
         {
