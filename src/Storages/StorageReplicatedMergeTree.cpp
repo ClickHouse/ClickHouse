@@ -6203,7 +6203,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAffectedPartitions(
     const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const
 {
-    const std::set<String> mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
+    const PartitionIds mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
 
     if (mutation_affected_partition_ids.size() == 1)
     {
@@ -6222,8 +6222,22 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
     PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
     for (const auto & lock : lock_holder.getLocks())
     {
-        if (mutation_affected_partition_ids.empty() || mutation_affected_partition_ids.contains(lock.partition_id))
-            block_numbers[lock.partition_id] = lock.number;
+// <<<<<<< variant A
+//         /// TODO: Implement optimal block number acquisition algorithm in multiple (but not all) partitions
+//         EphemeralLocksInAllPartitions lock_holder(
+//             fs::path(zookeeper_path) / "block_numbers", "block-", fs::path(zookeeper_path) / "temp", *zookeeper);
+
+//         PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
+//         for (const auto & lock : lock_holder.getLocks())
+//         {
+//             if (containsInPartitionIdsOrEmpty(mutation_affected_partition_ids, lock.partition_id))
+//                 block_numbers[lock.partition_id] = lock.number;
+//         }
+
+//         return {std::move(block_numbers), std::move(lock_holder)};
+// >>>>>>> variant B
+      if (containsInPartitionIdsOrEmpty(mutation_affected_partition_ids, lock.partition_id))
+          block_numbers[lock.partition_id] = lock.number;
     }
 
     return {std::move(block_numbers), std::move(lock_holder)};
@@ -8201,7 +8215,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto metadata_snapshot = getInMemoryMetadataPtr();
     const MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
 
-    std::unordered_set<String> partitions;
+    PartitionIds partitions;
     if (partition->as<ASTPartition>()->all)
     {
         if (replace)
@@ -8211,7 +8225,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     }
     else
     {
-        partitions = std::unordered_set<String>();
         partitions.emplace(getPartitionIDFromQuery(partition, query_context));
     }
     LOG_INFO(log, "Will try to attach {} partitions", partitions.size());
