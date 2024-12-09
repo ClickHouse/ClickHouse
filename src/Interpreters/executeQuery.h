@@ -82,7 +82,7 @@ QueryLogElement logQueryStart(
     const String & query_for_logging,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
-    const std::unique_ptr<IInterpreter> & interpreter,
+    const IInterpreter * interpreter,
     bool internal,
     const String & query_database,
     const String & query_table,
