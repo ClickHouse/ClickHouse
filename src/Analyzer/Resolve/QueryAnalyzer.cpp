@@ -5157,7 +5157,7 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
         validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
     }
 
-    checkDuplicateTableNamesOrAlias(cross_join_node, expressions, scope);
+    // checkDuplicateTableNamesOrAlias(cross_join_node, expressions, scope);
 }
 
 /// Resolve join node in scope
