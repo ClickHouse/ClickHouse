@@ -35,18 +35,29 @@ TEST(Marks, Compression)
         EXPECT_LE((marks.approximateMemoryUsage() - sizeof(MarksInCompressedFile)) * 8, plain.size() * max_bits_per_mark);
     };
 
-    // Typical.
-    test(gen(10000, 1'000'000, 0), 30);
+    {
+        SCOPED_TRACE("Typical");
+        test(gen(10000, 1'000'000, 0), 30);
+    }
 
-    // Completely random 64-bit values.
-    test(gen(10000, UINT64_MAX - 1, UINT64_MAX - 1), 130);
 
-    // All zeros.
-    test(gen(10000, 0, 0), 2);
+    {
+        SCOPED_TRACE("Completely random 64-bit values");
+        test(gen(10000, UINT64_MAX - 1, UINT64_MAX - 1), 130);
+    }
 
-    // Short.
-    test(gen(10, 1000, 1000), 65);
+    {
+        SCOPED_TRACE("All zeros");
+        test(gen(10000, 0, 0), 2);
+    }
 
-    // Empty.
-    test(gen(0, 0, 0), 0);
+    {
+        SCOPED_TRACE("Short");
+        test(gen(10, 1000, 1000), 65);
+    }
+
+    {
+        SCOPED_TRACE("Empty");
+        test(gen(0, 0, 0), 0);
+    }
 }

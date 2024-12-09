@@ -1,0 +1,10 @@
+<clickhouse>
+    <startup_scripts>
+        <scripts>
+            <query>SELECT 42;</query>
+        </scripts>
+        <scripts>
+            <query>SELECT * FROM non_existent_table;</query>
+        </scripts>
+    </startup_scripts>
+</clickhouse>
