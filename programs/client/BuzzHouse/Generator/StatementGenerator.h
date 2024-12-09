@@ -304,9 +304,9 @@ private:
     int generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
 
     std::tuple<const SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
-    std::tuple<const SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg);
-    std::tuple<const SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types);
-    const SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt);
+    std::tuple<const SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
+    std::tuple<const SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
+    const SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
     const SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
     const SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types);
     const SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);

@@ -3651,6 +3651,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "WAIT VIEW ";
             ExprSchemaTableToString(ret, cmd.wait_view());
             break;
+        case CmdType::kPrewarmCache:
+            ret += "PREWARM MARK CACHE ";
+            ExprSchemaTableToString(ret, cmd.prewarm_cache());
+            break;
         default:
             ret += "REFRESH VIEW";
     }

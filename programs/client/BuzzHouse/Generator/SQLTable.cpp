@@ -575,7 +575,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         {
             //requires keeper storage
             bool found = false;
-            auto & ovals = const_cast<decltype(svs->other_values()) &>(svs->other_values());
+            const auto & ovals = svs->other_values();
 
             for (auto it = ovals.begin(); it != ovals.end() && !found; it++)
             {

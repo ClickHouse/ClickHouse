@@ -3395,6 +3395,7 @@ message SystemCommand {
         ExprSchemaTable start_view = 47;
         ExprSchemaTable cancel_view = 48;
         ExprSchemaTable wait_view = 49;
+        ExprSchemaTable prewarm_cache = 50;
     }
 }
 

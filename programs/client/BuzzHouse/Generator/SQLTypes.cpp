@@ -203,19 +203,19 @@ std::tuple<const SQLType *, Integers> StatementGenerator::randomIntType(RandomGe
     return std::make_tuple(new IntType(32, false), Integers::Int32);
 }
 
-std::tuple<const SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg)
+std::tuple<const SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg) const
 {
     const uint32_t nopt = (rg.nextSmallNumber() % 3) + 1; //1 to 3
     return std::make_tuple(new FloatType(1 << (nopt + 3)), static_cast<FloatingPoints>(nopt));
 }
 
-std::tuple<const SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint32_t allowed_types)
+std::tuple<const SQLType *, Dates> StatementGenerator::randomDateType(RandomGenerator & rg, const uint32_t allowed_types) const
 {
     const bool use32 = (allowed_types & allow_date32) && rg.nextBool();
     return std::make_tuple(new DateType(use32), use32 ? Dates::Date32 : Dates::Date);
 }
 
-const SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, DateTimeTp * dt)
+const SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, const uint32_t allowed_types, DateTimeTp * dt) const
 {
     bool has_precision = false;
     const bool use64 = (allowed_types & allow_datetime64) && rg.nextBool();

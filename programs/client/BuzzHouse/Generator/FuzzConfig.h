@@ -257,7 +257,7 @@ private:
         buf.resize(0);
         buf += "SELECT \"";
         buf += col;
-        buf += "\" FROM \"system\".\"";
+        buf += R"(" FROM "system".")";
         buf += table;
         buf += "\" INTO OUTFILE '";
         buf += fuzz_out.generic_string();

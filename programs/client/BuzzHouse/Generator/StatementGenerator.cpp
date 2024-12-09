@@ -1742,7 +1742,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
         drop_compiled_expression_cache = 3, drop_query_cache = 3, drop_format_schema_cache = 3, flush_logs = 3, reload_config = 3,
         reload_users = 3,
         //for merge trees
-        stop_merges = 8 * has_merge_tree, start_merges = 8 * has_merge_tree, stop_ttl_merges = 8 * has_merge_tree,
+        stop_merges = 0 * has_merge_tree, start_merges = 0 * has_merge_tree, stop_ttl_merges = 8 * has_merge_tree,
         start_ttl_merges = 8 * has_merge_tree, stop_moves = 8 * has_merge_tree, start_moves = 8 * has_merge_tree,
         wait_loading_parts = 8 * has_merge_tree,
         //for replicated merge trees
@@ -1758,6 +1758,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
         //for refreshable views
         refresh_views = 3, refresh_view = 8 * has_refreshable_view, stop_views = 3, stop_view = 8 * has_refreshable_view, start_views = 3,
         start_view = 8 * has_refreshable_view, cancel_view = 8 * has_refreshable_view, wait_view = 8 * has_refreshable_view,
+        prewarm_cache = 8 * has_merge_tree,
         prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
         + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
         + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
@@ -1765,7 +1766,7 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
         + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues + stop_pulling_replication_log
         + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica + restore_replica + restart_replicas
         + drop_filesystem_cache + sync_file_cache + load_pks + load_pk + unload_pks + unload_pk + refresh_views + refresh_view + stop_views
-        + stop_view + start_views + start_view + cancel_view + wait_view;
+        + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -2295,6 +2296,20 @@ int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, System
                + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + 1))
     {
         setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_wait_view());
+    }
+    else if (
+        prewarm_cache
+        && nopt
+            < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+               + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
+               + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
+               + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
+               + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
+               + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + restart_replica
+               + restore_replica + restart_replicas + sync_file_cache + drop_filesystem_cache + load_pks + load_pk + unload_pks + unload_pk
+               + refresh_views + refresh_view + stop_views + stop_view + start_views + start_view + cancel_view + wait_view + prewarm_cache + 1))
+    {
+        setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_prewarm_cache());
     }
     else
     {
