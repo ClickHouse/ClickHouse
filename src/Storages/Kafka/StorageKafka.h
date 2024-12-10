@@ -81,7 +81,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    ExtStreamingHandleErrorMode getStreamingHandleErrorMode() const;
+    StreamingHandleErrorMode getStreamingHandleErrorMode() const;
 
     struct SafeConsumers
     {

@@ -50,7 +50,7 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
-    ExtStreamingHandleErrorMode handle_error_mode_,
+    StreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
     LoggerPtr log_)
@@ -77,7 +77,7 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     UInt64 max_execution_time_,
-    ExtStreamingHandleErrorMode handle_error_mode_,
+    StreamingHandleErrorMode handle_error_mode_,
     bool nack_broken_messages_,
     bool ack_in_suffix_,
     LoggerPtr log_)
@@ -173,8 +173,8 @@ Chunk RabbitMQSource::generateImpl()
     {
         switch (handle_error_mode)
         {
-            case ExtStreamingHandleErrorMode::STREAM:
-            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            case StreamingHandleErrorMode::STREAM:
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -188,7 +188,7 @@ Chunk RabbitMQSource::generateImpl()
 
                 break;
             }
-            case ExtStreamingHandleErrorMode::DEFAULT:
+            case StreamingHandleErrorMode::DEFAULT:
                 throw std::move(e);
         }
         return 1;
@@ -247,7 +247,7 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[3]->insert(message.redelivered);
                 virtual_columns[4]->insert(message.message_id);
                 virtual_columns[5]->insert(message.timestamp);
-                if (handle_error_mode == ExtStreamingHandleErrorMode::STREAM)
+                if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
@@ -260,7 +260,7 @@ Chunk RabbitMQSource::generateImpl()
                         virtual_columns[7]->insertDefault();
                     }
                 }
-                else if (handle_error_mode == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+                else if (handle_error_mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
                 {
                     if (exception_message)
                     {

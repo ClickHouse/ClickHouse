@@ -119,8 +119,8 @@ Chunk KafkaSource::generateImpl()
 
         switch (handle_error_mode)
         {
-            case ExtStreamingHandleErrorMode::STREAM:
-            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            case StreamingHandleErrorMode::STREAM:
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -133,7 +133,7 @@ Chunk KafkaSource::generateImpl()
                 }
                 break;
             }
-            case ExtStreamingHandleErrorMode::DEFAULT:
+            case StreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
                     "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
@@ -213,7 +213,7 @@ Chunk KafkaSource::generateImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
-                if (handle_error_mode == ExtStreamingHandleErrorMode::STREAM)
+                if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
@@ -227,7 +227,7 @@ Chunk KafkaSource::generateImpl()
                         virtual_columns[9]->insertDefault();
                     }
                 }
-                else if (handle_error_mode == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+                else if (handle_error_mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
                 {
                     if (exception_message)
                     {
@@ -265,7 +265,7 @@ Chunk KafkaSource::generateImpl()
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of ExtStreamingHandleErrorMode::STREAM or DEAD_LETTER_QUEUE
+            // TODO: it seems like in case of StreamingHandleErrorMode::STREAM or DEAD_LETTER_QUEUE
             //  we may need to process those differently
             //  currently we just skip them with note in logs.
             consumer->storeLastReadMessageOffset();

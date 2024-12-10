@@ -194,7 +194,7 @@ private:
     bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);
 
-    static VirtualColumnsDescription createVirtuals(ExtStreamingHandleErrorMode handle_error_mode);
+    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 
     static String getRandomName()
     {

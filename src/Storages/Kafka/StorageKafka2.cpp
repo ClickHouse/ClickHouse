@@ -90,7 +90,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
-    extern const KafkaSettingsExtStreamingHandleErrorMode kafka_handle_error_mode;
+    extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
     extern const KafkaSettingsString kafka_keeper_path;
     extern const KafkaSettingsUInt64 kafka_max_block_size;
     extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
@@ -157,7 +157,7 @@ StorageKafka2::StorageKafka2(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
     if (auto mode = getHandleKafkaErrorMode();
-        mode == ExtStreamingHandleErrorMode::STREAM || mode == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+        mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
@@ -367,7 +367,7 @@ Pipe StorageKafka2::read(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Direct read from the new Kafka storage is not implemented");
 }
 
-ExtStreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const
+StreamingHandleErrorMode StorageKafka2::getHandleKafkaErrorMode() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_handle_error_mode];
 }
@@ -860,8 +860,8 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
         switch (getHandleKafkaErrorMode())
         {
-            case ExtStreamingHandleErrorMode::STREAM:
-            case ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            case StreamingHandleErrorMode::STREAM:
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -874,7 +874,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 }
                 break;
             }
-            case ExtStreamingHandleErrorMode::DEFAULT:
+            case StreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
                     "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
@@ -961,7 +961,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
 
-                if (getHandleKafkaErrorMode() == ExtStreamingHandleErrorMode::STREAM)
+                if (getHandleKafkaErrorMode() == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
@@ -974,7 +974,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                         virtual_columns[9]->insertDefault();
                     }
                 }
-                else if (getHandleKafkaErrorMode() == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+                else if (getHandleKafkaErrorMode() == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
                 {
                     if (exception_message)
                     {
@@ -1011,7 +1011,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of ExtStreamingHandleErrorMode::STREAM or DEAD_LETTER_QUEUE
+            // TODO: it seems like in case of StreamingHandleErrorMode::STREAM or DEAD_LETTER_QUEUE
             //  we may need to process those differently
             //  currently we just skip them with note in logs.
             LOG_DEBUG(

@@ -94,7 +94,6 @@ class WriteBuffer;
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
-    M(CLASS_NAME, ExtStreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \

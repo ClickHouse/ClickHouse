@@ -265,7 +265,6 @@ enum class DistributedDDLOutputMode : uint8_t
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
-DECLARE_SETTING_ENUM(ExtStreamingHandleErrorMode)
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
