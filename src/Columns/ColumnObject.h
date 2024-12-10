@@ -171,7 +171,7 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void finalize() override;
     bool isFinalized() const override;
