@@ -3,6 +3,7 @@
 #include <Interpreters/JoinUtils.h>
 
 #include <Common/logger_useful.h>
+#include <Interpreters/GraceHashJoin.h>
 
 namespace ProfileEvents
 {
@@ -355,6 +356,40 @@ void FillingRightJoinSideTransform::work()
         join->tryRerangeRightTableData();
 
     set_totals = for_totals;
+}
+
+bool FillingRightJoinSideTransform::spillable() const
+{
+    //return false;
+    return typeid_cast<GraceHashJoin *>(join.get()) != nullptr;
+}
+
+ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
+{
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+    {
+        ProcessorMemoryStats res;
+        res.spillable_memory_bytes = grace_join->getTotalByteCount();
+        // in case the hash table will resize which requires more than 2x additional memory.
+        // we must reserve enough memory.
+        res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
+        return res;
+    }
+    return {};
+}
+
+bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
+{
+    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
+    {
+        auto total_bytes = grace_join->getTotalByteCount();
+        if (total_bytes >= bytes)
+        {
+            grace_join->forceSpill();
+            return true;
+        }
+    }
+    return false;
 }
 
 
