@@ -105,6 +105,7 @@ public:
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
 #endif
+    bool equalsAt(size_t n, size_t m, const IColumn & rhs) const override;
 
 #if USE_EMBEDDED_COMPILER
 
