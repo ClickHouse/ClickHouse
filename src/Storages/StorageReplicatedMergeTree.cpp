@@ -5759,6 +5759,8 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytesUncompressed(const S
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalBytesWithInactive(const Settings &) const
 {
+    auto lock = lockParts();
+
     UInt64 res = 0;
     auto outdated_parts = getDataPartsStateRange(DataPartState::Outdated);
     for (const auto & part : outdated_parts)

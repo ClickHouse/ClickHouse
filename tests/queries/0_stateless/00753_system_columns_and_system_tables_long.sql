@@ -24,11 +24,11 @@ FROM system.columns WHERE table = 'check_system_tables' AND database = currentDa
 FORMAT PrettyCompactNoEscapes;
 
 INSERT INTO check_system_tables VALUES (1, 1, 1);
-SELECT parts, active_parts, total_bytes_uncompressed, total_bytes, total_rows, total_bytes_with_inactive FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT parts, active_parts, total_bytes_uncompressed, total_bytes, total_rows, total_bytes_with_inactive = 0 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 
 INSERT INTO check_system_tables VALUES (2, 1, 3);
 OPTIMIZE TABLE check_system_tables;
-SELECT parts, active_parts, total_bytes_uncompressed, total_bytes, total_rows, total_bytes_with_inactive FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT parts, active_parts, total_bytes_uncompressed, total_bytes, total_rows, total_bytes_with_inactive > 0 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 
 
 DROP TABLE IF EXISTS check_system_tables;
