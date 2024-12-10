@@ -1,3 +1,5 @@
+-- Tags: long
+
 set allow_experimental_json_type = 1;
 set enable_analyzer = 1;
 
