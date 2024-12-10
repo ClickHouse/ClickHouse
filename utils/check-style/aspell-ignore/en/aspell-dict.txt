@@ -3167,4 +3167,10 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+divideOrNull
+moduloOrNull
+tupleDivideOrNull
+tupleDivideByNumberOrNull
+tupleModuloByNumberOrNull
+tupleModuloOrNull
 BFloat

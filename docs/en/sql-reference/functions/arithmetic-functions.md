@@ -89,6 +89,14 @@ divide(a, b)
 
 Alias: `a / b` (operator)
 
+## divideOrNull
+Like [divide](#divide) but returns NULL when the divisor is zero.
+**Syntax**
+
+```sql
+divideOrNull(a, b)
+```
+
 ## intDiv
 
 Performs an integer division of two values `a` by `b`, i.e. computes the quotient rounded down to the next smallest integer.
@@ -262,6 +270,15 @@ Result:
 ┌─positiveModulo(-1, 10)─┐
 │                      9 │
 └────────────────────────┘
+```
+
+## moduloOrNull
+Like [modulo](#modulo) but returns NULL when the divisor is zero.
+
+**Syntax**
+
+```sql
+moduloOrNull(a, b)
 ```
 
 ## negate
