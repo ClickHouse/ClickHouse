@@ -72,7 +72,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
-    extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_STATISTICS;
 }
 
@@ -602,10 +601,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (available_columns_set.emplace(name).second)
                     available_columns.push_back(name);
             }
-            else if (!available_columns_set.contains(name))
-            {
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} is updated but not requested to read", name);
-            }
 
             updated_columns.insert(name);
         }
@@ -1103,6 +1098,21 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
                 prepared_stages[i].output_columns.insert(column_name);
             }
+        }
+    }
+
+    auto storage_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+
+    /// Add persistent virtual columns if the whole part is rewritten,
+    /// because we should preserve them in parts after mutation.
+    if (prepared_stages.back().isAffectingAllColumns(storage_columns))
+    {
+        for (const auto & column_name : available_columns)
+        {
+            if (column_name == RowExistsColumn::name && has_filters && !deleted_mask_updated)
+                continue;
+
+            prepared_stages.back().output_columns.insert(column_name);
         }
     }
 
