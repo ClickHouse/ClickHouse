@@ -5785,8 +5785,8 @@ Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data typ
     DECLARE(Bool, allow_experimental_json_type, false, R"(
 Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
 )", BETA) ALIAS(enable_json_type) \
-    DECLARE(Bool, allow_general_join_algorithm, true, R"(
-TODO(antaljanosbenjamon)
+    DECLARE(Bool, allow_general_join_planning, true, R"(
+Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
     \
     \

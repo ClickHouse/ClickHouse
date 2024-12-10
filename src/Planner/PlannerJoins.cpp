@@ -55,7 +55,7 @@ namespace Setting
     extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsBool allow_general_join_algorithm;
+    extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
 }
 
@@ -736,7 +736,7 @@ std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     const auto & join_algorithms = planner_context->getQueryContext()->getSettingsRef()[Setting::join_algorithm];
     const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
         || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
-    if (is_hash_join_enabled && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_algorithm])
+    if (is_hash_join_enabled && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_planning])
     {
         auto join_clauses = buildJoinClauses(
             left_join_actions,
