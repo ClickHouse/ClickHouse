@@ -215,6 +215,8 @@ public:
 
     void setRemoteFunction(bool is_remote_function_ = true) { is_remote_function = is_remote_function_; }
 
+    void setShardCount(UInt32 shard_count_) { shard_count = shard_count_; }
+
     const Block & getHeader() const { return header; }
 
     IConnections & getConnections() { return *connections; }
@@ -305,6 +307,7 @@ private:
     bool has_postponed_packet = false;
 
     bool is_remote_function = false;
+    UInt32 shard_count = 0;
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;

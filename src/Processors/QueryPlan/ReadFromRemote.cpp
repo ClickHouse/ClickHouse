@@ -223,6 +223,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, my_stage);
         remote_query_executor->setRemoteFunction(my_is_remote_function);
+        remote_query_executor->setShardCount(my_shard_count);
 
         auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending);
         QueryPipelineBuilder builder;
@@ -307,6 +308,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             remote_query_executor->setLogger(log);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
             remote_query_executor->setRemoteFunction(is_remote_function);
+            remote_query_executor->setShardCount(shard_count);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -324,6 +326,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage);
         remote_query_executor->setLogger(log);
         remote_query_executor->setRemoteFunction(is_remote_function);
+        remote_query_executor->setShardCount(shard_count);
 
         if (context->canUseTaskBasedParallelReplicas())
         {
