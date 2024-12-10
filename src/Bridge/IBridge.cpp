@@ -19,6 +19,7 @@
 #include <base/scope_guard.h>
 
 #include <iostream>
+#include <thread>
 #include <sys/resource.h>
 #include <sys/time.h>
 

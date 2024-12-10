@@ -1,14 +1,14 @@
-#include "config.h"
 #include <string_view>
-#include <Common/Exception.h>
-#include <base/types.h>
-#include <IO/VarInt.h>
-#include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <Compression/CompressionFactory.h>
+#include <IO/VarInt.h>
 #include <Parsers/IAST.h>
-#include <Poco/Logger.h>
+#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
+#include "config.h"
 
 #if USE_SSL
 #    include <openssl/err.h>

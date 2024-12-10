@@ -50,6 +50,7 @@ except Exception as e:
 
 import docker
 from dict2xml import dict2xml
+from docker.models.containers import Container
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
@@ -525,7 +526,7 @@ class ClickHouseCluster:
         self.base_jdbc_bridge_cmd = []
         self.base_redis_cmd = []
         self.pre_zookeeper_commands = []
-        self.instances = {}
+        self.instances: dict[str, ClickHouseInstance] = {}
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -766,7 +767,7 @@ class ClickHouseCluster:
         self.prometheus_remote_read_handler_port = 9092
         self.prometheus_remote_read_handler_path = "/read"
 
-        self.docker_client = None
+        self.docker_client: docker.DockerClient = None
         self.is_up = False
         self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
@@ -957,7 +958,7 @@ class ClickHouseCluster:
         except:
             pass
 
-    def get_docker_handle(self, docker_id):
+    def get_docker_handle(self, docker_id) -> Container:
         exception = None
         for i in range(20):
             try:
@@ -3383,6 +3384,12 @@ class ClickHouseCluster:
             logging.info("Starting zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
 
+    def query_all_nodes(self, sql, *args, **kwargs):
+        return {
+            name: instance.query(sql, ignore_error=True, *args, **kwargs)
+            for name, instance in self.instances.items()
+        }
+
 
 DOCKER_COMPOSE_TEMPLATE = """---
 services:
@@ -3659,6 +3666,7 @@ class ClickHouseInstance:
         host=None,
         ignore_error=False,
         query_id=None,
+        parse=False,
     ):
         sql_for_log = ""
         if len(sql) > 1000:
@@ -3677,6 +3685,7 @@ class ClickHouseInstance:
             ignore_error=ignore_error,
             query_id=query_id,
             host=host,
+            parse=parse,
         )
 
     def query_with_retry(
@@ -3693,6 +3702,7 @@ class ClickHouseInstance:
         retry_count=20,
         sleep_time=0.5,
         check_callback=lambda x: True,
+        parse=False,
     ):
         # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
@@ -3709,6 +3719,7 @@ class ClickHouseInstance:
                     database=database,
                     host=host,
                     ignore_error=ignore_error,
+                    parse=parse,
                 )
                 if check_callback(result):
                     return result
@@ -4441,7 +4452,7 @@ class ClickHouseInstance:
         else:
             self.wait_start(time_left)
 
-    def get_docker_handle(self):
+    def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
 
     def stop(self):

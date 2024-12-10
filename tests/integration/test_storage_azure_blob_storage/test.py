@@ -1314,6 +1314,7 @@ def test_size_virtual_column(cluster):
 
 def test_format_detection(cluster):
     node = cluster.instances["node"]
+    connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
     account_name = "devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
@@ -1380,6 +1381,84 @@ def test_format_detection(cluster):
     )
 
     assert result == expected_result
+
+    azure_query(
+        node,
+        f"create table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1')",
+    )
+    result = azure_query(
+        node,
+        f"show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1', auto)",
+    )
+    result = azure_query(
+        node,
+        f"show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1', auto, 'none')",
+    )
+    result = azure_query(
+        node,
+        f"show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{connection_string}\\', \\'cont\\', \\'test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}')",
+    )
+    result = azure_query(
+        node,
+        f"show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', auto)",
+    )
+    result = azure_query(
+        node,
+        f"show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\')\n"
+    )
+
+    azure_query(
+        node,
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', auto, 'none')",
+    )
+    result = azure_query(
+        node,
+        f"show create table test_format_detection",
+    )
+    assert (
+        result
+        == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\', \\'none\\')\n"
+    )
 
 
 def test_write_to_globbed_partitioned_path(cluster):
