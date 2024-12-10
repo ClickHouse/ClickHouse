@@ -64,6 +64,7 @@ FileSegment::FileSegment(
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
+    , created_from_write_through_cache(settings.write_through_cache)
     , background_download_enabled(background_download_enabled_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
@@ -86,7 +87,6 @@ FileSegment::FileSegment(
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
-        /// or on shrinkFileSegmentToDownloadedSize() -- when file segment object is updated.
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
@@ -392,12 +392,6 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                     range().size(), first_non_downloaded_offset, size, current_downloaded_size);
             }
         }
-
-        if (!cache_writer && current_downloaded_size > 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cache writer was finalized (downloaded size: {}, state: {})",
-                current_downloaded_size, stateToString(download_state));
     }
 
     try
@@ -409,7 +403,12 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 #endif
 
         if (!cache_writer)
-            cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0);
+        {
+            int flags = -1;
+            if (downloaded_size > 0)
+                flags = O_WRONLY | O_APPEND | O_CLOEXEC;
+            cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
+        }
 
         /// Size is equal to offset as offset for write buffer points to data end.
         cache_writer->set(from, /* size */size, /* offset */size);
@@ -644,6 +643,65 @@ void FileSegment::completePartAndResetDownloader()
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lk));
 }
 
+void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key, const FileSegmentGuard::Lock & lock)
+{
+    chassert(downloaded_size);
+    chassert(fs::file_size(getPath()) > 0);
+
+    if (downloaded_size == range().size())
+    {
+        /// Nothing to resize;
+        return;
+    }
+
+    if (!locked_key.isLastOwnerOfFileSegment(offset()))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Shrinking of file segment can  be done only by the last holder: {}",
+            getInfoForLog());
+    }
+
+    size_t result_size = downloaded_size;
+
+    const bool shrink_to_aligned_size = !created_from_write_through_cache;
+    if (shrink_to_aligned_size)
+    {
+        size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+        chassert(aligned_downloaded_size >= downloaded_size);
+        if (aligned_downloaded_size < range().size()
+            && aligned_downloaded_size != downloaded_size)
+        {
+            result_size = aligned_downloaded_size;
+        }
+    }
+
+    chassert(result_size <= range().size());
+    chassert(result_size >= downloaded_size);
+
+    if (result_size == range().size())
+    {
+        /// Nothing to resize;
+        return;
+    }
+
+    if (downloaded_size == result_size)
+    {
+        /// Does not make sense to resize upwords.
+        /// Resize to already downloaded size.
+        setDownloadState(State::DOWNLOADED, lock);
+    }
+    else
+        setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
+
+    segment_range.right = segment_range.left + result_size - 1;
+
+    const size_t diff = reserved_size - downloaded_size;
+    chassert(reserved_size >= downloaded_size);
+    if (diff)
+        getQueueIterator()->decrementSize(diff);
+}
+
 size_t FileSegment::getSizeForBackgroundDownload() const
 {
     auto lk = lock();
@@ -762,8 +820,12 @@ void FileSegment::complete(bool allow_background_download)
 
                 if (!added_to_download_queue)
                 {
-                    locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
-                    setDetachedState(segment_lock); /// See comment below.
+                    if (cache_writer)
+                    {
+                        cache_writer->finalize();
+                        cache_writer.reset();
+                    }
+                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
             break;
@@ -782,6 +844,12 @@ void FileSegment::complete(bool allow_background_download)
                 {
                     LOG_TEST(log, "Resize file segment {} to downloaded: {}", range().toString(), current_downloaded_size);
 
+                    if (cache_writer)
+                    {
+                        cache_writer->finalize();
+                        cache_writer.reset();
+                    }
+
                     /**
                     * Only last holder of current file segment can resize the file segment,
                     * because there is an invariant that file segments returned to users
@@ -793,11 +861,7 @@ void FileSegment::complete(bool allow_background_download)
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
                     /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
                     /// (this will be crucial for other file segment holder, not for current one).
-                    locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
-
-                    /// We mark current file segment with state DETACHED, even though the data is still in cache
-                    /// (but a separate file segment) because is_last_holder is satisfied, so it does not matter.
-                    setDetachedState(segment_lock);
+                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
             break;
