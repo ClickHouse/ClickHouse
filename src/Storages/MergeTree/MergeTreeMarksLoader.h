@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Common/ThreadPool_fwd.h>
 
+#include <atomic>
+#include <future>
 
 namespace DB
 {
@@ -73,6 +75,7 @@ private:
 
     std::future<MarkCache::MappedPtr> future;
     ThreadPool * load_marks_threadpool;
+    std::atomic<bool> is_canceled{false};
 };
 
 using MergeTreeMarksLoaderPtr = std::shared_ptr<MergeTreeMarksLoader>;
