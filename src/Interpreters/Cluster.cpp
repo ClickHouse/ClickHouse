@@ -448,7 +448,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
         const auto & prefix = config_prefix + key + ((shard_with_replicas) ? ".":  "");
         const auto weight = config.getInt(prefix + ".weight", default_weight);
-        const auto shard_name = use_shards_names ? config.getString(prefix + ".shard_name") : "";
+        auto shard_name = use_shards_names ? config.getString(prefix + ".shard_name") : "";
         if (use_shards_names)
         {
             if (shard_name.empty() || !used_shard_names.insert(shard_name).second)
@@ -464,7 +464,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             ShardInfo info;
             info.shard_num = current_shard_num;
-            info.shard_name = shard_name;
+            info.shard_name = std::move(shard_name);
             info.weight = weight;
 
             if (address.is_local)
