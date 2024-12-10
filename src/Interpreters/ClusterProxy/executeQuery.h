@@ -3,6 +3,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include "QueryPipeline/RemoteQueryExecutor.h"
 
 namespace DB
 {
@@ -87,7 +88,8 @@ void executeQueryWithParallelReplicas(
     const ASTPtr & query_ast,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr read_from_merge_tree = nullptr);
+    QueryPlanStepPtr read_from_merge_tree = nullptr,
+    std::optional<RemoteQueryExecutor::Extension> extension = std::nullopt);
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,

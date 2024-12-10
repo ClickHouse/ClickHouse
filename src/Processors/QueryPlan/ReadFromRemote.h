@@ -6,6 +6,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/UUID.h>
+#include "QueryPipeline/RemoteQueryExecutor.h"
 
 namespace DB
 {
@@ -80,7 +81,8 @@ public:
         LoggerPtr log_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         std::vector<ConnectionPoolPtr> pools_to_use,
-        std::optional<size_t> exclude_pool_index_ = std::nullopt);
+        std::optional<size_t> exclude_pool_index_ = std::nullopt,
+        std::optional<RemoteQueryExecutor::Extension> extension_ = std::nullopt);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -105,6 +107,7 @@ private:
     LoggerPtr log;
     std::vector<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
+    std::optional<RemoteQueryExecutor::Extension> extension;
 };
 
 }
