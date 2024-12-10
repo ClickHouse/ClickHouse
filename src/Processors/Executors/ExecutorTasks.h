@@ -69,7 +69,8 @@ public:
 
     void processAsyncTasks();
 
-    bool shouldSpawn() {
+    bool shouldSpawn()
+    {
         std::lock_guard lock(mutex);
         return threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD;
     }
