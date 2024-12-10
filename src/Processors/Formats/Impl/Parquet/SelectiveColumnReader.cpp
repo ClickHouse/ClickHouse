@@ -1781,10 +1781,10 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
         if (has_filter)
             child_filter.reserve(rows_to_read);
         // read from current page
-        while (offsets.size() < target_size)
+        while (true)
         {
             size_t idx = start + count;
-            if (idx >= levels_size)
+            if (idx >= levels_size || rows_read >= rows_to_read)
                 break;
             if (rep_levels[idx] <= rep_level)
             {
@@ -1825,14 +1825,26 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                 array_size++;
             count++;
         }
-        if (!has_filter || row_set->get(row_set->totalRows() - 1))
+
+        // read tail record
+        if (rows_read < rows_to_read)
         {
             if (has_filter)
             {
-                for (int i = 0; i < array_size; i++)
-                    child_filter.push_back(true);
+                auto valid = row_set->get(rows_read);
+                if (valid)
+                {
+                    insertManyToFilter(child_filter, true, array_size);
+                    offsets.push_back(offsets.back() + array_size);
+                }
+                else
+                    insertManyToFilter(child_filter, false, array_size);
             }
-            offsets.push_back(offsets.back() + array_size);
+            else
+            {
+                offsets.push_back(offsets.back() + array_size);
+            }
+            rows_read ++;
         }
         auto data_column = array_column->getDataPtr()->assumeMutable();
         OptionalRowSet filter;
@@ -1907,10 +1919,10 @@ void MapColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, 
         PaddedPODArray<bool> child_filter;
         if (has_filter)
             child_filter.reserve(rows_to_read);
-        while (offsets.size() < target_size)
+        while (true)
         {
             size_t idx = start + count;
-            if (idx >= rep_levels.size())
+            if (idx >= levels_size || rows_read >= rows_to_read)
                 break;
             if (rep_levels[idx] <= rep_level)
             {
@@ -1949,14 +1961,26 @@ void MapColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, 
                 array_size++;
             count++;
         }
-        if (!has_filter || row_set->get(row_set->totalRows() - 1))
+
+        // read tail record
+        if (rows_read < rows_to_read)
         {
             if (has_filter)
             {
-                for (int i = 0; i < array_size; i++)
-                    child_filter.push_back(true);
+                auto valid = row_set->get(rows_read);
+                if (valid)
+                {
+                    insertManyToFilter(child_filter, true, array_size);
+                    offsets.push_back(offsets.back() + array_size);
+                }
+                else
+                    insertManyToFilter(child_filter, false, array_size);
             }
-            offsets.push_back(offsets.back() + array_size);
+            else
+            {
+                offsets.push_back(offsets.back() + array_size);
+            }
+            rows_read ++;
         }
         OptionalRowSet filter;
         if (has_filter)
@@ -1995,18 +2019,11 @@ void StructColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_se
     ColumnTuple * tuple_column = static_cast<ColumnTuple*>(column.get());
     const auto *tuple_type = checkAndGetDataType<DataTypeTuple>(structType.get());
     auto names = tuple_type->getElementNames();
-    size_t rows_read = 0;
-    while (rows_read < rows_to_read)
+    for (size_t i = 0; i < names.size(); i++)
     {
-        for (size_t i = 0; i < names.size(); i++)
-        {
-            auto nested_column = tuple_column->getColumn(i).assumeMutable();
-            auto & nested_reader = children.at(names.at(i));
-            nested_reader->read(nested_column, row_set, rows_to_read);
-        }
-        if (rows_read == column->size())
-            break;
-        rows_read = column->size();
+        auto nested_column = tuple_column->getColumn(i).assumeMutable();
+        auto & nested_reader = children.at(names.at(i));
+        nested_reader->read(nested_column, row_set, rows_to_read);
     }
 }
 

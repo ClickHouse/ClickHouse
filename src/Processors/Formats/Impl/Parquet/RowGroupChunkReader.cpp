@@ -122,10 +122,12 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                     auto column = reader->createColumn();
                     column->reserve(select_result.valid_count);
                     reader->read(column, select_result.set, rows_to_read);
-                    if (select_result.valid_count != column->size())
-                    {
-                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column {}, expect {} rows, but got {}", name, select_result.valid_count, column->size());
-                    }
+                    if (select_result.set)
+                        select_result.set->setOffset(0);
+//                    if (select_result.valid_count != column->size())
+//                    {
+//                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column {}, expect {} rows, but got {}", name, select_result.valid_count, column->size());
+//                    }
                     columns.emplace_back(std::move(column));
                 }
             }
@@ -278,6 +280,7 @@ static IColumn::Filter mergeFilters(std::vector<IColumn::Filter> & filters)
 
 static void combineRowSetAndFilter(RowSet & set, const IColumn::Filter& filter_data)
 {
+    set.setOffset(0);
     int count = 0;
     for (size_t i = 0; i < set.totalRows(); ++i)
     {
@@ -334,7 +337,11 @@ SelectResult SelectConditions::selectRows(size_t rows)
                     reader->read(column, set, rows);
                 }
                 else
+                {
                     reader->read(column, total_set, rows);
+                    // clean row set offset
+                    total_set->setOffset(0);
+                }
                 intermediate_columns.emplace(name, std::move(column));
             }
             input.emplace_back(intermediate_columns.at(name), header.getByName(name).type, name);

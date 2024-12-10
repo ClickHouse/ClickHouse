@@ -422,20 +422,20 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
     SelectiveColumnReaderPtr leaf_reader = nullptr;
     if (physical_type == parquet::Type::INT64)
     {
-        if (converted_type == parquet::ConvertedType::INT_64)
-        {
-            if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, true>(std::move(page_reader_creator), scan_spec, logical_type);
-            else
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, false>(std::move(page_reader_creator), scan_spec, logical_type);
-        }
         // for clickbench test
-        else if (isDateTime(target_type))
+        if (isDateTime(target_type))
         {
             if (dictionary_)
                 leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime, true>(std::move(page_reader_creator), scan_spec, logical_type);
             else
                 leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime, false>(std::move(page_reader_creator), scan_spec, logical_type);
+        }
+        else if (converted_type == parquet::ConvertedType::INT_64 || converted_type == parquet::ConvertedType::NONE)
+        {
+            if (dictionary_)
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, true>(std::move(page_reader_creator), scan_spec, logical_type);
+            else
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, false>(std::move(page_reader_creator), scan_spec, logical_type);
         }
         else if (converted_type == parquet::ConvertedType::TIMESTAMP_MILLIS
                  || converted_type == parquet::ConvertedType::TIMESTAMP_MICROS
@@ -457,7 +457,15 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
     }
     else if (physical_type == parquet::Type::INT32)
     {
-        if (converted_type == parquet::ConvertedType::INT_8)
+        // for clickbench test
+        if (isDateTime(target_type))
+        {
+            if (dictionary_)
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, true>(std::move(page_reader_creator), scan_spec, logical_type);
+            else
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, false>(std::move(page_reader_creator), scan_spec, logical_type);
+        }
+        else if (converted_type == parquet::ConvertedType::INT_8)
         {
             if (dictionary_)
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int8, true>(std::move(page_reader_creator), scan_spec, logical_type);
@@ -471,7 +479,7 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
             else
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int16, false>(std::move(page_reader_creator), scan_spec, logical_type);
         }
-        else if (converted_type == parquet::ConvertedType::INT_32)
+        else if (converted_type == parquet::ConvertedType::INT_32 || converted_type == parquet::ConvertedType::NONE)
         {
             if (dictionary_)
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int32, true>(std::move(page_reader_creator), scan_spec, logical_type);
@@ -512,13 +520,6 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, true>(std::move(page_reader_creator), scan_spec, logical_type);
             else
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, false>(std::move(page_reader_creator), scan_spec, logical_type);
-        }
-        else if (isDateTime(target_type))
-        {
-            if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, true>(std::move(page_reader_creator), scan_spec, logical_type);
-            else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, false>(std::move(page_reader_creator), scan_spec, logical_type);
         }
     }
     else if (physical_type == parquet::Type::FLOAT)
@@ -564,8 +565,9 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
     {
         throw DB::Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "ParquetColumnReaderFactory::createColumnReader: not implemented for physical type {} and target type {}",
+            "ParquetColumnReaderFactory::createColumnReader: not implemented for physical type {}, convert type {} and target type {}",
             magic_enum::enum_name(physical_type),
+            magic_enum::enum_name(converted_type),
             magic_enum::enum_name(target_type));
     }
     if (nullable_)
