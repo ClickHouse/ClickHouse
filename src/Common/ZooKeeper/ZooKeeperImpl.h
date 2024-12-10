@@ -262,10 +262,13 @@ private:
 
     struct RequestInfo
     {
+        RequestInfo();
+
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
         WatchCallbackPtr watch;
         clock::time_point time;
+        std::optional<StackTrace> stacktrace;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
@@ -341,7 +344,12 @@ private:
     void cancelWriteBuffer() noexcept;
     ReadBuffer & getReadBuffer();
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
+    void logOperationIfNeeded(
+        const ZooKeeperRequestPtr & request,
+        const ZooKeeperResponsePtr & response = nullptr,
+        bool finalize = false,
+        UInt64 elapsed_microseconds = 0,
+        StackTrace * stacktrace = nullptr);
 
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
