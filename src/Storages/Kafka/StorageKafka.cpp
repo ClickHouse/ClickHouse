@@ -79,7 +79,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
-    extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
+    extern const KafkaSettingsExtStreamingHandleErrorMode kafka_handle_error_mode;
     extern const KafkaSettingsUInt64 kafka_max_block_size;
     extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
     extern const KafkaSettingsUInt64 kafka_num_consumers;
@@ -189,7 +189,8 @@ StorageKafka::StorageKafka(
 {
     kafka_settings->sanityCheck();
 
-    if ((*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM)
+    if (auto mode = getStreamingHandleErrorMode();
+        mode == ExtStreamingHandleErrorMode::STREAM || mode == ExtStreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
@@ -409,7 +410,7 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     return ret_consumer_ptr;
 }
 
-StreamingHandleErrorMode StorageKafka::getStreamingHandleErrorMode() const
+ExtStreamingHandleErrorMode StorageKafka::getStreamingHandleErrorMode() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_handle_error_mode];
 }

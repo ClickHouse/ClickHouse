@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -57,7 +58,7 @@ namespace RabbitMQSetting
     extern const RabbitMQSettingsString rabbitmq_exchange_type;
     extern const RabbitMQSettingsUInt64 rabbitmq_flush_interval_ms;
     extern const RabbitMQSettingsString rabbitmq_format;
-    extern const RabbitMQSettingsStreamingHandleErrorMode rabbitmq_handle_error_mode;
+    extern const RabbitMQSettingsExtStreamingHandleErrorMode rabbitmq_handle_error_mode;
     extern const RabbitMQSettingsString rabbitmq_host_port;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_block_size;
     extern const RabbitMQSettingsUInt64 rabbitmq_max_rows_per_message;
@@ -248,7 +249,7 @@ StorageRabbitMQ::StorageRabbitMQ(
 
 StorageRabbitMQ::~StorageRabbitMQ() = default;
 
-VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMode handle_error_mode)
+VirtualColumnsDescription StorageRabbitMQ::createVirtuals(ExtStreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
 
@@ -260,7 +261,7 @@ VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMo
     desc.addEphemeral("_timestamp", std::make_shared<DataTypeUInt64>(), "");
 
 
-    if (handle_error_mode == StreamingHandleErrorMode::STREAM)
+    if (handle_error_mode == ExtStreamingHandleErrorMode::STREAM)
     {
         desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
         desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
@@ -316,7 +317,7 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode] == StreamingHandleErrorMode::DEFAULT)
+    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode] == ExtStreamingHandleErrorMode::DEFAULT)
         modified_context->setSetting("input_format_allow_errors_num", (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_skip_broken_messages].value);
     else
         modified_context->setSetting("input_format_allow_errors_num", Field(0));
