@@ -19,9 +19,6 @@ struct PartProperties
     /// How old this data part in seconds.
     const time_t age = 0;
 
-    /// Depth of tree of merges by which this part was created. New parts has zero level.
-    const uint32_t level = 0;
-
     /// Information about different TTLs for part. Used by Part/Row Delete Merge Selectors.
     struct GeneralTTLInfo
     {
@@ -39,10 +36,7 @@ struct PartProperties
     const std::optional<RecompressTTLInfo> recompression_ttl_info;
 };
 
-/// Parts are belong to partitions. Only parts within same partition could be merged.
 using PartsRange = std::vector<PartProperties>;
-
-/// Parts are in some specific order. Parts could be merged only in contiguous ranges.
 using PartsRanges = std::vector<PartsRange>;
 
 }
