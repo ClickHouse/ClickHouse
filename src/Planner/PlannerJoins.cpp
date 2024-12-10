@@ -56,6 +56,7 @@ namespace Setting
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool allow_general_join_algorithm;
+    extern const SettingsJoinAlgorithm join_algorithm;
 }
 
 namespace ServerSetting
@@ -135,28 +136,19 @@ JoinClause JoinClause::concatClauses(const JoinClause & lhs, const JoinClause & 
                                      const ActionsDAG::NodeRawConstPtrs & rhs_ptrs,
                                      ActionsDAG::NodeRawConstPtrs & result)
     {
+        result.reserve(lhs_ptrs.size() + rhs_ptrs.size());
         result.insert(result.end(), lhs_ptrs.begin(), lhs_ptrs.end());
         result.insert(result.end(), rhs_ptrs.begin(), rhs_ptrs.end());
     };
 
     JoinClause result;
     const auto lhs_key_size = lhs.left_key_nodes.size();
-    const auto rhs_key_size = rhs.left_key_nodes.size();
 
-    result.left_key_nodes.reserve(lhs_key_size + rhs_key_size);
     concat_ptrs_into(lhs.left_key_nodes, rhs.left_key_nodes, result.left_key_nodes);
-
-    result.right_key_nodes.reserve(lhs_key_size + rhs_key_size);
     concat_ptrs_into(lhs.right_key_nodes, rhs.right_key_nodes, result.right_key_nodes);
-
-    result.left_filter_condition_nodes.reserve(lhs.left_filter_condition_nodes.size() + rhs.left_filter_condition_nodes.size());
     concat_ptrs_into(lhs.left_filter_condition_nodes, rhs.left_filter_condition_nodes, result.left_filter_condition_nodes);
-
-    result.right_filter_condition_nodes.reserve(lhs.right_filter_condition_nodes.size() + rhs.right_filter_condition_nodes.size());
     concat_ptrs_into(lhs.right_filter_condition_nodes, rhs.right_filter_condition_nodes, result.right_filter_condition_nodes);
-
-    result.mixed_filter_condition_nodes.reserve(lhs.mixed_filter_condition_nodes.size() + rhs.mixed_filter_condition_nodes.size());
-    concat_ptrs_into(lhs.mixed_filter_condition_nodes, rhs.mixed_filter_condition_nodes, result.mixed_filter_condition_nodes);
+    concat_ptrs_into(lhs.residual_filter_condition_nodes, rhs.residual_filter_condition_nodes, result.residual_filter_condition_nodes);
 
     result.asof_conditions.reserve(lhs.asof_conditions.size() + rhs.asof_conditions.size());
     // We can keep the indices from left hand side, because their position remain the same
@@ -668,6 +660,27 @@ JoinClauses buildJoinClauses(
                     auto & child_res = built_clauses.at(argument.get());
                     result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
                 }
+
+                // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
+                // TODO(antaljanosbenjamin): Analyze the expressions first, so join clauses are not built unnecessarily.
+                const auto with_key_expression = static_cast<size_t>(std::count_if(
+                    result.begin(), result.end(), [](const JoinClause & clause) { return !clause.getLeftKeyNodes().empty(); }));
+
+                if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
+                {
+                    result.clear();
+                    result.emplace_back();
+                    buildSimpleJoinClause(
+                        left_dag,
+                        right_dag,
+                        joined_dag,
+                        planner_context,
+                        node,
+                        left_table_expressions,
+                        right_table_expressions,
+                        join_node,
+                        result.front());
+                }
             }
             else
             {
@@ -720,7 +733,10 @@ std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     const JoinNode & join_node,
     const FunctionNode & function_node)
 {
-    if (planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_algorithm])
+    const auto & join_algorithms = planner_context->getQueryContext()->getSettingsRef()[Setting::join_algorithm];
+    const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
+    if (is_hash_join_enabled && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_algorithm])
     {
         auto join_clauses = buildJoinClauses(
             left_join_actions,
