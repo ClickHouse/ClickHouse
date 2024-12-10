@@ -18,12 +18,16 @@ public:
     struct Settings
     {
         size_t num_parts_to_merge = 10;
-        size_t num_ranges_to_choose = 100;
+        size_t num_ranges_to_consider = 100;
     };
 
-    PartsRange select(
+    PartsRange selectBest(
         const PartsRanges & parts_ranges,
         size_t max_total_size_to_merge) override;
+
+    PartsRanges selectUpToTopN(
+        const PartsRanges & parts_ranges,
+        size_t max_total_size_to_merge, size_t top_n_ranges) override;
 
 private:
     const Settings settings;
