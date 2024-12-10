@@ -53,19 +53,20 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
-    iterateMetadataFiles([this, &local_context](const String & file_name)
-    {
-        const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-
-        fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
-        if (fs::exists(detached_permanently_flag))
+    iterateMetadataFiles(
+        [this, &local_context](const String & file_name)
         {
-            LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-            return;
-        }
+            const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
-        attachTable(local_context, table_name, nullptr, {});
-    });
+            fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
+            if (db_disk->existsFile(detached_permanently_flag))
+            {
+                LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+                return;
+            }
+
+            attachTable(local_context, table_name, nullptr, {});
+        });
 }
 
 
