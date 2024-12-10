@@ -75,7 +75,8 @@ result=$(${CLICKHOUSE_CLIENT} -q "
     echo "{\"min_compress_block_size\":\"$min_present\",\"max_block_size\":\"$max_present\",\"max_execution_time\":\"$execution_time_present\"}"
 }
 
-function check_tcp_attributes() {
+function check_tcp_attributes()
+{
   local query_id="$1"
   local result
   local client_version="not found"
@@ -103,7 +104,13 @@ function check_tcp_attributes() {
   echo "{\"client.version\":\"$client_version\"}"
 }
 
-function check_http_attributes() {
+function execute_query_HTTP()
+{
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&database=${CLICKHOUSE_DATABASE}&query_id=$1" -d "$2"
+}
+
+function check_http_attributes()
+{
   local query_id="$1"
   local result
   local referer="not found"
@@ -142,7 +149,6 @@ function check_http_attributes() {
 
   echo "{\"http.referer\":\"$referer\",\"http.user.agent\":\"$agent\",\"http.method\":\"$method\"}"
 }
-
 
 #
 # Set up
