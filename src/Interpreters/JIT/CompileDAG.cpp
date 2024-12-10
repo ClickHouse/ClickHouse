@@ -38,7 +38,7 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
         {
             case CompileType::CONSTANT:
             {
-                auto * native_value = getColumnNativeValue(b, node.result_type, *node.column, 0);
+                auto * native_value = node.skip_compile ? nullptr : getColumnNativeValue(b, node.result_type, *node.column, 0);
                 compiled_values[compiled_values_index] = {native_value, node.result_type};
                 break;
             }
@@ -47,9 +47,15 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
                 ValuesWithType temporary_values;
                 temporary_values.reserve(node.arguments.size());
                 for (auto argument_index : node.arguments)
-                {
-                    assert(compiled_values[argument_index].value != nullptr);
                     temporary_values.emplace_back(compiled_values[argument_index]);
+
+                if (node.function->getName() == "sparkDecimalDivide")
+                {
+                    for (size_t j = 0; j < temporary_values.size(); ++j)
+                    {
+                        std::cout << "argument[" << j << "] = " << reinterpret_cast<uintptr_t>(temporary_values[j].value)
+                                  << " type:" << temporary_values[j].type->getName() << std::endl;
+                    }
                 }
 
                 ValueWithType compiled_value{node.function->compile(builder, temporary_values), node.function->getResultType()};

@@ -369,6 +369,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
             return false;
         }
     }
+
     return function.isCompilable();
 }
 
@@ -387,6 +388,7 @@ static CompileDAG getCompilableDAG(
     {
         const ActionsDAG::Node * node;
         size_t next_child_to_visit = 0;
+        size_t skip_compile = false;
     };
 
     std::stack<Frame> stack;
@@ -400,7 +402,7 @@ static CompileDAG getCompilableDAG(
         bool is_compilable_constant = isCompilableConstant(*node);
         bool is_compilable_function = isCompilableFunction(*node, lazy_executed_nodes);
 
-        if (!is_compilable_function || is_compilable_constant)
+        if (!is_compilable_function || is_compilable_constant || frame.skip_compile)
         {
             CompileDAG::Node compile_node;
             compile_node.function = node->function_base;
@@ -410,6 +412,12 @@ static CompileDAG getCompilableDAG(
             {
                 compile_node.type = CompileDAG::CompileType::CONSTANT;
                 compile_node.column = node->column;
+            }
+            else if (frame.skip_compile)
+            {
+                compile_node.type = CompileDAG::CompileType::CONSTANT;
+                compile_node.column = node->column;
+                compile_node.skip_compile = true;
             }
             else
             {
@@ -427,13 +435,6 @@ static CompileDAG getCompilableDAG(
         auto skip_arguments = function.getArgumentsThatDontParticipateInCompilation(function.getArgumentTypes());
         while (frame.next_child_to_visit < node->children.size())
         {
-            /// Skip arguments that don't participate in compilation during DFS
-            if (std::find(skip_arguments.begin(), skip_arguments.end(), frame.next_child_to_visit) != skip_arguments.end())
-            {
-                ++frame.next_child_to_visit;
-                continue;
-            }
-
             const auto & child = node->children[frame.next_child_to_visit];
             if (visited_node_to_compile_dag_position.contains(child))
             {
@@ -441,7 +442,13 @@ static CompileDAG getCompilableDAG(
                 continue;
             }
 
-            stack.emplace(Frame{.node = child});
+            bool skip_compile = std::find(skip_arguments.begin(), skip_arguments.end(), frame.next_child_to_visit) != skip_arguments.end();
+            if (skip_compile
+                && (!child->column || !isColumnConst(*child->column)
+                    || dynamic_cast<const ColumnConst *>(child->column.get())->getField().isNull()))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Only constant nodes with non-null value could skip compilation");
+
+            stack.emplace(Frame{.node = child, .skip_compile = skip_compile});
             break;
         }
 
@@ -457,14 +464,8 @@ static CompileDAG getCompilableDAG(
         compile_node.result_type = node->result_type;
         compile_node.type = CompileDAG::CompileType::FUNCTION;
 
-        for (size_t i = 0; i < node->children.size(); ++i)
-        {
-            if (std::find(skip_arguments.begin(), skip_arguments.end(), i) != skip_arguments.end())
-                continue;
-
-            const auto * child = node->children[i];
+        for (const auto * child : node->children)
             compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
-        }
 
         visited_node_to_compile_dag_position[node] = dag.getNodesCount();
 

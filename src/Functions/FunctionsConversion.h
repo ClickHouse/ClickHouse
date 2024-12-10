@@ -3644,21 +3644,20 @@ public:
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override
     {
-        // std::cout << "come here " << " from_type:" << arguments[0].type->getName() << " to_type:" << getResultType()->getName()
-                //   << std::endl;
         const auto & input_type = arguments[0].type;
         const auto & result_type = getResultType();
-        auto denull_input_type = removeNullable(input_type);
-        auto denull_result_type = removeNullable(result_type);
 
         llvm::Value * result_value = nullptr;
         llvm::Value * input_value = arguments[0].value;
         llvm::Value * input_isnull = nullptr;
         if (input_type->isNullable())
         {
-            input_value = builder.CreateExtractValue(input_value, {0});
             input_isnull = builder.CreateExtractValue(input_value, {1});
+            input_value = builder.CreateExtractValue(input_value, {0});
         }
+
+        auto denull_input_type = removeNullable(input_type);
+        auto denull_result_type = removeNullable(result_type);
 
         castBothTypes(
             denull_input_type.get(),
@@ -3675,15 +3674,15 @@ public:
 
                     if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                     {
-                        result_value = nativeCast(builder, arguments[0], right.getPtr());
+                        result_value = nativeCast(builder, left.getPtr(), input_value, right.getPtr());
                         return true;
                     }
                     else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
                         auto scale = right.getScale();
                         auto multiplier = static_cast<LeftFieldType>(DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale));
-                        auto * from_type = arguments[0].value->getType();
-                        auto * from_value = arguments[0].value;
+                        auto * from_type = toNativeType(builder, left);
+                        auto * from_value = input_value;
                         if constexpr (std::is_floating_point_v<LeftFieldType>)
                         {
                             result_value = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, multiplier));
@@ -3709,14 +3708,14 @@ public:
                         auto divider = DecimalUtils::scaleMultiplier<NativeType<LeftFieldType>>(scale);
                         if constexpr (std::is_floating_point_v<RightFieldType>)
                         {
-                            auto * from_value = nativeCast(builder, arguments[0], right.getPtr());
+                            auto * from_value = nativeCast(builder, left.getPtr(), input_value, right.getPtr());
                             auto * d = llvm::ConstantFP::get(toNativeType(builder, right.getPtr()), static_cast<double>(divider));
                             result_value = builder.CreateFDiv(from_value, d);
                         }
                         else
                         {
                             llvm::Value * d = nullptr;
-                            auto * from_type = arguments[0].value->getType();
+                            auto * from_type = toNativeType(builder, left.getPtr());
                             if constexpr (std::is_integral_v<NativeType<LeftFieldType>>)
                                 d = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(divider), true);
                             else
@@ -3725,7 +3724,7 @@ public:
                                 d = llvm::ConstantInt::get(from_type, v);
                             }
 
-                            auto * from_value = arguments[0].value;
+                            auto * from_value = input_value;
                             auto * whole_part = builder.CreateSDiv(from_value, d);
                             result_value = nativeCast(builder, left.getPtr(), whole_part, right.getPtr());
                         }

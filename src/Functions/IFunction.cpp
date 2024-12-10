@@ -570,15 +570,17 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
 
         std::vector<llvm::Value*> is_null_values;
 
+        auto skip_arguments = getArgumentsThatDontParticipateInCompilation(arguments_types);
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const auto & argument = arguments[i];
             llvm::Value * unwrapped_value = argument.value;
 
+            bool skip_compile = (std::find(skip_arguments.begin(), skip_arguments.end(), i) != skip_arguments.end());
             if (argument.type->isNullable())
             {
-                unwrapped_value = b.CreateExtractValue(argument.value, {0});
-                is_null_values.emplace_back(b.CreateExtractValue(argument.value, {1}));
+                unwrapped_value = skip_compile ? nullptr : b.CreateExtractValue(argument.value, {0});
+                is_null_values.emplace_back(skip_compile ? nullptr : b.CreateExtractValue(argument.value, {1}));
             }
 
             unwrapped_arguments.emplace_back(unwrapped_value, (*denulled_arguments_types)[i]);
@@ -595,7 +597,10 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
             auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
 
             for (auto * is_null_value : is_null_values)
-                nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            {
+                if (is_null_value)
+                    nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            }
 
             return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
         }
@@ -610,7 +615,10 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
 
             nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, result_is_null);
             for (auto * is_null_value : is_null_values)
-                nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            {
+                if (is_null_value)
+                    nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            }
 
             return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
         }
