@@ -1,12 +1,32 @@
 [
 	{
+		"title": "Syntax",
+		"description": "A quick reference for the supported syntax in ClickHouse.",
+		"url": "/docs/en/sql-reference/syntax/"
+	},
+	{
+		"title": "Input and Output Formats",
+		"description": "A list of available Input and Output formats for handling your data.",
+		"url": "/docs/en/sql-reference/formats/"
+	},
+	{
 		"title": "Statements",
-		"description": "A list of available SQL statements in ClickHouse",
+		"description": "A list of available SQL statements in ClickHouse.",
 		"url": "/docs/en/sql-reference/statements/"
 	},
 	{
 	"title": "Database and Table Engines",
-	"description": "Engines determine where and how your data is stored",
-	"url": "/docs/en/engines/table-engines"
+	"description": "Information on database and table engines which determine where and how your data is stored.",
+	"url": "/docs/en/engines/engines"
+	},
+	{
+		"title": "Functions",
+		"description": "A complete and ever expanding list of functions for manipulating and transforming your data.",
+		"url": "/docs/en/engines/engines"
+	},
+	{
+		"title": "Other Features",
+		"description": "Additional features which are unique to ClickHouse.",
+		"url": "/docs/en/engines/engines"
 	}
 ]
