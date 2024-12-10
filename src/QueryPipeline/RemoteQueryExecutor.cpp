@@ -399,7 +399,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
 
-    if (is_remote_function)
+    /// Doesn't support now "remote('1.1.1.{1,2}')""
+    if (is_remote_function && (shard_count == 1))
     {
         modified_client_info.setInitialQuery();
         modified_client_info.client_name = "ClickHouse server";
