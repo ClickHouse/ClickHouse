@@ -179,7 +179,7 @@ NATSOptionsPtr NATSHandler::createOptions()
 bool NATSHandler::isRunning()
 {
     std::scoped_lock lock(loop_state_mutex, tasks_mutex);
-    return loop_state == Loop::RUN || tasks.size() != 0;
+    return loop_state == Loop::RUN || !tasks.empty();
 }
 
 }
