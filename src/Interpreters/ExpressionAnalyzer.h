@@ -226,6 +226,7 @@ struct ExpressionAnalysisResult
 
     String where_column_name;
     bool remove_where_filter = false;
+    bool remove_inrange_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
     bool join_has_delayed_stream = false;
@@ -245,6 +246,8 @@ struct ExpressionAnalysisResult
     ActionsAndProjectInputsFlagPtr before_window;
     ActionsAndProjectInputsFlagPtr before_order_by;
     ActionsAndProjectInputsFlagPtr before_limit_by;
+    ActionsAndProjectInputsFlagPtr before_limit_inrange_from;
+    ActionsAndProjectInputsFlagPtr before_limit_inrange_to;
     ActionsAndProjectInputsFlagPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases. Used to
@@ -284,6 +287,8 @@ struct ExpressionAnalysisResult
     bool hasPrewhere() const { return prewhere_info.get(); }
     bool hasWhere() const { return before_where.get(); }
     bool hasHaving() const { return before_having.get(); }
+    bool hasLimitInrangeFrom() const { return before_limit_inrange_from.get(); }
+    bool hasLimitInrangeTo() const { return before_limit_inrange_to.get(); }
     bool hasLimitBy() const { return before_limit_by.get(); }
 
     void removeExtraColumns() const;
@@ -408,8 +413,11 @@ private:
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
-    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+
     void validateOrderByKeyType(const DataTypePtr & key_type) const;
+    ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+    bool appendLimitInrangeFrom(ExpressionActionsChain & chain, bool only_types);
+    bool appendLimitInrangeTo(ExpressionActionsChain & chain, bool only_types);
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };
