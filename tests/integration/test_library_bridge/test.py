@@ -13,6 +13,11 @@ instance = cluster.add_instance(
     dictionaries=["configs/dictionaries/dict1.xml"],
     main_configs=["configs/config.d/config.xml"],
     stay_alive=True,
+    # WA for the problem with zombie processes inside the docker container.
+    # This is important here because we are checking that there are no zombie processes
+    # after craches inside the library bridge.
+    # https://forums.docker.com/t/what-the-latest-with-the-zombie-process-reaping-problem/50758/2
+    use_docker_init_flag=True,
 )
 
 
@@ -31,6 +36,13 @@ def create_dict_simple(ch_instance):
         LIFETIME(2) ;
     """
     )
+
+
+def check_no_zombie_processes(instance):
+    res = instance.exec_in_container(
+        ["bash", "-c", "ps ax -ostat,pid | grep -e '[zZ]' | wc -l"], user="root"
+    )
+    assert res == "0\n"
 
 
 @pytest.fixture(scope="module")
@@ -262,6 +274,8 @@ def test_recover_after_bridge_crash(ch_cluster):
     instance.exec_in_container(
         ["bash", "-c", "kill -9 `pidof clickhouse-library-bridge`"], user="root"
     )
+
+    check_no_zombie_processes(instance)
     instance.query("DROP DICTIONARY lib_dict_c")
 
 
@@ -286,6 +300,8 @@ def test_server_restart_bridge_might_be_stil_alive(ch_cluster):
 
     result = instance.query("""select dictGet(lib_dict_c, 'value1', toUInt64(1));""")
     assert result.strip() == "101"
+
+    check_no_zombie_processes(instance)
 
     instance.query("DROP DICTIONARY lib_dict_c")
 
