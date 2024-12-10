@@ -216,8 +216,6 @@ size_t ThreadStatus::getNextPipelineProcessorIndex() const
 
 ThreadStatus::~ThreadStatus()
 {
-    flushUntrackedMemory();
-
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
@@ -227,6 +225,9 @@ ThreadStatus::~ThreadStatus()
         deleter();
 
     chassert(!check_current_thread_on_destruction || current_thread == this);
+
+    /// Flush untracked_memory **before** switching the current_thread (to avoid losing untracked_memory)
+    flushUntrackedMemory();
 
     /// Only change current_thread if it's currently being used by this ThreadStatus
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
