@@ -7400,14 +7400,6 @@ trueの場合、ClickHouseは非レプリケートのMergeTreeテーブルにも
 
 trueの場合、JOINが並列レプリカアルゴリズムで実行でき、右JOIN部分のすべてのストレージが*MergeTreeの場合、ローカルJOINが使用され、GLOBAL JOINの代わりに使用されます。
 
-## parallel_replicas_single_task_marks_count_multiplier {#parallel_replicas_single_task_marks_count_multiplier}
-
-タイプ: Float
-
-デフォルト値: 2
-
-コーディネーターから取得する最小マーク数を計算する際に追加される乗数。これは、リモートレプリカにのみ適用されます。
-
 ## parallel_view_processing {#parallel_view_processing}
 
 タイプ: Bool

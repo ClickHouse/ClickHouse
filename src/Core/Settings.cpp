@@ -5658,9 +5658,6 @@ Cluster for a shard in which current server is located
     DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(
 If true, subquery for IN will be executed on every follower replica.
 )", BETA) \
-    DECLARE(Float, parallel_replicas_single_task_marks_count_multiplier, 2, R"(
-A multiplier which will be added during calculation for minimal number of marks to retrieve from coordinator. This will be applied only for remote replicas.
-)", BETA) \
     DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
 )", BETA) \

@@ -167,7 +167,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsFloat parallel_replicas_single_task_marks_count_multiplier;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
@@ -421,25 +420,6 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
     auto extension = ParallelReadingExtension{
         all_ranges_callback.value(), read_task_callback.value(), number_of_current_replica.value_or(client_info.number_of_current_replica), context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
 
-    /// We have a special logic for local replica. It has to read less data, because in some cases it should
-    /// merge states of aggregate functions or do some other important stuff other than reading from Disk.
-    auto multiplier = context->getSettingsRef()[Setting::parallel_replicas_single_task_marks_count_multiplier];
-    const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
-    if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
-    {
-        /// limit min marks to read in case it's big, happened in test since due to settings randomization
-        pool_settings.min_marks_for_concurrent_read = min_marks_for_concurrent_read_limit;
-        multiplier = 1.0f;
-    }
-
-    if (auto result = pool_settings.min_marks_for_concurrent_read * multiplier; canConvertTo<size_t>(result))
-        pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(result);
-    else
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Exceeded limit for the number of marks per a single task for parallel replicas. "
-            "Make sure that `parallel_replicas_single_task_marks_count_multiplier` is in some reasonable boundaries, current value is: {}",
-            multiplier);
-
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         std::move(extension),
         std::move(parts_with_range),
@@ -590,23 +570,6 @@ Pipe ReadFromMergeTree::readInOrder(
             all_ranges_callback.value(),
             read_task_callback.value(),
             number_of_current_replica.value_or(client_info.number_of_current_replica), context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount()};
-
-        auto multiplier = context->getSettingsRef()[Setting::parallel_replicas_single_task_marks_count_multiplier];
-        const auto min_marks_for_concurrent_read_limit = std::numeric_limits<Int64>::max() >> 1;
-        if (pool_settings.min_marks_for_concurrent_read > min_marks_for_concurrent_read_limit)
-        {
-            /// limit min marks to read in case it's big, happened in test since due to settings randomzation
-            pool_settings.min_marks_for_concurrent_read = min_marks_for_concurrent_read_limit;
-            multiplier = 1.0f;
-        }
-
-        if (auto result = pool_settings.min_marks_for_concurrent_read * multiplier; canConvertTo<size_t>(result))
-            pool_settings.min_marks_for_concurrent_read = static_cast<size_t>(result);
-        else
-            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                "Exceeded limit for the number of marks per a single task for parallel replicas. "
-                "Make sure that `parallel_replicas_single_task_marks_count_multiplier` is in some reasonable boundaries, current value is: {}",
-                multiplier);
 
         CoordinationMode mode = read_type == ReadType::InOrder
             ? CoordinationMode::WithOrder
