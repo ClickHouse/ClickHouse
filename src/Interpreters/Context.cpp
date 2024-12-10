@@ -524,9 +524,6 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for application_type modified only during initialization
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
-    /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
-    std::vector<std::unique_ptr<ShellCommand>> bridge_commands TSA_GUARDED_BY(mutex);
-
     /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
     Context::ConfigReloadCallback config_reload_callback;
     Context::StartStopServersCallback start_servers_callback;
@@ -5014,12 +5011,6 @@ void Context::addQueryParameters(const NameToNameMap & parameters)
 {
     for (const auto & [name, value] : parameters)
         query_parameters.insert_or_assign(name, value);
-}
-
-void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->bridge_commands.emplace_back(std::move(cmd));
 }
 
 

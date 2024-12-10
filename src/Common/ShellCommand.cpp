@@ -61,6 +61,9 @@ LoggerPtr ShellCommand::getLogger()
 
 ShellCommand::~ShellCommand()
 {
+    if (do_not_terminate)
+        return;
+
     if (wait_called)
         return;
 
@@ -291,11 +294,48 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Co
     return executeImpl(path.data(), argv.data(), config);
 }
 
+struct ShellCommand::tryWaitResult
+{
+    bool is_process_terminated = false;
+    int retcode = -1;
+};
 
 int ShellCommand::tryWait()
 {
+    return tryWaitImpl(true).retcode;
+}
+
+ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
+{
+    LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
+
+    ShellCommand::tryWaitResult result;
+
+    int options = ((!blocking) ? WNOHANG : 0);
+    int status = 0;
+    int waitpid_retcode = -1;
+
+    while (waitpid_retcode < 0)
+    {
+        waitpid_retcode = waitpid(pid, &status, options);
+        if (waitpid_retcode > 0)
+        {
+            break;
+        }
+        if (!blocking && !waitpid_retcode)
+        {
+            result.is_process_terminated = false;
+            return result;
+        }
+        if (errno != EINTR)
+            throw ErrnoException(ErrorCodes::CANNOT_WAITPID, "Cannot waitpid");
+    }
+
+    LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
+
     wait_called = true;
 
+    result.is_process_terminated = true;
     in.close();
     out.close();
     err.close();
@@ -306,19 +346,11 @@ int ShellCommand::tryWait()
     for (auto & [_, fd] : read_fds)
         fd.close();
 
-    LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
-
-    int status = 0;
-    while (waitpid(pid, &status, 0) < 0)
-    {
-        if (errno != EINTR)
-            throw ErrnoException(ErrorCodes::CANNOT_WAITPID, "Cannot waitpid");
-    }
-
-    LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
-
     if (WIFEXITED(status))
-        return WEXITSTATUS(status);
+    {
+        result.retcode = WEXITSTATUS(status);
+        return result;
+    }
 
     if (WIFSIGNALED(status))
         throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was terminated by signal {}", toString(WTERMSIG(status)));
@@ -330,10 +362,8 @@ int ShellCommand::tryWait()
 }
 
 
-void ShellCommand::wait()
+void ShellCommand::handleProcessRetcode(int retcode) const
 {
-    int retcode = tryWait();
-
     if (retcode != EXIT_SUCCESS)
     {
         switch (retcode)
@@ -354,6 +384,23 @@ void ShellCommand::wait()
                 throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
         }
     }
+}
+
+bool ShellCommand::waitIfProccesTerminated()
+{
+    auto proc_status = tryWaitImpl(false);
+    if (proc_status.is_process_terminated)
+    {
+        handleProcessRetcode(proc_status.retcode);
+    }
+    return proc_status.is_process_terminated;
+}
+
+
+void ShellCommand::wait()
+{
+    int retcode = tryWaitImpl(true).retcode;
+    handleProcessRetcode(retcode);
 }
 
 
