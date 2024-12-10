@@ -952,7 +952,7 @@ ColumnPtr ColumnVariant::permute(const Permutation & perm, size_t limit) const
     if (hasOnlyNulls())
     {
         if (limit)
-            return cloneResized(limit);
+            return cloneResized(limit ? std::min(size(), limit) : size());
 
         /// If no limit, we can just return current immutable column.
         return this->getPtr();
@@ -1409,16 +1409,33 @@ bool ColumnVariant::structureEquals(const IColumn & rhs) const
     return true;
 }
 
-ColumnPtr ColumnVariant::compress() const
+bool ColumnVariant::dynamicStructureEquals(const IColumn & rhs) const
 {
-    ColumnPtr local_discriminators_compressed = local_discriminators->compress();
-    ColumnPtr offsets_compressed = offsets->compress();
+    const auto * rhs_variant = typeid_cast<const ColumnVariant *>(&rhs);
+    if (!rhs_variant)
+        return false;
+
+    const size_t num_variants = variants.size();
+    if (num_variants != rhs_variant->variants.size())
+        return false;
+
+    for (size_t i = 0; i < num_variants; ++i)
+        if (!variants[i]->dynamicStructureEquals(rhs_variant->getVariantByGlobalDiscriminator(globalDiscriminatorByLocal(i))))
+            return false;
+
+    return true;
+}
+
+ColumnPtr ColumnVariant::compress(bool force_compression) const
+{
+    ColumnPtr local_discriminators_compressed = local_discriminators->compress(force_compression);
+    ColumnPtr offsets_compressed = offsets->compress(force_compression);
     size_t byte_size = local_discriminators_compressed->byteSize() + offsets_compressed->byteSize();
     Columns compressed;
     compressed.reserve(variants.size());
     for (const auto & variant : variants)
     {
-        auto compressed_variant = variant->compress();
+        auto compressed_variant = variant->compress(force_compression);
         byte_size += compressed_variant->byteSize();
         compressed.emplace_back(std::move(compressed_variant));
     }

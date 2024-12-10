@@ -116,7 +116,7 @@ bool allow(
     double sum_size,
     double max_size,
     double min_age,
-    double range_size,
+    size_t range_size,
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
@@ -124,6 +124,9 @@ bool allow(
 {
     if (settings.min_age_to_force_merge && min_age >= settings.min_age_to_force_merge)
         return true;
+
+    if (settings.min_parts_to_merge_at_once && range_size < settings.min_parts_to_merge_at_once)
+        return false;
 
     /// Map size to 0..1 using logarithmic scale
     /// Use log(1 + x) instead of log1p(x) because our sum_size is always integer.
@@ -163,11 +166,13 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
 {
     auto mean = static_cast<double>(parts_count);
     std::normal_distribution<double> distribution{mean, mean / 4};
+
     size_t right_boundary = static_cast<size_t>(distribution(thread_local_rng));
     if (right_boundary > parts_count)
         right_boundary = 2 * parts_count - right_boundary;
-    if (right_boundary < parts_threshold)
-        right_boundary = parts_threshold;
+
+    right_boundary = std::max(right_boundary, parts_threshold);
+
     return right_boundary - parts_threshold;
 }
 

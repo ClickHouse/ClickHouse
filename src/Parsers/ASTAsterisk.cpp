@@ -27,19 +27,19 @@ void ASTAsterisk::appendColumnName(WriteBuffer & ostr) const
     ostr.write('*');
 }
 
-void ASTAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTAsterisk::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (expression)
     {
-        expression->formatImpl(settings, state, frame);
-        settings.ostr << ".";
+        expression->formatImpl(ostr, settings, state, frame);
+        ostr << ".";
     }
 
-    settings.ostr << "*";
+    ostr << "*";
 
     if (transformers)
     {
-        transformers->formatImpl(settings, state, frame);
+        transformers->formatImpl(ostr, settings, state, frame);
     }
 }
 

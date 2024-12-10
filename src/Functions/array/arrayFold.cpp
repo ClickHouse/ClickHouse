@@ -87,7 +87,9 @@ public:
         if (!lambda_function_with_type_and_name.column)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function", getName());
 
-        const auto * lambda_function = typeid_cast<const ColumnFunction *>(lambda_function_with_type_and_name.column.get());
+        auto lambda_function_materialized = lambda_function_with_type_and_name.column->convertToFullColumnIfConst();
+
+        const auto * lambda_function = typeid_cast<const ColumnFunction *>(lambda_function_materialized.get());
         if (!lambda_function)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function", getName());
 

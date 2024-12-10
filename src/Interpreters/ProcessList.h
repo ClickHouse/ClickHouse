@@ -43,6 +43,13 @@ class ThreadStatus;
 class ProcessListEntry;
 
 
+enum CancelReason
+{
+    UNDEFINED,
+    TIMEOUT,
+    CANCELLED_BY_USER,
+};
+
 /** Information of process list element.
   * To output in SHOW PROCESSLIST query. Does not contain any complex objects, that do something on copy or destructor.
   */
@@ -60,6 +67,7 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
+    CancelReason cancel_reason;
     bool is_all_data_sent;
 
     /// Optional fields, filled by query
@@ -109,6 +117,10 @@ protected:
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
 
+    mutable std::mutex cancel_mutex;
+    CancelReason cancel_reason { CancelReason::UNDEFINED };
+    std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
+
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
@@ -126,6 +138,8 @@ protected:
     /// Be careful using it (this function contains no synchronization).
     /// A weak pointer is used here because it's a ProcessListEntry which owns this QueryStatus, and not vice versa.
     void setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_);
+
+    [[noreturn]] void throwQueryWasCancelled() const TSA_REQUIRES(cancel_mutex);
 
     mutable std::mutex executors_mutex;
 
@@ -225,14 +239,17 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    CancellationCode cancelQuery(bool kill);
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns = 0);
+
+    /// Cancels the current query.
+    /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
+    CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
 
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
 
-    bool isAllDataSent() const { return is_all_data_sent; }
     void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
@@ -490,8 +507,8 @@ public:
     void decrementWaiters();
 
     /// Try call cancel() for input and output streams of query with specified id and user
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
-    CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+    CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     void killAllQueries();
 };

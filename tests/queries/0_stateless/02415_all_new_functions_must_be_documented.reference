@@ -124,6 +124,7 @@ arrayMax
 arrayMin
 arrayPopBack
 arrayPopFront
+arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront
@@ -319,6 +320,7 @@ geohashDecode
 geohashEncode
 geohashesInBox
 getMacro
+getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSizeOfEnumType
@@ -513,6 +515,7 @@ parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
 parseDateTime32BestEffortOrZero
+parseDateTime64
 parseDateTime64BestEffort
 parseDateTime64BestEffortOrNull
 parseDateTime64BestEffortOrZero
@@ -522,6 +525,8 @@ parseDateTime64BestEffortUSOrZero
 parseDateTime64InJodaSyntax
 parseDateTime64InJodaSyntaxOrNull
 parseDateTime64InJodaSyntaxOrZero
+parseDateTime64OrNull
+parseDateTime64OrZero
 parseDateTimeBestEffort
 parseDateTimeBestEffortOrNull
 parseDateTimeBestEffortOrZero
@@ -853,6 +858,7 @@ toUnixTimestamp
 toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano
+toUnixTimestamp64Second
 toValidUTF8
 toWeek
 toYYYYMM

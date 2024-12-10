@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/checkStackSize.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -75,6 +76,7 @@ DiskObjectStorage::DiskObjectStorage(
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
+    , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     data_source_description = DataSourceDescription{
         .type = DataSourceType::ObjectStorage,
@@ -472,6 +474,65 @@ void DiskObjectStorage::removeSharedRecursive(
     transaction->commit();
 }
 
+void DiskObjectStorage::removeSharedRecursiveWithLimit(
+    const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
+{
+    if (remove_shared_recursive_file_limit == 0)
+    {
+        removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
+        return;
+    }
+
+
+    RemoveBatchRequest local_paths;
+    std::vector<std::string> directories;
+
+    auto check_limit_reached = [&]()
+    {
+        const auto path_count = local_paths.size() + directories.size();
+        chassert(path_count <= this->remove_shared_recursive_file_limit);
+        return local_paths.size() + directories.size() == this->remove_shared_recursive_file_limit;
+    };
+
+    auto remove = [&]()
+    {
+        auto transaction = createObjectStorageTransaction();
+        if (!local_paths.empty())
+            transaction->removeSharedFiles(local_paths, keep_all_batch_data, file_names_remove_metadata_only);
+        for (auto & directory : directories)
+            transaction->removeDirectory(directory);
+        transaction->commit();
+        local_paths.clear();
+        directories.clear();
+    };
+
+    std::function<void(const std::string &)> traverse_metadata_recursive = [&](const std::string & path_to_remove)
+    {
+        checkStackSize();
+        if (check_limit_reached())
+            remove();
+
+        if (metadata_storage->existsFile(path_to_remove))
+        {
+            chassert(path_to_remove.starts_with(path));
+            local_paths.emplace_back(path_to_remove);
+        }
+        else
+        {
+            for (auto it = metadata_storage->iterateDirectory(path_to_remove); it->isValid(); it->next())
+            {
+                traverse_metadata_recursive(it->path());
+                if (check_limit_reached())
+                    remove();
+            }
+            directories.push_back(path_to_remove);
+        }
+    };
+
+    traverse_metadata_recursive(path);
+    remove();
+}
+
 bool DiskObjectStorage::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(reservation_mutex);
@@ -641,19 +702,36 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         return impl;
     };
 
+    /// Avoid cache fragmentation by choosing bigger buffer size.
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && object_storage->supportsCache()
+        && read_settings.enable_filesystem_cache;
+
+    size_t buffer_size = prefer_bigger_buffer_size
+        ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
+        : settings.remote_fs_buffer_size;
+
+    size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
+    if (total_objects_size)
+        buffer_size = std::min(buffer_size, total_objects_size);
+
     const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(read_buffer_creator),
         storage_objects,
         read_settings,
         global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */use_async_buffer);
+        /* use_external_buffer */use_async_buffer,
+        /* buffer_size */use_async_buffer ? 0 : buffer_size);
 
     if (use_async_buffer)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
         return std::make_unique<AsynchronousBoundedReadBuffer>(
-            std::move(impl), reader, read_settings,
+            std::move(impl),
+            reader,
+            read_settings,
+            buffer_size,
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
 
@@ -722,6 +800,8 @@ void DiskObjectStorage::applyNewSettings(
             write_resource_name_from_config = new_write_resource_name;
     }
 
+    remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
+
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
 }
 
@@ -732,7 +812,7 @@ void DiskObjectStorage::restoreMetadataIfNeeded(
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_key_prefix);
+        auto current_schema_version = DB::DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(object_storage.get(), object_key_prefix);
         if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 

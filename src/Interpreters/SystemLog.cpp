@@ -1,6 +1,7 @@
 #include <Interpreters/SystemLog.h>
 
 #include <base/scope_guard.h>
+#include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -87,7 +88,7 @@ namespace
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
         }
 
-        void formatImpl(const FormatSettings &, FormatState &, FormatStateStacked) const override
+        void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
         }

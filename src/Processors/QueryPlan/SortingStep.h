@@ -23,7 +23,7 @@ public:
         size_t max_block_size;
         SizeLimits size_limits;
         size_t max_bytes_before_remerge = 0;
-        double remerge_lowered_memory_bytes_ratio = 0;
+        float remerge_lowered_memory_bytes_ratio = 0;
         size_t max_bytes_before_external_sort = 0;
         TemporaryDataOnDiskScopePtr tmp_data = nullptr;
         size_t min_free_disk_space = 0;
@@ -32,6 +32,9 @@ public:
 
         explicit Settings(const Context & context);
         explicit Settings(size_t max_block_size_);
+        explicit Settings(const QueryPlanSerializationSettings & settings);
+
+        void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
     };
 
     /// Full
@@ -39,7 +42,8 @@ public:
         const Header & input_header,
         SortDescription description_,
         UInt64 limit_,
-        const Settings & settings_);
+        const Settings & settings_,
+        bool is_sorting_for_merge_join_ = false);
 
     /// Full with partitioning
     SortingStep(
@@ -81,7 +85,9 @@ public:
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
 
-    void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_);
+    bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
+
+    void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
@@ -92,6 +98,11 @@ public:
         const SortDescription & result_sort_desc,
         UInt64 limit_,
         bool skip_partial_sort = false);
+
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serialize(Serialization & ctx) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
@@ -125,9 +136,13 @@ private:
 
     SortDescription partition_by_description;
 
+    /// See `findQueryForParallelReplicas`
+    bool is_sorting_for_merge_join = false;
+
     UInt64 limit;
     bool always_read_till_end = false;
     bool use_buffering = false;
+    bool apply_virtual_row_conversions = false;
 
     Settings sort_settings;
 };

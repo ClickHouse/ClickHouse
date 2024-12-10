@@ -260,10 +260,11 @@ void ColumnDynamic::insert(const Field & x)
         /// We store values in shared variant in binary form with binary encoded type.
         auto & shared_variant = getSharedVariant();
         auto & chars = shared_variant.getChars();
-        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
-        encodeDataType(field_data_type, value_buf);
-        getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
-        value_buf.finalize();
+        {
+            WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
+            encodeDataType(field_data_type, value_buf);
+            getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
+        }
         chars.push_back(0);
         shared_variant.getOffsets().push_back(chars.size());
         variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(shared_variant_discr));
@@ -697,10 +698,11 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     size_t n)
 {
     auto & chars = shared_variant.getChars();
-    WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
-    encodeDataType(type, value_buf);
-    serialization->serializeBinary(src, n, value_buf, getFormatSettings());
-    value_buf.finalize();
+    {
+        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
+        encodeDataType(type, value_buf);
+        serialization->serializeBinary(src, n, value_buf, getFormatSettings());
+    }
     chars.push_back(0);
     shared_variant.getOffsets().push_back(chars.size());
 }
@@ -989,9 +991,9 @@ void ColumnDynamic::updatePermutation(IColumn::PermutationSortDirection directio
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
-ColumnPtr ColumnDynamic::compress() const
+ColumnPtr ColumnDynamic::compress(bool force_compression) const
 {
-    ColumnPtr variant_compressed = variant_column_ptr->compress();
+    ColumnPtr variant_compressed = variant_column_ptr->compress(force_compression);
     size_t byte_size = variant_compressed->byteSize();
     return ColumnCompressed::create(size(), byte_size,
         [my_variant_compressed = std::move(variant_compressed), my_variant_info = variant_info, my_max_dynamic_types = max_dynamic_types, my_global_max_dynamic_types = global_max_dynamic_types, my_statistics = statistics]() mutable
@@ -1206,6 +1208,15 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
 
         variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
     }
+}
+
+bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_concrete = typeid_cast<const ColumnDynamic *>(&rhs))
+        return max_dynamic_types == rhs_concrete->max_dynamic_types && global_max_dynamic_types == rhs_concrete->global_max_dynamic_types
+            && variant_info.variant_name == rhs_concrete->variant_info.variant_name
+            && variant_column->dynamicStructureEquals(*rhs_concrete->variant_column);
+    return false;
 }
 
 void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)

@@ -8,6 +8,7 @@
 
 #include <Poco/Logger.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -229,6 +230,14 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Data type of argument for minmax index must be comparable, got {} type for column {} instead",
+                column.type->getName(), column.name);
+        }
+
+        if (isDynamic(column.type) || isVariant(column.type))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{} data type of column {} is not allowed in minmax index because the column of that type can contain values with different data "
+                "types. Consider using typed subcolumns or cast column to a specific data type",
                 column.type->getName(), column.name);
         }
     }

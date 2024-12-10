@@ -2,12 +2,16 @@
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
 
@@ -27,6 +31,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_sort;
+    extern const SettingsDouble max_bytes_ratio_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
     extern const SettingsUInt64 max_bytes_to_sort;
     extern const SettingsUInt64 max_rows_to_sort;
@@ -40,6 +45,9 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_DATA;
 }
 
 SortingStep::Settings::Settings(const Context & context)
@@ -54,11 +62,62 @@ SortingStep::Settings::Settings(const Context & context)
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
+
+    if (settings[Setting::max_bytes_ratio_before_external_sort] != 0.)
+    {
+        if (settings[Setting::max_bytes_before_external_sort] > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings max_bytes_ratio_before_external_sort and max_bytes_before_external_sort cannot be set simultaneously");
+
+        double ratio = settings[Setting::max_bytes_ratio_before_external_sort];
+        if (ratio < 0 || ratio >= 1.)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
+
+        auto available_system_memory = getMostStrictAvailableSystemMemory();
+        if (available_system_memory.has_value())
+        {
+            max_bytes_before_external_sort = static_cast<size_t>(*available_system_memory * ratio);
+            LOG_TEST(getLogger("SortingStep"), "Set max_bytes_before_external_sort={} (ratio: {}, available system memory: {})",
+                formatReadableSizeWithBinarySuffix(max_bytes_before_external_sort),
+                ratio,
+                formatReadableSizeWithBinarySuffix(*available_system_memory));
+        }
+        else
+        {
+            LOG_WARNING(getLogger("SortingStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_sort");
+        }
+    }
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
 {
     max_block_size = max_block_size_;
+}
+
+SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
+{
+    max_block_size = settings.max_block_size;
+    size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
+    max_bytes_before_remerge = settings.max_bytes_before_remerge_sort;
+    remerge_lowered_memory_bytes_ratio = settings.remerge_sort_lowered_memory_bytes_ratio;
+    max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
+    tmp_data = Context::getGlobalContextInstance()->getTempDataOnDisk();
+    min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
+    max_block_bytes = settings.prefer_external_sort_block_bytes;
+    read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
+}
+
+void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings.max_block_size = max_block_size;
+    settings.max_rows_to_sort = size_limits.max_rows;
+    settings.max_bytes_to_sort = size_limits.max_bytes;
+    settings.sort_overflow_mode = size_limits.overflow_mode;
+
+    settings.max_bytes_before_remerge_sort = max_bytes_before_remerge;
+    settings.remerge_sort_lowered_memory_bytes_ratio = remerge_lowered_memory_bytes_ratio;
+    settings.max_bytes_before_external_sort = max_bytes_before_external_sort;
+    settings.min_free_disk_space_for_temporary_data = min_free_disk_space;
+    settings.prefer_external_sort_block_bytes = max_block_bytes;
 }
 
 static ITransformingStep::Traits getTraits(size_t limit)
@@ -77,13 +136,11 @@ static ITransformingStep::Traits getTraits(size_t limit)
 }
 
 SortingStep::SortingStep(
-    const Header & input_header,
-    SortDescription description_,
-    UInt64 limit_,
-    const Settings & settings_)
+    const Header & input_header, SortDescription description_, UInt64 limit_, const Settings & settings_, bool is_sorting_for_merge_join_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::Full)
     , result_description(std::move(description_))
+    , is_sorting_for_merge_join(is_sorting_for_merge_join_)
     , limit(limit_)
     , sort_settings(settings_)
 {
@@ -147,11 +204,12 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_)
+void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
 {
     type = Type::FinishSorting;
     prefix_description = std::move(prefix_description_);
     use_buffering = use_buffering_;
+    apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
@@ -255,7 +313,10 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
-            always_read_till_end);
+            always_read_till_end,
+            nullptr,
+            false,
+            apply_virtual_row_conversions);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -280,9 +341,9 @@ void SortingStep::mergeSorting(
             if (increase_sort_description_compile_attempts)
                 increase_sort_description_compile_attempts = false;
 
-            auto tmp_data_on_disk = sort_settings.tmp_data
-                ? std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort)
-                : std::unique_ptr<TemporaryDataOnDisk>();
+            TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
+            if (sort_settings.tmp_data)
+                tmp_data_on_disk = sort_settings.tmp_data->childScope(CurrentMetrics::TemporaryFilesForSort);
 
             return std::make_shared<MergeSortingTransform>(
                 header,
@@ -421,6 +482,54 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
     if (limit)
         map.add("Limit", limit);
+}
+
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    sort_settings.updatePlanSettings(settings);
+}
+
+void SortingStep::serialize(Serialization & ctx) const
+{
+    if (type != Type::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of SortingStep is implemented only for Full sorting");
+
+    /// Do not serialize type here; Later we can use different names if needed.\
+
+    /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
+
+    serializeSortDescription(result_description, ctx.out);
+
+    /// Later
+    if (!partition_by_description.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
+
+    writeVarUInt(partition_by_description.size(), ctx.out);
+}
+
+std::unique_ptr<IQueryPlanStep> SortingStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "SortingStep must have one input stream");
+
+    SortingStep::Settings sort_settings(ctx.settings);
+
+    SortDescription result_description;
+    deserializeSortDescription(result_description, ctx.in);
+
+    UInt64 partition_desc_size;
+    readVarUInt(partition_desc_size, ctx.in);
+
+    if (partition_desc_size)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
+
+    return std::make_unique<SortingStep>(
+        ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
+}
+
+void registerSortingStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Sorting", SortingStep::deserialize);
 }
 
 }

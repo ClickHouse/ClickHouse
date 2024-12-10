@@ -18,6 +18,7 @@ private:
         FILL_FROM,
         FILL_TO,
         FILL_STEP,
+        FILL_STALENESS,
     };
 
 public:
@@ -32,12 +33,14 @@ public:
     void setFillFrom(ASTPtr node)  { setChild(Child::FILL_FROM, node); }
     void setFillTo(ASTPtr node)    { setChild(Child::FILL_TO, node);   }
     void setFillStep(ASTPtr node)  { setChild(Child::FILL_STEP, node); }
+    void setFillStaleness(ASTPtr node)  { setChild(Child::FILL_STALENESS, node); }
 
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
     ASTPtr getCollation() const { return getChild(Child::COLLATION); }
     ASTPtr getFillFrom()  const { return getChild(Child::FILL_FROM); }
     ASTPtr getFillTo()    const { return getChild(Child::FILL_TO);   }
     ASTPtr getFillStep()  const { return getChild(Child::FILL_STEP); }
+    ASTPtr getFillStaleness()  const { return getChild(Child::FILL_STALENESS); }
 
     String getID(char) const override { return "OrderByElement"; }
 
@@ -51,7 +54,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 private:
 
     ASTPtr getChild(Child child) const

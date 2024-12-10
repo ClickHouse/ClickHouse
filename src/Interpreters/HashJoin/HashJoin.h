@@ -1,9 +1,11 @@
 #pragma once
 
-#include <memory>
-#include <variant>
-#include <optional>
+#include <algorithm>
 #include <deque>
+#include <memory>
+#include <optional>
+#include <ranges>
+#include <variant>
 #include <vector>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -12,22 +14,18 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/RowRefs.h>
 
-#include <Common/Arena.h>
-#include <Common/ColumnsHashing.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/FixedHashMap.h>
-#include <Storages/TableLockHolder.h>
-
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-
-#include <QueryPipeline/SizeLimits.h>
-
+#include <Columns/ColumnString.h>
 #include <Core/Block.h>
-
-#include <Storages/IStorage_fwd.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/TableLockHolder.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/FixedHashMap.h>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -127,7 +125,7 @@ public:
 
     bool isCloneSupported() const override
     {
-        return true;
+        return !getTotals() && getTotalRowCount() == 0;
     }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
@@ -142,12 +140,20 @@ public:
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
 
+    /// Called directly from ConcurrentJoin::addBlockToJoin
+    bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
+
     void checkTypesOfKeys(const Block & block) const override;
+
+    using IJoin::joinBlock;
 
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
     void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
+
+    /// Called directly from ConcurrentJoin::joinBlock
+    void joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -327,8 +333,17 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    using RawBlockPtr = const Block *;
-    using BlockNullmapList = std::deque<std::pair<RawBlockPtr, ColumnPtr>>;
+    using RawBlockPtr = const ScatteredBlock *;
+    struct NullMapHolder
+    {
+        size_t allocatedBytes() const { return !column->empty() ? column->allocatedBytes() * block->rows() / column->size() : 0; }
+
+        RawBlockPtr block;
+        ColumnPtr column;
+    };
+    using BlockNullmapList = std::deque<NullMapHolder>;
+
+    using ScatteredBlocksList = std::list<ScatteredBlock>;
 
     struct RightTableData
     {
@@ -337,7 +352,7 @@ public:
 
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        BlocksList blocks; /// Blocks of "right" table.
+        ScatteredBlocksList blocks; /// Blocks of "right" table.
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
@@ -389,6 +404,9 @@ public:
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
+    void materializeColumnsFromLeftBlock(Block & block) const;
+    Block materializeColumnsFromRightBlock(Block block) const;
+
 private:
     friend class NotJoinedHash;
 
@@ -423,8 +441,9 @@ private:
     std::vector<Sizes> key_sizes;
 
     /// Needed to do external cross join
-    TemporaryDataOnDiskPtr tmp_data;
-    TemporaryFileStream* tmp_stream{nullptr};
+    TemporaryDataOnDiskScopePtr tmp_data;
+    std::optional<TemporaryBlockStreamHolder> tmp_stream;
+    mutable std::once_flag finish_writing;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -464,6 +483,9 @@ private:
 
     bool empty() const;
 
+    bool isUsedByAnotherAlgorithm() const;
+    bool canRemoveColumnsFromLeftBlock() const;
+
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
@@ -472,5 +494,4 @@ private:
     void tryRerangeRightTableDataImpl(Map & map);
     void doDebugAsserts() const;
 };
-
 }

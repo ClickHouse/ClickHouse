@@ -95,11 +95,11 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
+        ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
                     << " " << (settings.hilite ? hilite_none : "");
-        database->formatImpl(settings, state, frame);
+        database->formatImpl(ostr, settings, state, frame);
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Exists; }
@@ -117,11 +117,11 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
+        ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
                       << " " << (settings.hilite ? hilite_none : "");
-        database->formatImpl(settings, state, frame);
+        database->formatImpl(ostr, settings, state, frame);
     }
 };
 
@@ -148,11 +148,11 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Describe; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
+        ostr << (settings.hilite ? hilite_keyword : "")
                       << "DESCRIBE TABLE" << (settings.hilite ? hilite_none : "");
-        table_expression->formatImpl(settings, state, frame);
+        table_expression->formatImpl(ostr, settings, state, frame);
     }
 
 };
