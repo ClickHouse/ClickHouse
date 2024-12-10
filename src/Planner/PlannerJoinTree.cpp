@@ -2014,20 +2014,23 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     if (joins_count > 1 && is_full_join)
         planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
 
-    /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
-      * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
-      *
-      * Examples: Distributed, LiveView, Merge storages.
-      */
-    // find parent node in the table expressions stack
+    // in case of n-way JOINs the table expression stack contains several join nodes
+    // so, we need to find right parent node for a table expression to pass into buildQueryPlanForTableExpression()
     QueryTreeNodePtr parent_join_tree = join_tree_node;
     for (const auto & node : table_expressions_stack)
+    {
         if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
         {
             parent_join_tree = node;
             break;
         }
+    }
 
+    /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
+      * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
+      *
+      * Examples: Distributed, LiveView, Merge storages.
+      */
     auto left_table_expression = table_expressions_stack.front();
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
         left_table_expression,
@@ -2102,7 +2105,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 continue;
             }
 
-            // find parent node
+            // find parent join node
             parent_join_tree.reset();
             for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
             {
