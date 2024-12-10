@@ -493,7 +493,6 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     for (const auto & node : nodes)
     {
         bool node_is_compilable_in_isolation = isCompilableFunction(node, lazy_executed_nodes) && !isCompilableConstant(node);
-        std::cout << "node:" << node.result_name << " is_compilable_in_isolation:" << node_is_compilable_in_isolation << std::endl;
         node_to_data[&node].is_compilable_in_isolation = node_is_compilable_in_isolation;
     }
 

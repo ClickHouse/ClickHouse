@@ -49,15 +49,6 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
                 for (auto argument_index : node.arguments)
                     temporary_values.emplace_back(compiled_values[argument_index]);
 
-                if (node.function->getName() == "sparkDecimalDivide")
-                {
-                    for (size_t j = 0; j < temporary_values.size(); ++j)
-                    {
-                        std::cout << "argument[" << j << "] = " << reinterpret_cast<uintptr_t>(temporary_values[j].value)
-                                  << " type:" << temporary_values[j].type->getName() << std::endl;
-                    }
-                }
-
                 ValueWithType compiled_value{node.function->compile(builder, temporary_values), node.function->getResultType()};
                 if (!node.result_type->equals(*node.function->getResultType()))
                     compiled_values[compiled_values_index] = {nativeCast(b, compiled_value, node.result_type), node.result_type};
