@@ -34,6 +34,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
+#include <ranges>
 namespace DB
 {
 namespace Setting
@@ -489,7 +490,7 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
             case QueryTreeNodeType::CROSS_JOIN:
             {
                 auto & join_node = node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : join_node.getTableExpressions())
+                for (const auto & expr : std::ranges::reverse_view(join_node.getTableExpressions()))
                     nodes_to_process.push_front(expr);
                 break;
             }

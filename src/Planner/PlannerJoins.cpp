@@ -884,11 +884,10 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
     trySetStorageInTableJoin(right_table_expression, table_join);
 
-    auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
-
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
     {
+        auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
         Names required_column_names;
         for (const auto & result_column : right_table_expression_header)
         {
