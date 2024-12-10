@@ -75,57 +75,75 @@ result=$(${CLICKHOUSE_CLIENT} -q "
     echo "{\"min_compress_block_size\":\"$min_present\",\"max_block_size\":\"$max_present\",\"max_execution_time\":\"$execution_time_present\"}"
 }
 
-function check_http_attributes()
-{
-result=$(${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
-    SELECT attribute['http.referer'],
-           attribute['http.user.agent'],
-           attribute['http.method']
-    FROM system.opentelemetry_span_log
-    WHERE finish_date                      >= yesterday()
-    AND   operation_name                   = 'query'
-    AND   attribute['clickhouse.query_id'] = '${1}'
-    FORMAT JSONEachRow;
-  ")
+function check_tcp_attributes() {
+  local query_id="$1"
+  local result
+  local client_version="not found"
+
+  result=$(${CLICKHOUSE_CLIENT} -q "
+      SYSTEM FLUSH LOGS;
+      SELECT attribute['client.version']
+      FROM system.opentelemetry_span_log
+      WHERE finish_date >= yesterday()
+      AND operation_name = 'query'
+      AND attribute['clickhouse.query_id'] = '${query_id}'
+      FORMAT JSONEachRow;
+    ")
+
   if [[ -z "$result" ]]; then
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
-    result_json=$(check_http_attributes_in_result "$result")
-    echo "$result_json"
+
+  # Check if the result contains 'client.version'
+  if echo "$result" | jq -e '.[]."client.version" != null' > /dev/null; then
+    client_version="present"
+  fi
+
+  echo "{\"client.version\":\"$client_version\"}"
 }
 
-# Function to execute HTTP query
-function execute_query_HTTP()
-{
-    query_id="$1"
-    query="$2"
-    #HTTP_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=${CLICKHOUSE_DATABASE}&query_id=${query_id}"
-    #${CLICKHOUSE_CURL} -X GET -d "${query}" "${HTTP_URL}" 2>/dev/null
-    #${CLICKHOUSE_CURL} -sS "${HTTP_URL}" -d "${query}"
-    HTTP_URL="${CLICKHOUSE_URL}&database=${CLICKHOUSE_DATABASE}&query_id=${query_id}"
-    ${CLICKHOUSE_CURL} -sS "${HTTP_URL}" -d "${query}"
+function check_http_attributes() {
+  local query_id="$1"
+  local result
+  local referer="not found"
+  local agent="not found"
+  local method="not found"
+
+  result=$(${CLICKHOUSE_CLIENT} -q "
+      SYSTEM FLUSH LOGS;
+      SELECT attribute['http.referer'],
+             attribute['http.user.agent'],
+             attribute['http.method']
+      FROM system.opentelemetry_span_log
+      WHERE finish_date >= yesterday()
+      AND operation_name = 'query'
+      AND attribute['clickhouse.query_id'] = '${query_id}'
+      FORMAT JSONEachRow;
+    ")
+
+  if [[ -z "$result" ]]; then
+    echo "Error: No result returned from ClickHouse server"
+    return 1
+  fi
+
+  # Check each attribute using jq
+  if echo "$result" | jq -e '.[]."http.referer" != null' > /dev/null; then
+    referer="present"
+  fi
+
+  if echo "$result" | jq -e '.[]."http.user.agent" != null' > /dev/null; then
+    agent="present"
+  fi
+
+  if echo "$result" | jq -e '.[]."http.method" != null' > /dev/null; then
+    method="present"
+  fi
+
+  echo "{\"http.referer\":\"$referer\",\"http.user.agent\":\"$agent\",\"http.method\":\"$method\"}"
 }
 
-# Function to check if specific HTTP attributes are present in the result
-function check_http_attributes_in_result()
-{
-    local result="$1"
-    local referer="not found"
-    local agent="not found"
-    local method="not found"
-    if [[ $result == *"http.referer"* ]]; then
-        referer="present"
-    fi
-    if [[ $result == *"http.user.agent"* ]]; then
-        agent="present"
-    fi
-    if [[ $result == *"http.method"* ]]; then
-        method="present"
-    fi
-    echo "{\"http.referer\":\"$referer\",\"http.user.agent\":\"$agent\",\"http.method\":\"$method\"}"
-}
+
 #
 # Set up
 #
@@ -164,7 +182,7 @@ check_query_settings "$query_id" "max_execution_time"
 # Test 6: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
 execute_query $query_id 'select * from opentelemetry_test format Null'
-check_http_attributes $query_id
+check_tcp_attributes $query_id
 
 # Test 7: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
