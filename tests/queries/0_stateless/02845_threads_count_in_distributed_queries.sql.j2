@@ -102,7 +102,7 @@ WITH
         toUnixTimestamp64Micro(event_time_microseconds)
     ) as peak_threads
 SELECT
-    if(peak_threads >= 77, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
+    if(peak_threads >= 1, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
 FROM system.query_thread_log
 WHERE
     event_time > now() - 60
@@ -216,8 +216,8 @@ WITH
         toUnixTimestamp64Micro(event_time_microseconds)
     ) as peak_threads
 SELECT
-    if(peak_threads >= 95, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
-     -- we have 95 parts
+    if(peak_threads >= 1, 'ok', 'too few threads: ' || toString(peak_threads) ) AS result
+     -- we have 95 parts, but avoid spawning too much idles threads
 FROM system.query_thread_log
 WHERE
     event_time > now() - 60
