@@ -43,7 +43,7 @@ def test_two_new_versions(start_cluster):
 
     query_id = str(uuid.uuid4())
     current.query(
-        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables);",
+        "SELECT * FROM clusterAllReplicas('test_cluster_mixed', system.tables);",
         query_id=query_id,
     )
 
@@ -73,7 +73,7 @@ WHERE initial_query_id = '{query_id}';"""
 
     query_id = str(uuid.uuid4())
     backward.query(
-        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables)",
+        "SELECT * FROM clusterAllReplicas('test_cluster_mixed', system.tables)",
         query_id=query_id,
     )
 
@@ -108,7 +108,7 @@ WHERE initial_query_id = '{query_id}';"""
     # to the remote server.
     query_id = str(uuid.uuid4())
     current.query(
-        "SELECT name FROM clusterAllReplicas('test_cluster_mixed', system.tables) SETTINGS enable_analyzer = 1;",
+        "SELECT * FROM clusterAllReplicas('test_cluster_mixed', system.tables) SETTINGS enable_analyzer = 1;",
         query_id=query_id,
     )
 
