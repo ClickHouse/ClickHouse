@@ -110,7 +110,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
     auto format_element = [&](const String & elem_name)
     {
         ostr << (settings.hilite ? hilite_identifier : "");
-        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterIfAny(elem_name))
+        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
         {
             ostr << special_delimiter_and_identifier->first;
             settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);

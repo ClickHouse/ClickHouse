@@ -66,7 +66,7 @@ public:
     {
     }
 
-    static std::optional<std::pair<char, String>> splitSpecialDelimiterIfAny(const String & name);
+    static std::optional<std::pair<char, String>> splitSpecialDelimiterAndIdentifierIfAny(const String & name);
 
 protected:
     enum class SpecialDelimiter : char
