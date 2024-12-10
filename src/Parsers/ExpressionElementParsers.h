@@ -66,6 +66,8 @@ public:
     {
     }
 
+    /// Checks if the identirier is actually a pair of a special delimiter and the identifier in back quotes.
+    /// For example: :`UInt64` or ^`path` from special JSON subcolumns.
     static std::optional<std::pair<char, String>> splitSpecialDelimiterAndIdentifierIfAny(const String & name);
 
 protected:

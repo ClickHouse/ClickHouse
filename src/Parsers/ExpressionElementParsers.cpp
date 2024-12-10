@@ -417,6 +417,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
 std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(const String & name)
 {
+    /// Identifier with special delimiter looks like this: <special_delimiter>`<identifier>`.
     if (name.size() < 3
         || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
         || name[1] != '`' || name.back() != '`')
