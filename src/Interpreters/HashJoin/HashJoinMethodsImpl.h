@@ -358,12 +358,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         if (added_columns.additional_filter_expression)
         {
             const bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "__PRETTY_FUNCTION__={}, __LINE__={}, mark_per_row_used={}",
-                __PRETTY_FUNCTION__,
-                __LINE__,
-                mark_per_row_used);
             return joinRightColumnsWithAddtitionalFilter<KeyGetter, Map>(
                 std::forward<std::vector<KeyGetter>>(key_getter_vector),
                 mapv,
@@ -576,14 +570,12 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
             result_column = ColumnUInt8::create();
             break;
         }
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         const Block & sample_right_block = *((*selected_rows.begin())->block);
         if (!sample_right_block || !added_columns.additional_filter_expression)
         {
             auto filter = ColumnUInt8::create();
             filter->insertMany(1, selected_rows.size());
             result_column = std::move(filter);
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             break;
         }
 
@@ -593,7 +585,6 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
             Block block;
             added_columns.additional_filter_expression->execute(block);
             result_column = block.getByPosition(0).column->cloneResized(selected_rows.size());
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             break;
         }
         NameSet required_column_names;
@@ -610,14 +601,6 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
                 for (const auto & selected_row : selected_rows)
                 {
                     const auto & src_col = selected_row->block->getByPosition(right_col_pos);
-                    if (executed_block.columns() == 0)
-                        LOG_DEBUG(
-                            &Poco::Logger::get("debug"),
-                            "__PRETTY_FUNCTION__={}, __LINE__={}, src_col.name={}, selected_row->row_num={}",
-                            __PRETTY_FUNCTION__,
-                            __LINE__,
-                            src_col.name,
-                            selected_row->row_num);
                     new_col->insertFrom(*src_col.column, selected_row->row_num);
                 }
                 executed_block.insert({std::move(new_col), col.type, col.name});
@@ -637,9 +620,7 @@ ColumnPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::buildAdditionalFilter
                 const size_t & left_offset = row_replicate_offset[i];
                 size_t rows = left_offset - prev_left_offset;
                 if (rows)
-                {
                     new_col->insertManyFrom(*src_col->column, selector[left_start_row + i - 1], rows);
-                }
                 prev_left_offset = left_offset;
             }
             executed_block.insert({std::move(new_col), src_col->type, col_name});

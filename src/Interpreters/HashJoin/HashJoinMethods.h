@@ -9,10 +9,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-#include "Parsers/ExpressionListParsers.h"
-
 namespace DB
 {
 /// Inserting an element into a hash table of the form `key -> reference to a string`, which will then be used by JOIN.
