@@ -404,6 +404,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     {
         modified_client_info.setInitialQuery();
         modified_client_info.client_name = "ClickHouse server";
+        modified_client_info.interface = ClientInfo::Interface::TCP;
     }
     else
         modified_client_info.query_kind = query_kind;
