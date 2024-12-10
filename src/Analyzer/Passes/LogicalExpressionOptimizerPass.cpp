@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include "Analyzer/IQueryTreeNode.h"
 
 namespace DB
 {
