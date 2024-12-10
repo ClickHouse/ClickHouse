@@ -338,14 +338,14 @@ def test_materialzed_views_replicated(started_cluster):
         node.query(
             f"""
             CREATE DATABASE test_mv;
-            CREATE TABLE test_mv.test_table_src(id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_src', '{nodenum}')
+            CREATE TABLE test_mv.test_table_H(id UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_H', '{nodenum}')
             ORDER BY id;
-            CREATE TABLE test_mv.test_table_dst(id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_dst', '{nodenum}')
+            CREATE TABLE test_mv.test_table_S(id UInt32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_S', '{nodenum}')
             ORDER BY id;
-            CREATE MATERIALIZED VIEW test_mv.test_mv TO test_mv.test_table_dst
-            AS SELECT id FROM test_mv.test_table_src;
+            CREATE MATERIALIZED VIEW test_mv.test_mv TO test_mv.test_table_S
+            AS SELECT id FROM test_mv.test_table_H;
             """
         )
         nodenum += 1
@@ -360,7 +360,7 @@ def test_materialzed_views_replicated(started_cluster):
         event.set()
 
     for i in range(100):
-        node1.query(f"INSERT INTO test_mv.test_table_src SETTINGS prefer_localhost_replica={plr} VALUES({i}) ")
+        node1.query(f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i}) ")
 
     job = p.apply_async(
         reload_node,
@@ -373,7 +373,7 @@ def test_materialzed_views_replicated(started_cluster):
     i = 0
     for i in range(100, 130):
         try:
-            node1.query(f"INSERT INTO test_mv.test_table_src SETTINGS prefer_localhost_replica={plr} VALUES({i})")
+            node1.query(f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i})")
         except QueryRuntimeException as e:
             time.sleep(0.1)
     logging.debug(f"i is {i}")
@@ -381,21 +381,22 @@ def test_materialzed_views_replicated(started_cluster):
     disconnect_event.wait(90)
 
     for i in range(2000, 2100):
-        node1.query(f"INSERT INTO test_mv.test_table_src SETTINGS prefer_localhost_replica={plr} VALUES({i})")
+        node1.query(f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i})")
 
-    src_rows = node1.query("select count(*) from test_mv.test_table_src Format CSV")
-    logging.debug(f"{src_rows} are found in test_mv.test_table_src")
-    assert node1.query("select count(*) from test_mv.test_table_dst Format CSV") == src_rows
+    src_rows = node1.query("select count(*) from test_mv.test_table_H Format CSV")
+    logging.debug(f"{src_rows} are found in test_mv.test_table_H (src)")
 
     job.wait()
     p.close()
     p.join()
 
+    assert node1.query("select count(*) from test_mv.test_table_S Format CSV") == src_rows
+
     for node in [node1, node2]:
         node.query(
             f"""
-            DROP TABLE test_mv.test_table_dst SYNC;
-            DROP TABLE test_mv.test_table_src SYNC;
+            DROP TABLE test_mv.test_table_H SYNC;
+            DROP TABLE test_mv.test_table_S SYNC;
             DROP VIEW test_mv.test_mv SYNC;
             DROP DATABASE test_mv SYNC;
             """

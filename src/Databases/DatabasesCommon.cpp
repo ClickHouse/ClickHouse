@@ -441,8 +441,6 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         for (auto metric : getAttachedCountersForStorage(table))
             CurrentMetrics::add(metric);
     }
-
-    // if (DatabaseCatalog::iiMa
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
