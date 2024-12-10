@@ -129,7 +129,7 @@ public:
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
     UInt64 getNumberOfDefaultRows() const override { throwMustBeDecompressed(); }
-    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t, ssize_t) const override { throwMustBeDecompressed(); }
 
     bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
     void takeDynamicStructureFromSourceColumns(const Columns &) override { throwMustBeDecompressed(); }

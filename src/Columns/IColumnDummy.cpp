@@ -122,7 +122,7 @@ UInt64 IColumnDummy::getNumberOfDefaultRows() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
 }
 
-void IColumnDummy::getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const
+void IColumnDummy::getIndicesOfNonDefaultRows(Offsets &, size_t, size_t, ssize_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());
 }

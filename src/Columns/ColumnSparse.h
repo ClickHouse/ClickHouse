@@ -28,7 +28,7 @@ private:
 
 public:
     static constexpr auto DEFAULT_ROWS_SEARCH_SAMPLE_RATIO = 0.1;
-    static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.95;
+    static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.9375f;
 
     using Base = COWHelper<IColumnHelper<ColumnSparse>, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
@@ -143,7 +143,7 @@ public:
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
 
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit, ssize_t) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     UInt64 getNumberOfDefaultRows() const override;
 
