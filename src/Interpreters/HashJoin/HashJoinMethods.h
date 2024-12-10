@@ -11,6 +11,7 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include "Parsers/ExpressionListParsers.h"
 
 namespace DB
 {
@@ -149,9 +150,10 @@ private:
     template <bool need_filter>
     static void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]]);
 
-    template <typename AddedColumns>
+    template <typename AddedColumns, typename Selector>
     static ColumnPtr buildAdditionalFilter(
         size_t left_start_row,
+        const Selector & selector,
         const std::vector<const RowRef *> & selected_rows,
         const std::vector<size_t> & row_replicate_offset,
         AddedColumns & added_columns);
