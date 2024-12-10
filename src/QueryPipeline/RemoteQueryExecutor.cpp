@@ -398,7 +398,11 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
-    modified_client_info.query_kind = query_kind;
+
+    if (is_remote_function)
+        modified_client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    else
+        modified_client_info.query_kind = query_kind;
 
     if (!duplicated_part_uuids.empty())
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
