@@ -48,7 +48,7 @@ public:
 
     /// Adds a table with specified dependencies if there are no dependencies of the table in the graph yet;
     /// otherwise it replaces the dependencies of the table in the graph and shows a warning.
-    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & dependencies);
+    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & dependencies, bool add_only = false);
     void addDependencies(const StorageID & table_id, const TableNamesSet & dependencies);
     void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & dependencies);
 
@@ -76,7 +76,7 @@ public:
     std::vector<StorageID> getTables() const;
 
     /// Adds tables and dependencies with another graph.
-    void mergeWith(const TablesDependencyGraph & other);
+    void mergeWith(const TablesDependencyGraph & other, bool add_only = false);
 
     /// Returns a list of dependencies of a specified table.
     std::vector<StorageID> getDependencies(const StorageID & table_id) const;

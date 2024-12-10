@@ -751,15 +751,15 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
 void StorageMaterializedView::pushDependencies()
 {
-    // assert(!dependencies_are_tracked);
-    if (!dependencies_are_tracked)
-    {
-        auto metadata_snapshot = getInMemoryMetadataPtr();
-        const auto & select_query = metadata_snapshot->getSelectQuery();
-        if (!select_query.select_table_id.empty())
-            DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
-        dependencies_are_tracked = true;
-    }
+    // // assert(!dependencies_are_tracked);
+    // if (!dependencies_are_tracked)
+    // {
+    //     auto metadata_snapshot = getInMemoryMetadataPtr();
+    //     const auto & select_query = metadata_snapshot->getSelectQuery();
+    //     if (!select_query.select_table_id.empty())
+    //         DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
+    //     dependencies_are_tracked = true;
+    // }
 }
 
 void StorageMaterializedView::startup()
@@ -774,6 +774,16 @@ void StorageMaterializedView::startup()
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             LOG_DEBUG(&Poco::Logger::get("StorageMaterializedView"), "woken up in startup of {}", getStorageID().table_name);
         }
+    }
+
+    // assert(!dependencies_are_tracked);
+    if (!dependencies_are_tracked)
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr();
+        const auto & select_query = metadata_snapshot->getSelectQuery();
+        if (!select_query.select_table_id.empty())
+            DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
+        dependencies_are_tracked = true;
     }
 
     pushDependencies();

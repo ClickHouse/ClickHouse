@@ -1458,11 +1458,14 @@ void DatabaseCatalog::addDependencies(
 }
 
 void DatabaseCatalog::addDependencies(
-    const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies)
+    const TablesDependencyGraph & new_referential_dependencies,
+    const TablesDependencyGraph & new_loading_dependencies,
+    const TablesDependencyGraph & new_mv_dependencies)
 {
     std::lock_guard lock{databases_mutex};
     referential_dependencies.mergeWith(new_referential_dependencies);
     loading_dependencies.mergeWith(new_loading_dependencies);
+    view_dependencies.mergeWith(new_mv_dependencies);
 }
 
 std::vector<StorageID> DatabaseCatalog::getReferentialDependencies(const StorageID & table_id) const
