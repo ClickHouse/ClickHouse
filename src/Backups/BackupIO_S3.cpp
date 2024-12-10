@@ -52,6 +52,9 @@ namespace S3RequestSetting
 {
     extern const S3RequestSettingsBool allow_native_copy;
     extern const S3RequestSettingsString storage_class_name;
+    extern const S3RequestSettingsUInt64 http_max_fields;
+    extern const S3RequestSettingsUInt64 http_max_field_name_size;
+    extern const S3RequestSettingsUInt64 http_max_field_value_size;
 }
 
 namespace ErrorCodes
@@ -100,6 +103,9 @@ namespace
         client_configuration.requestTimeoutMs = 60 * 60 * 1000;
         client_configuration.http_keep_alive_timeout = S3::DEFAULT_KEEP_ALIVE_TIMEOUT;
         client_configuration.http_keep_alive_max_requests = S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS;
+        client_configuration.http_max_fields = request_settings[S3RequestSetting::http_max_fields];
+        client_configuration.http_max_field_name_size = request_settings[S3RequestSetting::http_max_field_name_size];
+        client_configuration.http_max_field_value_size = request_settings[S3RequestSetting::http_max_field_value_size];
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
