@@ -415,6 +415,19 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     return true;
 }
 
+std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDelimiterIfAny(const String & name)
+{
+    if (name.size() < 3
+        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
+        || name[1] != '`' || name.back() != '`')
+        return std::nullopt;
+
+    String identifier;
+    ReadBufferFromMemory buf(name.data() + 1, name.size() - 1);
+    readBackQuotedString(identifier, buf);
+    return std::make_pair(name[0], identifier);
+}
+
 
 ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 {

@@ -61,6 +61,14 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
+    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
+        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
+    {
+    }
+
+    static std::optional<std::pair<char, String>> splitSpecialDelimiterIfAny(const String & name);
+
+protected:
     enum class SpecialDelimiter : char
     {
         NONE = '\0',
@@ -68,12 +76,6 @@ public:
         JSON_PATH_PREFIX = '^',
     };
 
-    explicit ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false, bool allow_query_parameter_ = false, Highlight highlight_type_ = Highlight::identifier)
-        : table_name_with_optional_uuid(table_name_with_optional_uuid_), allow_query_parameter(allow_query_parameter_), highlight_type(highlight_type_)
-    {
-    }
-
-protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
     bool table_name_with_optional_uuid;
