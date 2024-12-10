@@ -460,7 +460,6 @@ dmesg -T > dmesg.log ||:
 zstd --threads=0 --rm server.log
 zstd --threads=0 --rm fuzzer.log
 
-SQL_LOG_LINK=''
 if [ -f $FUZZER_OUTPUT_SQL_FILE ]; then
     zstd --threads=0 --rm $FUZZER_OUTPUT_SQL_FILE
 fi
