@@ -97,6 +97,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"exact_rows_before_limit", trueOrFalse},
     {"extremes", trueOrFalse},
     {"final", trueOrFalse},
+    {"filesystem_cache_prefer_bigger_buffer_size", trueOrFalse},
     {"filesystem_cache_segments_batch_size",
      [](RandomGenerator & rg, std::string & ret)
      {
@@ -596,6 +597,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"read_in_order_two_level_merge_threshold",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.RandomInt<uint32_t>(0, 100)); }},
     {"read_in_order_use_buffering", trueOrFalse},
+    {"read_in_order_use_virtual_row", trueOrFalse},
     {"regexp_dict_allow_hyperscan", trueOrFalse},
     {"regexp_dict_flag_case_insensitive", trueOrFalse},
     {"regexp_dict_flag_dotall", trueOrFalse},

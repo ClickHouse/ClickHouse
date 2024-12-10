@@ -423,7 +423,7 @@ bool Client::buzzHouse()
     {
         std::string full_query2;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
-        bool has_cloud_features = false;
+        bool has_cloud_features = false, replica_setup = false;
         BuzzHouse::RandomGenerator rg(fc.seed);
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
         BuzzHouse::SQLQuery sq1, sq2, sq3, sq4;
@@ -435,6 +435,9 @@ bool Client::buzzHouse()
         processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Shared;");
         has_cloud_features |= !have_error;
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
+        processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
+        replica_setup |= !have_error;
+        std::cout << "Replica setup " << (replica_setup ? "" : "not ") << "detected" << std::endl;
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;
@@ -473,7 +476,7 @@ bool Client::buzzHouse()
         loadFuzzerSettings(fc);
 
         full_query2.reserve(8192);
-        BuzzHouse::StatementGenerator gen(fc, ei, has_cloud_features);
+        BuzzHouse::StatementGenerator gen(fc, ei, has_cloud_features, replica_setup);
         BuzzHouse::QueryOracle qo(fc);
         while (server_up && !buzz_done)
         {

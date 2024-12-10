@@ -700,7 +700,7 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
             break;
         case BottomTypeNameType::kDatetimes: {
             const DateTimeTp & dt = btn.datetimes();
-            const bool has_precision = dt.type() == DateTimes::DateTime64 && dt.has_precision();
+            const bool has_precision = dt.has_precision();
 
             ret += DateTimes_Name(dt.type());
             if (has_precision || dt.has_timezone())

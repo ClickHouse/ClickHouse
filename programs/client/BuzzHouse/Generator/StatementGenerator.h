@@ -70,7 +70,7 @@ class StatementGenerator
 private:
     FuzzConfig & fc;
     ExternalIntegrations & connections;
-    const bool supports_cloud_features;
+    const bool supports_cloud_features, replica_setup;
 
     std::string buf;
 
@@ -227,6 +227,7 @@ private:
     int generateMergeTreeEngineDetails(RandomGenerator & rg, TableEngineValues teng, bool add_pkey, TableEngine * te);
     int generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
+    DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);
     TableEngineValues getNextTableEngine(RandomGenerator & rg, bool use_external_integrations);
     PeerTableDatabase getNextPeerTableDatabase(RandomGenerator & rg, TableEngineValues teng);
 
@@ -384,8 +385,8 @@ public:
     const std::function<bool(const SQLView &)> detached_views
         = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
 
-    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf)
-        : fc(fuzzc), connections(conn), supports_cloud_features(scf)
+    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
+        : fc(fuzzc), connections(conn), supports_cloud_features(scf), replica_setup(hrs)
     {
         buf.reserve(2048);
         assert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());

@@ -15,7 +15,7 @@ const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), a
                          allow_enum = (1 << 12), allow_dynamic = (1 << 13), allow_JSON = (1 << 14), allow_nullable = (1 << 15),
                          allow_low_cardinality = (1 << 16), allow_array = (1 << 17), allow_map = (1 << 18), allow_tuple = (1 << 19),
                          allow_variant = (1 << 20), allow_nested = (1 << 21), allow_nullable_inside_array = (1 << 22),
-                         allow_ipv4 = (1 << 23), allow_ipv6 = (1 << 24), allow_geo = (1 << 25);
+                         allow_ipv4 = (1 << 23), allow_ipv6 = (1 << 24), allow_geo = (1 << 25), set_any_datetime_precision = (1 << 26);
 
 class SQLType
 {

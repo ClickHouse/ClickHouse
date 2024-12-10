@@ -13,17 +13,20 @@ void StatementGenerator::addTableRelation(
 
     for (const auto & entry : t.cols)
     {
-        if ((ntp = dynamic_cast<const NestedType *>(entry.second.tp)))
+        if (!entry.second.dmod.has_value() || entry.second.dmod.value() != DModifier::DEF_EPHEMERAL)
         {
-            for (const auto & entry2 : ntp->subtypes)
+            if ((ntp = dynamic_cast<const NestedType *>(entry.second.tp)))
             {
-                rel.cols.push_back(SQLRelationCol(
-                    rel_name, "c" + std::to_string(entry.first), std::optional<std::string>("c" + std::to_string(entry2.cname))));
+                for (const auto & entry2 : ntp->subtypes)
+                {
+                    rel.cols.push_back(SQLRelationCol(
+                        rel_name, "c" + std::to_string(entry.first), std::optional<std::string>("c" + std::to_string(entry2.cname))));
+                }
             }
-        }
-        else
-        {
-            rel.cols.push_back(SQLRelationCol(rel_name, "c" + std::to_string(entry.first), std::nullopt));
+            else
+            {
+                rel.cols.push_back(SQLRelationCol(rel_name, "c" + std::to_string(entry.first), std::nullopt));
+            }
         }
     }
     if (allow_internal_cols && rg.nextSmallNumber() < 3)
@@ -370,10 +373,20 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
     if (b.isMergeTreeFamily())
     {
-        if (rg.nextSmallNumber() < 4)
+        if ((supports_cloud_features || replica_setup) && rg.nextSmallNumber() < 4)
         {
-            b.toption = supports_cloud_features && rg.nextBool() ? TableEngineOption::TShared : TableEngineOption::TReplicated;
+            assert(this->ids.empty());
+            if (replica_setup)
+            {
+                this->ids.push_back(TReplicated);
+            }
+            if (supports_cloud_features)
+            {
+                this->ids.push_back(TShared);
+            }
+            b.toption = static_cast<TableEngineOption>(rg.pickRandomlyFromVector(this->ids));
             te->set_toption(b.toption.value());
+            this->ids.clear();
         }
         generateMergeTreeEngineDetails(rg, b.teng, add_pkey, te);
     }
@@ -622,6 +635,10 @@ int StatementGenerator::addTableColumn(
     {
         possible_types
             &= ~(allow_hugeint | allow_unsigned_int | allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
+        if (t.hasPostgreSQLPeer())
+        {
+            possible_types &= ~(set_any_datetime_precision); //datetime must have 6 digits precision
+        }
     }
     if (t.isSQLiteEngine() || t.hasSQLitePeer())
     {

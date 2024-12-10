@@ -54,18 +54,33 @@ int StatementGenerator::generateSettingList(
     return 0;
 }
 
+DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator & rg)
+{
+    assert(this->ids.empty());
+    this->ids.push_back(DAtomic);
+    this->ids.push_back(DMemory);
+    if (replica_setup)
+    {
+        this->ids.push_back(DReplicated);
+    }
+    if (supports_cloud_features)
+    {
+        this->ids.push_back(DShared);
+    }
+    const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomlyFromVector(this->ids));
+    this->ids.clear();
+    return res;
+}
+
 int StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd)
 {
     SQLDatabase next;
     const uint32_t dname = this->database_counter++;
     DatabaseEngine * deng = cd->mutable_dengine();
-    std::uniform_int_distribution<uint32_t> dengines(
-        1, static_cast<uint32_t>(supports_cloud_features ? DatabaseEngineValues::DShared : DatabaseEngineValues::DReplicated));
-    DatabaseEngineValues val = static_cast<DatabaseEngineValues>(dengines(rg.generator));
 
-    next.deng = val;
-    deng->set_engine(val);
-    if (val == DatabaseEngineValues::DReplicated)
+    next.deng = this->getNextDatabaseEngine(rg);
+    deng->set_engine(next.deng);
+    if (next.deng == DatabaseEngineValues::DReplicated)
     {
         deng->set_zoo_path(this->zoo_path_counter++);
     }
