@@ -13,7 +13,7 @@ namespace DB
 namespace Iceberg
 {
 
-class ManifestFileContentImpl;
+struct ManifestFileContentImpl;
 
 enum class ManifestEntryStatus : uint8_t
 {

@@ -57,11 +57,6 @@ bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
     return first_string_stream.str() == second_string_stream.str();
 }
 
-// bool operator!=(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
-// {
-//     return !(first == second);
-// }
-
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
 {
     DB::ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));

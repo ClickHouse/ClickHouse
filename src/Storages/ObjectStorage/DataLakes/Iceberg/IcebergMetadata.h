@@ -49,7 +49,8 @@ public:
 
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
-    /// All subsequent calls will return saved list of files (because it cannot be changed without changing metadata file)
+    /// All subsequent calls when the same data snapshot is relevant will return saved list of files (because it cannot be changed
+    /// without changing metadata file). Drops on every snapshot update.
     Strings getDataFiles() const override;
 
     /// Get table schema parsed from metadata.
@@ -113,18 +114,7 @@ private:
 
     IcebergSnapshot getSnapshot(const String & manifest_list_file) const;
 
-    std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const
-    {
-        auto manifest_file_it = manifest_entry_by_data_file.find(data_path);
-        if (manifest_file_it == manifest_entry_by_data_file.end())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find schema version for data file: {}", data_path);
-        }
-        auto schema_id = manifest_file_it->second.getContent().getSchemaId();
-        if (schema_id == current_schema_id)
-            return std::nullopt;
-        return std::optional{schema_id};
-    }
+    std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
     ManifestFileEntry getManifestFile(const String & manifest_file) const;
 

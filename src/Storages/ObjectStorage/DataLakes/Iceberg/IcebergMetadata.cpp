@@ -262,15 +262,9 @@ std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON:
 
     auto current_snapshot_id = metadata->getValue<Int64>("current-snapshot-id");
 
-    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata initialize"), "Current snapshot id {}", current_snapshot_id);
-
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-        LOG_DEBUG(
-            &Poco::Logger::get("IcebergMetadata initialize"),
-            "Iterationg on snapshot with id {}",
-            snapshot->getValue<Int64>("snapshot-id"));
 
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
@@ -279,6 +273,19 @@ std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON:
         }
     }
     return std::nullopt;
+}
+
+std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String data_path) const
+{
+    auto manifest_file_it = manifest_entry_by_data_file.find(data_path);
+    if (manifest_file_it == manifest_entry_by_data_file.end())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find schema version for data file: {}", data_path);
+    }
+    auto schema_id = manifest_file_it->second.getContent().getSchemaId();
+    if (schema_id == current_schema_id)
+        return std::nullopt;
+    return std::optional{schema_id};
 }
 
 
@@ -290,7 +297,6 @@ DataLakeMetadataPtr IcebergMetadata::create(
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
 
     auto log = getLogger("IcebergMetadata");
-    LOG_DEBUG(log, "Parse metadata {}", metadata_file_path);
 
     StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
@@ -323,11 +329,8 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
         std::filesystem::path(configuration_ptr->getPath()) / "metadata" / manifest_list_file);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
-    LOG_DEBUG(&Poco::Logger::get("initializeManifestList"), "Parse manifest list {}", manifest_list_file);
     auto manifest_list_file_reader
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
-
-    LOG_DEBUG(&Poco::Logger::get("initializeManifestList"), "Parsed manifest list {}", manifest_list_file);
 
     auto data_type = AvroSchemaReader::avroNodeToDataType(manifest_list_file_reader->dataSchema().root()->leafAt(0));
     Block header{{data_type->createColumn(), data_type, "manifest_path"}};
@@ -378,8 +381,6 @@ ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filenam
     {
         manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
     }
-    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata"), "Added manifest file {}", manifest_file);
-
     schema_processor.addIcebergTableSchema(schema_object);
     return manifest_file_entry;
 }

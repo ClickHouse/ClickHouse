@@ -23,7 +23,7 @@ namespace Iceberg
 
 
 /**
- * Iceberg supports the next data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
+ * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
  *   - boolean
  *   - int
