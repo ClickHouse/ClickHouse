@@ -623,6 +623,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"use_primary_key_cache", false, false, "New setting"},
             {"prewarm_primary_key_cache", false, false, "New setting"},
             {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},
+            {"enable_minmax_index_for_all_numeric_columns", false, false, "New setting to enable secondary indices for all numeric columns"},
+            {"enable_minmax_index_for_all_string_columns", false, false, "New setting to enable secondary indices for all string columns"},
         }
     },
     {"24.11",
