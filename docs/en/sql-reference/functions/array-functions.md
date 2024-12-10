@@ -2177,7 +2177,7 @@ Result:
 
 ## arrayPrAUC
 
-Calculate AUC (Area Under the Curve) for the Precision Recall curve.
+Calculate the area under the precision-recall (PR) curve. A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds. The resulting value ranges from 0 to 1, with a higher value indicating better model performance. PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases. For more details on what it is and when to use it, refer to <https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve> and <https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1>.
 
 **Syntax**
 
