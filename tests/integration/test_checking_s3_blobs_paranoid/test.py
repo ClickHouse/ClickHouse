@@ -43,7 +43,7 @@ def cluster():
             "node_with_query_log_on_s3",
             main_configs=[
                 "configs/storage_conf.xml",
-                "configs/query_log_conf.xml"
+                "configs/query_log_conf.xml",
             ],
             user_configs=[
                 "configs/setting.xml",
@@ -789,7 +789,8 @@ def test_node_with_query_log_on_s3(cluster, broken_s3):
     count_from_query_log = node.query(
         """
         SELECT count() from system.query_log WHERE query like 'SELECT 2222%' AND type = 'QueryFinish'
-        """)
+        """
+    )
 
     assert count_from_query_log == "0\n"
 
@@ -842,6 +843,7 @@ def test_exception_in_onFinish(cluster, broken_s3):
     count_from_query_log = node.query(
         """
         SELECT count() from source
-        """)
+        """
+    )
 
     assert count_from_query_log == "1\n"

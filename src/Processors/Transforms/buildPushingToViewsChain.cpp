@@ -776,7 +776,7 @@ IProcessor::Status CopyingDataToViewsTransform::prepare()
     {
         // If view_level == 0 than the exception comes from the source table.
         // There is no case when we could tolerate exceptions from the source table.
-        // Do not tolerate incomming exception and do not pass it to the follwing processors.
+        // Do not tolerate incoming exception and do not pass it to the following processors.
         if (view_level == 0)
             std::rethrow_exception(data.exception);
 
