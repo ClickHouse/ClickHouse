@@ -802,7 +802,10 @@ public:
         {
             postresql = PostgreSQLIntegration::TestAndAddPostgreSQLIntegration(fc, fc.postgresql_server.value(), fc.read_log);
         }
-        sqlite = SQLiteIntegration::TestAndAddSQLiteIntegration(fc, fc.sqlite_server.value());
+        if (fc.sqlite_server.has_value())
+        {
+            sqlite = SQLiteIntegration::TestAndAddSQLiteIntegration(fc, fc.sqlite_server.value());
+        }
         if (fc.mongodb_server.has_value())
         {
             mongodb = MongoDBIntegration::TestAndAddMongoDBIntegration(fc, fc.mongodb_server.value());
