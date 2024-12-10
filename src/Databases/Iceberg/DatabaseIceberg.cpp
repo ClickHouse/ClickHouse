@@ -198,8 +198,8 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
     auto table_endpoint = getStorageEndpointForTable(table_metadata);
     args[0] = std::make_shared<ASTLiteral>(table_endpoint);
 
-    /// We either fetch storage credentials from catalog "
-    /// "or get storage credentials from database engine arguments
+    /// We either fetch storage credentials from catalog
+    /// or get storage credentials from database engine arguments
     /// in CREATE query (e.g. in `args`).
     /// Vended credentials can be disabled in catalog itself,
     /// so we have a separate setting to know whether we should even try to fetch them.
