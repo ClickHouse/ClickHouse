@@ -70,9 +70,11 @@ public:
 
     /// Helper methods for compression.
 
-    /// If data is not worth to be compressed and not 'always_compress' - returns nullptr.
+    /// If data is not worth to be compressed - returns nullptr.
+    /// By default it requires that compressed data is at least 50% smaller than original.
+    /// With `force_compression` set to true, it requires compressed data to be not larger than the source data.
     /// Note: shared_ptr is to allow to be captured by std::function.
-    static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool always_compress);
+    static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool force_compression);
 
     static void decompressBuffer(
         const void * compressed_data, void * decompressed_data, size_t compressed_size, size_t decompressed_size);
