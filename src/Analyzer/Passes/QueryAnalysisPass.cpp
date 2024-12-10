@@ -1377,6 +1377,9 @@ private:
         const QueryTreeNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
+    static bool tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup,
+        const IdentifierResolveScope & scope);
+
     QueryTreeNodePtr tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
@@ -3077,6 +3080,27 @@ bool QueryAnalyzer::tryBindIdentifierToTableExpressions(const IdentifierLookup &
     return can_bind_identifier_to_table_expression;
 }
 
+bool QueryAnalyzer::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
+{
+    bool result = false;
+
+    for (const auto & table_expression : scope.registered_table_expression_nodes)
+    {
+        auto * array_join_node = table_expression->as<ArrayJoinNode>();
+        if (!array_join_node)
+            continue;
+
+        for (const auto & array_join_expression : array_join_node->getJoinExpressions())
+        {
+            auto array_join_expression_alias = array_join_expression->getAlias();
+            if (identifier_lookup.identifier.front() == array_join_expression_alias)
+                return true;
+        }
+    }
+
+    return result;
+}
+
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromStorage(
     const Identifier & identifier,
     const QueryTreeNodePtr & table_expression_node,
@@ -4270,7 +4294,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             if (need_to_qualify)
                 need_to_qualify = tryBindIdentifierToTableExpressions(identifier_lookup, table_expression_node, scope);
 
-            if (tryBindIdentifierToAliases(identifier_lookup, scope))
+            if (tryBindIdentifierToAliases(identifier_lookup, scope) || tryBindIdentifierToArrayJoinExpressions(identifier_lookup, scope))
                 need_to_qualify = true;
 
             if (need_to_qualify)
@@ -7537,6 +7561,16 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "ARRAY JOIN requires at least single expression");
 
+    /// Register expression aliases in the scope
+    for (const auto & elem : array_join_nodes)
+    {
+        for (auto & child : elem->getChildren())
+        {
+            if (child)
+                expressions_visitor.visit(child);
+        }
+    }
+
     std::vector<QueryTreeNodePtr> array_join_column_expressions;
     array_join_column_expressions.reserve(array_join_nodes_size);
 
@@ -7549,9 +7583,6 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
                 array_join_expression->formatASTForErrorMessage(),
                 array_join_expression_alias,
                 scope.scope_node->formatASTForErrorMessage());
-
-        /// Add array join expression into scope
-        expressions_visitor.visit(array_join_expression);
 
         std::string identifier_full_name;
 
@@ -7945,6 +7976,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     };
 
     add_table_expression_alias_into_scope(join_tree_node);
+    scope.registered_table_expression_nodes.insert(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 

@@ -1,6 +1,7 @@
-#include <memory>
-#include <unordered_map>
-#include <Analyzer/createUniqueTableAliases.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
+
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -48,8 +49,6 @@ public:
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
-                [[fallthrough]];
-            case QueryTreeNodeType::ARRAY_JOIN:
             {
                 auto & alias = table_expression_to_alias[node];
                 if (alias.empty())
@@ -58,6 +57,12 @@ public:
                     alias = fmt::format("__table{}", ++next_id);
                     node->setAlias(alias);
                 }
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                /// Simulate previous behaviour and preserve table naming with previous versions
+                ++next_id;
                 break;
             }
             default:
@@ -130,12 +135,97 @@ private:
     std::unordered_map<QueryTreeNodePtr, String> table_expression_to_alias;
 };
 
+class CreateUniqueArrayJoinAliasesVisitor : public InDepthQueryTreeVisitorWithContext<CreateUniqueArrayJoinAliasesVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<CreateUniqueArrayJoinAliasesVisitor>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (auto * array_join_typed = node->as<ArrayJoinNode>())
+        {
+            populateRenamingMap(array_join_typed, renaming[array_join_typed]);
+            return;
+        }
+
+        auto * column_node = node->as<ColumnNode>();
+        if (!column_node || replaced_nodes_set.contains(node))
+            return;
+
+        auto column_source = column_node->getColumnSource();
+        auto * array_join = column_source->as<ArrayJoinNode>();
+        if (!array_join)
+            return;
+
+        auto & renaming_map = getRenamingMap(array_join);
+
+        auto new_column = column_node->getColumn();
+        new_column.name = renaming_map[column_node->getColumnName()];
+        auto new_column_node = std::make_shared<ColumnNode>(new_column, column_source);
+
+        node = std::move(new_column_node);
+        replaced_nodes_set.insert(node);
+    }
+
+private:
+
+    using RenamingMap = std::unordered_map<String, String>;
+
+    void populateRenamingMap(ArrayJoinNode * array_join, RenamingMap & result)
+    {
+        if (result.empty())
+        {
+            for (auto & array_join_expression : array_join->getJoinExpressions())
+            {
+                auto * array_join_column = array_join_expression->as<ColumnNode>();
+                chassert(array_join_column != nullptr);
+
+                String unique_expression_name = fmt::format("__array_join_exp_{}", ++next_id);
+                result.emplace(array_join_column->getColumnName(), unique_expression_name);
+
+                auto replacement_column = array_join_column->getColumn();
+                replacement_column.name = unique_expression_name;
+                auto replacement_column_node = std::make_shared<ColumnNode>(replacement_column, array_join_column->getExpression(), array_join_column->getColumnSource());
+                replacement_column_node->setAlias(unique_expression_name);
+
+                array_join_expression = std::move(replacement_column_node);
+                replaced_nodes_set.insert(array_join_expression);
+            }
+        }
+    }
+
+    RenamingMap & getRenamingMap(ArrayJoinNode * array_join)
+    {
+        auto & result  = renaming[array_join];
+
+        populateRenamingMap(array_join, result);
+
+        return result;
+    }
+
+    size_t next_id = 0;
+
+    std::unordered_map<ArrayJoinNode *, RenamingMap> renaming;
+
+    // TODO: Remove this field when identifier resolution cache removed from analyzer.
+    std::unordered_set<QueryTreeNodePtr> replaced_nodes_set;
+};
+
 }
 
-
-void createUniqueTableAliases(QueryTreeNodePtr & node, const QueryTreeNodePtr &  /*table_expression*/, const ContextPtr & context)
+void createUniqueAliasesIfNecessary(QueryTreeNodePtr & node, const ContextPtr & context)
 {
+    /*
+     * For each table expression in the Query Tree generate and add a unique alias.
+     * If table expression had an alias in initial query tree, override it.
+     */
     CreateUniqueTableAliasesVisitor(context).visit(node);
+
+    /* Generate unique aliases for array join expressions.
+     * It's required to create a valid AST for distributed query.
+     */
+    CreateUniqueArrayJoinAliasesVisitor(context).visit(node);
 }
 
 }
