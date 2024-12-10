@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
 
