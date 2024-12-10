@@ -350,6 +350,7 @@ GetResolution
 GetUnidirectionalEdge
 GetUnidirectionalEdgeBoundary
 GetUnidirectionalEdgesFromHexagon
+Gini
 GitLab
 GlobalThread
 GlobalThreadActive
@@ -2296,6 +2297,7 @@ noop
 normalizeQuery
 normalizeQueryKeepNames
 normalizeUTF
+normalizedGini
 normalizedQueryHash
 normalizedQueryHashKeepNames
 notEmpty
