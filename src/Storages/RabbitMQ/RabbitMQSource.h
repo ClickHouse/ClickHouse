@@ -20,7 +20,7 @@ public:
             const Names & columns,
             size_t max_block_size_,
             UInt64 max_execution_time_,
-            ExtStreamingHandleErrorMode handle_error_mode_,
+            StreamingHandleErrorMode handle_error_mode_,
             bool nack_broken_messages_,
             bool ack_in_suffix,
             LoggerPtr log_);
@@ -45,7 +45,7 @@ private:
     ContextPtr context;
     const Names column_names;
     const size_t max_block_size;
-    const ExtStreamingHandleErrorMode handle_error_mode;
+    const StreamingHandleErrorMode handle_error_mode;
     const bool ack_in_suffix;
     const bool nack_broken_messages;
 
@@ -69,7 +69,7 @@ private:
         const Names & columns,
         size_t max_block_size_,
         UInt64 max_execution_time_,
-        ExtStreamingHandleErrorMode handle_error_mode_,
+        StreamingHandleErrorMode handle_error_mode_,
         bool nack_broken_messages_,
         bool ack_in_suffix,
         LoggerPtr log_);
