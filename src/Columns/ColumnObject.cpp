@@ -1672,7 +1672,7 @@ int ColumnObject::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_d
     size_t rhs_seen_shared_data_paths = 0;
     for (const auto & [path, column] : dynamic_paths)
     {
-        /// We consider null value as the absense of the key in the object.
+        /// We consider null value as the absence of the key in the object.
         if (column->isNullAt(n))
             continue;
 
