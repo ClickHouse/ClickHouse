@@ -434,6 +434,10 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     /// Highlight groups of thousands.
     if (color && is_number && format_settings.pretty.highlight_digit_groups)
         serialized_value = highlightDigitGroups(serialized_value);
+        
+    /// Highlight trailing whitespace.
+    if (color && format_settings.pretty.highlight_trailing_whitespace)
+        serialized_value = highlightTrailingWhitespace(serialized_value);
 
     if (align_right)
     {
