@@ -2009,20 +2009,16 @@ struct ConvertImplFromDynamicToColumn
 
         /// First, cast usual variants to result type.
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-        std::vector<ColumnPtr> cast_variant_columns;
-        cast_variant_columns.reserve(variant_types.size());
+        std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
         for (size_t i = 0; i != variant_types.size(); ++i)
         {
             /// Skip shared variant, it will be processed later.
             if (i == column_dynamic.getSharedVariantDiscriminator())
-            {
-                cast_variant_columns.push_back(nullptr);
                 continue;
-            }
 
             ColumnsWithTypeAndName new_args = arguments;
             new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
-            cast_variant_columns.push_back(nested_convert(new_args, result_type));
+            cast_variant_columns[i] = nested_convert(new_args, result_type);
         }
 
         /// Second, collect all variants stored in shared variant and cast them to result type.
@@ -2073,13 +2069,12 @@ struct ConvertImplFromDynamicToColumn
         }
 
         /// Cast all extracted variants into result type.
-        std::vector<ColumnPtr> cast_shared_variant_columns;
-        cast_shared_variant_columns.reserve(variant_types_from_shared_variant.size());
+        std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
         for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
         {
             ColumnsWithTypeAndName new_args = arguments;
             new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
-            cast_shared_variant_columns.push_back(nested_convert(new_args, result_type));
+            cast_shared_variant_columns[i] = nested_convert(new_args, result_type);
         }
 
         /// Construct result column from all cast variants.
