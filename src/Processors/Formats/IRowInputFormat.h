@@ -24,6 +24,8 @@ struct RowReadExtension
 struct RowInputFormatParams
 {
     size_t max_block_size = 0;
+    UInt64 preferred_block_size_bytes = 0;
+    UInt64 preferred_max_column_in_block_size_bytes = 0;
 
     UInt64 allow_errors_num = 0;
     Float64 allow_errors_ratio = 0;
