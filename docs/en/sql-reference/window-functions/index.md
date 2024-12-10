@@ -739,6 +739,14 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
+
+### SESSION frame
+
+This frame includes all rows separated by no more than a given timeout.
+
+add some proper docs
+
+
 ## References
 
 ### GitHub Issues
