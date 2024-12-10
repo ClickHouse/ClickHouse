@@ -134,7 +134,7 @@ bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Obj
     static String fields_key = "fields";
     if (!first.has(fields_key) || !second.has(fields_key))
         return false;
-    return first.getObject(fields_key) == second.getObject(fields_key);
+    return (*first.getObject(fields_key)) == (*second.getObject(fields_key));
 }
 }
 
