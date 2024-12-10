@@ -104,6 +104,12 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
                 password = true;
                 break;
             }
+            case AuthenticationType::ONE_TIME_PASSWORD:
+            {
+                prefix = "BY";
+                password = true;
+                break;
+            }
             case AuthenticationType::JWT:
             {
                 prefix = "CLAIMS";
