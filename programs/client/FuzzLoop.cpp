@@ -438,6 +438,7 @@ bool Client::buzzHouse()
         processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
         replica_setup |= !have_error;
         std::cout << "Replica setup " << (replica_setup ? "" : "not ") << "detected" << std::endl;
+        processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
         processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;

@@ -32,7 +32,8 @@ const std::map<std::string, std::function<void(RandomGenerator &, std::string &)
        {"min_rows_to_keep",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"max_rows_to_keep",
-        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }}};
+        [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
+       {"compress", trueOrFalse}};
 
 const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> setTableSettings = {{"persistent", trueOrFalse}};
 
