@@ -95,9 +95,8 @@ function check_tcp_attributes()
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
-
-  # Check if the result contains 'client.version'
-  if echo "$result" | jq -e '.[]."client.version" != null' > /dev/null; then
+  
+  if [[ $result == *"client.version"* ]]; then
     client_version="present"
   fi
 
@@ -116,7 +115,7 @@ function check_http_attributes()
   local referer="not found"
   local agent="not found"
   local method="not found"
-
+  
   result=$(${CLICKHOUSE_CLIENT} -q "
       SYSTEM FLUSH LOGS;
       SELECT attribute['http.referer'],
@@ -133,17 +132,16 @@ function check_http_attributes()
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
-
-  # Check each attribute using jq
-  if echo "$result" | jq -e '.[]."http.referer" != null' > /dev/null; then
+  
+  if [[ $result == *"http.referer"* ]]; then
     referer="present"
   fi
-
-  if echo "$result" | jq -e '.[]."http.user.agent" != null' > /dev/null; then
+  
+  if [[ $result == *"http.user.agent"* ]]; then
     agent="present"
   fi
 
-  if echo "$result" | jq -e '.[]."http.method" != null' > /dev/null; then
+  if [[ $result == *"http.method"* ]]; then
     method="present"
   fi
 
