@@ -80,7 +80,6 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
         return builder.getInt8Ty();
     if (data_type.isEnum16())
         return builder.getInt16Ty();
-
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native type");
 }
 

@@ -352,14 +352,23 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     }
 
     if (!canBeNativeType(*function.getResultType()))
-        return false;
-
-    for (const auto & type : function.getArgumentTypes())
     {
-        if (!canBeNativeType(*type))
-            return false;
+        return false;
     }
 
+    const auto & argument_types = function.getArgumentTypes();
+    auto skip_arguments = function.getArgumentsThatDontParticipateInCompilation(argument_types);
+    for (size_t i = 0; i < argument_types.size(); ++i)
+    {
+        if (std::find(skip_arguments.begin(), skip_arguments.end(), i) != skip_arguments.end())
+            continue;
+
+        const auto & type = argument_types[i];
+        if (!canBeNativeType(*type))
+        {
+            return false;
+        }
+    }
     return function.isCompilable();
 }
 
@@ -414,10 +423,18 @@ static CompileDAG getCompilableDAG(
             continue;
         }
 
+        const auto & function = *node->function_base;
+        auto skip_arguments = function.getArgumentsThatDontParticipateInCompilation(function.getArgumentTypes());
         while (frame.next_child_to_visit < node->children.size())
         {
-            const auto & child = node->children[frame.next_child_to_visit];
+            /// Skip arguments that don't participate in compilation during DFS
+            if (std::find(skip_arguments.begin(), skip_arguments.end(), frame.next_child_to_visit) != skip_arguments.end())
+            {
+                ++frame.next_child_to_visit;
+                continue;
+            }
 
+            const auto & child = node->children[frame.next_child_to_visit];
             if (visited_node_to_compile_dag_position.contains(child))
             {
                 ++frame.next_child_to_visit;
@@ -440,8 +457,14 @@ static CompileDAG getCompilableDAG(
         compile_node.result_type = node->result_type;
         compile_node.type = CompileDAG::CompileType::FUNCTION;
 
-        for (const auto * child : node->children)
+        for (size_t i = 0; i < node->children.size(); ++i)
+        {
+            if (std::find(skip_arguments.begin(), skip_arguments.end(), i) != skip_arguments.end())
+                continue;
+
+            const auto * child = node->children[i];
             compile_node.arguments.push_back(visited_node_to_compile_dag_position[child]);
+        }
 
         visited_node_to_compile_dag_position[node] = dag.getNodesCount();
 
@@ -469,6 +492,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     for (const auto & node : nodes)
     {
         bool node_is_compilable_in_isolation = isCompilableFunction(node, lazy_executed_nodes) && !isCompilableConstant(node);
+        std::cout << "node:" << node.result_name << " is_compilable_in_isolation:" << node_is_compilable_in_isolation << std::endl;
         node_to_data[&node].is_compilable_in_isolation = node_is_compilable_in_isolation;
     }
 

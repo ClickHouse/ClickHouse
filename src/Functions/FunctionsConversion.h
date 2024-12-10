@@ -2365,22 +2365,32 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
     {
-        if (types.size() != 1)
+        if (types.empty())
             return false;
+
 
         if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
             return false;
 
-        return castBothTypes(types[0].get(), result_type.get(), [](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
+        return castBothTypes(
+            types[0].get(),
+            result_type.get(),
+            [](const auto & left, const auto & right)
+            {
+                using LeftDataType = std::decay_t<decltype(left)>;
+                using RightDataType = std::decay_t<decltype(right)>;
 
-            if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
-                return true;
-
-            return false;
-        });
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+                {
+                    if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                        return true;
+                    else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                        return true;
+                    else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                        return true;
+                }
+                return false;
+            });
     }
 
     llvm::Value *
@@ -2394,11 +2404,69 @@ public:
             {
                 using LeftDataType = std::decay_t<decltype(left)>;
                 using RightDataType = std::decay_t<decltype(right)>;
-
-                if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
                 {
-                    result = nativeCast(builder, arguments[0], result_type);
-                    return true;
+                    using LeftFieldType = typename LeftDataType::FieldType;
+                    using RightFieldType = typename RightDataType::FieldType;
+
+                    if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    {
+                        result = nativeCast(builder, arguments[0], right.getPtr());
+                        return true;
+                    }
+                    else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    {
+                        auto scale = right.getScale();
+                        auto multiplier = static_cast<LeftFieldType>(DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale));
+                        auto * from_type = arguments[0].value->getType();
+                        auto * from_value = arguments[0].value;
+                        if constexpr (std::is_floating_point_v<LeftFieldType>)
+                        {
+                            result = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, multiplier));
+                        }
+                        else
+                        {
+                            llvm::Value * m = nullptr;
+                            if constexpr (std::is_integral_v<LeftFieldType>)
+                                m = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(multiplier), std::is_signed_v<LeftFieldType>);
+                            else
+                            {
+                                llvm::APInt v(from_type->getIntegerBitWidth(), multiplier.items);
+                                m = llvm::ConstantInt::get(from_type, v);
+                            }
+                            result = builder.CreateMul(from_value, m);
+                        }
+                        result = nativeCast(builder, left.getPtr(), result, right.getPtr());
+                        return true;
+                    }
+                    else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    {
+                        auto scale = left.getScale();
+                        auto divider = DecimalUtils::scaleMultiplier<NativeType<LeftFieldType>>(scale);
+                        if constexpr (std::is_floating_point_v<RightFieldType>)
+                        {
+                            auto * from_value = nativeCast(builder, arguments[0], right.getPtr());
+                            auto * d = llvm::ConstantFP::get(toNativeType(builder, right.getPtr()), static_cast<double>(divider));
+                            result = builder.CreateFDiv(from_value, d);
+                        }
+                        else
+                        {
+                            llvm::Value * d = nullptr;
+                            auto * from_type = arguments[0].value->getType();
+                            if constexpr (std::is_integral_v<NativeType<LeftFieldType>>)
+                                d = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(divider), true);
+                            else
+                            {
+                                llvm::APInt v(from_type->getIntegerBitWidth(), divider.items);
+                                d = llvm::ConstantInt::get(from_type, v);
+                            }
+
+                            auto * from_value = arguments[0].value;
+                            auto * whole_part = builder.CreateSDiv(from_value, d);
+                            result = nativeCast(builder, left.getPtr(), whole_part, right.getPtr());
+                        }
+                        return true;
+                    }
                 }
 
                 return false;
@@ -3543,56 +3611,149 @@ public:
     }
 
 #if USE_EMBEDDED_COMPILER
+    ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const override { return {1}; }
+
     bool isCompilable() const override
     {
         if (getName() != "CAST" || argument_types.size() != 2)
             return false;
 
-        const auto & from_type = argument_types[0];
-        const auto & to_type = return_type;
-        auto denull_from_type = removeNullable(from_type);
-        auto denull_to_type = removeNullable(to_type);
-        if (!canBeNativeType(denull_from_type) || !canBeNativeType(denull_to_type))
+        const auto & input_type = argument_types[0];
+        const auto & result_type = getResultType();
+        auto denull_input_type = removeNullable(input_type);
+        auto denull_result_type = removeNullable(result_type);
+        if (!canBeNativeType(denull_input_type) || !canBeNativeType(denull_result_type))
             return false;
 
-        return castBothTypes(denull_from_type.get(), denull_to_type.get(), [](const auto & left, const auto & right)
+        return castBothTypes(denull_input_type.get(), denull_result_type.get(), [](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
-                return true;
-
+            if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
+            {
+                if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    return true;
+                else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    return true;
+                else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    return true;
+            }
             return false;
         });
     }
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override
     {
-        llvm::Value * result = nullptr;
+        // std::cout << "come here " << " from_type:" << arguments[0].type->getName() << " to_type:" << getResultType()->getName()
+                //   << std::endl;
+        const auto & input_type = arguments[0].type;
+        const auto & result_type = getResultType();
+        auto denull_input_type = removeNullable(input_type);
+        auto denull_result_type = removeNullable(result_type);
 
-        const auto & from_type = arguments[0].type;
-        const auto & to_type = return_type;
-        auto denull_from_type = removeNullable(from_type);
-        auto denull_to_type = removeNullable(to_type);
+        llvm::Value * result_value = nullptr;
+        llvm::Value * input_value = arguments[0].value;
+        llvm::Value * input_isnull = nullptr;
+        if (input_type->isNullable())
+        {
+            input_value = builder.CreateExtractValue(input_value, {0});
+            input_isnull = builder.CreateExtractValue(input_value, {1});
+        }
+
         castBothTypes(
-            denull_from_type.get(),
-            denull_to_type.get(),
+            denull_input_type.get(),
+            denull_result_type.get(),
             [&](const auto & left, const auto & right)
             {
                 using LeftDataType = std::decay_t<decltype(left)>;
                 using RightDataType = std::decay_t<decltype(right)>;
 
-                if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
+                if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
                 {
-                    result = nativeCast(builder, arguments[0], return_type);
-                    return true;
-                }
+                    using LeftFieldType = typename LeftDataType::FieldType;
+                    using RightFieldType = typename RightDataType::FieldType;
 
+                    if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    {
+                        result_value = nativeCast(builder, arguments[0], right.getPtr());
+                        return true;
+                    }
+                    else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                    {
+                        auto scale = right.getScale();
+                        auto multiplier = static_cast<LeftFieldType>(DecimalUtils::scaleMultiplier<NativeType<RightFieldType>>(scale));
+                        auto * from_type = arguments[0].value->getType();
+                        auto * from_value = arguments[0].value;
+                        if constexpr (std::is_floating_point_v<LeftFieldType>)
+                        {
+                            result_value = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, multiplier));
+                        }
+                        else
+                        {
+                            llvm::Value * m = nullptr;
+                            if constexpr (std::is_integral_v<LeftFieldType>)
+                                m = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(multiplier), std::is_signed_v<LeftFieldType>);
+                            else
+                            {
+                                llvm::APInt v(from_type->getIntegerBitWidth(), multiplier.items);
+                                m = llvm::ConstantInt::get(from_type, v);
+                            }
+                            result_value = builder.CreateMul(from_value, m);
+                        }
+                        result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
+                        return true;
+                    }
+                    else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
+                    {
+                        auto scale = left.getScale();
+                        auto divider = DecimalUtils::scaleMultiplier<NativeType<LeftFieldType>>(scale);
+                        if constexpr (std::is_floating_point_v<RightFieldType>)
+                        {
+                            auto * from_value = nativeCast(builder, arguments[0], right.getPtr());
+                            auto * d = llvm::ConstantFP::get(toNativeType(builder, right.getPtr()), static_cast<double>(divider));
+                            result_value = builder.CreateFDiv(from_value, d);
+                        }
+                        else
+                        {
+                            llvm::Value * d = nullptr;
+                            auto * from_type = arguments[0].value->getType();
+                            if constexpr (std::is_integral_v<NativeType<LeftFieldType>>)
+                                d = llvm::ConstantInt::get(from_type, static_cast<uint64_t>(divider), true);
+                            else
+                            {
+                                llvm::APInt v(from_type->getIntegerBitWidth(), divider.items);
+                                d = llvm::ConstantInt::get(from_type, v);
+                            }
+
+                            auto * from_value = arguments[0].value;
+                            auto * whole_part = builder.CreateSDiv(from_value, d);
+                            result_value = nativeCast(builder, left.getPtr(), whole_part, right.getPtr());
+                        }
+                        return true;
+                    }
+                }
                 return false;
             });
 
-        return result;
+            if (!result_value)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot compile CAST function for types {} -> {}",
+                    input_type->getName(),
+                    result_type->getName());
+
+            if (result_type->isNullable())
+            {
+                llvm::Value * result_isnull = input_isnull ? input_isnull : llvm::ConstantInt::get(builder.getInt1Ty(), 0);
+                auto * nullable_structure_type = toNativeType(builder, result_type);
+                llvm::Value * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
+                nullable_structure_value = builder.CreateInsertValue(nullable_structure_value, result_value, {0});
+                return builder.CreateInsertValue(nullable_structure_value, result_isnull, {1});
+            }
+            else
+            {
+                return result_value;
+            }
     }
 #endif
 

@@ -86,8 +86,10 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     b.SetInsertPoint(entry);
 
     std::vector<ColumnDataPlaceholder> columns(function_argument_types.size() + 1);
+    std::cout << "function name: " << function.getName() << std::endl;
     for (size_t i = 0; i <= function_argument_types.size(); ++i)
     {
+        std::cout << "i:" << i << " type:" << function_argument_types[i]->getName() << std::endl;
         const auto & function_argument_type = i == function_argument_types.size() ? function.getResultType() : function_argument_types[i];
         auto * data = b.CreateLoad(data_type, b.CreateConstInBoundsGEP1_64(data_type, columns_arg, i));
         columns[i].data_ptr = b.CreateExtractValue(data, {0});
