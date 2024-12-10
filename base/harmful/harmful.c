@@ -290,6 +290,7 @@ TRAP(putenv)
 TRAP(setlogmask)
 TRAP(rand)
 TRAP(getmntent)
+TRAP(getlogin)
 #endif
 
 #endif
