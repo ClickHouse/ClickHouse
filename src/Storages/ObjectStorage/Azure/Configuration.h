@@ -76,7 +76,8 @@ public:
         ASTs & args,
         const String & structure_,
         const String & format_,
-        ContextPtr context) override;
+        ContextPtr context,
+        bool with_structure) override;
 
 protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
