@@ -29,7 +29,8 @@ public:
         const ReadSettings & settings_,
         size_t buffer_size_,
         AsyncReadCountersPtr async_read_counters_ = nullptr,
-        FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
+        FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr,
+        bool enable_read_at = false);
 
     ~AsynchronousBoundedReadBuffer() override;
 
@@ -73,6 +74,8 @@ private:
 
     AsyncReadCountersPtr async_read_counters;
     FilesystemReadPrefetchesLogPtr prefetches_log;
+
+    bool supports_read_at;
 
     struct LastPrefetchInfo
     {
