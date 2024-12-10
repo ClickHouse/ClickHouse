@@ -128,6 +128,14 @@ bool operator!=(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
 {
     return !(first == second);
 }
+
+bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
+{
+    static String fields_key = "fields";
+    if (!first.has(fields_key) || !second.has(fields_key))
+        return false;
+    return first.getObject(fields_key) == second.getObject(fields_key);
+}
 }
 
 
@@ -481,7 +489,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        chassert(*iceberg_table_schemas_by_ids.at(schema_id) == *schema_ptr);
+        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr));
     }
     else
     {
