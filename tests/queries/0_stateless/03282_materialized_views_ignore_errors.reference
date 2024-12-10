@@ -1,0 +1,14 @@
+-- { echoOn }
+
+insert into testX select number from numbers(20)
+    settings materialized_views_ignore_errors = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+select count() from testX;
+0
+select count() from testXA;
+0
+insert into testX select number from numbers(20)
+    settings materialized_views_ignore_errors = 1; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+select count() from testX;
+0
+select count() from testXA;
+0

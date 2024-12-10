@@ -35,6 +35,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <memory>
 
 
@@ -120,7 +121,7 @@ using ViewsDataPtr = std::shared_ptr<ViewsData>;
 class CopyingDataToViewsTransform final : public IProcessor
 {
 public:
-    CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data);
+    CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data, size_t view_level_);
 
     String getName() const override { return "CopyingDataToViewsTransform"; }
     Status prepare() override;
@@ -129,6 +130,7 @@ public:
 private:
     InputPort & input;
     ViewsDataPtr views_data;
+    size_t view_level;
 };
 
 /// For source chunk, execute view query over it.
@@ -223,6 +225,7 @@ private:
 /// Generates one chain part for every view in buildPushingToViewsChain
 std::optional<Chain> generateViewChain(
     ContextPtr context,
+    size_t view_level,
     const StorageID & view_id,
     ThreadGroupPtr running_group,
     Chain & result_chain,
@@ -400,6 +403,7 @@ std::optional<Chain> generateViewChain(
         query = live_view->getInnerQuery();
         out = buildPushingToViewsChain(
             view, view_metadata_snapshot, insert_context, ASTPtr(),
+            view_level + 1,
             /* no_destination= */ true,
             thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
     }
@@ -409,12 +413,14 @@ std::optional<Chain> generateViewChain(
         query = window_view->getMergeableQuery();
         out = buildPushingToViewsChain(
             view, view_metadata_snapshot, insert_context, ASTPtr(),
+            view_level + 1,
             /* no_destination= */ true,
             thread_status_holder, running_group, view_counter_ms, async_insert);
     }
     else
         out = buildPushingToViewsChain(
             view, view_metadata_snapshot, insert_context, ASTPtr(),
+            view_level + 1,
             /* no_destination= */ false,
             thread_status_holder, running_group, view_counter_ms, async_insert);
 
@@ -466,12 +472,14 @@ Chain buildPushingToViewsChain(
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     const ASTPtr & query_ptr,
+    size_t view_level,
     bool no_destination,
     ThreadStatusesHolderPtr thread_status_holder,
     ThreadGroupPtr running_group,
     std::atomic_uint64_t * elapsed_counter_ms,
     bool async_insert,
-    const Block & live_view_header)
+    const Block & live_view_header
+ )
 {
     checkStackSize();
     Chain result_chain;
@@ -514,7 +522,7 @@ Chain buildPushingToViewsChain(
         try
         {
             auto out = generateViewChain(
-                context, view_id, running_group, result_chain,
+                context, view_level, view_id, running_group, result_chain,
                 views_data, thread_status_holder, async_insert, storage_header, disable_deduplication_for_children);
 
             if (!out.has_value())
@@ -554,7 +562,7 @@ Chain buildPushingToViewsChain(
         for (const auto & chain : chains)
             headers.push_back(chain.getOutputHeader());
 
-        auto copying_data = std::make_shared<CopyingDataToViewsTransform>(storage_header, views_data);
+        auto copying_data = std::make_shared<CopyingDataToViewsTransform>(storage_header, views_data, view_level);
         auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(headers), views_data);
         auto out = copying_data->getOutputs().begin();
         auto in = finalizing_views->getInputs().begin();
@@ -726,10 +734,11 @@ static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context
 }
 
 
-CopyingDataToViewsTransform::CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data)
+CopyingDataToViewsTransform::CopyingDataToViewsTransform(const Block & header, ViewsDataPtr data, size_t view_level_)
     : IProcessor({header}, OutputPorts(data->views.size(), header))
     , input(inputs.front())
     , views_data(std::move(data))
+    , view_level(view_level_)
 {
     if (views_data->views.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CopyingDataToViewsTransform cannot have zero outputs");
@@ -765,6 +774,12 @@ IProcessor::Status CopyingDataToViewsTransform::prepare()
     auto data = input.pullData();
     if (data.exception)
     {
+        // If view_level == 0 than the exception comes from the source table.
+        // There is no case when we could tolerate exceptions from the source table.
+        // Do not tolerate incomming exception and do not pass it to the follwing processors.
+        if (view_level == 0)
+            std::rethrow_exception(data.exception);
+
         if (!views_data->has_exception)
         {
             views_data->first_exception = data.exception;

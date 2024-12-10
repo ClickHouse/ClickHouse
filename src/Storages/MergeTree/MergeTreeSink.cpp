@@ -4,6 +4,7 @@
 #include <Interpreters/PartLog.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <DataTypes/ObjectUtils.h>
+#include "Common/logger_useful.h"
 #include <Common/ProfileEventsScope.h>
 #include <Core/Settings.h>
 
@@ -79,6 +80,7 @@ void MergeTreeSink::onStart()
 void MergeTreeSink::onFinish()
 {
     chassert(!isCancelled());
+
     finishDelayedChunk();
 }
 
