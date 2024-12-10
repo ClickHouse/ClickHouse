@@ -6,4 +6,3 @@
 {"min_compress_block_size":"present","max_block_size":"present","max_execution_time":"present"}
 {"http.referer":"present","http.user.agent":"present","http.method":"present"}
 {"http.referer":"present","http.user.agent":"present","http.method":"present"}
-
