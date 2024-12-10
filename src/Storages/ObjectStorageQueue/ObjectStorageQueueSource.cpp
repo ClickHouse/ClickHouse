@@ -49,11 +49,15 @@ ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObject
 ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
     std::unique_ptr<Source::GlobIterator> glob_iterator_,
+    ObjectStoragePtr object_storage_,
+    bool file_deletion_on_processed_enabled_,
     std::atomic<bool> & shutdown_called_,
     LoggerPtr logger_)
     : StorageObjectStorageSource::IIterator("ObjectStorageQueueIterator")
     , metadata(metadata_)
+    , object_storage(object_storage_)
     , glob_iterator(std::move(glob_iterator_))
+    , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -114,7 +118,39 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
 
         auto file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
         if (file_metadata->setProcessing())
+        {
+            if (file_deletion_on_processed_enabled
+                && !object_storage->exists(StoredObject(object_info->relative_path)))
+            {
+                /// Imagine the following case:
+                /// Replica A processed fileA and deletes it afterwards.
+                /// Replica B has a list request batch (by default list batch is 1000 elements)
+                /// and this batch was collected from object storage before replica A processed fileA.
+                /// fileA could be somewhere in the middle of this batch of replica B
+                /// and replica A processed it before replica B reached fileA in this batch.
+                /// All would be alright, unless user has tracked_files_size_limit or tracked_files_ttl_limit
+                /// which could expire before replica B reached fileA in this list batch.
+                /// It would mean that replica B listed this file while it no longer
+                /// exists in object storage at the moment it wants to process it, but
+                /// because of tracked_files_size(ttl)_limit expiration - we no longer
+                /// have information in keeper that the file was actually processed before,
+                /// so replica B would successfully set itself as processor of this file in keeper
+                /// and face "The specified key does not exist" after that.
+                ///
+                /// This existence check here is enough,
+                /// only because we do applyActionAfterProcessing BEFORE setting file as processed
+                /// and because at this exact place we already successfully set file as processing,
+                /// e.g. file deletion and marking file as processed in keeper already took place.
+                ///
+                /// Note: this all applies only for Unordered mode.
+                LOG_TRACE(log, "Ignoring {} because of the race with list & delete", object_info->getPath());
+
+                file_metadata->resetProcessing();
+                continue;
+            }
+
             return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, file_metadata);
+        }
     }
     return {};
 }
@@ -628,8 +664,8 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
     {
         if (success)
         {
-            file_metadata->setProcessed();
             applyActionAfterProcessing(file_metadata->getPath());
+            file_metadata->setProcessed();
         }
         else
         {

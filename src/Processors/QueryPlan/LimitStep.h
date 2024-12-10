@@ -33,6 +33,10 @@ public:
 
     bool withTies() const { return with_ties; }
 
+    void serialize(Serialization & ctx) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
 private:
     void updateOutputHeader() override
     {
