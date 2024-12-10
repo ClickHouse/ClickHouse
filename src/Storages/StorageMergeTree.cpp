@@ -1439,7 +1439,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     assert(!isStaticStorage());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    MergeMutateSelectedEntryPtr merge_entry, mutate_entry;
+    MergeMutateSelectedEntryPtr merge_entry;
+    MergeMutateSelectedEntryPtr mutate_entry;
 
     auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 

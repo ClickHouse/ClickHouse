@@ -542,7 +542,8 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
         return;
 
     /// We will sort nested columns into `new_ranges` and call updatePermutation in next columns with `null_ranges`.
-    EqualRanges new_ranges, null_ranges;
+    EqualRanges new_ranges;
+    EqualRanges null_ranges;
 
     bool reverse = direction == IColumn::PermutationSortDirection::Descending;
     const auto is_nulls_last = ((null_direction_hint > 0) != reverse);

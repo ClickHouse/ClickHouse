@@ -219,7 +219,8 @@ namespace
         };
 
         /// We're going to prepare two blocks - one for the "data" table, and one for the "tags" table.
-        Block data_block, tags_block;
+        Block data_block;
+        Block tags_block;
 
         auto make_column_for_data_block = [&](const ColumnDescription & column_description) -> IColumn &
         {

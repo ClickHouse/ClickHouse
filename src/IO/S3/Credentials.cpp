@@ -349,7 +349,9 @@ bool AWSEC2InstanceProfileConfigLoader::LoadInternal()
         LOG_ERROR(logger, "Failed to parse output from EC2MetadataService.");
         return false;
     }
-    String access_key, secret_key, token;
+    String access_key;
+    String secret_key;
+    String token;
 
     auto credentials_view = credentials_doc.View();
     access_key = credentials_view.GetString("AccessKeyId");
@@ -647,7 +649,8 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
             return "";
         }
         Aws::Utils::Json::JsonView token_view(token_doc);
-        Aws::String tmp_access_token, expiration_str;
+        Aws::String tmp_access_token;
+        Aws::String expiration_str;
         tmp_access_token = token_view.GetString("accessToken");
         expiration_str = token_view.GetString("expiresAt");
         Aws::Utils::DateTime expiration(expiration_str, Aws::Utils::DateFormat::ISO_8601);

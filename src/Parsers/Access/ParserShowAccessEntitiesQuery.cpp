@@ -73,7 +73,8 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     std::optional<std::pair<String, String>> database_and_table_name;
     if (type == AccessEntityType::ROW_POLICY)
     {
-        String database, table_name;
+        String database;
+        String table_name;
         bool wildcard = false;
         bool default_database = false;
         if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))

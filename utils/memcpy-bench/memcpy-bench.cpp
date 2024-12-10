@@ -188,7 +188,8 @@ static void * memcpySSE2Unrolled2(void * __restrict destination, const void * __
     }
 
     // medium size copy
-    __m128i c0, c1;
+    __m128i c0;
+    __m128i c1;
 
     for (; size >= 32; size -= 32)
     {
@@ -227,7 +228,10 @@ static void * memcpySSE2Unrolled4(void * __restrict destination, const void * __
     }
 
     // medium size copy
-    __m128i c0, c1, c2, c3;
+    __m128i c0;
+    __m128i c1;
+    __m128i c2;
+    __m128i c3;
 
     for (; size >= 64; size -= 64)
     {
@@ -271,7 +275,14 @@ static void * memcpySSE2Unrolled8(void * __restrict destination, const void * __
     }
 
     // medium size copy
-    __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+    __m128i c0;
+    __m128i c1;
+    __m128i c2;
+    __m128i c3;
+    __m128i c4;
+    __m128i c5;
+    __m128i c6;
+    __m128i c7;
 
     for (; size >= 128; size -= 128)
     {
@@ -317,7 +328,14 @@ memcpy_my_medium_sse(uint8_t * __restrict & dst, const uint8_t * __restrict & sr
     }
 
     /// Aligned unrolled copy.
-    __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+    __m128i c0;
+    __m128i c1;
+    __m128i c2;
+    __m128i c3;
+    __m128i c4;
+    __m128i c5;
+    __m128i c6;
+    __m128i c7;
 
     while (size >= 128)
     {
@@ -358,7 +376,14 @@ void memcpy_my_medium_avx(uint8_t * __restrict & __restrict dst, const uint8_t *
         size -= padding;
     }
 
-    __m256i c0, c1, c2, c3, c4, c5, c6, c7;
+    __m256i c0;
+    __m256i c1;
+    __m256i c2;
+    __m256i c3;
+    __m256i c4;
+    __m256i c5;
+    __m256i c6;
+    __m256i c7;
 
     while (size >= 256)
     {
@@ -530,7 +555,14 @@ tail:
             }
 
             /// Aligned unrolled copy.
-            __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+            __m128i c0;
+            __m128i c1;
+            __m128i c2;
+            __m128i c3;
+            __m128i c4;
+            __m128i c5;
+            __m128i c6;
+            __m128i c7;
 
             while (size >= 128)
             {
@@ -617,7 +649,14 @@ static uint8_t * memcpy_my2(uint8_t * __restrict dst, const uint8_t * __restrict
         }
 
         /// Aligned unrolled copy.
-        __m128i c0, c1, c2, c3, c4, c5, c6, c7;
+        __m128i c0;
+        __m128i c1;
+        __m128i c2;
+        __m128i c3;
+        __m128i c4;
+        __m128i c5;
+        __m128i c6;
+        __m128i c7;
 
         while (size >= 128)
         {
