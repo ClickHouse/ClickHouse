@@ -37,16 +37,26 @@ namespace
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
     public:
+
+
         DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_)
             : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_)
         {
         }
 
         /// Acquire the result of visiting the create query.
-        TableNamesSet getDependencies() &&
+        TableNamesSet getDependencies()
         {
             dependencies.erase(table_name);
-            return std::move(dependencies);
+            return dependencies;
+        }
+        QualifiedTableName getMvToDependency()
+        {
+            return mv_to_dependency;
+        }
+        QualifiedTableName getMvFromDependency()
+        {
+            return mv_from_dependency;
         }
 
         bool needChildVisit(const ASTPtr & child) const { return !skip_asts.contains(child.get()); }
@@ -73,7 +83,6 @@ namespace
                     visitFunction(*function);
             }
         }
-
     private:
         ASTPtr create_query;
         std::unordered_set<const IAST *> skip_asts;
@@ -82,6 +91,8 @@ namespace
         String current_database;
         ContextPtr global_context;
         TableNamesSet dependencies;
+        QualifiedTableName mv_to_dependency;
+        QualifiedTableName mv_from_dependency;
 
         /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         void visitCreateQuery(const ASTCreateQuery & create)
@@ -95,8 +106,12 @@ namespace
                     {
                         /// TO target_table (for materialized views)
                         QualifiedTableName target_name{table_id.database_name, table_id.table_name};
+                        // auto target_name = table_id.getQualifiedName();
                         if (target_name.database.empty())
                             target_name.database = current_database;
+                        // view_dependencies.emplace(target_name);
+                        // view_dependencies.emplace(table_name);
+                        mv_to_dependency = target_name;
                         dependencies.emplace(target_name);
                     }
                 }
@@ -113,8 +128,11 @@ namespace
 
             /// Visit nested select query only for views, for other cases it's not
             /// an actual dependency as it will be executed only once to fill the table.
-            if (create.select && !create.isView())
-                skip_asts.insert(create.select);
+            if (create.select)
+            {
+                if (!create.isView())
+                    skip_asts.insert(create.select);
+            }
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
@@ -176,6 +194,10 @@ namespace
                 qualified_name.database = current_database;
             }
 
+            if (!mv_to_dependency.table.empty() && dependencies.size() == 1)
+            {
+                mv_from_dependency = qualified_name;
+            }
             dependencies.emplace(qualified_name);
         }
 
@@ -489,12 +511,12 @@ namespace
 }
 
 
-TableNamesSet getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database)
+CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database)
 {
     DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);
-    return std::move(data).getDependencies();
+    return {data.getDependencies(), data.getMvToDependency(), data.getMvFromDependency()};
 }
 
 TableNamesSet getDependenciesFromDictionaryNestedSelectQuery(const ContextPtr & global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & select_query, const String & current_database)

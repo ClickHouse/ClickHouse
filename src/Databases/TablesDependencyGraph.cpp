@@ -106,7 +106,7 @@ void TablesDependencyGraph::addDependency(const StorageID & table_id, const Stor
 }
 
 
-void TablesDependencyGraph::addDependencies(const StorageID & table_id, const std::vector<StorageID> & dependencies)
+void TablesDependencyGraph::addDependencies(const StorageID & table_id, const std::vector<StorageID> & dependencies, bool add_only)
 {
     auto * table_node = addOrUpdateNode(table_id);
 
@@ -130,14 +130,18 @@ void TablesDependencyGraph::addDependencies(const StorageID & table_id, const st
             fmt::join(dependencies, ", "));
     }
 
-    for (auto * dependency_node : old_dependency_nodes)
+    if (!add_only)
     {
-        if (!new_dependency_nodes.contains(dependency_node))
+        for (auto * dependency_node : old_dependency_nodes)
         {
-            [[maybe_unused]] bool removed_from_set = dependency_node->dependents.erase(table_node);
-            chassert(removed_from_set);
+            if (!new_dependency_nodes.contains(dependency_node))
+            {
+                [[maybe_unused]] bool removed_from_set = dependency_node->dependents.erase(table_node);
+                chassert(removed_from_set);
+            }
         }
     }
+
 
     for (auto * dependency_node : new_dependency_nodes)
     {
@@ -445,10 +449,10 @@ std::vector<StorageID> TablesDependencyGraph::getTables() const
 }
 
 
-void TablesDependencyGraph::mergeWith(const TablesDependencyGraph & other)
+void TablesDependencyGraph::mergeWith(const TablesDependencyGraph & other, bool add_only)
 {
     for (const auto & other_node : other.nodes)
-        addDependencies(other_node->storage_id, TablesDependencyGraph::getDependencies(*other_node));
+        addDependencies(other_node->storage_id, TablesDependencyGraph::getDependencies(*other_node), add_only);
 }
 
 
