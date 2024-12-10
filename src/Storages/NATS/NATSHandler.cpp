@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <adapters/libuv.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
