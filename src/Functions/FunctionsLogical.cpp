@@ -1,6 +1,5 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/logical.h>
 
 #include <Columns/ColumnConst.h>
@@ -30,7 +29,7 @@ REGISTER_FUNCTION(Logical)
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
     factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>({}, FunctionFactory::Case::Insensitive); /// Operator NOT(x) can be parsed as a function.
+    factory.registerFunction<FunctionNot>({}, FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
 }
 
 namespace ErrorCodes
@@ -39,7 +38,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -50,7 +48,7 @@ using UInt8Container = ColumnUInt8::Container;
 using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
-MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
+MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, const bool make_nullable)
 {
     const size_t rows_count = ternary_data.size();
 
@@ -172,7 +170,7 @@ public:
         : vec(in[in.size() - N]->getData()), next(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    ResultValueType apply(const size_t i) const
+    inline ResultValueType apply(const size_t i) const
     {
         const auto a = !!vec[i];
         return Op::apply(a, next.apply(i));
@@ -192,7 +190,7 @@ public:
     explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
-    ResultValueType apply(const size_t i) const { return !!vec[i]; }
+    inline ResultValueType apply(const size_t i) const { return !!vec[i]; }
 
 private:
     const UInt8Container & vec;
@@ -293,7 +291,7 @@ public:
         }
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    ResultValueType apply(const size_t i) const
+    inline ResultValueType apply(const size_t i) const
     {
         return Op::ternaryApply(vec[i], next.apply(i));
     }
@@ -317,7 +315,7 @@ public:
             TernaryValueBuilder::build(in[in.size() - 1], vec.data());
         }
 
-    ResultValueType apply(const size_t i) const { return vec[i]; }
+    inline ResultValueType apply(const size_t i) const { return vec[i]; }
 
 private:
     UInt8Container vec;
@@ -512,44 +510,6 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
 
 }
 
-namespace FunctionsLogicalDetail
-{
-
-#if USE_EMBEDDED_COMPILER
-
-/// Cast LLVM value with type to ternary
-llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
-{
-    auto * result_type = llvm::Type::getInt8Ty(b.getContext());
-
-    if (from_type->isNullable())
-    {
-        auto * ternary_null = llvm::ConstantInt::get(result_type, 1);
-        auto * inner = nativeTernaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
-        auto * is_null = b.CreateExtractValue(value, {1});
-        return b.CreateSelect(is_null, ternary_null, inner);
-    }
-
-    auto * zero = llvm::Constant::getNullValue(value->getType());
-    auto * ternary_true = llvm::ConstantInt::get(result_type, 2);
-    auto * ternary_false = llvm::ConstantInt::get(result_type, 0);
-    if (value->getType()->isIntegerTy())
-        return b.CreateSelect(b.CreateICmpNE(value, zero), ternary_true, ternary_false);
-    else if (value->getType()->isFloatingPointTy())
-        return b.CreateSelect(b.CreateFCmpONE(value, zero), ternary_true, ternary_false);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to ternary", from_type->getName());
-}
-
-/// Cast LLVM value with type to ternary
-llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
-{
-    return nativeTernaryCast(b, value_with_type.type, value_with_type.value);
-}
-
-#endif
-}
-
 template <typename Impl, typename Name>
 DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
 {
@@ -698,7 +658,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
 
     if (result_type->isNullable())
         return executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+    else
+        return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
 }
 
 template <typename Impl, typename Name>
@@ -740,11 +701,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
         bool constant_value_bool = false;
 
         if (field_type == Field::Types::Float64)
-            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Float64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.get<Float64>());
         else if (field_type == Field::Types::Int64)
-            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Int64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.get<Int64>());
         else if (field_type == Field::Types::UInt64)
-            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<UInt64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.get<UInt64>());
 
         has_true_constant = has_true_constant || constant_value_bool;
         has_false_constant = has_false_constant || !constant_value_bool;

@@ -15,7 +15,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ResizeProcessor.h>
-#include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -26,7 +26,6 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/PasteJoinTransform.h>
-#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Common/CurrentThread.h>
@@ -299,10 +298,10 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
 
         /// If one of pipelines uses more threads then current limit, will keep it.
         /// It may happen if max_distributed_connections > max_threads
-        max_threads_limit = std::max(pipeline.max_threads, max_threads_limit);
+        if (pipeline.max_threads > max_threads_limit)
+            max_threads_limit = pipeline.max_threads;
 
-        // Use concurrency control if at least one of pipelines is using it
-        concurrency_control = concurrency_control || pipeline.getConcurrencyControl();
+        concurrency_control = pipeline.getConcurrencyControl();
     }
 
     QueryPipelineBuilder pipeline;
@@ -313,8 +312,8 @@ QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
     {
         pipeline.setMaxThreads(max_threads);
         pipeline.limitMaxThreads(max_threads_limit);
+        pipeline.setConcurrencyControl(concurrency_control);
     }
-    pipeline.setConcurrencyControl(concurrency_control);
 
     pipeline.setCollectedProcessors(nullptr);
     return pipeline;
@@ -341,6 +340,7 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+    left->resources = std::move(right->resources);
     return left;
 }
 
@@ -375,9 +375,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
         auto joining = std::make_shared<PasteJoinTransform>(join, inputs, out_header, max_block_size);
         return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
-
-    auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
-    return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+    else
+    {
+        auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
+        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+    }
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
@@ -386,7 +388,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     JoinPtr join,
     const Block & output_header,
     size_t max_block_size,
-    size_t min_block_size_bytes,
     size_t max_streams,
     bool keep_left_read_in_order,
     Processors * collected_processors)
@@ -400,10 +401,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     left->pipe.collected_processors = collected_processors;
 
+    /// Collect the NEW processors for the right pipeline.
+    QueryPipelineProcessorsCollector collector(*right);
     /// Remember the last step of the right pipeline.
     IQueryPlanStep * step = right->pipe.processors->back()->getQueryPlanStep();
-    /// Collect the NEW processors for the right pipeline.
-    QueryPipelineProcessorsCollector collector(*right, step);
 
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;
@@ -443,12 +444,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             Processors processors;
             for (auto & outport : outports)
             {
-                auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), 0, min_block_size_bytes);
-                connect(*outport, squashing->getInputs().front());
-                processors.emplace_back(squashing);
                 auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
-                connect(squashing->getOutputPort(), adding_joined->getInputs().front());
-                processors.emplace_back(std::move(adding_joined));
+                connect(*outport, adding_joined->getInputs().front());
+                processors.emplace_back(adding_joined);
             }
             return processors;
         };
@@ -502,13 +500,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     Block left_header = left->getHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
-        connect(**lit, squashing->getInputs().front());
-
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, finish_counter);
 
-        connect(squashing->getOutputPort(), joining->getInputs().front());
+        connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
         {
@@ -540,7 +535,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
-        left->pipe.processors->emplace_back(std::move(squashing));
         left->pipe.processors->emplace_back(std::move(joining));
     }
 

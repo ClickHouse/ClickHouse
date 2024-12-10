@@ -26,6 +26,14 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 {
     chassert(ast);
 
+    if (const auto * function = ast->template as<ASTFunction>())
+    {
+        std::unordered_set<std::string> udf_in_replace_process;
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+        if (replace_result)
+            ast = replace_result;
+    }
+
     for (auto & child : ast->children)
     {
         if (!child)
@@ -39,14 +47,6 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
         /// We have to replace them if the child was replaced.
         if (new_ptr != old_ptr)
             ast->updatePointerToChild(old_ptr, new_ptr);
-    }
-
-    if (const auto * function = ast->template as<ASTFunction>())
-    {
-        std::unordered_set<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
-        if (replace_result)
-            ast = replace_result;
     }
 }
 

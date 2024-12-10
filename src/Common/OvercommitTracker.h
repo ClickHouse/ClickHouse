@@ -9,7 +9,6 @@
 #include <condition_variable>
 #include <mutex>
 #include <unordered_map>
-#include <Common/SharedMutex.h>
 
 // This struct is used for the comparison of query memory usage.
 struct OvercommitRatio
@@ -43,7 +42,7 @@ namespace DB
     struct ProcessListForUser;
 }
 
-enum class OvercommitResult : uint8_t
+enum class OvercommitResult
 {
     NONE,
     DISABLED,
@@ -53,7 +52,7 @@ enum class OvercommitResult : uint8_t
     NOT_ENOUGH_FREED,
 };
 
-enum class QueryCancellationState : uint8_t
+enum class QueryCancellationState
 {
     NONE     = 0,  // Hard limit is not reached, there is no selected query to kill.
     SELECTED = 1,  // Hard limit is reached, query to stop was chosen but it still is not aware of cancellation.
@@ -84,8 +83,8 @@ protected:
 
     // This mutex is used to disallow concurrent access
     // to picked_tracker and cancellation_state variables.
-    DB::SharedMutex overcommit_m;
-    std::condition_variable_any cv;
+    std::mutex overcommit_m;
+    std::condition_variable cv;
 
     // Specifies memory tracker of the chosen to stop query.
     // If soft limit is not set, all the queries which reach hard limit must stop.

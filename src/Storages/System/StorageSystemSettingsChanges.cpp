@@ -26,7 +26,6 @@ ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
 
 void StorageSystemSettingsChanges::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & settings_changes_history = getSettingsChangesHistory();
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
     {
         res_columns[0]->insert(it->first.toString());

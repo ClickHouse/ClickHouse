@@ -70,7 +70,7 @@ struct JoinedElement
         join->strictness = JoinStrictness::All;
 
         join->on_expression = on_expression;
-        join->children = {join->on_expression};
+        join->children.push_back(join->on_expression);
         return true;
     }
 

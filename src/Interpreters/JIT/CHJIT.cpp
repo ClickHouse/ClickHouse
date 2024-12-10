@@ -3,7 +3,6 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
-#include <cmath>
 
 #include <boost/noncopyable.hpp>
 
@@ -120,9 +119,9 @@ public:
         return result;
     }
 
-    size_t getAllocatedSize() const { return allocated_size; }
+    inline size_t getAllocatedSize() const { return allocated_size; }
 
-    size_t getPageSize() const { return page_size; }
+    inline size_t getPageSize() const { return page_size; }
 
     ~PageArena()
     {
@@ -178,10 +177,10 @@ private:
         {
         }
 
-        void * base() const { return pages_base; }
-        size_t pagesSize() const { return pages_size; }
-        size_t pageSize() const { return page_size; }
-        size_t blockSize() const { return pages_size * page_size; }
+        inline void * base() const { return pages_base; }
+        inline size_t pagesSize() const { return pages_size; }
+        inline size_t pageSize() const { return page_size; }
+        inline size_t blockSize() const { return pages_size * page_size; }
 
     private:
         void * pages_base;
@@ -218,8 +217,10 @@ private:
 
             return static_cast<char *>(result);
         }
-
-        return nullptr;
+        else
+        {
+            return nullptr;
+        }
     }
 
     void allocateNextPageBlock(size_t size)
@@ -286,7 +287,8 @@ public:
     {
         if (is_read_only)
             return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
-        return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+        else
+            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
     }
 
     bool finalizeMemory(std::string *) override
@@ -296,7 +298,7 @@ public:
         return true;
     }
 
-    size_t allocatedSize() const
+    inline size_t allocatedSize() const
     {
         size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
         size_t code_size = ex_page_arena.getAllocatedSize();
@@ -371,9 +373,6 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
-
-    double (*fmod_ptr)(double, double) = &fmod;
-    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
 }
 
 CHJIT::~CHJIT() = default;

@@ -7,17 +7,13 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 template <typename A>
 struct BitCountImpl
 {
     using ResultType = std::conditional_t<(sizeof(A) * 8 >= 256), UInt16, UInt8>;
     static constexpr bool allow_string_or_fixed_string = true;
 
-    static ResultType apply(A a)
+    static inline ResultType apply(A a)
     {
         /// We count bits in the value representation in memory. For example, we support floats.
         /// We need to avoid sign-extension when converting signed numbers to larger type. So, uint8_t(-1) has 8 bits.
@@ -42,26 +38,7 @@ struct BitCountImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
-    {
-        const auto & type = arg->getType();
-        llvm::Value * int_value = nullptr;
-
-        if (type->isIntegerTy())
-            int_value = arg;
-        else if (type->isFloatTy())
-            int_value = b.CreateBitCast(arg, llvm::Type::getInt32Ty(b.getContext()));
-        else if (type->isDoubleTy())
-            int_value = b.CreateBitCast(arg, llvm::Type::getInt64Ty(b.getContext()));
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitCountImpl compilation expected native integer or floating-point type");
-
-        auto * func_ctpop = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::ctpop, {int_value->getType()});
-        llvm::Value * ctpop_value = b.CreateCall(func_ctpop, {int_value});
-        return b.CreateZExtOrTrunc(ctpop_value, llvm::Type::getInt8Ty(b.getContext()));
-    }
+    static constexpr bool compilable = false;
 #endif
 };
 

@@ -190,8 +190,10 @@ void HiveMetastoreClient::HiveTableMetadata::updateIfNeeded(const std::vector<Ap
             new_partition_infos.emplace(partition.sd.location, PartitionInfo(partition));
             continue;
         }
-
-        new_partition_infos.emplace(partition.sd.location, std::move(it->second));
+        else
+        {
+            new_partition_infos.emplace(partition.sd.location, std::move(it->second));
+        }
     }
 
     partition_infos.swap(new_partition_infos);

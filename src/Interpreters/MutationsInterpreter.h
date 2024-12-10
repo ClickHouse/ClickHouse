@@ -20,7 +20,6 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
-    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context
@@ -40,6 +39,7 @@ class MutationsInterpreter
 {
 private:
     struct Stage;
+
 public:
     struct Settings
     {
@@ -70,7 +70,6 @@ public:
     MutationsInterpreter(
         MergeTreeData & storage_,
         MergeTreeData::DataPartPtr source_part_,
-        AlterConversionsPtr alter_conversions_,
         StorageMetadataPtr metadata_snapshot_,
         MutationCommands commands_,
         Names available_columns_,
@@ -102,7 +101,7 @@ public:
         enum MutationKindEnum
         {
             MUTATE_UNKNOWN,
-            MUTATE_INDEX_STATISTICS_PROJECTION,
+            MUTATE_INDEX_STATISTIC_PROJECTION,
             MUTATE_OTHER,
         } mutation_kind = MUTATE_UNKNOWN;
 
@@ -122,6 +121,7 @@ public:
         const MergeTreeData * getMergeTreeData() const;
 
         bool supportsLightweightDelete() const;
+        bool hasLightweightDeleteMask() const;
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;
         bool hasProjection(const String & name) const;
@@ -137,7 +137,7 @@ public:
             bool can_execute_) const;
 
         explicit Source(StoragePtr storage_);
-        Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_, AlterConversionsPtr alter_conversions_);
+        Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_);
 
     private:
         StoragePtr storage;
@@ -145,7 +145,6 @@ public:
         /// Special case for *MergeTree.
         MergeTreeData * data = nullptr;
         MergeTreeData::DataPartPtr part;
-        AlterConversionsPtr alter_conversions;
     };
 
 private:
@@ -174,8 +173,6 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
-
-    LoggerPtr logger;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
