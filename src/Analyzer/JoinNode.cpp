@@ -9,6 +9,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {

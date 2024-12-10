@@ -29,6 +29,7 @@
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
+#include <future>
 #include <ranges>
 
 namespace fs = std::filesystem;

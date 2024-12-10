@@ -805,6 +805,7 @@ Strings IcebergMetadata::getDataFiles() const
             {
                 LOG_TEST(log, "Processing data file for path: {}", file_path);
                 data_files.push_back(file_path);
+                schema_id_by_data_file[file_path] = current_schema_id;
             }
         }
         ColumnPtr big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));

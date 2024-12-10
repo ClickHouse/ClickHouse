@@ -124,6 +124,7 @@ arrayMax
 arrayMin
 arrayPopBack
 arrayPopFront
+arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront

@@ -70,8 +70,8 @@ enable sanitizers you must use a version that matches the exact same `std` as th
 the crates):
 
 ```bash
-rustup toolchain install nightly-2024-04-01
-rustup default nightly-2024-04-01
+rustup toolchain install nightly-2024-12-01
+rustup default nightly-2024-12-01
 rustup component add rust-src
 ```
 

@@ -4951,6 +4951,7 @@ Prefer prefetched threadpool if all parts are on remote filesystem
 Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
+    DECLARE(UInt64, object_storage_remove_recursive_file_limit, DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT, "Max number of files to store in memory during remove. Zero value means unlimited. Used to reduce memory usage.", 0) \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the prefetch buffer to read from the filesystem.
 )", 0) \

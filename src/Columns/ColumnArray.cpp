@@ -1024,10 +1024,10 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, Perm
             DefaultPartialSort());
 }
 
-ColumnPtr ColumnArray::compress(bool force_compression) const
+ColumnPtr ColumnArray::compress() const
 {
-    ColumnPtr data_compressed = data->compress(force_compression);
-    ColumnPtr offsets_compressed = offsets->compress(force_compression);
+    ColumnPtr data_compressed = data->compress();
+    ColumnPtr offsets_compressed = offsets->compress();
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
 

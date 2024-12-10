@@ -297,24 +297,44 @@ def get_creation_expression(
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
 
-def check_schema_and_data(instance, table_expression, expected_schema, expected_data):
-    schema = instance.query(f"DESC {table_expression}")
-    data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL")
+def get_schema(instance, table_expression):
+    query_id = uuid.uuid4().hex
+    schema = instance.query(f"DESC {table_expression}", query_id=query_id)
     schema = list(
         map(
             lambda x: x.split("\t")[:2],
             filter(lambda x: len(x) > 0, schema.strip().split("\n")),
         )
     )
+    return schema, query_id
+
+def check_schema(instance, table_expression, expected_schema):
+    schema, query_id = get_schema(instance, table_expression)
+    assert expected_schema == schema
+    return query_id
+
+def get_data(instance, table_expression):
+    query_id = uuid.uuid4().hex
+    data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL", query_id=query_id)
     data = list(
         map(
             lambda x: x.split("\t"),
             filter(lambda x: len(x) > 0, data.strip().split("\n")),
         )
     )
-    assert expected_schema == schema
-    assert expected_data == data
+    return data, query_id
 
+def check_data(instance, table_expression, expected_data):
+    data, query_id = get_schema(instance, table_expression)
+    assert expected_data == data
+    return query_id
+
+def check_schema_and_data(instance, table_expression, expected_schema, expected_data):
+    check_schema(instance, table_expression, expected_schema)
+    check_data(instance, table_expression, expected_data)
+
+def get_prunned_filed_profile_event(query_id, instance):
+    return int(f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'")
 
 def get_uuid_str():
     return str(uuid.uuid4()).replace("-", "_")
@@ -375,6 +395,37 @@ def default_upload_directory(
     else:
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+def test_partition_pruning(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_single_iceberg_file_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(100)"
+    )
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
@@ -1869,3 +1920,325 @@ def test_filesystem_cache(started_cluster, storage_type):
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
+def test_partition_pruning(started_cluster, format_version, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_partition_pruning_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(
+        f"""
+            DROP TABLE IF EXISTS {TABLE_NAME};
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+                a int NOT NULL, 
+                b float, 
+                c decimal(9,2) NOT NULL,
+                d array<int>
+            )
+            USING iceberg 
+            OPTIONS ('format-version'='{format_version}')
+        """
+    )
+
+    instance.query(
+        get_creation_expression(
+            storage_type,
+            TABLE_NAME,
+            started_cluster,
+            table_function=True,
+            allow_dynamic_metadata_for_data_lakes=False,
+
+        )
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [],
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (4, 3.0, 7.12, ARRAY(5, 6, 7));
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [["4", "3", "7.12", "[5,6,7]"]],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b TYPE double;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [["4", "3", "7.12", "[5,6,7]"]],
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (7, 5.0, 18.1, ARRAY(6, 7, 9));
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN d FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b AFTER d;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME}
+            ADD COLUMNS (
+                e string
+            );
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN c TYPE decimal(12, 2);
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(5, 6, 7), 3, -30, 7.12, 'AAA');
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [
+            ["-30", "3", "7.12", "[5,6,7]"],
+            ["4", "3", "7.12", "[5,6,7]"],
+            ["7", "5", "18.1", "[6,7,9]"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN a TYPE BIGINT;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [
+            ["-30", "3", "7.12", "[5,6,7]"],
+            ["4", "3", "7.12", "[5,6,7]"],
+            ["7", "5", "18.1", "[6,7,9]"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(), 3.0, 12, -9.13, 'BBB');
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [
+            ["-30", "3", "7.12", "[5,6,7]"],
+            ["4", "3", "7.12", "[5,6,7]"],
+            ["7", "5", "18.1", "[6,7,9]"],
+            ["12", "3", "-9.13", "[]"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN a DROP NOT NULL;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [
+            ["-30", "3", "7.12", "[5,6,7]"],
+            ["4", "3", "7.12", "[5,6,7]"],
+            ["7", "5", "18.1", "[6,7,9]"],
+            ["12", "3", "-9.13", "[]"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (NULL, 3.4, NULL, -9.13, NULL);
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        TABLE_NAME,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float32)"],
+            ["c", "Decimal(9, 2)"],
+            ["d", "Array(Nullable(Int32))"],
+        ],
+        [
+            ["-30", "3", "7.12", "[5,6,7]"],
+            ["0", "3.4", "-9.13", "[]"],
+            ["4", "3", "7.12", "[5,6,7]"],
+            ["7", "5", "18.1", "[6,7,9]"],
+            ["12", "3", "-9.13", "[]"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN d;
+        """
+    )
+
+    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL")
+
+    assert "Not found column" in error
