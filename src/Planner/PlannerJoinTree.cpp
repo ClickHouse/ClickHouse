@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 
 #include <Core/ParallelReplicasMode.h>
+#include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 
 #include <Columns/ColumnAggregateFunction.h>

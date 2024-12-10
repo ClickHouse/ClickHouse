@@ -71,10 +71,13 @@ namespace
 
         if (!user.settings.empty())
         {
+            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query->settings = user.settings.toAST();
+                query_settings = user.settings.toAST();
             else
-                query->settings = user.settings.toASTWithNames(*access_control);
+                query_settings = user.settings.toASTWithNames(*access_control);
+            if (!query_settings->empty())
+                query->settings = query_settings;
         }
 
         if (user.grantees != RolesOrUsersSet::AllTag{})
@@ -105,10 +108,13 @@ namespace
 
         if (!role.settings.empty())
         {
+            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query->settings = role.settings.toAST();
+                query_settings = role.settings.toAST();
             else
-                query->settings = role.settings.toASTWithNames(*access_control);
+                query_settings = role.settings.toASTWithNames(*access_control);
+            if (!query_settings->empty())
+                query->settings = query_settings;
         }
 
         return query;
@@ -123,12 +129,16 @@ namespace
 
         if (!profile.elements.empty())
         {
+            std::shared_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query->settings = profile.elements.toAST();
+                query_settings = profile.elements.toAST();
             else
-                query->settings = profile.elements.toASTWithNames(*access_control);
-            if (query->settings)
-                query->settings->setUseInheritKeyword(true);
+                query_settings = profile.elements.toASTWithNames(*access_control);
+            if (!query_settings->empty())
+            {
+                query_settings->setUseInheritKeyword(true);
+                query->settings = query_settings;
+            }
         }
 
         if (!profile.to_roles.empty())

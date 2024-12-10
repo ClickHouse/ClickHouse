@@ -419,7 +419,7 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnFixedString::compress(bool force_compression) const
+ColumnPtr ColumnFixedString::compress() const
 {
     size_t source_size = chars.size();
 
@@ -427,7 +427,7 @@ ColumnPtr ColumnFixedString::compress(bool force_compression) const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, force_compression);
+    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, false);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
