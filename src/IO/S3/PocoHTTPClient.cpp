@@ -163,6 +163,9 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
     , s3_use_adaptive_timeouts(client_configuration.s3_use_adaptive_timeouts)
+    , http_max_fields(client_configuration.http_max_fields)
+    , http_max_field_name_size(client_configuration.http_max_field_name_size)
+    , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
     , get_request_throttler(client_configuration.get_request_throttler)
@@ -466,6 +469,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
             }
 
             Poco::Net::HTTPResponse poco_response;
+            poco_response.setFieldLimit(static_cast<int>(http_max_fields));
+            poco_response.setNameLengthLimit(static_cast<int>(http_max_field_name_size));
+            poco_response.setValueLengthLimit(static_cast<int>(http_max_field_value_size));
 
             Stopwatch watch;
 

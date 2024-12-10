@@ -17,6 +17,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
+#include <Common/DNSResolver.h>
 #include <numeric>
 
 
@@ -436,6 +437,163 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         ErrorCodes::REPLICA_ALREADY_EXISTS,
         "Cannot create table, because it is created concurrently every time or because "
         "of wrong zookeeper path or because of logical error");
+}
+
+namespace
+{
+    struct Info
+    {
+        std::string hostname;
+        std::string table_id;
+
+        bool operator ==(const Info & other) const
+        {
+            return hostname == other.hostname && table_id == other.table_id;
+        }
+
+        static Info create(const StorageID & storage_id)
+        {
+            Info self;
+            self.hostname = DNSResolver::instance().getHostName();
+            self.table_id = storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName();
+            return self;
+        }
+
+        std::string serialize() const
+        {
+            WriteBufferFromOwnString buf;
+            size_t version = 0;
+            buf << version << "\n";
+            buf << hostname << "\n";
+            buf << table_id << "\n";
+            return buf.str();
+        }
+
+        static Info deserialize(const std::string & str)
+        {
+            ReadBufferFromString buf(str);
+            Info info;
+            size_t version;
+            buf >> version >> "\n";
+            buf >> info.hostname >> "\n";
+            buf >> info.table_id >> "\n";
+            return info;
+        }
+    };
+}
+
+void ObjectStorageQueueMetadata::registerIfNot(const StorageID & storage_id)
+{
+    const auto registry_path = zookeeper_path / "registry";
+    const auto self = Info::create(storage_id);
+
+    Coordination::Error code;
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        Coordination::Stat stat;
+        std::string registry_str;
+        auto zk_client = getZooKeeper();
+
+        if (zk_client->tryGet(registry_path, registry_str, &stat))
+        {
+            Strings registered;
+            splitInto<','>(registered, registry_str);
+
+            for (const auto & elem : registered)
+            {
+                if (elem.empty())
+                    continue;
+
+                auto info = Info::deserialize(elem);
+                if (info == self)
+                {
+                    LOG_TRACE(log, "Table {} is already registered", self.table_id);
+                    return;
+                }
+            }
+
+            auto new_registry_str = registry_str + "," + self.serialize();
+            code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+        }
+        else
+            code = zk_client->tryCreate(registry_path, self.serialize(), zkutil::CreateMode::Persistent);
+
+        if (code == Coordination::Error::ZOK)
+        {
+            LOG_TRACE(log, "Added {} to registry", self.table_id);
+            return;
+        }
+
+        if (code == Coordination::Error::ZBADVERSION
+            || code == Coordination::Error::ZSESSIONEXPIRED)
+            continue;
+
+        throw zkutil::KeeperException(code);
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot register in keeper. Last error: {}", code);
+}
+
+size_t ObjectStorageQueueMetadata::unregister(const StorageID & storage_id)
+{
+    const auto registry_path = zookeeper_path / "registry";
+    const auto self = Info::create(storage_id);
+
+    Coordination::Error code = Coordination::Error::ZOK;
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        Coordination::Stat stat;
+        std::string registry_str;
+        auto zk_client = getZooKeeper();
+
+        bool node_exists = zk_client->tryGet(registry_path, registry_str, &stat);
+        if (!node_exists)
+        {
+            LOG_WARNING(log, "Cannot unregister: registry does not exist");
+            chassert(false);
+            return 0;
+        }
+
+        Strings registered;
+        splitInto<','>(registered, registry_str);
+
+        bool found = false;
+        std::string new_registry_str;
+        size_t count = 0;
+        for (const auto & elem : registered)
+        {
+            if (elem.empty())
+                continue;
+
+            auto info = Info::deserialize(elem);
+            if (info == self)
+                found = true;
+            else
+            {
+                if (!new_registry_str.empty())
+                    new_registry_str += ",";
+                new_registry_str += elem;
+                count += 1;
+            }
+        }
+        if (!found)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: not registered");
+
+        code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+
+        if (code == Coordination::Error::ZOK)
+            return count;
+
+        if (Coordination::isHardwareError(code)
+            || code == Coordination::Error::ZBADVERSION)
+            continue;
+
+        throw zkutil::KeeperException(code);
+    }
+
+    if (Coordination::isHardwareError(code))
+        throw zkutil::KeeperException(code);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister in keeper. Last error: {}", code);
 }
 
 void ObjectStorageQueueMetadata::cleanupThreadFunc()

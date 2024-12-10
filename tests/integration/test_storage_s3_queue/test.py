@@ -2403,3 +2403,127 @@ def test_list_and_delete_race(started_cluster):
     assert node.contains_in_log(
         "because of the race with list & delete"
     ) or node_2.contains_in_log("because of the race with list & delete")
+
+
+def test_registry(started_cluster):
+    node1 = started_cluster.instances["node1"]
+    node2 = started_cluster.instances["node2"]
+
+    table_name = f"test_registry_{uuid.uuid4().hex[:8]}"
+    db_name = f"db_{table_name}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+
+    node1.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node2.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+    node1.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb2', 'shard1', 'node1')"
+    )
+    node2.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb2', 'shard1', 'node2')"
+    )
+
+    create_table(
+        started_cluster,
+        node1,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path, "buckets": 3},
+        database_name=db_name,
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    registry, stat = zk.get(f"{keeper_path}/registry/")
+
+    uuid1 = node1.query(
+        f"SELECT uuid FROM system.tables WHERE database = '{db_name}' and table = '{table_name}'"
+    ).strip()
+    assert uuid1 in str(registry)
+
+    expected = [f"0\\nnode1\\n{uuid1}\\n", f"0\\nnode2\\n{uuid1}\\n"]
+
+    for elem in expected:
+        assert elem in str(registry)
+
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node1, f"{db_name}.{table_name}", dst_table_name)
+    create_mv(node2, f"{db_name}.{table_name}", dst_table_name)
+
+    def get_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+            )
+        )
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    table_name_2 = f"test_registry_{uuid.uuid4().hex[:8]}_2"
+    create_table(
+        started_cluster,
+        node1,
+        table_name_2,
+        "ordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path, "buckets": 3},
+        database_name=db_name,
+    )
+
+    registry, stat = zk.get(f"{keeper_path}/registry/")
+
+    uuid2 = node1.query(
+        f"SELECT uuid FROM system.tables WHERE database = '{db_name}' and table = '{table_name_2}'"
+    ).strip()
+
+    assert uuid1 in str(registry)
+    assert uuid2 in str(registry)
+
+    expected = [
+        f"0\\nnode1\\n{uuid1}\\n",
+        f"0\\nnode2\\n{uuid1}\\n",
+        f"0\\nnode1\\n{uuid2}\\n",
+        f"0\\nnode2\\n{uuid2}\\n",
+    ]
+
+    for elem in expected:
+        assert elem in str(registry)
+
+    node1.restart_clickhouse()
+    node2.restart_clickhouse()
+
+    registry, stat = zk.get(f"{keeper_path}/registry/")
+
+    assert uuid1 in str(registry)
+    assert uuid2 in str(registry)
+
+    node1.query(f"DROP TABLE {db_name}.{table_name_2} SYNC")
+
+    assert zk.exists(keeper_path) is not None
+    registry, stat = zk.get(f"{keeper_path}/registry/")
+
+    assert uuid1 in str(registry)
+    assert uuid2 not in str(registry)
+
+    expected = [
+        f"0\\nnode1\\n{uuid1}\\n",
+        f"0\\nnode2\\n{uuid1}\\n",
+    ]
+
+    for elem in expected:
+        assert elem in str(registry)
+
+    node1.query(f"DROP TABLE {db_name}.{table_name} SYNC")
+
+    assert zk.exists(keeper_path) is None
