@@ -104,4 +104,30 @@ String highlightDigitGroups(String source)
     return result;
 }
 
+String highlightTrailingWhitespace(String source)
+{
+    String result = source;
+    size_t last_non_whitespace = source.find_last_not_of(" \t\n\r");
+    if (last_non_whitespace == String::npos) /// String is all whitespace
+    {
+    	String highlighted = GRAY_COLOR;
+    	highlighted += UNDERSCORE;
+    	highlighted += source;
+    	highlighted += RESET_COLOR;
+    	return highlighted;
+    }
+    else if (last_non_whitespace + 1 < source.size())
+    {
+	size_t whitespace_start = last_non_whitespace + 1;
+	String highlighted = source.substr(0, whitespace_start);
+	highlighted += GRAY_COLOR;
+	highlighted += UNDERSCORE;
+	highlighted += source.substr(whitespace_start);
+	highlighted += RESET_COLOR;
+	return highlighted;
+    }
+    
+    return source;
+}
+
 }
