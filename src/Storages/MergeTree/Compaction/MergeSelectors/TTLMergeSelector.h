@@ -15,7 +15,6 @@ namespace DB
 class ITTLMergeSelector : public IMergeSelector
 {
 protected:
-    using PartitionIdToTTLs = std::map<String, time_t>;
     using Iterator = PartsRange::const_iterator;
 
     /// Get TTL value for part, may depend on child type and some settings in constructor.
@@ -27,6 +26,8 @@ protected:
     const time_t current_time;
 
 public:
+    using PartitionIdToTTLs = std::map<String, time_t>;
+
     ITTLMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
     PartsRange select(
