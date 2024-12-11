@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <iterator>
 
@@ -305,6 +306,32 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name, bool c
     return &data[it->second];
 }
 
+std::optional<ColumnWithTypeAndName> Block::findSubcolumnByName(const std::string & name) const
+{
+    auto [name_in_storage, subcolumn_name] = Nested::splitName(name);
+    if (subcolumn_name.empty())
+        return std::nullopt;
+
+    const auto * column = findByName(name_in_storage, false);
+    if (!column)
+        return std::nullopt;
+
+    auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
+    auto subcolumn = column->type->tryGetSubcolumn(subcolumn_name, column->column);
+    if (!subcolumn_type || !subcolumn)
+        return std::nullopt;
+
+    return ColumnWithTypeAndName(subcolumn, subcolumn_type, name);
+}
+
+std::optional<ColumnWithTypeAndName> Block::findColumnOrSubcolumnByName(const std::string & name) const
+{
+    if (const auto * column = findByName(name, false))
+        return *column;
+
+    return findSubcolumnByName(name);
+}
+
 
 const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool case_insensitive) const
 {
@@ -312,6 +339,32 @@ const ColumnWithTypeAndName & Block::getByName(const std::string & name, bool ca
     if (!result)
         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
             name, dumpNames());
+
+    return *result;
+}
+
+ColumnWithTypeAndName Block::getSubcolumnByName(const std::string & name) const
+{
+    auto result = findSubcolumnByName(name);
+    if (!result)
+        throw Exception(
+            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+            "Not found subcolumn {} in block. There are only columns: {}",
+            name,
+            dumpNames());
+
+    return *result;
+}
+
+ColumnWithTypeAndName Block::getColumnOrSubcolumnByName(const std::string & name) const
+{
+    auto result = findColumnOrSubcolumnByName(name);
+    if (!result)
+        throw Exception(
+            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+            "Not found column or subcolumn {} in block. There are only columns: {}",
+            name,
+            dumpNames());
 
     return *result;
 }
