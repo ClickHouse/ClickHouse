@@ -1,10 +1,8 @@
 #pragma once
 
-#include <algorithm>
 #include <deque>
 #include <memory>
 #include <optional>
-#include <ranges>
 #include <variant>
 #include <vector>
 
@@ -26,6 +24,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/TwoLevelHashMap.h>
 
 namespace DB
 {
@@ -243,15 +242,16 @@ public:
     {
 /// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
-        std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
-        std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
-        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
-        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>   key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_fixed_string;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>   keys128;
-        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>   keys256;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
+        // TODO(nickitat): bring back FixedHashMap
+        std::shared_ptr<TwoLevelHashMap<UInt8, Mapped>> key8;
+        std::shared_ptr<TwoLevelHashMap<UInt16, Mapped>> key16;
+        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>> key32;
+        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>> key64;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_fixed_string;
+        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>> keys128;
+        std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>> keys256;
+        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
 
         void create(Type which)
         {
@@ -267,20 +267,21 @@ public:
             }
         }
 
-        void reserve(Type which, size_t num)
+        void reserve(Type, size_t)
         {
-            switch (which)
-            {
-                case Type::EMPTY:            break;
-                case Type::CROSS:            break;
-                case Type::key8:             break;
-                case Type::key16:            break;
-
-            #define M(NAME) \
-                case Type::NAME: NAME->reserve(num); break;
-                APPLY_FOR_HASH_JOIN_VARIANTS(M)
-            #undef M
-            }
+            // TODO(nickitat): implement
+            // switch (which)
+            // {
+            //     case Type::EMPTY:            break;
+            //     case Type::CROSS:            break;
+            //     case Type::key8:             break;
+            //     case Type::key16:            break;
+            //
+            // #define M(NAME) \
+            //     case Type::NAME: NAME->reserve(num); break;
+            //     APPLY_FOR_HASH_JOIN_VARIANTS(M)
+            // #undef M
+            // }
         }
 
         size_t getTotalRowCount(Type which) const
@@ -407,6 +408,10 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
+    const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
+
+    std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
+
 private:
     friend class NotJoinedHash;
 
@@ -434,7 +439,7 @@ private:
     /// Number of this flags equals to hashtable buffer size (plus one for zero value).
     /// Changes in hash table broke correspondence,
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
-    mutable std::unique_ptr<JoinStuff::JoinUsedFlags> used_flags;
+    mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
     bool have_compressed = false;
 

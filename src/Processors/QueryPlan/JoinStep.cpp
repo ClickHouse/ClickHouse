@@ -136,11 +136,11 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (join->supportParallelJoin())
-    {
-        joined_pipeline->addSimpleTransform([&](const Block & header)
-                                     { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
-    }
+    // if (join->supportParallelJoin())
+    // {
+    //     joined_pipeline->addSimpleTransform([&](const Block & header)
+    //                                  { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+    // }
 
     return joined_pipeline;
 }
