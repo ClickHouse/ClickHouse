@@ -60,7 +60,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_YAML;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int PATH_ACCESS_DENIED;
-    extern const int BAD_ARGUMENTS;
 }
 
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
@@ -77,7 +76,7 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
         if (dict_struct.has_expressions)
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Dictionary source of type `{}` does not support attribute expressions", kYAMLRegExpTree);
+                ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `{}` does not support attribute expressions", kYAMLRegExpTree);
         }
 
         if (!dict_struct.key.has_value() || dict_struct.key.value().size() != 1 || (*dict_struct.key)[0].type->getName() != "String")
