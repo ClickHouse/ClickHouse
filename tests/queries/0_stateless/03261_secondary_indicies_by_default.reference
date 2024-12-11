@@ -1,50 +1,41 @@
-Default
-x_idx	minmax	x
-Enable enable_minmax_index_for_all_numeric_columns
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
-Disable enable_minmax_index_for_all_numeric_columns
-x_idx	minmax	x
-Enable enable_minmax_index_for_all_numeric_columns again
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
+tbl with enable_minmax_index_for_all_numeric_columns and enable_minmax_index_for_all_string_columns enabled
+x_idx	minmax	x	34
+_idx_minmax_n_key	minmax	key	34
+_idx_minmax_n_y	minmax	y	34
 Add numeric column
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
-_idx_minmax_n_w	minmax	w
+x_idx	minmax	x	34
+_idx_minmax_n_key	minmax	key	34
+_idx_minmax_n_y	minmax	y	34
+_idx_minmax_n_w	minmax	w	0
+After materialize
+x_idx	minmax	x	34
+_idx_minmax_n_key	minmax	key	34
+_idx_minmax_n_y	minmax	y	34
+_idx_minmax_n_w	minmax	w	34
 Drop numeric column
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
+x_idx	minmax	x	34
+_idx_minmax_n_key	minmax	key	34
+_idx_minmax_n_y	minmax	y	34
 Add string column
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
-Enable enable_minmax_index_for_all_string_columns
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
-_idx_minmax_s_s	minmax	s
-Add string column
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
-_idx_minmax_s_s	minmax	s
-_idx_minmax_s_t	minmax	t
-Drop string column
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
-_idx_minmax_s_s	minmax	s
+x_idx	minmax	x	34
+_idx_minmax_n_key	minmax	key	34
+_idx_minmax_n_y	minmax	y	34
+_idx_minmax_s_s	minmax	s	0
+Add another string column
+x_idx	minmax	x	34
+_idx_minmax_n_key	minmax	key	34
+_idx_minmax_n_y	minmax	y	34
+_idx_minmax_s_s	minmax	s	0
+_idx_minmax_s_t	minmax	t	0
+Drop string column t
+x_idx	minmax	x	34
+_idx_minmax_n_key	minmax	key	34
+_idx_minmax_n_y	minmax	y	34
+_idx_minmax_s_s	minmax	s	0
 Rename column s to ss
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
-_idx_minmax_s_ss	minmax	ss
-Disable enable_minmax_index_for_all_string_columns
-x_idx	minmax	x
-_idx_minmax_n_key	minmax	key
-_idx_minmax_n_y	minmax	y
+x_idx	minmax	x	34
+_idx_minmax_n_key	minmax	key	34
+_idx_minmax_n_y	minmax	y	34
+_idx_minmax_s_ss	minmax	ss	0
+tbl3 with enable_minmax_index_for_all_numeric_columns and enable_minmax_index_for_all_string_columns disabled
+x_idx	minmax	x	0

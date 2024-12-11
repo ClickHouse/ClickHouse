@@ -285,7 +285,9 @@ namespace ErrorCodes
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(MACRO) \
-    MACRO(index_granularity)
+    MACRO(index_granularity)                           \
+    MACRO(enable_minmax_index_for_all_numeric_columns) \
+    MACRO(enable_minmax_index_for_all_string_columns)  \
 
 #define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
     MERGE_TREE_SETTINGS(M, ALIAS)             \
@@ -773,7 +775,8 @@ std::string_view MergeTreeSettings::resolveName(std::string_view name)
 
 bool MergeTreeSettings::isReadonlySetting(const String & name)
 {
-    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts";
+    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts"
+           || name == "enable_minmax_index_for_all_numeric_columns" || name == "enable_minmax_index_for_all_string_columns";
 }
 
 void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)

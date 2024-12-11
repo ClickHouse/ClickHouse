@@ -1079,7 +1079,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         String index_prefix;
 
-        auto column = metadata.columns.tryGet(rename_to);
+        const auto * column = metadata.columns.tryGet(rename_to);
         if (column)
         {
             index_prefix = isNumber(column->type) ? INDEX_MINMAX_NUMERIC_PREFIX : INDEX_MINMAX_STRING_PREFIX;
