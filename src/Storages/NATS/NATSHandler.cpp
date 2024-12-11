@@ -41,10 +41,13 @@ void NATSHandler::runLoop()
         natsLibuv_Init();
         natsLibuv_SetThreadLocalLoop(loop.getLoop());
 
-        SCOPE_EXIT(nats_ReleaseThreadMemory());
-
         loop_state = Loop::RUN;
     }
+
+    SCOPE_EXIT({
+        nats_ReleaseThreadMemory(); 
+        uv_key_delete(&uvLoopThreadKey);
+    });
 
     LOG_DEBUG(log, "Background loop started");
 
