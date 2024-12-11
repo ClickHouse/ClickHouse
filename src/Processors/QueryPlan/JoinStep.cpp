@@ -35,6 +35,9 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
     if (!table_join.getClauses().empty())
         description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
 
+    if (const auto & mixed_expression = table_join.getMixedJoinExpression())
+        description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
+
     return description;
 }
 

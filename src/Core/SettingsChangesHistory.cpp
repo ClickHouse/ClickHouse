@@ -58,6 +58,11 @@ String ClickHouseVersion::toString() const
 /// Note: please check if the key already exists to prevent duplicate entries.
 static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> settings_changes_history_initializer =
 {
+    {"25.1",
+        {
+            {"query_plan_use_new_logical_join_step", false, true, "New join step, internal change"},
+        }
+    },
     {"24.12",
         {
             {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
