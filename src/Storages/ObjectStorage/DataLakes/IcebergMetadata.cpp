@@ -52,9 +52,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Int32 parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
-
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
     ConfigurationObserverPtr configuration_,
@@ -79,7 +76,6 @@ IcebergMetadata::IcebergMetadata(
 
 namespace
 {
-
 enum class ManifestEntryStatus : uint8_t
 {
     EXISTING = 0,
@@ -143,6 +139,7 @@ bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Obj
         return false;
     return *(first.getArray(fields_key)) == *(second.getArray(fields_key));
 }
+
 }
 
 
@@ -309,7 +306,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-Int32 parseTableSchema(
+Int32 DB::IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger)
 {
     Int32 format_version = metadata_object->getValue<Int32>("format-version");
@@ -576,7 +573,6 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
     /// Get the latest version of metadata file: v<V>.metadata.json
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
 }
-
 
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context)
