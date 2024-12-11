@@ -112,8 +112,6 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"distributed_insert_skip_read_only_replicas", trueOrFalse},
     {"do_not_merge_across_partitions_select_final", trueOrFalse},
     {"empty_result_for_aggregation_by_constant_keys_on_empty_set", trueOrFalse},
-    {"empty_result_for_aggregation_by_empty_set", trueOrFalse},
-    {"enable_analyzer", trueOrFalse},
     {"enable_blob_storage_log", trueOrFalse},
     {"enable_early_constant_folding", trueOrFalse},
     {"enable_extended_results_for_datetime_functions", trueOrFalse},

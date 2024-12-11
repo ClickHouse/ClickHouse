@@ -317,7 +317,6 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("cross_join_min_rows_to_compress", {"0", "1"}),
     TestSetting("describe_include_subcolumns", {"0", "1"}),
     TestSetting("distributed_aggregation_memory_efficient", {"0", "1"}),
-    TestSetting("enable_analyzer", {"0", "1"}),
     TestSetting("enable_filesystem_cache", {"0", "1"}),
     TestSetting("enable_memory_bound_merging_of_aggregation_results", {"0", "1"}),
     TestSetting("enable_multiple_prewhere_read_steps", {"0", "1"}),
