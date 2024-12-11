@@ -99,7 +99,7 @@ def chunks(lst, n):
         yield lst[i : i + n]
 
 
-def get_counters(fname):
+def get_counters(fname: str) -> Dict[str, List[str]]:
     counters = {
         "ERROR": set([]),
         "PASSED": set([]),
@@ -672,13 +672,7 @@ class ClickhouseIntegrationTestsRunner:
             for pytest_log_path in glob.glob(
                 os.path.join(self.repo_path, "tests/integration/pytest*.log")
             ):
-                new_name = (
-                    test_group_str
-                    + "_"
-                    + str(i)
-                    + "_"
-                    + os.path.basename(pytest_log_path)
-                )
+                new_name = f"{test_group_str}_{i}_{os.path.basename(pytest_log_path)}"
                 os.rename(
                     pytest_log_path,
                     os.path.join(self.repo_path, "tests/integration", new_name),
@@ -724,7 +718,7 @@ class ClickhouseIntegrationTestsRunner:
             if extra_logs_names or test_data_dirs_diff:
                 extras_result_path = os.path.join(
                     str(self.path()),
-                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.zst",
+                    f"integration_run_{test_group_str}_{i}.tar.zst",
                 )
                 self._compress_logs(
                     os.path.join(self.repo_path, "tests/integration"),
@@ -816,10 +810,11 @@ class ClickhouseIntegrationTestsRunner:
                         len(value),
                     )
                     counters[counter] += value
+                    for test_name in value:
+                        tests_log_paths[test_name] = log_paths
 
                 for test_name, test_time in group_test_times.items():
                     tests_times[test_name] = test_time
-                    tests_log_paths[test_name] = log_paths
                 if not should_fail and (
                     group_counters["FAILED"] or group_counters["ERROR"]
                 ):
@@ -995,11 +990,12 @@ class ClickhouseIntegrationTestsRunner:
                     "Totally have %s with status %s", len(counters[counter]), counter
                 )
                 total_tests += len(counters[counter])
+                for test_name in value:
+                    tests_log_paths[test_name] = log_paths
             logging.info("Totally finished tests %s/%s", total_tests, len(all_tests))
 
             for test_name, test_time in group_test_times.items():
                 tests_times[test_name] = test_time
-                tests_log_paths[test_name] = log_paths
 
             if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
                 logging.info("Collected more than 20 failed/error tests, stopping")
