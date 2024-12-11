@@ -258,7 +258,7 @@ public:
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeConcrete(); }
     UInt64 getNumberOfDefaultRows() const override { throwMustBeConcrete(); }
-    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t, ssize_t) const override { throwMustBeConcrete(); }
 
 private:
     [[noreturn]] static void throwMustBeConcrete()
