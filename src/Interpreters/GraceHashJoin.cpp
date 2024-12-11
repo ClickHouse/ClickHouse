@@ -658,6 +658,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             num_rows += block.rows();
             addBlockToJoinImpl(std::move(block));
         }
+        hash_join->onBuildPhaseFinish();
 
         LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows",
             bucket_idx, hash_join->getTotalRowCount(), num_rows);
@@ -762,4 +763,10 @@ GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const
     return buckets;
 }
 
+void GraceHashJoin::onBuildPhaseFinish()
+{
+    // It cannot be called concurently with other IJoin methods
+    if (hash_join)
+        hash_join->onBuildPhaseFinish();
+}
 }

@@ -85,6 +85,8 @@ public:
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
 
+    void onBuildPhaseFinish() override;
+
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
 private:
