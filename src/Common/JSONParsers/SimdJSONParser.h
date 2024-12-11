@@ -914,6 +914,8 @@ struct OnDemandSimdJSONParser
         }
         if (scalar.value())
         {
+            if (!checkIfValidScalar())
+                return false;
             //std::cerr << "gethere scala: " << json << std::endl;
             padded_scalar_string.reserve(2 + json.size() + simdjson::SIMDJSON_PADDING);
             padded_scalar_string.insert(0, "[");
@@ -950,6 +952,66 @@ struct OnDemandSimdJSONParser
     }
 
 private:
+    bool checkIfValidScalar()
+    {
+        auto type = document.type();
+        if (type.error())
+            return false;
+        switch (type.value())
+        {
+            case simdjson::ondemand::json_type::string:
+            {
+                auto s = document.get_string();
+                if (s.error())
+                    return false;
+                break;
+            }
+            case simdjson::ondemand::json_type::boolean:
+            {
+                auto b = document.get_bool();
+                if (b.error())
+                    return false;
+                break;
+            }
+            case simdjson::ondemand::json_type::number:
+            {
+                auto res = document.get_number_type();
+                if (res.error())
+                    return false;
+                if (res.value() == simdjson::ondemand::number_type::signed_integer)
+                {
+                    auto i = document.get_int64();
+                    if (i.error())
+                        return false;
+                }
+                if (res.value() == simdjson::ondemand::number_type::unsigned_integer)
+                {
+                    auto u = document.get_uint64();
+                    if (u.error())
+                        return false;
+                }
+                if (res.value() == simdjson::ondemand::number_type::floating_point_number)
+                {
+                    auto d = document.get_double();
+                    if (d.error())
+                        return false;
+                }
+                break;
+            }
+            case simdjson::ondemand::json_type::null:
+            {
+                auto v = document.raw_json();
+                if (v.error())
+                    return false;
+                if (v.value() != "null")
+                    return false;
+                break;
+            }
+            default:
+                break;
+        }
+        return true;
+    }
     simdjson::ondemand::parser parser;
     simdjson::ondemand::document document{};
     simdjson::padded_string padstr;
