@@ -372,7 +372,7 @@ std::optional<Chain> generateViewChain(
 
         /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
-        out = interpreter.buildChain(inner_table, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
+        out = interpreter.buildChain(inner_table, view_level + 1, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
         if (interpreter.shouldAddSquashingFroStorage(inner_table))
         {
