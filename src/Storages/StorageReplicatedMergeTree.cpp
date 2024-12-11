@@ -8214,7 +8214,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
                 || (*dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
-    std::unique_ptr<ReplicatedMergeTreeLogEntryData> entries[partitions.size()];
+    using Entry = std::unique_ptr<ReplicatedMergeTreeLogEntryData>;
+    std::vector<Entry> entries(partitions.size());
     size_t idx = 0;
     for (const auto & partition_id : partitions)
     {

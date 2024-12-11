@@ -19,6 +19,7 @@ endif ()
 # We want to get everything out of the compiler for code quality.
 add_warning(everything)
 add_warning(pedantic)
+add_warning(vla-cxx-extension)
 no_warning(zero-length-array)
 no_warning(c++98-compat-pedantic)
 no_warning(c++98-compat)

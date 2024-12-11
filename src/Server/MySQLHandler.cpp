@@ -340,14 +340,14 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     size_t packet_size = PACKET_HEADER_SIZE + SSL_REQUEST_PAYLOAD_SIZE;
 
     /// Buffer for SSLRequest or part of HandshakeResponse.
-    char buf[packet_size];
+    std::vector<char> buf(packet_size);
     size_t pos = 0;
 
     /// Reads at least count and at most packet_size bytes.
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            int ret = socket().receiveBytes(buf + pos, static_cast<uint32_t>(packet_size - pos));
+            int ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
             if (ret == 0)
             {
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
@@ -357,19 +357,19 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     };
     read_bytes(3); /// We can find out whether it is SSLRequest of HandshakeResponse by first 3 bytes.
 
-    size_t payload_size = unalignedLoad<uint32_t>(buf) & 0xFFFFFFu;
+    size_t payload_size = unalignedLoad<uint32_t>(buf.data()) & 0xFFFFFFu;
     LOG_TRACE(log, "payload size: {}", payload_size);
 
     if (payload_size == SSL_REQUEST_PAYLOAD_SIZE)
     {
-        finishHandshakeSSL(packet_size, buf, pos, read_bytes, packet);
+        finishHandshakeSSL(packet_size, buf.data(), pos, read_bytes, packet);
     }
     else
     {
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
-        buf_for_handshake_response.write(buf, pos);
+        buf_for_handshake_response.write(buf.data(), pos);
         copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
         ReadBufferFromString payload(buf_for_handshake_response.str());
         payload.ignore(PACKET_HEADER_SIZE);
