@@ -4,13 +4,13 @@ DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
 
-CREATE TABLE t1 (a UInt64, b UInt64) ENGINE = Memory;
+CREATE TABLE t1 (a UInt64, b UInt64) ENGINE = Log;
 INSERT INTO t1 VALUES (1, 2), (3, 4), (5, 6);
 
-CREATE TABLE t2 (a UInt64, b UInt64) ENGINE = Memory;
+CREATE TABLE t2 (a UInt64, b UInt64) ENGINE = Log;
 INSERT INTO t2 VALUES (3, 4), (5, 6), (7, 8);
 
-CREATE TABLE t3 (a UInt64, b UInt64) ENGINE = Memory;
+CREATE TABLE t3 (a UInt64, b UInt64) ENGINE = Log;
 INSERT INTO t3 VALUES (5, 6), (7, 8), (9, 10);
 
 SET cross_to_inner_join_rewrite = 1;

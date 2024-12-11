@@ -114,21 +114,24 @@ public:
         struct Node
         {
             QueryTreeNodePtr table_node;
-            /// JoinKind kind;
-            std::unordered_map<size_t, Edge *> edges;
+            CrossJoinNode::JoinType join_type{};
+            std::unordered_map<size_t, Edge *> edges{};
         };
 
         std::vector<Node> nodes;
         std::list<Edge> edges;
     };
 
-    JoinGraph buildJoinGraph(const QueryTreeNodes & table_nodes, QueryTreeNodes & equi_conditions, QueryTreeNodes & other_conditions)
+    JoinGraph buildJoinGraph(const QueryTreeNodes & table_nodes, const CrossJoinNode::JoinTypes & join_types, QueryTreeNodes & equi_conditions, QueryTreeNodes & other_conditions)
     {
         JoinGraph graph;
 
         graph.nodes.reserve(table_nodes.size());
         for (const auto & table_node : table_nodes)
-            graph.nodes.emplace_back(JoinGraph::Node{table_node, {}});
+            graph.nodes.emplace_back(JoinGraph::Node{.table_node = table_node});
+
+        for (size_t i = 0; i < join_types.size(); ++i)
+            graph.nodes[i + 1].join_type = join_types[i];
 
         for (auto & condition : equi_conditions)
         {
@@ -137,34 +140,40 @@ public:
 
             bool is_useful = false;
 
-            auto left_src = getExpressionSource(lhs_equi_argument);
-            auto right_src = getExpressionSource(rhs_equi_argument);
+            DataTypes key_types = {lhs_equi_argument->getResultType(), rhs_equi_argument->getResultType()};
+            DataTypePtr common_key_type = tryGetLeastSupertype(key_types);
 
-            if (left_src && right_src)
+            /// If there is common key type, we can join on this condition
+            if (common_key_type)
             {
-                std::optional<size_t> lhs_index;
-                std::optional<size_t> rhs_index;
-                for (size_t i = 0; i < table_nodes.size(); ++i)
-                {
-                    const auto & table_node = table_nodes[i];
-                    if (findInTableExpression(left_src, table_node))
-                        lhs_index = i;
-                    if (findInTableExpression(right_src, table_node))
-                        rhs_index = i;
-                }
+                auto left_src = getExpressionSource(lhs_equi_argument);
+                auto right_src = getExpressionSource(rhs_equi_argument);
 
-                if (lhs_index != std::nullopt && rhs_index != std::nullopt && *lhs_index != *rhs_index)
+                if (left_src && right_src)
                 {
-                    is_useful = true;
-                    auto & edge = graph.nodes[*lhs_index].edges[*rhs_index];
-                    if (!edge)
+                    std::optional<size_t> lhs_index;
+                    std::optional<size_t> rhs_index;
+                    for (size_t i = 0; i < table_nodes.size(); ++i)
                     {
-                        edge = &graph.edges.emplace_back();
-                        graph.nodes[*rhs_index].edges[*lhs_index] = edge;
+                        const auto & table_node = table_nodes[i];
+                        if (findInTableExpression(left_src, table_node))
+                            lhs_index = i;
+                        if (findInTableExpression(right_src, table_node))
+                            rhs_index = i;
                     }
 
-                    // std::cerr << "+ Cond " << *lhs_index << " " << *rhs_index << " : " << condition->dumpTree() << std::endl;
-                    edge->equi_conditions.push_back(std::move(condition));
+                    if (lhs_index != std::nullopt && rhs_index != std::nullopt && *lhs_index != *rhs_index)
+                    {
+                        is_useful = true;
+                        auto & edge = graph.nodes[*lhs_index].edges[*rhs_index];
+                        if (!edge)
+                        {
+                            edge = &graph.edges.emplace_back();
+                            graph.nodes[*rhs_index].edges[*lhs_index] = edge;
+                        }
+
+                        edge->equi_conditions.push_back(std::move(condition));
+                    }
                 }
             }
 
@@ -179,6 +188,7 @@ public:
     {
         QueryTreeNodePtr table_node;
         QueryTreeNodes equi_conditions;
+        CrossJoinNode::JoinType join_type{};
     };
 
     std::vector<TableWithConditions> buildJoinsChain(const JoinGraph & graph)
@@ -190,10 +200,7 @@ public:
         for (size_t i = 0; i < graph.nodes.size(); ++i)
         {
             if (visited[i])
-            {
-                // std::cerr << "Skipped : " << graph.nodes[i].table_node->dumpTree() << std::endl;
                 continue;
-            }
 
             active_set.insert(i);
 
@@ -215,7 +222,7 @@ public:
                 // std::cerr << "Added : " << graph.nodes[node].table_node->dumpTree() << std::endl;
                 // if (auto conj = makeConjunction(equi_conditions))
                 //     std::cerr << "Cond : " << conj->dumpTree() << std::endl;
-                res.emplace_back(graph.nodes[node].table_node, std::move(equi_conditions));
+                res.emplace_back(graph.nodes[node].table_node, std::move(equi_conditions), graph.nodes[node].join_type);
             }
         }
 
@@ -224,13 +231,15 @@ public:
 
     QueryTreeNodePtr rebuildJoins(std::vector<TableWithConditions> tables)
     {
-        QueryTreeNodes cross;
+        std::shared_ptr<CrossJoinNode> cross;
+        CrossJoinNode::JoinType cross_join_type;
         QueryTreeNodePtr lhs;
         for (auto & table_with_condition : tables)
         {
             if (!lhs)
             {
                 lhs = table_with_condition.table_node;
+                cross_join_type = table_with_condition.join_type;
                 continue;
             }
 
@@ -238,36 +247,34 @@ public:
                 std::move(lhs),
                 std::move(table_with_condition.table_node),
                 nullptr,
-                JoinLocality::Unspecified,
+                table_with_condition.join_type.locality,
                 JoinStrictness::Unspecified,
-                JoinKind::Cross,
+                table_with_condition.join_type.is_comma ? JoinKind::Comma : JoinKind::Cross,
                 false);
 
-            if (table_with_condition.equi_conditions.empty())
+            if (!table_with_condition.equi_conditions.empty())
             {
-                if (forceRewrite(join_node->getKind()))
-                {
-                    throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "Failed to rewrite '{}' to INNER JOIN: "
-                        "no equi-join conditions found in WHERE clause. "
-                        "You may set setting `cross_to_inner_join_rewrite` to `1` to allow slow CROSS JOIN for this case",
-                        join_node->formatASTForErrorMessage());
-                }
-
-                cross.push_back(std::move(join_node->getLeftTableExpression()));
-                lhs = std::move(join_node->getRightTableExpression());
+                join_node->crossToInner(makeConjunction(table_with_condition.equi_conditions));
+                lhs = std::move(join_node);
                 continue;
             }
 
-            join_node->crossToInner(makeConjunction(table_with_condition.equi_conditions));
-            lhs = std::move(join_node);
+            checkNotRewritten(table_with_condition.join_type.is_comma, join_node);
+
+            if (!cross)
+                cross = std::make_shared<CrossJoinNode>(std::move(join_node->getLeftTableExpression()));
+            else
+                cross->appendTable(std::move(join_node->getLeftTableExpression()), cross_join_type);
+
+            cross_join_type = table_with_condition.join_type;
+            lhs = std::move(join_node->getRightTableExpression());
         }
 
-        if (cross.empty())
+        if (!cross)
             return lhs;
 
-        cross.push_back(lhs);
-        return std::make_shared<CrossJoinNode>(std::move(cross));
+        cross->appendTable(std::move(lhs), cross_join_type);
+        return std::move(cross);
     }
 
     void enterImpl(QueryTreeNodePtr & node)
@@ -293,29 +300,50 @@ public:
         QueryTreeNodes other_conditions;
         extractJoinConditions(where_node, equi_conditions, other_conditions);
         if (equi_conditions.empty())
+        {
+            checkNotRewritten(cross_join_node.getJoinTypes(), join_tree_node);
             return;
+        }
 
-        auto join_graph = buildJoinGraph(cross_join_node.getTableExpressions(), equi_conditions, other_conditions);
+        auto join_graph = buildJoinGraph(cross_join_node.getTableExpressions(), cross_join_node.getJoinTypes(), equi_conditions, other_conditions);
         if (join_graph.edges.empty())
+        {
+            checkNotRewritten(cross_join_node.getJoinTypes(), join_tree_node);
             return;
+        }
 
         auto tables_with_conditions = buildJoinsChain(join_graph);
         auto table_node = rebuildJoins(tables_with_conditions);
         query_node->getJoinTree() = table_node;
 
-        if (!other_conditions.empty())
-            where_node = makeConjunction(other_conditions);
+        where_node = makeConjunction(other_conditions);
     }
 
 private:
     bool isEnabled() const { return getSettings()[Setting::cross_to_inner_join_rewrite]; }
 
-    bool forceRewrite(JoinKind kind) const
+    bool forceRewrite(bool is_comma) const
     {
-        if (kind == JoinKind::Cross)
-            return false;
         /// Comma join can be forced to rewrite
-        return getSettings()[Setting::cross_to_inner_join_rewrite] >= 2;
+        return is_comma && getSettings()[Setting::cross_to_inner_join_rewrite] >= 2;
+    }
+
+    void checkNotRewritten(bool is_comma, const QueryTreeNodePtr & join_node)
+    {
+        if (forceRewrite(is_comma))
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Failed to rewrite '{}' to INNER JOIN: "
+                "no equi-join conditions found in WHERE clause. "
+                "You may set setting `cross_to_inner_join_rewrite` to `1` to allow slow CROSS JOIN for this case",
+                join_node->formatASTForErrorMessage());
+        }
+    }
+
+    void checkNotRewritten(const CrossJoinNode::JoinTypes & join_types, const QueryTreeNodePtr & join_node)
+    {
+        for (const auto & item : join_types)
+            checkNotRewritten(item.is_comma, join_node);
     }
 
     QueryTreeNodePtr makeConjunction(const QueryTreeNodes & nodes)

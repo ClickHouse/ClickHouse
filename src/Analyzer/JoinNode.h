@@ -169,14 +169,16 @@ using CrossJoinNodePtr = std::shared_ptr<CrossJoinNode>;
 class CrossJoinNode final : public IQueryTreeNode
 {
 public:
-    /** Construct join node with left table expression, right table expression and join expression.
-      * Example: SELECT id FROM test_table_1 INNER JOIN test_table_2 ON expression.
-      *
-      * test_table_1 - left table expression.
-      * test_table_2 - right table expression.
-      * expression - join expression.
-      */
-    explicit CrossJoinNode(QueryTreeNodes table_expressions);
+    struct JoinType
+    {
+        bool is_comma = false;
+        JoinLocality locality = JoinLocality::Unspecified;
+    };
+
+    using JoinTypes = std::vector<JoinType>;
+
+    explicit CrossJoinNode(QueryTreeNodePtr table_expression);
+    CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_);
 
     const QueryTreeNodes & getTableExpressions() const
     {
@@ -187,6 +189,11 @@ public:
     {
         return children;
     }
+
+    /// The size is getTableExpressions.size() - 1
+    const JoinTypes & getJoinTypes() { return join_types; }
+
+    void appendTable(QueryTreeNodePtr table_expression, JoinType join_type);
 
     /// Convert join node to ASTTableJoin
     // ASTPtr toASTTableJoin() const;
@@ -213,6 +220,8 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+    JoinTypes join_types;
 };
 
 }

@@ -38,22 +38,22 @@ SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explai
 0	3
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t3.a = t1.a AND t3.a = t2.a AND t3.a = t4.a) SETTINGS enable_analyzer = 1;
-1	2
+0	3
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t4.a = t1.a AND t4.a = t2.a AND t4.a = t3.a) SETTINGS enable_analyzer = 1;
-2	1
+0	3
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t2.a = t3.a AND t3.a = t4.a) SETTINGS enable_analyzer = 1;
 0	3
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4) SETTINGS enable_analyzer = 1;
-3	0
+1	0
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1 CROSS JOIN t2 CROSS JOIN t3 CROSS JOIN t4) SETTINGS enable_analyzer = 1;
-3	0
+1	0
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 CROSS JOIN t3) SETTINGS enable_analyzer = 1;
-2	0
+1	0
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1 JOIN t2 USING a CROSS JOIN t3) SETTINGS enable_analyzer = 1;
 1	1

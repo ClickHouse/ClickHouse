@@ -144,10 +144,27 @@ void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
 }
 
 
-CrossJoinNode::CrossJoinNode(QueryTreeNodes table_expressions)
+CrossJoinNode::CrossJoinNode(QueryTreeNodePtr table_expression)
+    : IQueryTreeNode(1)
+{
+    children = {std::move(table_expression)};
+}
+
+CrossJoinNode::CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_)
     : IQueryTreeNode(table_expressions.size())
+    , join_types(std::move(join_types_))
 {
     children = std::move(table_expressions);
+    if (children.size() != join_types.size() + 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid number of join tables for CrossJoinNode. Expected {} got {}",
+            join_types.size() + 1, children.size());
+}
+
+void CrossJoinNode::appendTable(QueryTreeNodePtr table_expression, CrossJoinNode::JoinType join_type)
+{
+    children.push_back(std::move(table_expression));
+    join_types.push_back(join_type);
 }
 
 void CrossJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -164,31 +181,32 @@ void CrossJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
 bool CrossJoinNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const { return true; }
 void CrossJoinNode::updateTreeHashImpl(HashState &, CompareOptions) const {}
 
-QueryTreeNodePtr CrossJoinNode::cloneImpl() const { return std::make_shared<CrossJoinNode>(children); }
+QueryTreeNodePtr CrossJoinNode::cloneImpl() const
+{
+    return std::make_shared<CrossJoinNode>(children, join_types);
+}
 
 ASTPtr CrossJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
 
-    bool first = true;
-    for (const auto & child : children)
+    for (size_t i = 0; i < children.size(); ++i)
     {
+        const auto & child = children[i];
         size_t join_table_index = tables_in_select_query_ast->children.size();
         addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, child, options);
 
-        if (!first)
+        if (i > 0)
         {
             auto join_ast = std::make_shared<ASTTableJoin>();
-            join_ast->locality = JoinLocality::Unspecified;
+            join_ast->locality = join_types[i - 1].locality;
             join_ast->strictness = JoinStrictness::Unspecified;
-            join_ast->kind = JoinKind::Cross;
+            join_ast->kind = join_types[i - 1].is_comma ? JoinKind::Comma : JoinKind::Cross;
 
             auto & table_element = tables_in_select_query_ast->children.at(join_table_index)->as<ASTTablesInSelectQueryElement &>();
             table_element.children.push_back(std::move(join_ast));
             table_element.table_join = table_element.children.back();
         }
-
-        first = false;
     }
 
     return tables_in_select_query_ast;

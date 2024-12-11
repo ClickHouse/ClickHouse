@@ -958,18 +958,31 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
             QueryTreeNodePtr join_node;
             if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
             {
-                QueryTreeNodes children;
+                CrossJoinNode * cross_join;
                 if (auto * left_cross_join = left_table_expression->as<CrossJoinNode>())
-                    children = std::move(left_cross_join->getChildren());
+                    cross_join = left_cross_join;
                 else
-                    children = {left_table_expression};
+                {
+                    auto new_cross_join = std::make_shared<CrossJoinNode>(std::move(left_table_expression));
+                    cross_join = new_cross_join.get();
+                    left_table_expression = std::move(new_cross_join);
+                }
+
+                CrossJoinNode::JoinType join_type{result_join_kind == JoinKind::Comma, table_join.locality};
 
                 if (auto * right_cross_join = right_table_expression->as<CrossJoinNode>())
-                    children.insert(children.end(), right_cross_join->getChildren().begin(), right_cross_join->getChildren().end());
-                else
-                    children.push_back(right_table_expression);
+                {
+                    const auto & expr = right_cross_join->getTableExpressions();
+                    cross_join->appendTable(expr.front(), join_type);
 
-                join_node = std::make_shared<CrossJoinNode>(std::move(children));
+                    const auto & join_types = right_cross_join->getJoinTypes();
+                    for (size_t i = 0; i < join_types.size(); ++i)
+                        cross_join->appendTable(expr[i + 1], join_types[i]);
+                }
+                else
+                    cross_join->appendTable(right_table_expression, join_type);
+
+                join_node = std::move(left_table_expression);
             }
             else
             {
