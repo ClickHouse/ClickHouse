@@ -67,6 +67,7 @@ struct ZooKeeperLogElement
     /// list
     Strings children;
 
+    Array trace;
 
     static std::string name() { return "ZooKeeperLog"; }
     static ColumnsDescription getColumnsDescription();
