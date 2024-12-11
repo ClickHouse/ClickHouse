@@ -90,8 +90,8 @@ RSAKeyImpl::RSAKeyImpl(int keyLength, unsigned long exponent): KeyPairImpl("rsa"
 }
 
 
-RSAKeyImpl::RSAKeyImpl(const std::string& publicKeyFile, 
-	const std::string& privateKeyFile, 
+RSAKeyImpl::RSAKeyImpl(const std::string& publicKeyFile,
+	const std::string& privateKeyFile,
 	const std::string& privateKeyPassphrase): KeyPairImpl("rsa", KT_RSA_IMPL),
 		_pRSA(0)
 {

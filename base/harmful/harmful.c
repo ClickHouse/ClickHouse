@@ -104,7 +104,7 @@ TRAP(jrand48)
 TRAP(l64a)
 TRAP(lcong48)
 TRAP(lgammafNx)
-TRAP(localeconv)
+// TRAP(localeconv)  /// FIXME
 TRAP(localtime)
 TRAP(login)
 TRAP(login_tty)

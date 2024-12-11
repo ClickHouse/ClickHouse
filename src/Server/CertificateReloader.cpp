@@ -8,6 +8,7 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
+#include <Server/ACMEClient.h>
 
 
 namespace DB
@@ -32,6 +33,7 @@ int callSetCertificate(SSL * ssl, void * arg)
 int CertificateReloader::setCertificate(SSL * ssl, const CertificateReloader::MultiData * pdata)
 {
     auto current = pdata->data.get();
+
     if (!current)
         return -1;
     return setCertificateCallback(ssl, current.get(), log);
@@ -41,6 +43,12 @@ int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_
 {
     if (current_data->certs_chain.empty())
         return -1;
+
+    // auto letsencrypt_configuration = let_encrypt_configuration_data.get();
+    // if (letsencrypt_configuration
+    //     && current->certs_chain.expiresOn().timestamp()
+    //         <= Poco::Timestamp() + Poco::Timespan(3600ll * letsencrypt_configuration->reissue_hours_before, 0))
+    //     CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
 
     if (auto err = SSL_clear_chain_certs(ssl); err != 1)
     {
@@ -79,9 +87,9 @@ void CertificateReloader::init(MultiData * pdata)
     LOG_DEBUG(log, "Initializing certificate reloader.");
 
     /// Set a callback for OpenSSL to allow get the updated cert and key.
-
     SSL_CTX_set_cert_cb(pdata->ctx, callSetCertificate, reinterpret_cast<void *>(pdata));
-    pdata->init_was_not_made = false;
+
+    pdata->initialized = true;
 }
 
 
@@ -131,42 +139,67 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
 {
     /// If at least one of the files is modified - recreate
 
-    std::string new_cert_path = config.getString(prefix + "certificateFile", "");
-    std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
+    // std::string new_cert_path = config.getString(prefix + "certificateFile", "");
+    // std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
+
+    // Fetching configuration for possible reissuing let's encrypt certificates
+    // if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
+    //     let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(config));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
 
-    if (new_cert_path.empty() || new_key_path.empty())
+    // if (new_cert_path.empty() || new_key_path.empty())
+    // {
+    //     LOG_WARNING(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
+    //     return;
+    // }
+
+    try
     {
-        LOG_INFO(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
+        auto maybe_certificates = ACMEClient::ACMEClient::instance().requestCertificate(config);
+        if (!maybe_certificates)
+        {
+            LOG_WARNING(log, "Certificates are not ready yet.");
+            return;
+        }
+
+        auto [pkey, certificate] = maybe_certificates.value();
+        auto it = findOrInsert(ctx, prefix);
+        it->data.set(std::make_unique<const Data>(pkey, certificate));
+        if (!it->initialized)
+            init(&*it);
     }
-    else
+    catch (...)
     {
-        try
-        {
-            auto it = findOrInsert(ctx, prefix);
-
-            bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
-            bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
-
-            if (cert_file_changed || key_file_changed)
-            {
-                LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
-                std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
-                it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
-                LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
-            }
-
-            /// If callback is not set yet
-            if (it->init_was_not_made)
-                init(&*it);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
-        }
+        LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
     }
+
+    // try
+    // {
+    //     auto it = findOrInsert(ctx, prefix);
+    //
+    //     bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
+    //     bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
+    //
+    //     if (cert_file_changed || key_file_changed)
+    //     {
+    //         LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+    //
+    //         std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
+    //         it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
+    //
+    //         LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+    //     }
+    //
+    //     /// If callback is not set yet
+    //     if (!it->initialized)
+    //         init(&*it);
+    // }
+    // catch (...)
+    // {
+    //     LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+    // }
 }
 
 
@@ -183,6 +216,11 @@ CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std
 {
 }
 
+CertificateReloader::Data::Data(Poco::Crypto::EVPPKey _pkey, Poco::Crypto::X509Certificate _cert)
+    : certs_chain({_cert}), key(_pkey)
+{
+}
+
 
 bool CertificateReloader::File::changeIfModified(std::string new_path, LoggerPtr logger)
 {
@@ -190,8 +228,12 @@ bool CertificateReloader::File::changeIfModified(std::string new_path, LoggerPtr
     std::filesystem::file_time_type new_modification_time = std::filesystem::last_write_time(new_path, ec);
     if (ec)
     {
-        LOG_ERROR(logger, "Cannot obtain modification time for {} file {}, skipping update. {}",
-            description, new_path, errnoToString(ec.value()));
+        LOG_ERROR(
+            logger,
+            "Cannot obtain modification time for {} file {}, skipping update. {}",
+            description,
+            new_path,
+            errnoToString(ec.value()));
         return false;
     }
 
