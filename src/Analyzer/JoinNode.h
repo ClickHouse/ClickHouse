@@ -163,5 +163,66 @@ private:
     static constexpr size_t children_size = join_expression_child_index + 1;
 };
 
+class CrossJoinNode;
+using CrossJoinNodePtr = std::shared_ptr<CrossJoinNode>;
+
+class CrossJoinNode final : public IQueryTreeNode
+{
+public:
+    struct JoinType
+    {
+        bool is_comma = false;
+        JoinLocality locality = JoinLocality::Unspecified;
+    };
+
+    using JoinTypes = std::vector<JoinType>;
+
+    explicit CrossJoinNode(QueryTreeNodePtr table_expression);
+    CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_);
+
+    const QueryTreeNodes & getTableExpressions() const
+    {
+        return children;
+    }
+
+    QueryTreeNodes & getTableExpressions()
+    {
+        return children;
+    }
+
+    /// The size is getTableExpressions.size() - 1
+    const JoinTypes & getJoinTypes() { return join_types; }
+
+    void appendTable(QueryTreeNodePtr table_expression, JoinType join_type);
+
+    /// Convert join node to ASTTableJoin
+    // ASTPtr toASTTableJoin() const;
+
+    QueryTreeNodeType getNodeType() const override
+    {
+        return QueryTreeNodeType::CROSS_JOIN;
+    }
+
+    /*
+     * Convert CROSS to INNER JOIN - changes JOIN kind and sets a new join expression
+     * (that was moved from WHERE clause).
+     * Expects the current kind to be CROSS (and join expression to be null because of that).
+     */
+    // void crossToInner(const QueryTreeNodePtr & join_expression_);
+
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
+
+    QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+    JoinTypes join_types;
+};
+
 }
 
