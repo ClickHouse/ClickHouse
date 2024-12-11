@@ -13,7 +13,7 @@ Block ExpressionTransform::transformHeader(const Block & header, const ActionsDA
 
 ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_)
     : ISimpleTransform(header_, transformHeader(header_, expression_->getActionsDAG()), false)
-    , expression(std::move(expression_))
+    , expression(expression_->clone())
 {
 }
 
@@ -29,7 +29,7 @@ void ExpressionTransform::transform(Chunk & chunk)
 
 ConvertingTransform::ConvertingTransform(const Block & header_, ExpressionActionsPtr expression_)
     : ExceptionKeepingTransform(header_, ExpressionTransform::transformHeader(header_, expression_->getActionsDAG()))
-    , expression(std::move(expression_))
+    , expression(expression_->clone())
 {
 }
 

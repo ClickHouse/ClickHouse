@@ -43,7 +43,7 @@ ExpressionStep::ExpressionStep(const Header & input_header_, ActionsDAG actions_
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings(), false, true);
 
     pipeline.addSimpleTransform([&](const Block & header)
     {

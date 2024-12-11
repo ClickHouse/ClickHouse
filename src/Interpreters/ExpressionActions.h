@@ -78,11 +78,16 @@ private:
     Block sample_block;
 
     bool project_inputs = false;
+    bool enable_adaptive_short_circuiting = false;
 
     ExpressionActionsSettings settings;
 
 public:
-    explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    explicit ExpressionActions(
+        ActionsDAG actions_dag_,
+        const ExpressionActionsSettings & settings_ = {},
+        bool project_inputs_ = false,
+        bool enable_adaptive_short_circuiting_ = false);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
 

@@ -49,9 +49,14 @@ namespace ErrorCodes
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
-ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+ExpressionActions::ExpressionActions(
+    ActionsDAG actions_dag_,
+    const ExpressionActionsSettings & settings_,
+    bool project_inputs_,
+    bool enable_adaptive_short_circuiting_)
     : actions_dag(std::move(actions_dag_))
     , project_inputs(project_inputs_)
+    , enable_adaptive_short_circuiting(enable_adaptive_short_circuiting_)
     , settings(settings_)
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
@@ -91,6 +96,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 
     copy->project_inputs = project_inputs;
     copy->settings = settings;
+    copy->enable_adaptive_short_circuiting = enable_adaptive_short_circuiting;
 
     return copy;
 }
