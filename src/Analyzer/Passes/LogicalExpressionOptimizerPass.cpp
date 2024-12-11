@@ -460,7 +460,7 @@ class JoinOnLogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWi
 public:
     using Base = InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>;
 
-    explicit JoinOnLogicalExpressionOptimizerVisitor(const JoinNode * join_node_, ContextPtr context)
+    explicit JoinOnLogicalExpressionOptimizerVisitor(const JoinNode & join_node_, ContextPtr context)
         : Base(std::move(context))
         , join_node(join_node_)
     {}
@@ -513,14 +513,14 @@ public:
             rerunFunctionResolve(function_node, getContext());
 
         // The optimization only makes sense on the top level
-        if (node != join_node->getJoinExpression() || !getSettings()[Setting::optimize_extract_common_expressions])
+        if (node != join_node.getJoinExpression() || !getSettings()[Setting::optimize_extract_common_expressions])
             return;
 
         tryOptimizeCommonExpressions(node, *function_node, getContext());
     }
 
 private:
-    const JoinNode * join_node;
+    const JoinNode & join_node;
     bool need_rerun_resolve = false;
 
     /// Returns optimized node or nullptr if nothing have been changed
@@ -563,7 +563,7 @@ private:
             const auto & func_name = argument_function->getFunctionName();
             if (func_name == "equals" || func_name == "isNotDistinctFrom")
             {
-                if (isTwoArgumentsFromDifferentSides(*argument_function, *join_node))
+                if (isTwoArgumentsFromDifferentSides(*argument_function, join_node))
                     equals_functions_indices.push_back(or_operands.size() - 1);
             }
             else if (func_name == "and")
@@ -608,7 +608,7 @@ private:
                         is_anything_changed = true;
                         or_operands.pop_back();
                         or_operands.push_back(equals_function);
-                        if (isTwoArgumentsFromDifferentSides(equals_function->as<FunctionNode &>(), *join_node))
+                        if (isTwoArgumentsFromDifferentSides(equals_function->as<FunctionNode &>(), join_node))
                             equals_functions_indices.push_back(or_operands.size() - 1);
                     }
                 }
@@ -717,7 +717,7 @@ public:
             /// Operator <=> is not supported outside of JOIN ON section
             if (join_node->hasJoinExpression())
             {
-                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(join_node, getContext());
+                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(*join_node, getContext());
                 join_on_visitor.visit(join_node->getJoinExpression());
             }
             return;
