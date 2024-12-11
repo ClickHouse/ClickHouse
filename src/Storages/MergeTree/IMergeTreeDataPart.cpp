@@ -2527,10 +2527,10 @@ UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
     return hash.get128();
 }
 
-String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
+String IMergeTreeDataPart::getNewPartBlockID(std::string_view token) const
 {
-    if (info.level != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
+    if (info.min_block != info.max_block)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for part {} that contains more than one block", name);
 
     if (token.empty())
     {
