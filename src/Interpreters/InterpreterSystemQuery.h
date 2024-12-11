@@ -72,6 +72,8 @@ private:
 
     void restoreReplica();
 
+    void restoreDatabaseReplica(ASTSystemQuery & query);
+
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
     void dropDatabaseReplica(ASTSystemQuery & query);

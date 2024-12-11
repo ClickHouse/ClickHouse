@@ -68,6 +68,7 @@
 #include <base/coverage.h>
 #include <csignal>
 #include <algorithm>
+#include <stdexcept>
 #include <unistd.h>
 
 #if USE_PROTOBUF
@@ -744,6 +745,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RESTORE_REPLICA:
             restoreReplica();
             break;
+        case Type::RESTORE_DATABASE_REPLICA:
+            restoreDatabaseReplica(query);
+            break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
@@ -875,6 +879,33 @@ void InterpreterSystemQuery::restoreReplica()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 
     table_replicated_ptr->restoreMetadataInZooKeeper();
+}
+
+void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
+{
+    LOG_TEST(log, "call restoreDatabaseReplica");
+
+    const String database_name = query.getDatabase();
+    getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
+
+    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name);
+
+    auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
+    if (!replicated_db)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
+    }
+
+    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
+
+    LOG_TRACE(log, "Replicated database {} was restored.", database_name);
+
+    /*
+    check:
+    - check_not_local_replica
+    - is_whole_drop_replica
+    - query.replica_zk_path.empty
+    */
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
@@ -1546,6 +1577,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESTORE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, query.getDatabase());
             break;
         }
         case Type::SYNC_REPLICA:
