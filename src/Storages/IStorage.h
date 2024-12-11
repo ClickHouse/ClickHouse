@@ -121,6 +121,9 @@ public:
     /// Returns true if the storage is dictionary
     virtual bool isDictionary() const { return false; }
 
+    /// Returns true if the metadata of a table can be changed normally by other processes
+    virtual bool hasExternalDynamicMetadata() const { return false; }
+
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
@@ -283,6 +286,10 @@ public:
 
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return {}; }
+
+    /// Add engine args that were inferred during storage creation to create query to avoid the same
+    /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
+    virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
 
 private:
     StorageID storage_id;
@@ -503,6 +510,12 @@ public:
       */
     virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
+    /// Updates metadata that can be changed by other processes
+    virtual void updateExternalDynamicMetadata(ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
+    }
+
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */
@@ -717,6 +730,15 @@ public:
     ///
     /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
+
+    /// If it is possible to quickly determine exact number of bytes for the table on storage:
+    /// - disk (compressed)
+    ///
+    /// Used for:
+    /// - For total_bytes_with_inactive column in system.tables
+    //
+    /// Does not takes underlying Storage (if any) into account
+    virtual std::optional<UInt64> totalBytesWithInactive(const Settings &) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///

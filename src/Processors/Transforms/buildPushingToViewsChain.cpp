@@ -28,6 +28,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <base/defines.h>

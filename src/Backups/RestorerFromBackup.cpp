@@ -20,6 +20,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
 #include <base/insertAtEnd.h>
@@ -29,6 +30,7 @@
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
+#include <future>
 #include <ranges>
 
 namespace fs = std::filesystem;
@@ -38,6 +40,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
@@ -102,6 +107,11 @@ RestorerFromBackup::RestorerFromBackup(
     , after_task_callback(after_task_callback_)
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(getLogger("RestorerFromBackup"))
+    , zookeeper_retries_info(
+          context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+          context->getProcessListElementSafe())
     , tables_dependencies("RestorerFromBackup")
     , thread_pool(thread_pool_)
 {
@@ -975,6 +985,11 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         auto query_context = Context::createCopy(context);
         query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
         query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+
+        /// Creating of replicated tables may need retries.
+        query_context->setSetting("keeper_max_retries", zookeeper_retries_info.max_retries);
+        query_context->setSetting("keeper_initial_backoff_ms", zookeeper_retries_info.initial_backoff_ms);
+        query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).

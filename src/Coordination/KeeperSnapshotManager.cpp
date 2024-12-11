@@ -11,11 +11,13 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
 #include <Disks/DiskLocal.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>

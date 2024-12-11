@@ -32,7 +32,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false);
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false, nullptr);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
