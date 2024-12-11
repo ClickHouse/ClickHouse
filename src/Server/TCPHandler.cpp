@@ -1548,11 +1548,16 @@ bool TCPHandler::receiveProxyHeader()
             return false;
         }
 
+        bool is_tcp6 = ('6' == *limit_in.position());
+
         ++limit_in.position();
         assertChar(' ', limit_in);
 
         /// Read the first field and ignore other.
         readStringUntilWhitespace(forwarded_address, limit_in);
+
+        if (is_tcp6)
+            forwarded_address = "[" + forwarded_address + "]";
 
         /// Skip second field (destination address)
         assertChar(' ', limit_in);
@@ -1563,7 +1568,7 @@ bool TCPHandler::receiveProxyHeader()
         String port;
         readStringUntilWhitespace(port, limit_in);
 
-        forwarded_address += String{":"} + port;
+        forwarded_address += ":" + port;
 
         /// Skip until \r\n
         while (!limit_in.eof() && *limit_in.position() != '\r')
