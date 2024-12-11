@@ -743,6 +743,19 @@ def test_node_with_query_log_on_s3(cluster, broken_s3):
 
     node.query(
         """
+        DROP VIEW IF EXISTS log_sink_mv
+        """
+    )
+
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS log_sink
+        """
+    )
+
+    node.query(
+        """
         CREATE TABLE log_sink
             ENGINE = MergeTree()
             ORDER BY ()
@@ -797,6 +810,24 @@ def test_node_with_query_log_on_s3(cluster, broken_s3):
 
 def test_exception_in_onFinish(cluster, broken_s3):
     node = cluster.instances["node_with_query_log_on_s3"]
+
+    node.query(
+        """
+        DROP VIEW IF EXISTS source_sink_mv
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS source_sink
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS source
+        """
+    )
 
     node.query(
         """
