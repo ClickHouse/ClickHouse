@@ -1,0 +1,12 @@
+[
+	{
+		"title": "Database Engines",
+		"description": "Database engines determine how ClickHouse interacts with tables and manages data storage.",
+		"url": "/docs/en/sql-reference/syntax/"
+	},
+	{
+		"title": "Table Engines",
+		"description": "Table engines determine how data is stored, accessed, and manipulated within tables.",
+		"url": "/docs/en/sql-reference/formats/"
+	}
+]
