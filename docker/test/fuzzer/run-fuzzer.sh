@@ -254,19 +254,59 @@ function fuzz
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually, I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    timeout -s TERM --preserve-status 30m clickhouse-client \
+
+    # Setup arguments for the fuzzer
+    FUZZER_OUTPUT_SQL_FILE=''
+
+    if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
+    then
+        QUERIES_FILE=$(find ch/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+    elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
+    then
+        touch fuzzer_out.sql fuzz.json
+        FUZZER_OUTPUT_SQL_FILE=$(realpath fuzzer_out.sql)
+        BUZZHOUSE_CONFIG_FILE=$(realpath fuzz.json)
+cat << EOF > $BUZZHOUSE_CONFIG_FILE
+{
+    "db_file_path": "/var/lib/clickhouse/user_files",
+    "log_path": "$FUZZER_OUTPUT_SQL_FILE",
+    "seed": 0,
+    "read_log": false,
+    "fuzz_floating_points": false,
+    "time_to_run": 180
+}
+EOF
+        FUZZER_ARGS="--buzz-house-config=$BUZZHOUSE_CONFIG_FILE"
+    else
+        >&2 echo "Fuzzer \"$FUZZER_TO_RUN\" unknown, provide either \"AST Fuzzer\" or \"BuzzHouse\""
+        exit 1
+    fi
+
+    timeout -s TERM --kill-after=30s --preserve-status 30m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
-        --query-fuzzer-runs=1000 \
-        --create-query-fuzzer-runs=50 \
-        --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
-        $NEW_TESTS_OPT \
+        $FUZZER_ARGS \
         > fuzzer.log \
         2>&1 &
     fuzzer_pid=$!
     echo "Fuzzer pid is $fuzzer_pid"
+
+    # We need to give timeout some time to execute the underlying command with that many arguments
+    elapsed=0
+    maximum=50
+    while [[ $elapsed -lt $maximum ]]; do
+        if ps -o pid= --pid "$fuzzer_pid"; then
+            echo "Found underlying PID!"
+            break;
+        else
+            echo "Not found. Trying again..."
+        fi
+        sleep 0.1
+        elapsed=$((elapsed+1))
+    done
 
     # The fuzzer_pid belongs to the timeout process.
     actual_fuzzer_pid=$(ps -o pid= --ppid "$fuzzer_pid")
@@ -410,79 +450,15 @@ case "$stage" in
 "fuzz")
     time fuzz
     ;&
-"report")
-
-CORE_LINK=''
-if [ -f core.zst ]; then
-    CORE_LINK='<a href="core.zst">core.zst</a>'
-fi
-
-# Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
-sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
-FATAL_LINK=''
-if [ -s fatal.log ]; then
-    FATAL_LINK='<a href="fatal.log">fatal.log</a>'
-fi
+esac
 
 dmesg -T > dmesg.log ||:
 
 zstd --threads=0 --rm server.log
 zstd --threads=0 --rm fuzzer.log
 
-cat > report.html <<EOF ||:
-<!DOCTYPE html>
-<html lang="en">
-  <style>
-body { font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }
-h1 { margin-left: 10px; }
-th, td { border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF; }
-td { white-space: pre; font-family: Monospace, Courier New; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
-a { color: #06F; text-decoration: none; }
-a:hover, a:active { color: #F40; text-decoration: underline; }
-table { border: 0; }
-p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }
-
-  </style>
-  <title>AST Fuzzer for PR #${PR_TO_TEST} @ ${SHA_TO_TEST}</title>
-</head>
-<body>
-<div class="main">
-
-<h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
-<p class="links">
-  <a href="run.log">run.log</a>
-  <a href="fuzzer.log.zst">fuzzer.log.zst</a>
-  <a href="server.log.zst">server.log.zst</a>
-  <a href="stderr.log">stderr.log</a>
-  <a href="main.log">main.log</a>
-  <a href="dmesg.log">dmesg.log</a>
-  ${CORE_LINK}
-  ${FATAL_LINK}
-</p>
-<table>
-<tr>
-  <th>Test name</th>
-  <th>Test status</th>
-  <th>Description</th>
-</tr>
-<tr>
-  <td>AST Fuzzer</td>
-  <td>$(cat status.txt)</td>
-  <td>$(
-    clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < description.txt || cat description.txt
-  )</td>
-</tr>
-<tr>
-  <td colspan="3" style="white-space: pre-wrap;">$(
-    clickhouse-local --input-format RawBLOB --output-format RawBLOB --query "SELECT encodeXMLComponent(*) FROM table" < fatal.log || cat fatal.log
-  )</td>
-</tr>
-</table>
-</body>
-</html>
-
-EOF
-    ;&
-esac
+if [ -f $FUZZER_OUTPUT_SQL_FILE ]; then
+    zstd --threads=0 --rm $FUZZER_OUTPUT_SQL_FILE
+fi
 
 exit $task_exit_code
