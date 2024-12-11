@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <mutex>
 
-namespace DB 
+namespace DB
 {
 class IProcessor;
 struct ProcessorMemoryStats
