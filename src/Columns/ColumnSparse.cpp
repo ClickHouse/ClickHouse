@@ -774,10 +774,10 @@ UInt64 ColumnSparse::getNumberOfDefaultRows() const
     return _size - offsets->size();
 }
 
-ColumnPtr ColumnSparse::compress() const
+ColumnPtr ColumnSparse::compress(bool force_compression) const
 {
-    auto values_compressed = values->compress();
-    auto offsets_compressed = offsets->compress();
+    auto values_compressed = values->compress(force_compression);
+    auto offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 

@@ -1,10 +1,11 @@
 #include "OvercommitTracker.h"
 
-#include <chrono>
-#include <mutex>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/ProcessList.h>
+
+#include <chrono>
+#include <shared_mutex>
 
 namespace CurrentMetrics
 {
