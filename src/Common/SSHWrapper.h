@@ -37,9 +37,12 @@ public:
     String getBase64() const;
     String getKeyType() const;
 
+
     friend class SSHKeyFactory;
-private:
+// private:
     explicit SSHKey(ssh_key key_) : key(key_) { }
+
+private:
     ssh_key key = nullptr;
 };
 
