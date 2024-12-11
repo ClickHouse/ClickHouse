@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from . import Artifact, Job
 from .docker import Docker
@@ -33,21 +33,21 @@ class Workflow:
         enable_cidb: bool = False
         enable_merge_commit: bool = False
 
-        def is_event_pull_request(self):
+        def is_event_pull_request(self) -> bool:
             return self.event == Workflow.Event.PULL_REQUEST
 
-        def is_event_push(self):
+        def is_event_push(self) -> bool:
             return self.event == Workflow.Event.PUSH
 
-        def get_job(self, name):
+        def get_job(self, name: str) -> Job.Config:
             job = self.find_job(name)
-            if not job:
+            if job is None:
                 Utils.raise_with_error(
                     f"Failed to find job [{name}], workflow [{self.name}]"
                 )
             return job
 
-        def find_job(self, name, lazy=False):
+        def find_job(self, name: str, lazy: bool = False) -> Optional[Job.Config]:
             name = str(name)
             for job in self.jobs:
                 if lazy:
@@ -58,12 +58,16 @@ class Workflow:
                         return job
             return None
 
-        def get_secret(self, name) -> Optional[Secret.Config]:
+        def get_secret(self, name: Any) -> Secret.Config:
             name = str(name)
             names = []
             for secret in self.secrets:
                 if secret.name == name:
                     return secret
                 names.append(secret.name)
-            print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
-            raise
+            Utils.raise_with_error(
+                f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]"
+            )
+
+
+Workflows = List[Workflow.Config]

@@ -1,13 +1,18 @@
 import argparse
-import os
+from typing import List, Tuple
 
 from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import MetaClasses, Shell, Utils
 
-from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts.git_helper import Git, unshallow_cmd
+from ci.jobs.scripts.version_helper import (
+    ClickHouseVersion,
+    get_version_from_repo,
+    update_cmake_version,
+)
+from ci.settings import settings
 from ci.workflows.defs import CIFiles, ToolSet
-from ci.workflows.pull_request import S3_BUILDS_BUCKET
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -19,33 +24,104 @@ class JobStages(metaclass=MetaClasses.WithIter):
     UNIT = "unit"
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="ClickHouse Build Job")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="ClickHouse Build Job",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
         "--build-type",
-        help="Type: <amd|arm>,<debug|release>,<asan|msan|..>",
+        help="Type: <binary|package>_<amd|arm>_<debug|release|asan|msan|..>",
     )
     parser.add_argument(
         "--param",
         help="Optional user-defined job start stage (for local run)",
-        default=None,
+        default=JobStages.CHECKOUT_SUBMODULES,
+        choices=JobStages,
     )
     return parser.parse_args()
 
 
-CMAKE_CMD = """cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA \
--DCMAKE_BUILD_TYPE={BUILD_TYPE} \
--DSANITIZE={SANITIZER} \
--DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
--DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr \
--DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
-{AUX_DEFS} \
--DCMAKE_C_COMPILER={COMPILER} -DCMAKE_CXX_COMPILER={COMPILER_CPP} \
--DCOMPILER_CACHE={CACHE_TYPE} -DENABLE_BUILD_PROFILING=1 {DIR}"""
+CMAKE_BASE = (
+    "cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1"
+    " -LA -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_BUILD_PROFILING=1"
+    f" -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} "
+    f"-DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP}"
+)
 
-# release:          cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
-# binary release:   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
-# release coverage: cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DSANITIZE_COVERAGE=1 -DBUILD_STANDALONE_KEEPER=0 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
+SANITIZERS = {
+    "asan": "address",
+    "msan": "memory",
+    "tsan": "thread",
+    "ubsan": "undefined",
+}
+
+
+def build_args(build_type: List[str]) -> Tuple[str, str]:
+    cmake = CMAKE_BASE
+    ninja = "ninja"
+    build_target = "clickhouse-bundle"
+    if "package" in build_type:
+        # Packaging
+        cmake = (
+            f"{cmake} -DCMAKE_INSTALL_PREFIX=/usr"
+            " -DCMAKE_INSTALL_SYSCONFDIR=/etc"
+            " -DCMAKE_INSTALL_LOCALSTATEDIR=/var"
+            # Reduce linking and building time by avoid *install/all dependencies
+            " -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON"
+        )
+        build_target = (
+            f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
+        )
+
+    if all(arg in build_type for arg in ["package", "release"]):
+        cmake = f"{cmake} -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1"
+
+    if "fuzzers" in build_type:
+        cmake = (
+            f"{cmake} -DENABLE_FUZZING=1"
+            " -DENABLE_PROTOBUF=1"
+            " -DWITH_COVERAGE=1"
+            # Reduce linking and building time by avoid *install/all dependencies
+            " -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON"
+        )
+
+    if "coverage" in build_type:
+        cmake = f"{cmake} -DSANITIZE_COVERAGE=1 -DBUILD_STANDALONE_KEEPER=0"
+
+    try:
+        sanitizer = next(san for san in SANITIZERS if san in build_type)
+    except StopIteration:
+        sanitizer = ""
+
+    if sanitizer:
+        cmake = f"{cmake} -DENABLE_TESTS=1 -DSANITIZE={SANITIZERS.get(sanitizer, '')}"
+
+    if "debug" in build_type:
+        cmake = f"{cmake} -DCMAKE_BUILD_TYPE=Debug"
+    else:
+        cmake = f"{cmake} -DCMAKE_BUILD_TYPE=None"
+
+    cmake = f"{cmake} -DCOMPILER_CACHE=sccache"
+
+    prefix = (
+        f"SCCACHE_BUCKET={settings.S3_BUCKET_NAME} "
+        "SCCACHE_S3_KEY_PREFIX=ccache/sccache SCCACHE_S3_NO_CREDENTIALS=true "
+    )
+
+    if "clang_tidy" in build_type:
+        cmake = f"{cmake} -DENABLE_CLANG_TIDY=1 -DENABLE_TESTS=1 -DENABLE_EXAMPLES=1"
+        ninja = f"{ninja} -k0"
+        build_target = "all"
+        prefix = (
+            f"{prefix} CTCACHE_S3_FOLDER=ccache/sccache "
+            f"CTCACHE_S3_BUCKET={settings.S3_BUCKET_NAME} "
+            "CTCACHE_S3_NO_CREDENTIALS=true"
+        )
+
+    ninja = f"{ninja} {build_target}"
+
+    return f"{prefix} {cmake} {Utils.cwd()}", f"{prefix} {ninja}"
 
 
 def main():
@@ -59,90 +135,44 @@ def main():
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
-    stage = args.param or JobStages.CHECKOUT_SUBMODULES
-    if stage:
-        assert stage in JobStages, f"--param must be one of [{list(JobStages)}]"
-        print(f"Job will start from stage [{stage}]")
-        while stage in stages:
-            stages.pop(0)
-        stages.insert(0, stage)
+    stage = args.param
+    print(f"Job will start from stage [{stage}]")
+    while stage in stages:
+        stages.pop(0)
+    stages.insert(0, stage)
 
-    build_type = args.build_type
+    build_type = args.build_type.lower().split("_")
     assert (
         build_type
     ), "build_type must be provided either as input argument or as a parameter of parametrized job in CI"
-    build_type = build_type.lower()
 
-    CACHE_TYPE = "sccache"
-
-    BUILD_TYPE = "RelWithDebInfo"
-    SANITIZER = ""
-    AUX_DEFS = " -DENABLE_TESTS=1 "
-    cmake_cmd = None
-
-    if "debug" in build_type:
-        print("Build type set: debug")
-        BUILD_TYPE = "Debug"
-        AUX_DEFS = " -DENABLE_TESTS=0 "
-        package_type = "debug"
-    elif "release" in build_type:
-        print("Build type set: release")
-        AUX_DEFS = (
-            " -DENABLE_TESTS=0 -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 "
-        )
-        package_type = "release"
-    elif "asan" in build_type:
-        print("Sanitizer set: address")
-        SANITIZER = "address"
-        package_type = "asan"
-    elif "tsan" in build_type:
-        print("Sanitizer set: thread")
-        SANITIZER = "thread"
-        package_type = "tsan"
-    elif "msan" in build_type:
-        print("Sanitizer set: memory")
-        SANITIZER = "memory"
-        package_type = "msan"
-    elif "ubsan" in build_type:
-        print("Sanitizer set: undefined")
-        SANITIZER = "undefined"
-        package_type = "ubsan"
-    elif "binary" in build_type:
-        package_type = "binary"
-        cmake_cmd = f"cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 {Utils.cwd()}"
+    for package in ("debug", "release", "binary", *SANITIZERS):
+        if package in build_type:
+            package_type = package
+            break
     else:
         assert False
 
-    if not cmake_cmd:
-        cmake_cmd = CMAKE_CMD.format(
-            BUILD_TYPE=BUILD_TYPE,
-            CACHE_TYPE=CACHE_TYPE,
-            SANITIZER=SANITIZER,
-            AUX_DEFS=AUX_DEFS,
-            DIR=Utils.cwd(),
-            COMPILER=ToolSet.COMPILER_C,
-            COMPILER_CPP=ToolSet.COMPILER_CPP,
-        )
+    cmake_cmd, ninja_cmd = build_args(build_type)
 
     build_dir = f"{Settings.TEMP_DIR}/build"
 
     res = True
     results = []
-    version = ""
+    version = get_version_from_repo()
 
     if res and JobStages.UNSHALLOW in stages:
         results.append(
             Result.from_commands_run(
                 name="Repo Unshallow",
-                command="git rev-parse --is-shallow-repository | grep -q true && git fetch --depth 10000 --no-tags --filter=tree:0 origin $(git rev-parse --abbrev-ref HEAD)",
+                command=unshallow_cmd,
                 with_log=True,
             )
         )
         res = results[-1].is_ok()
         if res:
             try:
-                version = CHVersion.get_version()
-                assert version
+                version = get_version_from_repo(git=Git())
                 print(f"Got version from repo [{version}]")
             except Exception as e:
                 results[-1].set_failed().set_info(
@@ -155,7 +185,12 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Checkout Submodules",
-                command=f"git submodule sync --recursive && git submodule init && git submodule update --depth 1 --recursive --jobs {min([Utils.cpu_count(), 20])}",
+                # TODO: think of agressive parallel update, it should use async run
+                command=[
+                    "git submodule sync --recursive",
+                    "git submodule init",
+                    f"git submodule update --depth 1 --recursive --jobs {min([Utils.cpu_count(), 20])}",
+                ],
             )
         )
         res = results[-1].is_ok()
@@ -172,28 +207,25 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        Shell.check("sccache --show-stats")
+        Shell.check("SCCACHE_NO_DAEMON=1 sccache --show-stats")
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="ninja clickhouse-bundle clickhouse-odbc-bridge clickhouse-library-bridge",
+                command=ninja_cmd,
                 workdir=build_dir,
                 with_log=True,
             )
         )
-        Shell.check("sccache --show-stats")
+        Shell.check("SCCACHE_NO_DAEMON=1 sccache --show-stats")
         Shell.check(f"ls -l {build_dir}/programs/")
-        Shell.check(f"pwd")
+        Shell.check("pwd")
         Shell.check(f"find {build_dir} -name unit_tests_dbms")
-        Shell.check(f"find . -name unit_tests_dbms")
+        Shell.check("find . -name unit_tests_dbms")
         res = results[-1].is_ok()
 
     if res and JobStages.PACKAGE in stages and "binary" not in build_type:
         assert package_type
-        if "amd" in build_type:
-            deb_arch = "amd64"
-        else:
-            deb_arch = "arm64"
+        deb_arch = "amd64" if "amd" in build_type else "arm64"
 
         output_dir = "/tmp/praktika/output/"
         assert Shell.check(f"rm -f {output_dir}/*.deb")
@@ -204,7 +236,8 @@ def main():
                 command=[
                     f"DESTDIR={build_dir}/root ninja programs/install",
                     f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
-                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
+                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} "
+                    f"BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
                 ],
                 workdir=build_dir,
                 with_log=True,
@@ -212,7 +245,11 @@ def main():
         )
         res = results[-1].is_ok()
 
-    if res and JobStages.UNIT in stages and (SANITIZER or "binary" in build_type):
+    if (
+        res
+        and JobStages.UNIT in stages
+        and any(build in build_type for build in (*SANITIZERS, "binary"))
+    ):
         # TODO: parallel execution
         results.append(
             Result.from_gtest_run(
