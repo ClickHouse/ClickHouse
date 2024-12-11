@@ -12,8 +12,8 @@ INSERT INTO FUNCTION s3(s3_conn, filename='dir1/03271_s3_table_function_asterisk
 SELECT * FROM s3(s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 1;
 SELECT * FROM s3(s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 4;
 
-SELECT * FROM s3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 1;
-SELECT * FROM s3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 4;
+SELECT * FROM s3Cluster('test_cluster_one_shard_two_replicas', s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 1;
+SELECT * FROM s3Cluster('test_cluster_one_shard_two_replicas', s3_conn, filename='dir1/03271_s3_table_function_asterisk_glob/*') ORDER BY ALL SETTINGS max_threads = 4;
 
 -- Empty "directory" files created implicitly by S3 console:
 -- https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-folders.html
@@ -23,6 +23,6 @@ LIMIT 1
 FORMAT Null;
 
 SELECT *
-FROM s3Cluster('test_cluster_two_shards_localhost', 'https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/*', NOSIGN)
+FROM s3Cluster('test_cluster_one_shard_two_replicas', 'https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/*', NOSIGN)
 LIMIT 1
 Format Null;

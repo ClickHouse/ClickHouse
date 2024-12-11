@@ -1,6 +1,7 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
+#include "Interpreters/ClusterProxy/executeQuery.h"
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,6 +26,7 @@
 #include <Storages/StorageDictionary.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace DB
@@ -35,6 +37,8 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 IStorageCluster::IStorageCluster(
@@ -143,33 +147,59 @@ void IStorageCluster::read(
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
+    Settings new_settings{context->getSettingsRef()};
+
+    /// Cluster table functions should always skip unavailable shards.
+    new_settings[Setting::skip_unavailable_shards] = true;
+
+    new_settings[Setting::parallel_replicas_local_plan] = false;
+
+    if (new_settings[Setting::cluster_for_parallel_replicas].toString().empty())
+        new_settings[Setting::cluster_for_parallel_replicas] = cluster->getName();
+
+    auto new_context = Context::createCopy(context);
+    new_context->setSettings(new_settings);
+
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, new_context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
-    data.remote_table.database = context->getCurrentDatabase();
+    data.remote_table.database = new_context->getCurrentDatabase();
     data.remote_table.table = getName();
     RestoreQualifiedNamesVisitor(data).visit(query_to_send);
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
+    AddDefaultDatabaseVisitor visitor(new_context, new_context->getCurrentDatabase(),
                                       /* only_replace_current_database_function_= */false,
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
-    auto reading = std::make_unique<ReadFromCluster>(
-        column_names,
-        query_info,
-        storage_snapshot,
-        context,
-        sample_block,
-        std::move(this_ptr),
-        std::move(query_to_send),
-        processed_stage,
-        cluster,
-        log);
+    // auto reading = std::make_unique<ReadFromCluster>(
+    //     column_names,
+    //     query_info,
+    //     storage_snapshot,
+    //     context,
+    //     sample_block,
+    //     std::move(this_ptr),
+    //     std::move(query_to_send),
+    //     processed_stage,
+    //     cluster,
+    //     log);
+    //
+    // query_plan.addStep(std::move(reading));
 
-    query_plan.addStep(std::move(reading));
+    auto extension = getTaskIteratorExtension(nullptr, new_context);
+    ClusterProxy::executeQueryWithParallelReplicas(
+        query_plan,
+        getStorageID(),
+        sample_block,
+        processed_stage,
+        query_to_send,
+        new_context,
+        query_info.storage_limits,
+        nullptr,
+        std::make_optional(extension)
+    );
 }
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -236,6 +266,9 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
+
+    if (new_settings[Setting::cluster_for_parallel_replicas].toString().empty())
+        new_settings[Setting::cluster_for_parallel_replicas] = cluster->getName();
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

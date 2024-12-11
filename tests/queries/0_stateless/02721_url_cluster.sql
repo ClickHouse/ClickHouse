@@ -1,18 +1,18 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
 
-select * from urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv') ORDER BY c1, c2, c3;
-select * from urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV') ORDER BY c1, c2, c3;
-select * from urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64') ORDER BY c1, c2, c3;
-select * from urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64', 'auto') ORDER BY c1, c2, c3;
+select * from urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv') ORDER BY c1, c2, c3;
+select * from urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV') ORDER BY c1, c2, c3;
+select * from urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64') ORDER BY c1, c2, c3;
+select * from urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64', 'auto') ORDER BY c1, c2, c3;
 
-desc urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv');
-desc urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV');
-desc urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64');
-desc urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64', 'auto');
+desc urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv');
+desc urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV');
+desc urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64');
+desc urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv', 'TSV', 'c1 UInt64, c2 UInt64, c3 UInt64', 'auto');
 
-select COUNT() from urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv');
-select COUNT(*) from urlCluster('test_cluster_two_shards_localhost', 'http://localhost:11111/test/{a,b,c}.tsv');
+select COUNT() from urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv');
+select COUNT(*) from urlCluster('test_cluster_one_shard_two_replicas', 'http://localhost:11111/test/{a,b,c}.tsv');
 
 desc urlCluster('test_cluster_one_shard_three_replicas_localhost', 'http://localhost:11111/test/{a,b}.tsv');
 desc urlCluster('test_cluster_one_shard_three_replicas_localhost', 'http://localhost:11111/test/{a,b}.tsv', 'TSV');
