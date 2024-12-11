@@ -211,6 +211,20 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
     }
 }
 
+template <char... chars>
+void skipStringUntilChars(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
+
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            return;
+    }
+}
+
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
@@ -243,6 +257,11 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
+}
+
+void skipStringUntilWhitespace(ReadBuffer & buf)
+{
+    skipStringUntilChars<' '>(buf);
 }
 
 void readStringUntilAmpersand(String & s, ReadBuffer & buf)
