@@ -4358,6 +4358,9 @@ Disable limit on kafka_num_consumers that depends on the number of available CPU
     DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
 Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_kafka_use_default_column, false, R"(
+Disable kafka engine use DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns.
+)", 0) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
 Enable use of software prefetch in aggregation
 )", 0) \

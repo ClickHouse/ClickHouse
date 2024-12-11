@@ -51,6 +51,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_kafka_offsets_storage_in_keeper;
     extern const SettingsBool kafka_disable_num_consumers_limit;
+    extern const SettingsBool allow_kafka_use_default_column;
 }
 
 namespace KafkaSetting
@@ -223,7 +224,7 @@ void registerStorageKafka(StorageFactory & factory)
                 supported_columns.emplace_back(column.name, column.type);
         }
         // Kafka engine allows only ordinary columns without default expression or alias columns.
-        if (args.columns.getAll() != supported_columns)
+        if (args.columns.getAll() != supported_columns && !args.getLocalContext()->getSettingsRef()[Setting::allow_kafka_use_default_column])
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
