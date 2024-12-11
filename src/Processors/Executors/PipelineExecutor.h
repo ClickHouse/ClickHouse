@@ -85,6 +85,7 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::atomic_size_t threads = 0;
+    std::mutex spawn_lock;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
