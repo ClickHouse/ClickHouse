@@ -36,6 +36,7 @@
 #    include <Common/Allocator.h>
 #    include <Common/FieldVisitorsAccurateComparison.h>
 #    include <Common/MemorySanitizer.h>
+#    include <Common/quoteString.h>
 #    include <orc/Vector.hh>
 
 #    include "ArrowBufferedStreams.h"

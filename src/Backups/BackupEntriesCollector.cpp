@@ -6,6 +6,7 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Backups/IBackupCoordination.h>
+#include <Common/quoteString.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -111,10 +112,11 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
     , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
     , log(getLogger("BackupEntriesCollector"))
-    , global_zookeeper_retries_info(
+    , zookeeper_retries_info(
           context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
           context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
-          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms])
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+          context->getProcessListElementSafe())
     , threadpool(threadpool_)
 {
 }
@@ -582,8 +584,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     try
     {
         /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
-        auto zookeeper_retries_info = global_zookeeper_retries_info;
-        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info, nullptr);
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info);
         retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)

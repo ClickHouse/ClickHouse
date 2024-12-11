@@ -179,6 +179,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
             "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into account)."
         },
+        {"total_bytes_with_inactive", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+         "Total number of bytes with inactive parts, if it is possible to quickly determine exact number "
+         "of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). "
+        },
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of parts in this table."},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
@@ -593,6 +597,15 @@ protected:
                     auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
                     if (total_bytes_uncompressed)
                         res_columns[res_index++]->insert(*total_bytes_uncompressed);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    auto total_bytes_with_inactive = table->totalBytesWithInactive(settings);
+                    if (total_bytes_with_inactive)
+                        res_columns[res_index++]->insert(*total_bytes_with_inactive);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

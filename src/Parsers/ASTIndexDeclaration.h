@@ -25,7 +25,7 @@ public:
     String getID(char) const override { return "Index"; }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
     ASTPtr getExpression() const;
     std::shared_ptr<ASTFunction> getType() const;

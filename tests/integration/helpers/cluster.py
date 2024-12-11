@@ -17,6 +17,8 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+import uuid
+from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
 from typing import Any, List, Sequence, Tuple, Union
@@ -48,6 +50,7 @@ except Exception as e:
 
 import docker
 from dict2xml import dict2xml
+from docker.models.containers import Container
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
@@ -523,7 +526,7 @@ class ClickHouseCluster:
         self.base_jdbc_bridge_cmd = []
         self.base_redis_cmd = []
         self.pre_zookeeper_commands = []
-        self.instances = {}
+        self.instances: dict[str, ClickHouseInstance] = {}
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -763,7 +766,7 @@ class ClickHouseCluster:
         self.prometheus_remote_read_handler_port = 9092
         self.prometheus_remote_read_handler_path = "/read"
 
-        self.docker_client = None
+        self.docker_client: docker.DockerClient = None
         self.is_up = False
         self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
@@ -954,7 +957,7 @@ class ClickHouseCluster:
         except:
             pass
 
-    def get_docker_handle(self, docker_id):
+    def get_docker_handle(self, docker_id) -> Container:
         exception = None
         for i in range(20):
             try:
@@ -3351,6 +3354,12 @@ class ClickHouseCluster:
             logging.info("Starting zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
 
+    def query_all_nodes(self, sql, *args, **kwargs):
+        return {
+            name: instance.query(sql, ignore_error=True, *args, **kwargs)
+            for name, instance in self.instances.items()
+        }
+
 
 DOCKER_COMPOSE_TEMPLATE = """---
 services:
@@ -3626,6 +3635,7 @@ class ClickHouseInstance:
         host=None,
         ignore_error=False,
         query_id=None,
+        parse=False,
     ):
         sql_for_log = ""
         if len(sql) > 1000:
@@ -3644,6 +3654,7 @@ class ClickHouseInstance:
             ignore_error=ignore_error,
             query_id=query_id,
             host=host,
+            parse=parse,
         )
 
     def query_with_retry(
@@ -3660,6 +3671,7 @@ class ClickHouseInstance:
         retry_count=20,
         sleep_time=0.5,
         check_callback=lambda x: True,
+        parse=False,
     ):
         # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
@@ -3676,6 +3688,7 @@ class ClickHouseInstance:
                     database=database,
                     host=host,
                     ignore_error=ignore_error,
+                    parse=parse,
                 )
                 if check_callback(result):
                     return result
@@ -4408,7 +4421,7 @@ class ClickHouseInstance:
         else:
             self.wait_start(time_left)
 
-    def get_docker_handle(self):
+    def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
 
     def stop(self):
@@ -4541,6 +4554,24 @@ class ClickHouseInstance:
                 for key, value in list(driver_setup.items()):
                     if key != "DSN":
                         f.write(key + "=" + value + "\n")
+
+    @contextmanager
+    def with_replace_config(self, path, replacement):
+        """Create a copy of existing config (if exists) and revert on leaving the context"""
+        _directory, filename = os.path.split(path)
+        basename, extension = os.path.splitext(filename)
+        id = uuid.uuid4()
+        backup_path = f"/tmp/{basename}_{id}{extension}"
+        self.exec_in_container(
+            ["bash", "-c", f"test ! -f {path} || mv --no-clobber {path} {backup_path}"]
+        )
+        self.exec_in_container(
+            ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
+        )
+        yield
+        self.exec_in_container(
+            ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
+        )
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(

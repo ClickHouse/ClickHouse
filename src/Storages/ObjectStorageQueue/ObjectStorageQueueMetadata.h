@@ -71,6 +71,9 @@ public:
         bool is_attach,
         LoggerPtr log);
 
+    void registerIfNot(const StorageID & storage_id);
+    size_t unregister(const StorageID & storage_id);
+
     void shutdown();
 
     FileMetadataPtr getFileMetadata(const std::string & path, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
