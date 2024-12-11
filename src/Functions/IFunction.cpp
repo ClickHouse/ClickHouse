@@ -397,6 +397,17 @@ ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, co
     return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
 }
 
+ColumnPtr IFunctionBase::executeOnShortCircuite(
+    const DB::ColumnsWithTypeAndName& arguments,
+    const DB::DataTypePtr& result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    ShortCircuiteArgumentExecuteCosts & arg_costs) const
+{
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+    return prepare(arguments)->executeOnShortCircuite(arguments, result_type, input_rows_count, dry_run, arg_costs);
+}
+
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const
 {
     if (isVariadic())

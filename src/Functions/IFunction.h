@@ -36,6 +36,15 @@ namespace ErrorCodes
 using FieldInterval = std::pair<Field, Field>;
 using OptionalFieldInterval = std::optional<FieldInterval>;
 
+struct ShortCircuiteArgumentExecuteCost
+{
+    size_t argument_pos = 0;
+    // less is better
+    double cost = .0;
+    std::vector<ShortCircuiteArgumentExecuteCost> children;
+};
+using ShortCircuiteArgumentExecuteCosts = std::vector<ShortCircuiteArgumentExecuteCost>;
+
 /// The simplest executable object.
 /// Motivation:
 ///  * Prepare something heavy once before main execution loop instead of doing it for each columns.
@@ -51,10 +60,26 @@ public:
     virtual String getName() const = 0;
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
-
+    virtual ColumnPtr executeOnShortCircuite(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run,
+        ShortCircuiteArgumentExecuteCosts & /*arg_costs*/) const
+    {
+        return execute(arguments, result_type, input_rows_count, dry_run);
+    }
 protected:
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    virtual ColumnPtr executeOnShortCircuiteImpl(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        ShortCircuiteArgumentExecuteCosts &) const
+    {
+        executeImpl(arguments, result_type, input_rows_count)
+    }
 
     virtual ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
@@ -137,6 +162,13 @@ public:
         const DataTypePtr & result_type,
         size_t input_rows_count,
         bool dry_run) const;
+    virtual ColumnPtr executeOnShortCircuite( /// NOLINT
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run,
+        ShortCircuiteArgumentExecuteCosts & arg_costs) const;
+    
 
     /// Get the main function name.
     virtual String getName() const = 0;
