@@ -65,14 +65,8 @@ struct InMemoryDirectoryPathMap
 
     mutable SharedMutex mutex;
 
-#ifdef OS_LINUX
     FileNames TSA_GUARDED_BY(mutex) unique_filenames;
     Map TSA_GUARDED_BY(mutex) map;
-/// std::shared_mutex may not be annotated with the 'capability' attribute in libcxx.
-#else
-    FileNames unique_filenames;
-    Map map;
-#endif
 };
 
 }

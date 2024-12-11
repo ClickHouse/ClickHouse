@@ -15,6 +15,8 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <shared_mutex>
+
 namespace DB
 {
 
