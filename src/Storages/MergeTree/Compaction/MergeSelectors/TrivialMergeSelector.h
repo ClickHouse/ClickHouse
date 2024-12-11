@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
 
 namespace DB
 {

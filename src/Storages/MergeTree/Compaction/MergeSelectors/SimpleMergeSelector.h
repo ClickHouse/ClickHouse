@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
 
 /**
 We have a set of data parts that is dynamically changing - new data parts are added and there is background merging process.
