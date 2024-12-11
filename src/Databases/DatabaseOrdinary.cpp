@@ -381,7 +381,7 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
 
-    (void)checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
+    checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
     LOG_INFO
     (
         log,
@@ -624,11 +624,11 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     try
     {
         /// rename atomically replaces the old file with the new one.
-        (void)db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+        db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
     }
     catch (...)
     {
-        (void)db_disk->removeFileIfExists(table_metadata_tmp_path);
+        db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
 }

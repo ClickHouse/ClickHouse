@@ -227,7 +227,7 @@ void commitMetadata(Fn<void()> auto && function, const String & persistent_tmp_p
     }
     catch (...)
     {
-        (void)db_disk->removeFileIfExists(persistent_tmp_path);
+        db_disk->removeFileIfExists(persistent_tmp_path);
         throw;
     }
 }

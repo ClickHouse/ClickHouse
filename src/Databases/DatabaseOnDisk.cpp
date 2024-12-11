@@ -288,7 +288,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
     try
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
-        (void)db_disk->removeFileIfExists(detached_permanently_flag);
+        db_disk->removeFileIfExists(detached_permanently_flag);
     }
     catch (Exception & e)
     {
@@ -314,7 +314,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
     catch (...)
     {
-        (void)db_disk->removeFileIfExists(table_metadata_tmp_path);
+        db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
 }
@@ -388,7 +388,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
         disk->removeRecursive(table_data_path_relative);
     }
-    (void)db_disk->removeFileIfExists(table_metadata_path_drop);
+    db_disk->removeFileIfExists(table_metadata_path_drop);
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
@@ -519,7 +519,7 @@ void DatabaseOnDisk::renameTable(
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     to_database.createTable(local_context, to_table_name, table, attach_query);
 
-    (void)db_disk->removeFileIfExists(table_metadata_path);
+    db_disk->removeFileIfExists(table_metadata_path);
 
     if (from_atomic_to_ordinary)
     {
@@ -600,15 +600,15 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
-        (void)db_disk->removeRecursive(data_path);
-        (void)db_disk->removeRecursive(getMetadataPath());
+        db_disk->removeRecursive(data_path);
+        db_disk->removeRecursive(getMetadataPath());
     }
     else
     {
         try
         {
-            (void)db_disk->removeDirectoryIfExists(data_path);
-            (void)db_disk->removeDirectoryIfExists(getMetadataPath());
+            db_disk->removeDirectoryIfExists(data_path);
+            db_disk->removeDirectoryIfExists(getMetadataPath());
         }
         catch (const Exception & e)
         {
@@ -674,7 +674,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         else
         {
             LOG_INFO(log, "Removing file {}", getMetadataPath() + file_name);
-            (void)db_disk->removeFileIfExists(getMetadataPath() + file_name);
+            db_disk->removeFileIfExists(getMetadataPath() + file_name);
         }
     };
 
@@ -706,7 +706,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         {
             /// There are files .sql.tmp - delete
             LOG_INFO(log, "Removing file {}", sub_path.string());
-            (void)db_disk->removeFileIfExists(sub_path);
+            db_disk->removeFileIfExists(sub_path);
         }
         else if (endsWith(file_name, ".sql"))
         {
@@ -776,7 +776,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     {
         if (logger)
             LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
-        (void)db_disk->removeFileIfExists(metadata_file_path);
+        db_disk->removeFileIfExists(metadata_file_path);
         return nullptr;
     }
 

@@ -107,15 +107,15 @@ void DatabaseAtomic::drop(ContextPtr)
     {
         if (db_disk->isSymlinkSupported())
         {
-            (void)db_disk->removeFileIfExists(path_to_metadata_symlink);
-            (void)db_disk->removeRecursive(path_to_table_symlinks);
+            db_disk->removeFileIfExists(path_to_metadata_symlink);
+            db_disk->removeRecursive(path_to_table_symlinks);
         }
     }
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
-    (void)db_disk->removeRecursive(getMetadataPath());
+    db_disk->removeRecursive(getMetadataPath());
 }
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -380,7 +380,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
     catch (...)
     {
-        (void)db_disk->removeFileIfExists(table_metadata_tmp_path);
+        db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
     if (table->storesDataOnDisk())
@@ -393,7 +393,7 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     bool check_file_exists = true;
     SCOPE_EXIT({
         if (check_file_exists)
-            (void)db_disk->removeFileIfExists(table_metadata_tmp_path);
+            db_disk->removeFileIfExists(table_metadata_tmp_path);
     });
 
     std::lock_guard lock{mutex};
@@ -491,6 +491,8 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
     if (!db_disk->isSymlinkSupported())
         return;
 
+    // When `db_disk` is a `DiskLocal` object, `existsDirectory` will return false if the input path is a symlink.
+    // So we use `existsFileOrDirectory` here to check if the symlink exists.
     if (!db_disk->existsFileOrDirectory(path_to_table_symlinks))
         return;
 
@@ -506,7 +508,7 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
                 ErrorCodes::ABORTED, "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path));
         }
 
-        (void)db_disk->removeFileIfExists(table_path);
+        db_disk->removeFileIfExists(table_path);
     }
 }
 
@@ -604,7 +606,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     try
     {
         String path = path_to_table_symlinks + escapeForFileName(table_name);
-        (void)db_disk->removeFileIfExists(path);
+        db_disk->removeFileIfExists(path);
     }
     catch (...)
     {
@@ -632,7 +634,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
         {
             /// fs::exists could return false for broken symlink
             if (db_disk->isSymlinkNoThrow(metadata_symlink))
-                (void)db_disk->removeFileIfExists(metadata_symlink);
+                db_disk->removeFileIfExists(metadata_symlink);
             db_disk->createDirectoriesSymlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)
@@ -660,7 +662,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     try
     {
         if (db_disk->isSymlinkSupported())
-            (void)db_disk->removeFileIfExists(path_to_metadata_symlink);
+            db_disk->removeFileIfExists(path_to_metadata_symlink);
     }
     catch (...)
     {

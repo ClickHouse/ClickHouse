@@ -1,8 +1,5 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
-#include <base/scope_guard.h>
-#include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
@@ -12,9 +9,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
-#include <Storages/IStorage.h>
-#include <base/scope_guard.h>
-#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include "Storages/IStorage.h"
 
 namespace DB
 {

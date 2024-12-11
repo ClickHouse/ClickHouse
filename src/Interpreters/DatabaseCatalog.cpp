@@ -1014,7 +1014,6 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
     {
-        auto sub_path = fs::path(it->path());
         /// File name has the following format:
         /// database_name.table_name.uuid.sql
 

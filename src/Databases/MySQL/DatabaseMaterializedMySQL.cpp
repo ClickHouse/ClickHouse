@@ -189,7 +189,7 @@ void DatabaseMaterializedMySQL::drop(ContextPtr context_)
     /// Remove metadata info
     fs::path metadata(getMetadataPath() + "/.metadata");
 
-    (void)db_disk->removeFileIfExists(metadata);
+    db_disk->removeFileIfExists(metadata);
 
     DatabaseAtomic::drop(context_);
 }

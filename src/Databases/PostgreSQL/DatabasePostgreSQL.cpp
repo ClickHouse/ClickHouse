@@ -308,7 +308,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    (void)db_disk->removeRecursive(getMetadataPath());
+    db_disk->removeRecursive(getMetadataPath());
 }
 
 
