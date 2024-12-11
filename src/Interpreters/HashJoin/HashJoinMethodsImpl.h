@@ -274,7 +274,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeC
         else
             Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block, ind, pool);
     }
-    return map.getBufferSizeInCells();
+    return /*map.getBufferSizeInCells()*/ 0;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
