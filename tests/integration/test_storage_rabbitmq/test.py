@@ -2120,6 +2120,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     instance.query(
         """
         DROP TABLE IF EXISTS test.consume;
+        DROP TABLE IF EXISTS test.view SYNC;
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
             ORDER BY key;
