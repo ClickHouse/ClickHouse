@@ -716,7 +716,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         if (format_settings.parquet.filter_push_down)
         {
-            hyperrectangle = getHyperrectangleForRowGroup(*metadata, row_group, header, format_settings);getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings);
+            hyperrectangle = getHyperrectangleForRowGroup(*metadata, row_group, header, format_settings);
         }
 
         if (format_settings.parquet.bloom_filter_push_down)
