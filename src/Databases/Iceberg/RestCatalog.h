@@ -1,4 +1,7 @@
 #pragma once
+#include "config.h"
+
+#if USE_AVRO
 #include <Databases/Iceberg/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -115,3 +118,5 @@ private:
 };
 
 }
+
+#endif

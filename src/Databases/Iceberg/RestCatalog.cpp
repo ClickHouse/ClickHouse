@@ -1,3 +1,6 @@
+#include "config.h"
+
+#if USE_AVRO
 #include <Databases/Iceberg/RestCatalog.h>
 #include <Databases/Iceberg/StorageCredentials.h>
 
@@ -6,6 +9,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
+#include <Common/checkStackSize.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -640,3 +644,5 @@ bool RestCatalog::getTableMetadataImpl(
 }
 
 }
+
+#endif
