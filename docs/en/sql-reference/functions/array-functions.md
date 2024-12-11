@@ -2149,7 +2149,7 @@ Calculate AUC (Area Under the Curve) for the Receiver Operating Characteristic (
 arrayRocAUC(arr_scores, arr_labels[, scale])
 ```
 
-Alias: `arrayAUC`
+Alias: `arrayAUC`, `arrayROCAUC`
 
 **Arguments**
 
@@ -2194,7 +2194,7 @@ arrayPrAUC(arr_scores, arr_labels)
 
 **Returned value**
 
-Returns PR-AUC value with type Float64.
+Returns PR AUC value with type Float64.
 
 **Example**
 
