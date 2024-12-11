@@ -6,7 +6,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 
 
-int main(int argc, char ** argv)
+int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv)
 {
     try
     {
