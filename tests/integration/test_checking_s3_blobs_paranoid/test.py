@@ -747,7 +747,6 @@ def test_node_with_query_log_on_s3(cluster, broken_s3):
         """
     )
 
-
     node.query(
         """
         DROP TABLE IF EXISTS log_sink
