@@ -49,6 +49,7 @@ AutoML
 Autocompletion
 AvroConfluent
 AzureQueue
+arrayNormalizedGini
 BIGINT
 BIGSERIAL
 BORO
@@ -350,6 +351,7 @@ GetResolution
 GetUnidirectionalEdge
 GetUnidirectionalEdgeBoundary
 GetUnidirectionalEdgesFromHexagon
+Gini
 GitLab
 GlobalThread
 GlobalThreadActive

@@ -3213,6 +3213,43 @@ Result:
 └─────────┘
 ```
 
+## arrayNormalizedGini
+
+Function `arrayNormalizedGini` is used to calculate the normalized Gini coefficient.
+
+**Syntax**
+
+```sql
+arrayNormalizedGini(predicted, label)
+```
+
+**Arguments**
+
+- `predicted` — Predicted values ([Array(T)](../data-types/array.md))
+- `label` — Actual values ([Array(T)](../data-types/array.md))
+
+**Returned Value**
+
+- A tuple contains Gini coefficient of predicted values, Gini coefficient of label values and the normalized Gini coefficient, which is the ratio between predicted Gini coefficient and label Gini coefficient.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2]);
+```
+
+Result:
+
+```
+┌─arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
+│ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- For more details, check https://arxiv.org/abs/1912.07753
+
 ## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
