@@ -38,6 +38,11 @@ namespace CurrentMetrics
     extern const Metric ThreadPoolRemoteFSReaderThreadsScheduled;
 }
 
+namespace ErrorCodes
+{
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+}
+
 namespace DB
 {
 
@@ -77,6 +82,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
     auto & reader = fd->getReader();
 
+    if (!request.supports_read_at)
     {
         ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
         /// `seek` have to be done before checking `isContentCached`, and `set` have to be done prior to `seek`
@@ -125,38 +131,75 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     auto read_counters = fd->getReadCounters();
     std::optional<AsyncReadIncrement> increment = read_counters ? std::optional<AsyncReadIncrement>(read_counters) : std::nullopt;
 
+    auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
+    IAsynchronousReader::Result read_result;
+    if (!request.supports_read_at)
     {
-        ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
-        if (!seek_performed)
         {
-            reader.set(request.buf, request.size);
-            reader.seek(request.offset, SEEK_SET);
+            ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
+            if (!seek_performed)
+            {
+                reader.set(request.buf, request.size);
+                reader.seek(request.offset, SEEK_SET);
+            }
+
+            if (request.ignore)
+            {
+                ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
+                reader.ignore(request.ignore);
+            }
         }
 
-        if (request.ignore)
+        watch->start();
+        bool result = reader.available();
+        if (!result)
+            result = reader.next();
+
+        watch->stop();
+        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch->elapsedMicroseconds());
+
+        if (result)
         {
-            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
-            reader.ignore(request.ignore);
+            chassert(reader.buffer().begin() == request.buf);
+            chassert(reader.buffer().end() <= request.buf + request.size);
+            read_result.size = reader.buffer().size();
+            read_result.offset = reader.offset();
+            ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);
         }
     }
-
-    auto watch = std::make_unique<Stopwatch>(CLOCK_REALTIME);
-
-    bool result = reader.available();
-    if (!result)
-        result = reader.next();
-
-    watch->stop();
-    ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch->elapsedMicroseconds());
-
-    IAsynchronousReader::Result read_result;
-    if (result)
+    else
     {
-        chassert(reader.buffer().begin() == request.buf);
-        chassert(reader.buffer().end() <= request.buf + request.size);
-        read_result.size = reader.buffer().size();
-        read_result.offset = reader.offset();
-        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);
+        size_t curr_offset = request.offset;
+        if (request.ignore)
+        {
+            ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
+            size_t bytes_to_ignore = request.ignore;
+            while (bytes_to_ignore)
+            {
+                size_t size = std::min(bytes_to_ignore, request.size);
+                size_t n = reader.readBigAt(request.buf, size, curr_offset, nullptr);
+                if (!n)
+                    break;
+
+                bytes_to_ignore -= n;
+                curr_offset += n;
+            }
+
+            if (bytes_to_ignore)
+                throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
+        }
+
+        watch->start();
+        size_t n = reader.readBigAt(request.buf, request.size, curr_offset, nullptr);
+        watch->stop();
+        ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch->elapsedMicroseconds());
+
+        if (n)
+        {
+            read_result.size = n;
+            read_result.offset = 0;
+            ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);
+        }
     }
 
     read_result.execution_watch = std::move(watch);
