@@ -1083,7 +1083,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// - and plus this will require other changes in the interface.
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[all_keys_are_const ? 1 : row_end]);
 
-    size_t key_start, key_end;
+    size_t key_start;
+    size_t key_end;
     /// If all keys are const, key columns contain only 1 row.
     if  (all_keys_are_const)
     {
