@@ -60,6 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"24.12",
         {
+            {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
             {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
