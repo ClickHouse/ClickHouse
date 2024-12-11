@@ -207,14 +207,17 @@ def get_creation_expression(
     format="Parquet",
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
+    use_iceberg_partition_pruning=False,
     run_on_cluster=False,
     **kwargs,
 ):
-    allow_dynamic_metadata_for_datalakes_suffix = (
-        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
-        if allow_dynamic_metadata_for_data_lakes
-        else ""
-    )
+    is_first_setting = True
+    for name, value in [("allow_dynamic_metadata_for_data_lakes", allow_dynamic_metadata_for_data_lakes), ("use_iceberg_partition_pruning", use_iceberg_partition_pruning)]:
+        if is_first_setting:
+            settings += f" SETTINGS {name} = {'1' if value else '0'}"
+            is_first_setting = False
+        else:
+            settings += f", {name} = {'1' if value else '0'}"
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -234,7 +237,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
+                    + settings
                 )
 
     elif storage_type == "azure":
@@ -254,7 +257,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
+                    + settings
                 )
 
     elif storage_type == "hdfs":
@@ -274,7 +277,7 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergHDFS(hdfs, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
+                    + settings
                 )
 
     elif storage_type == "local":
@@ -290,7 +293,7 @@ def get_creation_expression(
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
                 ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
-                + allow_dynamic_metadata_for_datalakes_suffix
+                + settings
             )
 
     else:
@@ -1957,10 +1960,8 @@ def test_partition_pruning(started_cluster, format_version, storage_type):
     execute_spark_query(
         f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
-                c decimal(9,2) NOT NULL,
-                d array<int>
+                a int, 
+                b float
             )
             USING iceberg 
             OPTIONS ('format-version'='{format_version}')
