@@ -46,7 +46,7 @@ ITTLMergeSelector::Iterator ITTLMergeSelector::findRightRangeBorder(Iterator rig
     return right;
 }
 
-ITTLMergeSelector::ITTLMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_)
+ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
     : current_time(current_time_)
     , merge_due_times(merge_due_times_)
 {
@@ -107,7 +107,7 @@ PartsRange ITTLMergeSelector::select(
     return PartsRange(left, right);
 }
 
-TTLPartDeleteMergeSelector::TTLPartDeleteMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_)
+TTLPartDeleteMergeSelector::TTLPartDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
     : ITTLMergeSelector(merge_due_times_, current_time_)
 {
 }
@@ -122,7 +122,7 @@ bool TTLPartDeleteMergeSelector::canConsiderPart(const PartProperties & part) co
     return part.general_ttl_info.has_value();
 }
 
-TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_)
+TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
     : ITTLMergeSelector(merge_due_times_, current_time_)
 {
 }
@@ -144,7 +144,7 @@ bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) con
     return false;
 }
 
-TTLRecompressMergeSelector::TTLRecompressMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_, const TTLDescriptions & recompression_ttls_)
+TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, const TTLDescriptions & recompression_ttls_)
     : ITTLMergeSelector(merge_due_times_, current_time_)
     , recompression_ttls(recompression_ttls_)
 {

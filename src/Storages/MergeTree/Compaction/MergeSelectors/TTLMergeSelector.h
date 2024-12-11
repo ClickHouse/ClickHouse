@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Storages/TTLDescription.h>
-#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
 
 namespace DB
 {
+
+using PartitionIdToTTLs = std::map<String, time_t>;
 
 /** Merge selector, which is used to remove values with expired ttl.
   * It selects parts to merge by greedy algorithm:
@@ -26,9 +28,7 @@ protected:
     const time_t current_time;
 
 public:
-    using PartitionIdToTTLs = std::map<String, time_t>;
-
-    ITTLMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
     PartsRange select(
         const PartsRanges & parts_ranges,
@@ -45,7 +45,7 @@ private:
 class TTLPartDeleteMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLPartDeleteMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    explicit TTLPartDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
@@ -58,7 +58,7 @@ private:
 class TTLRowDeleteMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLRowDeleteMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    explicit TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
@@ -72,7 +72,7 @@ private:
 class TTLRecompressMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLRecompressMergeSelector(PartitionIdToTTLs & merge_due_times_, time_t current_time_, const TTLDescriptions & recompression_ttls_);
+    explicit TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, const TTLDescriptions & recompression_ttls_);
 
 private:
     /// Return part min recompression TTL.
