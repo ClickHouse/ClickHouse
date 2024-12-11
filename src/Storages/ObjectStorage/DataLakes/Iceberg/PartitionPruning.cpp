@@ -92,13 +92,11 @@ CommonPartitionInfo PartitionPruningProcessor::getCommonPartitionInfo(
 }
 
 SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionInfo(
-    const CommonPartitionInfo & common_info,
-    [[maybe_unused]] Int32 schema_version,
-    const std::unordered_map<Int32, NameAndTypePair> & name_and_type_by_source_id) const
+    const CommonPartitionInfo & common_info, [[maybe_unused]] Int32 schema_version, const IcebergSchemaProcessor & processor) const
 {
     SpecificSchemaPartitionInfo specific_info;
 
-    LOG_DEBUG(&Poco::Logger::get("Form specific info"), "name_and_type_by_source_id size: {}", name_and_type_by_source_id.size());
+    // LOG_DEBUG(&Poco::Logger::get("Form specific info"), "name_and_type_by_source_id size: {}", name_and_type_by_source_id.size());
 
     for (size_t i = 0; i < common_info.partition_columns.size(); ++i)
     {
@@ -108,12 +106,13 @@ SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionInfo(
             continue;
         }
         Int32 source_id = common_info.partition_source_ids[i];
-        auto it = name_and_type_by_source_id.find(source_id);
-        if (it == name_and_type_by_source_id.end())
-        {
-            continue;
-        }
-        LOG_DEBUG(&Poco::Logger::get("Form specific info"), "Added source id: {}", source_id);
+        NameAndTypePair name_and_type = processor.getFieldCharacteristics(schema_version, source_id);
+        LOG_DEBUG(
+            &Poco::Logger::get("Form specific info"),
+            "Added schema: {}, source id: {}, name_and_type: {}",
+            schema_version,
+            source_id,
+            name_and_type.dump());
         size_t column_size = common_info.partition_columns[i]->size();
         if (specific_info.ranges.empty())
         {
@@ -123,7 +122,6 @@ SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionInfo(
         {
             assert(specific_info.ranges.size() == column_size);
         }
-        NameAndTypePair name_and_type = it->second;
         specific_info.partition_names_and_types.push_back(name_and_type);
         for (size_t j = 0; j < column_size; ++j)
         {
@@ -143,6 +141,20 @@ std::vector<bool> PartitionPruningProcessor::getPruningMask(
     std::vector<bool> pruning_mask(specific_info.ranges.size(), true);
     LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Name and types size: {}", specific_info.partition_names_and_types.size());
 
+    for (const auto & name_and_type : specific_info.partition_names_and_types)
+    {
+        LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Name and type: {}", name_and_type.dump());
+    }
+
+    for (const auto & range : specific_info.ranges)
+    {
+        LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "New data file");
+        for (const auto & field_range : range)
+        {
+            LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Field range: {}", field_range.toString());
+        }
+    }
+
     if (!specific_info.partition_names_and_types.empty())
     {
         ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
@@ -159,6 +171,8 @@ std::vector<bool> PartitionPruningProcessor::getPruningMask(
                     "Partition pruning in manifest {} was successful for file number {}",
                     manifest_file,
                     j);
+
+                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
                 pruning_mask[j] = false;
             }
             else
@@ -198,7 +212,6 @@ Strings PartitionPruningProcessor::getDataFiles(
         {
             if (!filter_dag || pruning_mask.empty() || pruning_mask[i])
             {
-                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
                 const auto status = manifest_partition_info.status_column->getInt(i);
                 const auto data_path = std::string(manifest_partition_info.file_path_column->getDataAt(i).toView());
                 const auto pos = data_path.find(common_path);

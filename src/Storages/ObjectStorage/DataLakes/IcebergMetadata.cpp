@@ -480,11 +480,22 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             auto field = fields->getObject(static_cast<UInt32>(i));
             auto name = field->getValue<String>("name");
             bool required = field->getValue<bool>("required");
+            clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>("id")}]
+                = NameAndTypePair{name, getFieldType(field, "type", required)};
             clickhouse_schema->push_back(NameAndTypePair{name, getFieldType(field, "type", required)});
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     }
 }
+
+NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
+{
+    auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
+    if (it == clickhouse_types_by_source_ids.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} is unknown", source_id);
+    return it->second;
+}
+
 
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)
 {
@@ -826,7 +837,7 @@ Strings IcebergMetadata::getDataFiles() const
         common_partition_infos.push_back(
             pruning_processor.getCommonPartitionInfo(partition_spec, big_partition_tuple, file_path_column, status_column, manifest_file));
         specific_partition_infos.push_back(
-            pruning_processor.getSpecificPartitionInfo(common_partition_infos.back(), current_schema_id, name_and_type_by_source_id));
+            pruning_processor.getSpecificPartitionInfo(common_partition_infos.back(), current_schema_id, schema_processor));
     }
 
     return pruning_processor.getDataFiles(

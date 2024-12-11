@@ -218,7 +218,14 @@ public:
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
         const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
+        LOG_DEBUG(&Poco::Logger::get("ReadFromObjectStorageStep"), "Applying filters");
+        LOG_DEBUG(&Poco::Logger::get("ReadFromObjectStorageStep"), "Filter action dag exists: {}", filter_actions_dag.has_value());
+        LOG_DEBUG(
+            &Poco::Logger::get("ReadFromObjectStorageStep"),
+            "Partition pruning setting: {}",
+            getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning]);
+
+        if (filter_actions_dag.has_value() && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
         {
             configuration->implementPartitionPruning(*filter_actions_dag);
             predicate = filter_actions_dag->getOutputs().at(0);

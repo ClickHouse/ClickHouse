@@ -93,10 +93,12 @@ public:
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
+    NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id) const;
 
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
+    std::map<std::pair<Int32, Int32>, NameAndTypePair> clickhouse_types_by_source_ids;
     std::map<std::pair<Int32, Int32>, std::shared_ptr<ActionsDAG>> transform_dags_by_ids;
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
@@ -209,15 +211,13 @@ class PartitionPruningProcessor
 public:
     CommonPartitionInfo getCommonPartitionInfo(
         const Poco::JSON::Array::Ptr & partition_specification,
-        const ColumnTuple * data_file_tuple_column,
+        const ColumnTuple * big_partition_column,
         ColumnPtr file_path_column,
         ColumnPtr status_column,
         const String & manifest_file) const;
 
-    SpecificSchemaPartitionInfo getSpecificPartitionInfo(
-        const CommonPartitionInfo & common_info,
-        Int32 schema_version,
-        const std::unordered_map<Int32, NameAndTypePair> & name_and_type_by_source_id) const;
+    SpecificSchemaPartitionInfo
+    getSpecificPartitionInfo(const CommonPartitionInfo & common_info, Int32 schema_version, const IcebergSchemaProcessor & processor) const;
 
     std::vector<bool> getPruningMask(
         const String & manifest_file,
@@ -281,7 +281,7 @@ private:
         }
         else if (transform == PartitionTransform::Hour)
         {
-            DateLUTImpl::Values values = DateLUT::instance().getValues(static_cast<UInt16>(value / 24));
+            DateLUTImpl::Values values = DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value / 24));
             values.date += (value % 24) * 3600;
             return values;
         }
@@ -369,15 +369,6 @@ public:
 
     static constexpr auto name = "Iceberg";
 
-    enum class PartitionTransform
-    {
-        Year,
-        Month,
-        Day,
-        Hour,
-        Unsupported
-    };
-
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         ConfigurationObserverPtr configuration_,
@@ -427,6 +418,7 @@ public:
 
     Strings makePartitionPruning(const ActionsDAG & filter_dag) override
     {
+        LOG_DEBUG(&Poco::Logger::get("Make partition pruning"), "Make partition pruning");
         auto configuration_ptr = configuration.lock();
         if (!configuration_ptr)
         {
@@ -453,8 +445,6 @@ private:
     DataLakePartitionColumns partition_columns;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
-
-    std::unordered_map<Int32, NameAndTypePair> name_and_type_by_source_id;
 
     std::vector<std::pair<String, Int32>> manifest_files_with_start_index;
 
