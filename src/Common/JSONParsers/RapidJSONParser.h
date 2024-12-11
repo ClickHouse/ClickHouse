@@ -87,6 +87,7 @@ struct RapidJSONParser
         ALWAYS_INLINE Iterator end() const { return ptr->End(); }
         ALWAYS_INLINE size_t size() const { return ptr->Size(); }
         ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return *(ptr->Begin() + index); }
+        void reset() const {}
 
     private:
         const rapidjson::Value * ptr = nullptr;
