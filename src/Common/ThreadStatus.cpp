@@ -226,7 +226,7 @@ ThreadStatus::~ThreadStatus()
 
     chassert(!check_current_thread_on_destruction || current_thread == this);
 
-    /// Flush untracked_memory **before** switching the current_thread (to avoid losing untracked_memory)
+    /// Flush untracked_memory **right before** switching the current_thread to avoid losing untracked_memory in deleter (detachFromGroup)
     flushUntrackedMemory();
 
     /// Only change current_thread if it's currently being used by this ThreadStatus
