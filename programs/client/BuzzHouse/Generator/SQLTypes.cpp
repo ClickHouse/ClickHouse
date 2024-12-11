@@ -150,8 +150,11 @@ std::tuple<const SQLType *, Integers> StatementGenerator::randomIntType(RandomGe
         }
         this->ids.push_back(2);
         this->ids.push_back(3);
-        this->ids.push_back(4);
-        if ((allowed_types & allow_hugeint))
+        if ((allowed_types & allow_int64))
+        {
+            this->ids.push_back(4);
+        }
+        if ((allowed_types & allow_int128))
         {
             this->ids.push_back(5);
             this->ids.push_back(6);
@@ -163,8 +166,11 @@ std::tuple<const SQLType *, Integers> StatementGenerator::randomIntType(RandomGe
     }
     this->ids.push_back(8);
     this->ids.push_back(9);
-    this->ids.push_back(10);
-    if ((allowed_types & allow_hugeint))
+    if ((allowed_types & allow_int64))
+    {
+        this->ids.push_back(10);
+    }
+    if ((allowed_types & allow_int128))
     {
         this->ids.push_back(11);
         this->ids.push_back(12);

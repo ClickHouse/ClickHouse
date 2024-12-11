@@ -629,12 +629,12 @@ int StatementGenerator::addTableColumn(
     if (t.isMySQLEngine() || t.hasMySQLPeer())
     {
         possible_types
-            &= ~(allow_hugeint | allow_dynamic | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
+            &= ~(allow_int128 | allow_dynamic | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
     }
     if (t.isPostgreSQLEngine() || t.hasPostgreSQLPeer())
     {
         possible_types
-            &= ~(allow_hugeint | allow_unsigned_int | allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
+            &= ~(allow_int128 | allow_unsigned_int | allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
         if (t.hasPostgreSQLPeer())
         {
             possible_types &= ~(set_any_datetime_precision); //datetime must have 6 digits precision
@@ -643,7 +643,7 @@ int StatementGenerator::addTableColumn(
     if (t.isSQLiteEngine() || t.hasSQLitePeer())
     {
         possible_types &= ~(
-            allow_hugeint | allow_unsigned_int | allow_dynamic | allow_array | allow_map | allow_tuple | allow_variant | allow_nested
+            allow_int128 | allow_unsigned_int | allow_dynamic | allow_array | allow_map | allow_tuple | allow_variant | allow_nested
             | allow_geo);
         if (t.hasSQLitePeer())
         {

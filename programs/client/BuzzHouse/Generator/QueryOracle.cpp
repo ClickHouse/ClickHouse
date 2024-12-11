@@ -381,7 +381,6 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("optimize_distinct_in_order", {"0", "1"}),
     TestSetting("optimize_distributed_group_by_sharding_key", {"0", "1"}),
     TestSetting("optimize_functions_to_subcolumns", {"0", "1"}),
-    TestSetting("optimize_functions_to_subcolumns", {"0", "1"}),
     TestSetting("optimize_group_by_constant_keys", {"0", "1"}),
     TestSetting("optimize_group_by_function_keys", {"0", "1"}),
     TestSetting("optimize_if_chain_to_multiif", {"0", "1"}),

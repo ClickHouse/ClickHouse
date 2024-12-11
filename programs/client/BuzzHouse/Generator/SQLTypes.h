@@ -9,13 +9,14 @@
 namespace BuzzHouse
 {
 
-const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), allow_int8 = (1 << 2), allow_hugeint = (1 << 3),
-                         allow_floating_points = (1 << 4), allow_dates = (1 << 5), allow_date32 = (1 << 6), allow_datetimes = (1 << 7),
-                         allow_datetime64 = (1 << 8), allow_strings = (1 << 9), allow_decimals = (1 << 10), allow_uuid = (1 << 11),
-                         allow_enum = (1 << 12), allow_dynamic = (1 << 13), allow_JSON = (1 << 14), allow_nullable = (1 << 15),
-                         allow_low_cardinality = (1 << 16), allow_array = (1 << 17), allow_map = (1 << 18), allow_tuple = (1 << 19),
-                         allow_variant = (1 << 20), allow_nested = (1 << 21), allow_nullable_inside_array = (1 << 22),
-                         allow_ipv4 = (1 << 23), allow_ipv6 = (1 << 24), allow_geo = (1 << 25), set_any_datetime_precision = (1 << 26);
+const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), allow_int8 = (1 << 2), allow_int64 = (1 << 3),
+                         allow_int128 = (1 << 4), allow_floating_points = (1 << 5), allow_dates = (1 << 6), allow_date32 = (1 << 7),
+                         allow_datetimes = (1 << 8), allow_datetime64 = (1 << 9), allow_strings = (1 << 10), allow_decimals = (1 << 11),
+                         allow_uuid = (1 << 12), allow_enum = (1 << 13), allow_dynamic = (1 << 14), allow_JSON = (1 << 15),
+                         allow_nullable = (1 << 16), allow_low_cardinality = (1 << 17), allow_array = (1 << 18), allow_map = (1 << 19),
+                         allow_tuple = (1 << 20), allow_variant = (1 << 21), allow_nested = (1 << 22),
+                         allow_nullable_inside_array = (1 << 23), allow_ipv4 = (1 << 24), allow_ipv6 = (1 << 25), allow_geo = (1 << 26),
+                         set_any_datetime_precision = (1 << 27);
 
 class SQLType
 {
