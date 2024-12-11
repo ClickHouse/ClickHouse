@@ -44,7 +44,6 @@ using namespace DB;
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
-extern const Event HashJoinScatteringBlocksMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -56,6 +55,8 @@ extern const Metric ConcurrentHashJoinPoolThreadsScheduled;
 
 namespace
 {
+
+using BlockHashes = std::vector<UInt64>;
 
 void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & params)
 {
@@ -145,7 +146,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
             if (hash_joins[0] && hash_joins[0]->data && hash_joins[0]->data->getJoinedData())
             {
                 hash_joins[i]->data->getJoinedData()->maps = hash_joins[0]->data->getJoinedData()->maps;
-                hash_joins[i]->data->used_flags = hash_joins[0]->data->used_flags;
+                hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
             }
         }
     }
@@ -159,11 +160,6 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
 ConcurrentHashJoin::~ConcurrentHashJoin()
 {
-    // for (const auto & [key, value] : dispatch_time)
-    // {
-    //     LOG_DEBUG(&Poco::Logger::get("debug"), "key={}, value={}", key, value);
-    // }
-
     try
     {
         updateStatistics(hash_joins, stats_collecting_params);
@@ -253,6 +249,7 @@ void ConcurrentHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & 
 
 void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_blocks, std::vector<Block> & res)
 {
+    // TODO(nickitat): simplify code, since we don't scatter anymore
     ScatteredBlocks dispatched_blocks;
     auto & remaining_blocks = extra_blocks.remaining_blocks;
     if (extra_blocks.rows())
@@ -263,7 +260,6 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     {
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
         dispatched_blocks.emplace_back(std::move(block));
-        // dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
     if (dispatched_blocks.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "dispatched_blocks.size() != 1");
@@ -271,7 +267,6 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     block = {};
 
     /// Just in case, should be no-op always
-    // remaining_blocks.resize(slots);
     remaining_blocks.resize(1);
 
     chassert(res.empty());
@@ -280,13 +275,10 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
 
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
-        std::shared_ptr<ExtraBlock> none_extra_block;
         auto & hash_join = hash_joins[i];
         auto & dispatched_block = dispatched_blocks[i];
         if (dispatched_block && (i == 0 || dispatched_block.rows()))
             hash_join->data->joinBlock(dispatched_block, remaining_blocks[i]);
-        if (none_extra_block && !none_extra_block->empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "not_processed should be empty");
     }
     for (size_t i = 0; i < dispatched_blocks.size(); ++i)
     {
@@ -359,24 +351,23 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
 }
 
 template <typename HashTable>
-static IColumn::Selector hashToSelector(const HashTable & hash_table, const std::vector<UInt64> & data, size_t num_shards)
+static IColumn::Selector hashToSelector(const HashTable & hash_table, const BlockHashes & hashes, size_t num_shards)
 {
-    assert(num_shards > 0 && (num_shards & (num_shards - 1)) == 0);
-    size_t num_rows = data.size();
-
+    assert(isPowerOf2(num_shards));
+    const size_t num_rows = hashes.size();
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = hash_table.getBucketFromHash(data[i]) & (num_shards - 1);
+        selector[i] = hash_table.getBucketFromHash(hashes[i]) & (num_shards - 1);
     return selector;
 }
 
 template <typename KeyGetter, typename HashTable>
-std::vector<UInt64> calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
+BlockHashes calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
 {
     const size_t num_rows = key_columns[0]->size();
-    std::vector<UInt64> hash(num_rows);
-    auto key_getter = KeyGetter(key_columns, key_sizes, nullptr);
     Arena pool;
+    auto key_getter = KeyGetter(key_columns, key_sizes, nullptr);
+    BlockHashes hash(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
         hash[i] = key_getter.getHash(hash_table, i, pool);
     return hash;
@@ -384,34 +375,23 @@ std::vector<UInt64> calculateHashes(const HashTable & hash_table, const ColumnRa
 
 IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
-    /// TODO:
-    /// 1. HashMethod (could be obtained using KeyGetterForType it seems) -> key holder
-    /// 2. HT::hash(key_holder)
-    /// 3. Use 64-bit hash
-    /// 4. Use joinDispatch
-    /// 5. Make sure we cannot get different hashes for the same key because of difference in LowCardinality or Const columns
-
-    std::vector<ColumnPtr> keys;
+    std::vector<ColumnPtr> key_column_holders;
     ColumnRawPtrs key_columns;
     key_columns.reserve(key_columns_names.size());
     for (const auto & key_name : key_columns_names)
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
-        keys.push_back(key_col_no_lc);
+        key_column_holders.push_back(key_col_no_lc);
         key_columns.push_back(key_col_no_lc.get());
     }
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    /// CHJ supports only one join clause for now
-    if (join.getJoinedData()->maps.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}", join.getJoinedData()->maps.size());
-
-    std::vector<UInt64> hash;
-
     auto calculate_selector = [&](auto & maps)
     {
+        BlockHashes hash;
+
         switch (join.getJoinedData()->type)
         {
             case HashJoin::Type::EMPTY:
@@ -422,7 +402,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-            *maps.TYPE, key_columns, join.key_sizes[0]); \
+            *maps.TYPE, key_columns, join.getKeySizes().at(0)); \
         return hashToSelector(*maps.TYPE, hash, num_shards);
 
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -431,6 +411,9 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
 
         UNREACHABLE();
     };
+
+    /// CHJ supports only one join clause for now
+    chassert(join.getJoinedData()->maps.size() != 1, "Expected to have only one join clause");
 
     return std::visit(
         [&](auto & maps)
@@ -442,10 +425,10 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
                 return calculate_selector(maps);
             else if constexpr (std::is_same_v<T, HashJoin::MapsAsof>)
                 return calculate_selector(maps);
-
-            UNREACHABLE();
+            else
+                static_assert(false);
         },
-        join.getJoinedData()->maps[0]);
+        join.getJoinedData()->maps.at(0));
 }
 
 ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
@@ -493,14 +476,6 @@ ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Sele
 
 ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
 {
-    // Stopwatch watch;
-    // SCOPE_EXIT({
-    //     std::thread::id thread_id = std::this_thread::get_id();
-    //     std::hash<std::thread::id> hasher;
-    //     std::size_t thread_id_numeric = hasher(thread_id);
-    //     dispatch_time[thread_id_numeric] += watch.elapsed();
-    // });
-
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)
     {
@@ -508,9 +483,6 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
         res.emplace_back(std::move(from_block));
         return res;
     }
-
-    if (!isPowerOf2(num_shards))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of shards should be power of 2");
 
     IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <Common/HashTable/HashTable.h>
 
 
@@ -87,7 +88,7 @@ public:
     using ConstLookupResult = typename Impl::ConstLookupResult;
 
     Impl impls[NUM_BUCKETS];
-    std::atomic_uint_fast64_t size_in_cells{0};
+
 
     TwoLevelHashTable() = default;
 
@@ -117,11 +118,8 @@ public:
             size_t buck = getBucketFromHash(hash_value);
             impls[buck].insertUniqueNonZero(cell, hash_value);
         }
-
-        size_in_cells = 0;
-        for (const auto & bucket : impls)
-            size_in_cells += bucket.getBufferSizeInCells();
     }
+
 
     class iterator /// NOLINT
     {
@@ -158,6 +156,7 @@ public:
         Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
     };
+
 
     class const_iterator /// NOLINT
     {
@@ -198,6 +197,7 @@ public:
         size_t getHash() const { return current_it.getHash(); }
     };
 
+
     const_iterator begin() const
     {
         size_t buck = 0;
@@ -213,8 +213,8 @@ public:
     }
 
     const_iterator end() const         { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
-
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
+
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
@@ -261,13 +261,14 @@ public:
         emplace(key_holder, it, inserted, hash_value);
     }
 
+
     /// Same, but with a precalculated values of hash function.
     template <typename KeyHolder>
-    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted, size_t hash_value)
+    void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it,
+                                  bool & inserted, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);
         impls[buck].emplace(key_holder, it, inserted, hash_value);
-        size_in_cells.fetch_add(inserted, std::memory_order_relaxed);
     }
 
     LookupResult ALWAYS_INLINE find(Key x, size_t hash_value)
@@ -284,6 +285,7 @@ public:
     LookupResult ALWAYS_INLINE find(Key x) { return find(x, hash(x)); }
 
     ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
+
 
     void write(DB::WriteBuffer & wb) const
     {
@@ -305,10 +307,6 @@ public:
     {
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             impls[i].read(rb);
-
-        size_in_cells = 0;
-        for (const auto & bucket : impls)
-            size_in_cells += bucket.getBufferSizeInCells();
     }
 
     void readText(DB::ReadBuffer & rb)
@@ -319,11 +317,8 @@ public:
                 DB::assertChar(',', rb);
             impls[i].readText(rb);
         }
-
-        size_in_cells = 0;
-        for (const auto & bucket : impls)
-            size_in_cells += bucket.getBufferSizeInCells();
     }
+
 
     size_t size() const
     {
@@ -357,10 +352,7 @@ public:
         size_t res = 0;
         for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
             res += impls[i].getBufferSizeInCells();
-        if (res != size_in_cells.load(std::memory_order_relaxed))
-            throw DB::Exception("Inconsistent size_in_cells in TwoLevelHashTable", DB::ErrorCodes::LOGICAL_ERROR);
         return res;
-        // return size_in_cells.load(std::memory_order_relaxed);
     }
 
     size_t offsetInternal(ConstLookupResult ptr) const

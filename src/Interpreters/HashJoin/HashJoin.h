@@ -1,10 +1,8 @@
 #pragma once
 
-#include <algorithm>
 #include <deque>
 #include <memory>
 #include <optional>
-#include <ranges>
 #include <variant>
 #include <vector>
 
@@ -23,10 +21,10 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
-#include "Common/HashTable/TwoLevelHashMap.h"
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/TwoLevelHashMap.h>
 
 namespace DB
 {
@@ -244,6 +242,7 @@ public:
     {
 /// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
+        // TODO(nickitat): bring back FixedHashMap
         std::shared_ptr<TwoLevelHashMap<UInt8, Mapped>> key8;
         std::shared_ptr<TwoLevelHashMap<UInt16, Mapped>> key16;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>> key32;
@@ -270,6 +269,7 @@ public:
 
         void reserve(Type, size_t)
         {
+            // TODO(nickitat): implement
             // switch (which)
             // {
             //     case Type::EMPTY:            break;
@@ -412,15 +412,9 @@ public:
     void tryRerangeRightTableData() override;
     size_t getAndSetRightTableKeys() const;
 
-    std::vector<Sizes> key_sizes;
+    const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
-    /// Right table data. StorageJoin shares it between many Join objects.
-    /// Flags that indicate that particular row already used in join.
-    /// Flag is stored for every record in hash map.
-    /// Number of this flags equals to hashtable buffer size (plus one for zero value).
-    /// Changes in hash table broke correspondence,
-    /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
-    mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
+    std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
 
 private:
     friend class NotJoinedHash;
@@ -443,8 +437,17 @@ private:
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
 
+    /// Right table data. StorageJoin shares it between many Join objects.
+    /// Flags that indicate that particular row already used in join.
+    /// Flag is stored for every record in hash map.
+    /// Number of this flags equals to hashtable buffer size (plus one for zero value).
+    /// Changes in hash table broke correspondence,
+    /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
+    mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
     bool have_compressed = false;
+
+    std::vector<Sizes> key_sizes;
 
     /// Needed to do external cross join
     TemporaryDataOnDiskScopePtr tmp_data;
