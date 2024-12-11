@@ -7189,45 +7189,6 @@ Result:
 └───────────────────────┘
 ```
 
-## toUnixTimestamp64Milli
-
-Converts a `DateTime64` to a `Int64` value with fixed millisecond precision. The input value is scaled up or down appropriately depending on its precision.
-
-:::note
-The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
-:::
-
-**Syntax**
-
-```sql
-toUnixTimestamp64Milli(value)
-```
-
-**Arguments**
-
-- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH toDateTime64('2009-02-13 23:31:31.011', 3, 'UTC') AS dt64
-SELECT toUnixTimestamp64Milli(dt64);
-```
-
-Result:
-
-```response
-┌─toUnixTimestamp64Milli(dt64)─┐
-│                1234567891011 │
-└──────────────────────────────┘
-```
-
 ## toUnixTimestamp64Second
 
 Converts a `DateTime64` to a `Int64` value with fixed second precision. The input value is scaled up or down appropriately depending on its precision.
@@ -7265,6 +7226,45 @@ Result:
 ┌─toUnixTimestamp64Second(dt64)─┐
 │                    1234567891 │
 └───────────────────────────────┘
+```
+
+## toUnixTimestamp64Milli
+
+Converts a `DateTime64` to a `Int64` value with fixed millisecond precision. The input value is scaled up or down appropriately depending on its precision.
+
+:::note
+The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+:::
+
+**Syntax**
+
+```sql
+toUnixTimestamp64Milli(value)
+```
+
+**Arguments**
+
+- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime64('2009-02-13 23:31:31.011', 3, 'UTC') AS dt64
+SELECT toUnixTimestamp64Milli(dt64);
+```
+
+Result:
+
+```response
+┌─toUnixTimestamp64Milli(dt64)─┐
+│                1234567891011 │
+└──────────────────────────────┘
 ```
 
 ## toUnixTimestamp64Micro
@@ -7345,6 +7345,48 @@ Result:
 └─────────────────────────────┘
 ```
 
+## fromUnixTimestamp64Second
+
+Converts an `Int64` to a `DateTime64` value with fixed second precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
+
+:::note
+Please note that input value is treated as a UTC timestamp, not timestamp at the given (or implicit) timezone.
+:::
+
+**Syntax**
+
+``` sql
+fromUnixTimestamp64Second(value[, timezone])
+```
+
+**Arguments**
+
+- `value` — value with any precision. [Int64](../data-types/int-uint.md).
+- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
+
+**Returned value**
+
+- `value` converted to DateTime64 with precision `0`. [DateTime64](../data-types/datetime64.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH CAST(1733935988, 'Int64') AS i64
+SELECT
+    fromUnixTimestamp64Second(i64, 'UTC') AS x,
+    toTypeName(x);
+```
+
+Result:
+
+```response
+┌───────────────────x─┬─toTypeName(x)────────┐
+│ 2024-12-11 16:53:08 │ DateTime64(0, 'UTC') │
+└─────────────────────┴──────────────────────┘
+```
+
 ## fromUnixTimestamp64Milli
 
 Converts an `Int64` to a `DateTime64` value with fixed millisecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
@@ -7373,7 +7415,7 @@ fromUnixTimestamp64Milli(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Milli(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7383,7 +7425,7 @@ Result:
 
 ```response
 ┌───────────────────────x─┬─toTypeName(x)────────┐
-│ 2009-02-13 23:31:31.011 │ DateTime64(3, 'UTC') │
+│ 2024-12-11 16:53:08.123 │ DateTime64(3, 'UTC') │
 └─────────────────────────┴──────────────────────┘
 ```
 
@@ -7415,7 +7457,7 @@ fromUnixTimestamp64Micro(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123456, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Micro(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7425,7 +7467,7 @@ Result:
 
 ```response
 ┌──────────────────────────x─┬─toTypeName(x)────────┐
-│ 1970-01-15 06:56:07.891011 │ DateTime64(6, 'UTC') │
+│ 2024-12-11 16:53:08.123456 │ DateTime64(6, 'UTC') │
 └────────────────────────────┴──────────────────────┘
 ```
 
@@ -7457,7 +7499,7 @@ fromUnixTimestamp64Nano(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123456789, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Nano(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7467,7 +7509,7 @@ Result:
 
 ```response
 ┌─────────────────────────────x─┬─toTypeName(x)────────┐
-│ 1970-01-01 00:20:34.567891011 │ DateTime64(9, 'UTC') │
+│ 2024-12-11 16:53:08.123456789 │ DateTime64(9, 'UTC') │
 └───────────────────────────────┴──────────────────────┘
 ```
 
