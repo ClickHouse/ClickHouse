@@ -17,6 +17,9 @@ Columns:
     - `UNKNOWN`
 - `max_data_part_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
 - `move_factor` ([Float64](../../sql-reference/data-types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
+- `move_policy`([Enum8](../../sql-reference/data-types/enum.md)) - Policy for selecting parts for move to the next volume with the total size that is sufficient to meet the `move_factor` condition. Can have one of the following values:
+    - `BY_PART_SIZE` - sorts existing parts by size from largest to smallest (in descending order).
+    - `BY_INSERT_DATA_TIME` - sorts existing parts by time of data insert in this part(older parts first).
 - `prefer_not_to_merge` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Value of the `prefer_not_to_merge` setting. Should be always false. When this setting is enabled, you did a mistake.
 - `perform_ttl_move_on_insert` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Value of the `perform_ttl_move_on_insert` setting. — Disables TTL move on data part INSERT. By default if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3).
 - `load_balancing` ([Enum8](../../sql-reference/data-types/enum.md))  — Policy for disk balancing. Can have one of the following values:
