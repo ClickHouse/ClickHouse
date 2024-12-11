@@ -43,6 +43,24 @@ namespace ErrorCodes
     extern const int CANNOT_MPROTECT;
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wbit-int-extension"
+using NewInt128 = signed _BitInt(128);
+using NewUInt128 = unsigned _BitInt(128);
+using NewInt256 = signed _BitInt(256);
+using NewUInt256 = unsigned _BitInt(256);
+#pragma clang diagnostic pop
+
+NewInt256 divideInt256(NewInt256 left, NewInt256 right)
+{
+    return left / right;
+}
+
+NewInt128 divideInt128(NewInt128 left, NewInt128 right)
+{
+    return left / right;
+}
+
 /** Simple module to object file compiler.
   * Result object cannot be used as machine code directly, it should be passed to linker.
   */
@@ -374,6 +392,8 @@ CHJIT::CHJIT()
 
     double (*fmod_ptr)(double, double) = &fmod;
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
+    symbol_resolver->registerSymbol("__divei4", reinterpret_cast<void *>(&divideInt256));
+    symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&divideInt128));
 }
 
 CHJIT::~CHJIT() = default;
