@@ -1,6 +1,5 @@
 #pragma once
 
-#include <exception>
 #include <Common/HashTable/HashTable.h>
 
 
