@@ -778,16 +778,24 @@ void StorageMaterializedView::startup()
         refresher->startup();
 }
 
-void StorageMaterializedView::shutdown(bool)
+void StorageMaterializedView::flushAndPrepareForShutdown()
 {
     if (refresher)
         refresher->shutdown();
+}
 
+void StorageMaterializedView::shutdown(bool)
+{
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, getStorageID());
+}
+
+bool StorageMaterializedView::canCreateOrDropOtherTables() const
+{
+    return refresher && refresher->canCreateOrDropOtherTables();
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const

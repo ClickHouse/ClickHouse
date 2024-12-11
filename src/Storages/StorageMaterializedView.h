@@ -68,10 +68,13 @@ public:
     void renameInMemory(const StorageID & new_table_id) override;
 
     void startup() override;
+    void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
+    bool canCreateOrDropOtherTables() const;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;

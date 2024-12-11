@@ -65,11 +65,11 @@ do
 done
 
 # Check that refreshes and both kinds of errors appear in query log.
-# (Magic word to silence check-style warning: **current_database = currentDatabase()**.
+# (The following string needs to be present in this comment to silence check-style warning: **current_database = currentDatabase()**.
 #  It's ok that we don't have this condition in the query, we're checking the db name in `tables` column instead.)
 $CLICKHOUSE_CLIENT -q "
     system flush logs;
-    select replaceAll(toString(type), 'Exception', 'Ex**ption'), interface, client_name, exception != '', has(tables, '${second_db}.v') from system.query_log where event_time > now() - interval 30 minute and log_comment = 'refresh of ${second_db}.v' group by all order by all;
+    select replaceAll(toString(type), 'Exception', 'Ex**ption'), interface, client_name, exception != '', has(tables, '${second_db}.v') from system.query_log where event_time > now() - interval 30 minute and log_comment like 'refresh of ${second_db}.v%' group by all order by all;
 "
 
 $CLICKHOUSE_CLIENT -q "

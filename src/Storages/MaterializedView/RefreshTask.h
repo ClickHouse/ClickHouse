@@ -53,7 +53,7 @@ public:
     /// Called at most once.
     void startup();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
-    /// Ok to call multiple times, but not in parallel.
+    /// Ok to call multiple times, including in parallel.
     /// Ok to call even if startup() wasn't called or failed.
     void shutdown();
     /// Call when dropping the table, after shutdown(). Removes coordination znodes if needed.
@@ -65,6 +65,8 @@ public:
     void alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy);
 
     Info getInfo() const;
+
+    bool canCreateOrDropOtherTables() const;
 
     /// Enable task scheduling
     void start();

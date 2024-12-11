@@ -123,6 +123,11 @@ OwnedRefreshTask RefreshTask::create(
     return OwnedRefreshTask(task);
 }
 
+bool RefreshTask::canCreateOrDropOtherTables() const
+{
+    return !refresh_append;
+}
+
 void RefreshTask::startup()
 {
     if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
