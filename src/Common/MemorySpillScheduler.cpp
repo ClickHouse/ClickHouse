@@ -58,10 +58,7 @@ void MemorySpillScheduler::updateTopProcessor()
     max_reserved_memory_bytes = 0;
     for (const auto & [proc, stats] : processor_stats)
     {
-        if (stats.need_reserved_memory_bytes > max_reserved_memory_bytes)
-        {
-            max_reserved_memory_bytes = stats.need_reserved_memory_bytes;
-        }
+        max_reserved_memory_bytes = std::max(stats.need_reserved_memory_bytes, max_reserved_memory_bytes);
         if (!top_processor || stats.spillable_memory_bytes > max_spillable_memory_bytes)
         {
             top_processor = proc;
