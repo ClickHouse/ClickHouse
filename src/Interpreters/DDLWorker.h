@@ -84,7 +84,7 @@ public:
 
     std::string getReplicasDir() const { return replicas_dir; }
 
-    void startup();
+    void startup(bool restore);
     virtual void shutdown();
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
@@ -164,13 +164,13 @@ protected:
     void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
     /// Return false if the worker was stopped (stop_flag = true)
-    virtual bool initializeMainThread();
-    virtual void initializeReplication();
+    virtual bool initializeMainThread(bool restore);
+    virtual void initializeReplication(bool restore);
 
     virtual void createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids);
     virtual void markReplicasActive(bool reinitialized);
 
-    void runMainThread();
+    void runMainThread(bool restore);
     void runCleanupThread();
 
     ContextMutablePtr context;

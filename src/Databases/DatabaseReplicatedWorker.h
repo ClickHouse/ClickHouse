@@ -40,8 +40,8 @@ public:
     UInt64 getCurrentInitializationDurationMs() const;
 
 private:
-    bool initializeMainThread() override;
-    void initializeReplication() override;
+    bool initializeMainThread(bool restore) override;
+    void initializeReplication(bool restore) override;
 
     void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override { }
     void markReplicasActive(bool) override { }

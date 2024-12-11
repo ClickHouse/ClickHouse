@@ -3,6 +3,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
+#include "Common/Logger.h"
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -54,7 +55,7 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
     /// We also need similar graph to load tables on server startup in order of topsort.
 }
 
-bool DatabaseReplicatedDDLWorker::initializeMainThread()
+bool DatabaseReplicatedDDLWorker::initializeMainThread(const bool restore)
 {
     {
         std::lock_guard lock(initialization_duration_timer_mutex);
@@ -97,7 +98,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 zookeeper->trySet(database->replica_path + "/digest", FORCE_AUTO_RECOVERY_DIGEST);
             }
 
-            initializeReplication();
+            initializeReplication(restore);
             initialized = true;
             {
                 std::lock_guard lock(initialization_duration_timer_mutex);
@@ -126,7 +127,7 @@ void DatabaseReplicatedDDLWorker::shutdown()
     wait_current_task_change.notify_all();
 }
 
-void DatabaseReplicatedDDLWorker::initializeReplication()
+void DatabaseReplicatedDDLWorker::initializeReplication(const bool restore)
 {
     /// Check if we need to recover replica.
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
@@ -177,7 +178,11 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         if (!is_new_replica)
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
-        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+        if (!restore)
+        {
+            database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+        }
+        
         zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
     }
@@ -284,6 +289,13 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
 
     String node_path = query_path_prefix + counter_path.substr(counter_prefix.size());
 
+    LOG_DEBUG(
+        getLogger("DatabaseReplicatedDDLWorker"),
+        "[enqueueQueryImpl] counter_path={}, counter_prefix={}, node_path={}",
+        counter_path,
+        counter_prefix,
+        node_path);
+
     /// Now create task in queue
     Coordination::Requests ops;
     /// Query is not committed yet, but we have to write it into log to avoid reordering
@@ -318,7 +330,10 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     auto zookeeper = getAndSetZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
+    LOG_DEBUG(log, "[tryEnqueueAndExecuteEntry] our_log_ptr was gotten {}", our_log_ptr);
+
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    LOG_DEBUG(log, "[tryEnqueueAndExecuteEntry] max_log_ptr={}", max_log_ptr);
 
     if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
         throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
@@ -392,6 +407,13 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     UInt32 our_log_ptr = getLogPointer();
     UInt32 entry_num = DatabaseReplicatedTask::getLogEntryNumber(entry_name);
+
+    LOG_DEBUG(
+        log,
+        "[DatabaseReplicatedDDLWorker::initAndCheckTask] our_log_ptr={}, entry_num={}, entry_name={}",
+        our_log_ptr,
+        entry_num,
+        entry_name);
 
     if (entry_num <= our_log_ptr)
     {
