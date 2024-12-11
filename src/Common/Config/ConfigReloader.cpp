@@ -13,6 +13,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_RELOAD_CONFIG;
+}
+
 ConfigReloader::ConfigReloader(
         std::string_view config_path_,
         const std::vector<std::string>& extra_paths_,
@@ -131,18 +136,22 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (Coordination::isHardwareError(e.code))
                 need_reload_from_zk = true;
 
+            PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+            message.text = fmt::format("ZooKeeper error when loading config from '{}' config: {}", config_path, message.text);
             if (throw_on_error)
-                throw;
+                throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
 
-            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + config_path + "'");
+            LOG_ERROR(log, message);
             return std::nullopt;
         }
         catch (...)
         {
+            PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+            message.text = fmt::format("Error loading config from '{}' config: {}", config_path, message.text);
             if (throw_on_error)
-                throw;
+                throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
 
-            tryLogCurrentException(log, "Error loading config from '" + config_path + "'");
+            LOG_ERROR(log, message);
             return std::nullopt;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
@@ -166,9 +175,12 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         }
         catch (...)
         {
+            PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+            message.text = fmt::format("Error updating configuration from '{}' config: {}", config_path, message.text);
             if (throw_on_error)
-                throw;
-            tryLogCurrentException(log, "Error updating configuration from '" + config_path + "' config.");
+                throw Exception(ErrorCodes::CANNOT_RELOAD_CONFIG, message);
+
+            LOG_ERROR(log, message);
             return std::nullopt;
         }
 
