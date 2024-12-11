@@ -48,3 +48,4 @@ allow_statistic_optimize
 allow_statistics_optimize
 allow_unrestricted_reads_from_keeper
 allow_reorder_prewhere_conditions
+allow_general_join_planning

@@ -311,7 +311,7 @@ void buildSimpleJoinClause(
                 if (function_name == "or" || function_name == "and")
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Cannot build simple join clause for '{}' expression containing expressions from both tables!",
+                        "Cannot build simple join clause for '{}' expression containing expressions from both tables",
                         function_name);
 
                 auto left_key = left_child;
