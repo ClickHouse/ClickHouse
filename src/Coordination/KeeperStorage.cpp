@@ -30,6 +30,7 @@
 #include <Coordination/KeeperStorage.h>
 
 #include <functional>
+#include <shared_mutex>
 #include <base/defines.h>
 
 namespace ProfileEvents
