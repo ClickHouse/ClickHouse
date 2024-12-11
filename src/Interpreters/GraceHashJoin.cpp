@@ -765,7 +765,7 @@ GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const
 
 void GraceHashJoin::onBuildPhaseFinish()
 {
-    // It cannot be called concurently with other IJoin methods
+    // It cannot be called concurrently with other IJoin methods
     if (hash_join)
         hash_join->onBuildPhaseFinish();
 }

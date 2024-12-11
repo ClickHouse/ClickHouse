@@ -78,7 +78,7 @@ public:
     {
         for (auto & hash_join : hash_joins)
         {
-            // It cannot be called concurently with other IJoin methods
+            // It cannot be called concurrently with other IJoin methods
             hash_join->data->onBuildPhaseFinish();
         }
     }
