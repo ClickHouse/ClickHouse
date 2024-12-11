@@ -383,7 +383,7 @@ public:
     // aggregate, join and sort processors can be spillable.
     // For unspillable processors, the memory usage is not tracked.
     virtual bool spillable() const { return false; }
-    
+
     virtual ProcessorMemoryStats getMemoryStats()
     {
         return {};
