@@ -3157,37 +3157,37 @@ Result:
 └─────────┘
 ```
 
-## normalizedGini
+## arrayNormalizedGini
 
-Function `normalizedGini` is used to calculate the normalized Gini coefficient.
+Function `arrayNormalizedGini` is used to calculate the normalized Gini coefficient.
 
 **Syntax**
 
 ```sql
-normalizedGini(pltv, ltv)
+arrayNormalizedGini(predicted, label)
 ```
 
 **Arguments**
 
-- `pltv` — Predicted lifetime value ([Array(T)](../data-types/array.md))
-- `ltv` — Actual lifetime value ([Array(T)](../data-types/array.md))
+- `predicted` — Predicted values ([Array(T)](../data-types/array.md))
+- `label` — Actual values ([Array(T)](../data-types/array.md))
 
 **Returned Value**
 
-- A tuple contains Gini coefficient for the predicted LTV, Gini coefficient for the actual  LTV and the normalized Gini coefficient.
+- A tuple contains Gini coefficient of predicted values, Gini coefficient of label values and the normalized Gini coefficient, which is the ratio between predicted Gini coeffient and label Gini coefficient.
 
 **Examples**
 
 Query:
 
 ```sql
-SELECT normalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2]);
+SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2]);
 ```
 
 Result:
 
 ```
-┌─normalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
+┌─arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
 │ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
 └─────────────────────────────────────────────────────────────┘
 ```

@@ -42,20 +42,23 @@ struct NormalizedGiniImpl
 
         if (array_size > MAX_ARRAY_SIZE)
             throw Exception(
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in normalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size in function arrayNormalizedGini: {}, maximum: {}",
+                array_size,
+                MAX_ARRAY_SIZE);
 
         for (size_t i = 0; i < size; ++i)
         {
             size_t array1_size = offsets1[i] - offsets1[i - 1];
             if (array1_size != array_size)
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function normalizedGini should have same size");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function arrayNormalizedGini should have same size");
             }
 
-            // Why we need to create a new array here every loop, because array2 will be sorted in normalizedGiniImpl.
+            // Why we need to create a new array here every loop, because array2 will be sorted in arrayNormalizedGiniImpl.
             PODArrayWithStackMemory<T2, 1024> array2(const_array.begin(), const_array.end());
 
-            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(array_datas1, offsets1[i - 1], array2, array_size);
+            auto [pred_gini, label_gini, norm_gini] = arrayNormalizedGiniImpl(array_datas1, offsets1[i - 1], array2, array_size);
 
             pred_gini_col[i] = pred_gini;
             label_gini_col[i] = label_gini;
@@ -78,7 +81,7 @@ struct NormalizedGiniImpl
 
         if (array_size > MAX_ARRAY_SIZE)
             throw Exception(
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in normalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -86,12 +89,12 @@ struct NormalizedGiniImpl
             size_t array2_size = offsets2[i] - offsets2[i - 1];
             if (array1_size != array_size || array2_size != array_size)
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function normalizedGini should have same size");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function arrayNormalizedGini should have same size");
             }
 
             PODArrayWithStackMemory<T2, 1024> array2(array_datas2.data() + offsets2[i - 1], array_datas2.data() + offsets2[i]);
 
-            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(array_datas1, offsets1[i - 1], array2, array_size);
+            auto [pred_gini, label_gini, norm_gini] = arrayNormalizedGiniImpl(array_datas1, offsets1[i - 1], array2, array_size);
 
             pred_gini_col[i] = pred_gini;
             label_gini_col[i] = label_gini;
@@ -113,19 +116,19 @@ struct NormalizedGiniImpl
 
         if (array_size > MAX_ARRAY_SIZE)
             throw Exception(
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in normalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
         for (size_t i = 0; i < size; ++i)
         {
             size_t array1_size = offsets1[i] - offsets1[i - 1];
             if (array1_size != array_size)
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function normalizedGini should have same size");
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function arrayNormalizedGini should have same size");
             }
 
             PODArrayWithStackMemory<T2, 1024> array2(array_datas1.data() + offsets1[i - 1], array_datas1.data() + offsets1[i]);
 
-            auto [pred_gini, label_gini, norm_gini] = normalizedGiniImpl(const_array, 0, array2, array_size);
+            auto [pred_gini, label_gini, norm_gini] = arrayNormalizedGiniImpl(const_array, 0, array2, array_size);
 
             pred_gini_col[i] = pred_gini;
             label_gini_col[i] = label_gini;
@@ -136,7 +139,7 @@ struct NormalizedGiniImpl
 private:
     template <typename T1, typename T2>
     static std::tuple<Float64, Float64, Float64>
-    normalizedGiniImpl(const PaddedPODArray<T1> & array1, size_t offset, PODArrayWithStackMemory<T2, 1024> & array2, size_t array_size)
+    arrayNormalizedGiniImpl(const PaddedPODArray<T1> & array1, size_t offset, PODArrayWithStackMemory<T2, 1024> & array2, size_t array_size)
     {
         auto sort_idx = sortIndexes(array1, offset, array_size);
 
@@ -191,7 +194,7 @@ private:
 /**
  * Calculate the normalized Gini coefficient. See https://arxiv.org/pdf/1912.07753
  */
-class FunctionNormalizedGini : public IFunction
+class FunctionArrayNormalizedGini : public IFunction
 {
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -222,8 +225,8 @@ class FunctionNormalizedGini : public IFunction
     }
 
 public:
-    static constexpr auto name = "normalizedGini";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNormalizedGini>(); }
+    static constexpr auto name = "arrayNormalizedGini";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNormalizedGini>(); }
 
     String getName() const override { return name; }
 
@@ -422,18 +425,18 @@ public:
 REGISTER_FUNCTION(NormalizedGini)
 {
     FunctionDocumentation::Description doc_description = "The function is used to calculate the normalized Gini coefficient.";
-    FunctionDocumentation::Syntax doc_syntax = "normalizedGini(pltv, ltv)";
+    FunctionDocumentation::Syntax doc_syntax = "arrayNormalizedGini(predicted, label)";
     FunctionDocumentation::Arguments doc_arguments
-        = {{"pltv", "Predicted liefetime value (Array(T))."}, {"ltv", "Actual lifetime value (Array(T))."}};
-    FunctionDocumentation::ReturnedValue doc_returned_value = "A tuple contains Gini coefficient for the predicted LTV, Gini coefficient "
-                                                              "for the actual  LTV and the normalized Gini coefficient .";
+        = {{"predicted", "Predicted value (Array(T))."}, {"label", "Actual value (Array(T))."}};
+    FunctionDocumentation::ReturnedValue doc_returned_value = "A tuple contains predicted Gini coefficient, "
+                                                              "label Gini coefficient and the normalized Gini coefficient .";
     FunctionDocumentation::Examples doc_examples
         = {{"Example",
-            "SELECT normalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);",
+            "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);",
             "(0.18055555555555558,0.2638888888888889,0.6842105263157896)"}};
     FunctionDocumentation::Categories doc_categories = {"Array"};
 
-    factory.registerFunction<FunctionNormalizedGini>(
+    factory.registerFunction<FunctionArrayNormalizedGini>(
         {doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::Case::Sensitive);
 }
 
