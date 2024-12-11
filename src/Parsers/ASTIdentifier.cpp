@@ -125,7 +125,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
             /// Here we also ignore children if they are empty.
             if (name_parts[i].empty() && j < children.size())
             {
-                children[j]->formatImpl(ostr, settings, state, frame);
+                children[j]->format(ostr, settings, state, frame);
                 ++j;
             }
             else
@@ -136,7 +136,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
     {
         const auto & name = shortName();
         if (name.empty() && !children.empty())
-            children.front()->formatImpl(ostr, settings, state, frame);
+            children.front()->format(ostr, settings, state, frame);
         else
             format_element(name);
     }

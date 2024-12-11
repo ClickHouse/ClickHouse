@@ -259,9 +259,9 @@ public:
         formatImpl(ostr, settings, state, FormatStateStacked());
     }
 
-    virtual void formatImpl(WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
+    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
+        formatImpl(ostr, settings, state, std::move(frame));
     }
 
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
@@ -351,6 +351,11 @@ public:
     static const char * hilite_none;
 
 protected:
+    virtual void formatImpl(WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
+    }
+
     bool childrenHaveSecretParts() const;
 
     /// Some AST classes have naked pointers to children elements as members.
