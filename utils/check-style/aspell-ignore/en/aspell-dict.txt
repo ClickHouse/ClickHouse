@@ -49,6 +49,7 @@ AutoML
 Autocompletion
 AvroConfluent
 AzureQueue
+arrayNormalizedGini
 BIGINT
 BIGSERIAL
 BORO
@@ -2295,7 +2296,6 @@ noop
 normalizeQuery
 normalizeQueryKeepNames
 normalizeUTF
-normalizedGini
 normalizedQueryHash
 normalizedQueryHashKeepNames
 notEmpty

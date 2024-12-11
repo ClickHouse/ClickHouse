@@ -3174,7 +3174,7 @@ arrayNormalizedGini(predicted, label)
 
 **Returned Value**
 
-- A tuple contains Gini coefficient of predicted values, Gini coefficient of label values and the normalized Gini coefficient, which is the ratio between predicted Gini coeffient and label Gini coefficient.
+- A tuple contains Gini coefficient of predicted values, Gini coefficient of label values and the normalized Gini coefficient, which is the ratio between predicted Gini coefficient and label Gini coefficient.
 
 **Examples**
 
