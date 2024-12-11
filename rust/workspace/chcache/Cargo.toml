@@ -16,4 +16,4 @@ xdg = "2.5.2"
 
 [[bin]]
 name = "chcache"
-path = "src/main.rs"  # FIXME
+path = "src/main.rs"

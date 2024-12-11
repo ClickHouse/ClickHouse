@@ -3,6 +3,7 @@
 members = [
     "skim",
     "prql",
+    "chcache",
 ]
 resolver = "2"
 
