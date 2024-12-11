@@ -19,7 +19,7 @@ struct ProcessorMemoryStats
 class MemorySpillScheduler
 {
 public:
-    MemorySpillScheduler(bool enable_ = false) : enable(enable_) {}
+    explicit MemorySpillScheduler(bool enable_ = false) : enable(enable_) {}
     ~MemorySpillScheduler() = default;
 
     void checkAndSpill(IProcessor * processor);
