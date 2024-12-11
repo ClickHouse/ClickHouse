@@ -394,7 +394,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
             {
                 /// We add the hash from the data and partition identifier to deduplication ID.
                 /// That is, do not insert the same data to the same partition twice.
-                block_id = temp_part.part->getZeroLevelPartBlockID(block_dedup_token);
+                block_id = temp_part.part->getNewPartBlockID(block_dedup_token);
                 LOG_DEBUG(log, "Wrote block with ID '{}', {} rows{}", block_id, current_block.block.rows(), quorumLogMessage(replicas_num));
             }
             else
@@ -918,8 +918,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         /// Set part attributes according to part_number.
         part->info.min_block = block_number;
         part->info.max_block = block_number;
-        part->info.level = 0;
-        part->info.mutation = 0;
 
         part->setName(part->getNewName(part->info));
         retry_context.actual_part_name = part->name;
