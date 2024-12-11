@@ -45,7 +45,7 @@ void NATSHandler::runLoop()
     }
 
     SCOPE_EXIT({
-        nats_ReleaseThreadMemory(); 
+        nats_ReleaseThreadMemory();
         uv_key_delete(&uvLoopThreadKey);
     });
 
