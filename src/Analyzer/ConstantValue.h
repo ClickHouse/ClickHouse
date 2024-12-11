@@ -1,37 +1,68 @@
 #pragma once
 
+#include <Common/FieldVisitorToString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/FieldToDataType.h>
 
 namespace DB
 {
 
-/** Immutable constant value representation during analysis stage.
-  * Some query nodes can be represented by constant (scalar subqueries, functions with constant arguments).
-  */
-class ConstantValue;
-using ConstantValuePtr = std::shared_ptr<ConstantValue>;
-
 class ConstantValue
 {
 public:
-    ConstantValue(Field value_, DataTypePtr data_type_)
-        : value(std::move(value_))
+    ConstantValue(ColumnPtr column_, DataTypePtr data_type_)
+        : column(wrapToColumnConst(column_))
         , data_type(std::move(data_type_))
     {}
 
-    const Field & getValue() const
+    ConstantValue(const Field & field_, DataTypePtr data_type_)
+        : column(data_type_->createColumnConst(1, field_))
+        , data_type(std::move(data_type_))
+        , field_cache(applyVisitor(FieldVisitorToString(), field_), field_.getType(), applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), field_))
+    {}
+
+    const ColumnPtr & getColumn() const
     {
-        return value;
+        return column;
     }
 
     const DataTypePtr & getType() const
     {
         return data_type;
     }
+
+    const std::tuple<String, Field::Types::Which, DataTypePtr> & getFieldAttributes() const &
+    {
+        if (std::get<String>(field_cache).empty())
+        {
+            Field field;
+            column->get(0, field);
+             field_cache = {applyVisitor(FieldVisitorToString(), field), field.getType(), applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), field)};
+        }
+
+        return field_cache;
+    }
+
+    std::tuple<String, Field::Types::Which, DataTypePtr> getFieldAttributes() const &&
+    {
+        return getFieldAttributes();
+    }
+
 private:
-    Field value;
+
+    static ColumnPtr wrapToColumnConst(ColumnPtr column_)
+    {
+        if (!isColumnConst(*column_))
+            return ColumnConst::create(column_, 1);
+        return column_;
+    }
+
+    ColumnPtr column;
     DataTypePtr data_type;
+    mutable std::tuple<String, Field::Types::Which, DataTypePtr> field_cache;
 };
 
 }
