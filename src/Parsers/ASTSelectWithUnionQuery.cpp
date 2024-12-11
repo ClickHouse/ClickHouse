@@ -27,7 +27,7 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 }
 
 
-void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
@@ -57,24 +57,24 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+            ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
                           << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
                           << (settings.hilite ? hilite_none : "");
 
         if (auto * /*node*/ _ = (*it)->as<ASTSelectWithUnionQuery>())
         {
             if (it != list_of_selects->children.begin())
-                settings.ostr << settings.nl_or_ws;
+                ostr << settings.nl_or_ws;
 
-            settings.ostr << indent_str;
+            ostr << indent_str;
             auto sub_query = std::make_shared<ASTSubquery>(*it);
-            sub_query->formatImpl(settings, state, frame);
+            sub_query->formatImpl(ostr, settings, state, frame);
         }
         else
         {
             if (it != list_of_selects->children.begin())
-                settings.ostr << settings.nl_or_ws;
-            (*it)->formatImpl(settings, state, frame);
+                ostr << settings.nl_or_ws;
+            (*it)->formatImpl(ostr, settings, state, frame);
         }
     }
 }

@@ -13,6 +13,8 @@
 
 #include "config.h"
 
+class SipHash;
+
 namespace DB
 {
 
@@ -20,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
 
 /** A template for columns that use a simple array to store.
  */

@@ -413,7 +413,7 @@ public:
     auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix);
+    void renameToDetached(const String & prefix, bool ignore_error = false);
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly

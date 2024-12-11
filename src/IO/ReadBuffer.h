@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <cstring>
-#include <algorithm>
 #include <memory>
 
 #include <Common/Exception.h>

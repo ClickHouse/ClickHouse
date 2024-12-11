@@ -5,6 +5,7 @@ import random
 import string
 import time
 import uuid
+from multiprocessing.dummy import Pool
 
 import pytest
 
@@ -205,6 +206,11 @@ def run_query(instance, query, stdin=None, settings=None):
     return result
 
 
+def random_str(length=6):
+    alphabet = string.ascii_lowercase + string.digits
+    return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
+
+
 def generate_random_files(
     started_cluster,
     files_path,
@@ -214,10 +220,18 @@ def generate_random_files(
     row_num=10,
     start_ind=0,
     bucket=None,
+    use_random_names=False,
 ):
-    files = [
-        (f"{files_path}/test_{i}.csv", i) for i in range(start_ind, start_ind + count)
-    ]
+    if use_random_names:
+        files = [
+            (f"{files_path}/{random_str(10)}.csv", i)
+            for i in range(start_ind, start_ind + count)
+        ]
+    else:
+        files = [
+            (f"{files_path}/test_{i}.csv", i)
+            for i in range(start_ind, start_ind + count)
+        ]
     files.sort(key=lambda x: x[0])
 
     print(f"Generating files: {files}")
@@ -2301,3 +2315,91 @@ def test_alter_settings(started_cluster):
 
         check_int_settings(node, int_settings)
         check_string_settings(node, string_settings)
+
+
+def test_list_and_delete_race(started_cluster):
+    node = started_cluster.instances["instance"]
+    if node.is_built_with_sanitizer():
+        # Issue does not reproduce under sanitizer
+        return
+    node_2 = started_cluster.instances["instance2"]
+    table_name = f"list_and_delete_race_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1000
+    row_num = 10
+
+    for instance in [node, node_2]:
+        create_table(
+            started_cluster,
+            instance,
+            table_name,
+            "unordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "tracked_files_limit": 1,
+                "polling_max_timeout_ms": 0,
+                "processing_threads_num": 1,
+                "polling_min_timeout_ms": 200,
+                "cleanup_interval_min_ms": 0,
+                "cleanup_interval_max_ms": 0,
+                "polling_backoff_ms": 100,
+                "after_processing": "delete",
+            },
+        )
+
+    threads = 6
+    total_rows = row_num * files_to_generate * (threads + 1)
+
+    busy_pool = Pool(threads)
+
+    def generate(_):
+        generate_random_files(
+            started_cluster,
+            files_path,
+            files_to_generate,
+            row_num=row_num,
+            use_random_names=True,
+        )
+
+    generate(0)
+
+    p = busy_pool.map_async(generate, range(threads))
+
+    create_mv(node, table_name, dst_table_name)
+    time.sleep(2)
+    create_mv(node_2, table_name, dst_table_name)
+
+    p.wait()
+
+    def get_count(node, table_name):
+        return int(run_query(node, f"SELECT count() FROM {table_name}"))
+
+    for _ in range(150):
+        if (
+            get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+        ) == total_rows:
+            break
+        time.sleep(1)
+
+    assert (
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+        == total_rows
+    )
+
+    get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
+    res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
+    res2 = [
+        list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
+    ]
+
+    logging.debug(
+        f"res1 size: {len(res1)}, res2 size: {len(res2)}, total_rows: {total_rows}"
+    )
+
+    assert len(res1) + len(res2) == total_rows
+    assert node.contains_in_log(
+        "because of the race with list & delete"
+    ) or node_2.contains_in_log("because of the race with list & delete")

@@ -618,6 +618,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
+            has_limit_below_one_block,
             storage_snapshot,
             prewhere_info,
             actions_settings,
@@ -1959,9 +1960,10 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     if (context->getSettingsRef()[Setting::parallel_replicas_count] > 1 && data.supportsSampling())
         return true;
 
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (query_info.table_expression_modifiers)
         return query_info.table_expression_modifiers->getSampleSizeRatio() != std::nullopt;
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
     return select.sampleSize() != nullptr;
 }
 

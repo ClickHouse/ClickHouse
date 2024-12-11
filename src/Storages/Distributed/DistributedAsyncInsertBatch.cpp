@@ -6,6 +6,7 @@
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/quoteString.h>
 #include <base/defines.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>

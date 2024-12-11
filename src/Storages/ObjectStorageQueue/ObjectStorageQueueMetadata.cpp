@@ -466,10 +466,22 @@ void ObjectStorageQueueMetadata::cleanupThreadFunc()
 void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 {
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds);
+
+    const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
     const auto zk_client = getZooKeeper();
+
+    /// Create a lock so that with distributed processing
+    /// multiple nodes do not execute cleanup in parallel.
+    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(zookeeper_cleanup_lock_path, *zk_client, toString(getCurrentTime()));
+    if (!ephemeral_node)
+    {
+        LOG_TEST(log, "Cleanup is already being executed by another node");
+        return;
+    }
+    /// TODO because of this lock we might not update local file statuses on time on one of the nodes.
+
     const fs::path zookeeper_processed_path = zookeeper_path / "processed";
     const fs::path zookeeper_failed_path = zookeeper_path / "failed";
-    const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
 
     Strings processed_nodes;
     auto code = zk_client->tryGetChildren(zookeeper_processed_path, processed_nodes);
@@ -515,16 +527,6 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     }
 
     LOG_TRACE(log, "Will check limits for {} nodes", nodes_num);
-
-    /// Create a lock so that with distributed processing
-    /// multiple nodes do not execute cleanup in parallel.
-    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(zookeeper_cleanup_lock_path, *zk_client, toString(getCurrentTime()));
-    if (!ephemeral_node)
-    {
-        LOG_TEST(log, "Cleanup is already being executed by another node");
-        return;
-    }
-    /// TODO because of this lock we might not update local file statuses on time on one of the nodes.
 
     struct Node
     {

@@ -731,13 +731,20 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
+std::shared_ptr<StorageObjectStorageQueue::FileIterator>
+StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
     auto settings = configuration->getQuerySettings(local_context);
     auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
+        object_storage, configuration, predicate, getVirtualsList(), local_context,
+        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 
-    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
+    const auto & table_metadata = getTableMetadata();
+    bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
+        && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
+
+    return std::make_shared<FileIterator>(
+        files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const

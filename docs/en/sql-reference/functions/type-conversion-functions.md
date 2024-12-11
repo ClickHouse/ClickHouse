@@ -122,7 +122,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toInt8(128) == -128;`.
 :::
 
@@ -370,7 +370,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toInt16(32768) == -32768;`.
 :::
 
@@ -618,7 +618,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toInt32(2147483648) == -2147483648;`
 :::
 
@@ -865,7 +865,7 @@ Unsupported types:
 
 :::note
 If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
 :::
 
@@ -1608,7 +1608,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toUInt8(256) == 0;`.
 :::
 
@@ -1856,7 +1856,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toUInt16(65536) == 0;`.
 :::
 
@@ -2104,7 +2104,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toUInt32(4294967296) == 0;`
 :::
 
@@ -2353,7 +2353,7 @@ Unsupported types:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toUInt64(18446744073709551616) == 0;`
 :::
 
@@ -3691,8 +3691,8 @@ toDateTime(expr[, time_zone ])
 - `time_zone` — Time zone. [String](../data-types/string.md).
 
 :::note
-If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).  
-If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.  
+If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
+If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
 :::
 
@@ -5536,7 +5536,7 @@ Result:
 
 ## reinterpretAsUInt256
 
-Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
+Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
 
 **Syntax**
 
@@ -5612,7 +5612,7 @@ Result:
 
 ## reinterpretAsInt16
 
-Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
+Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
 
 **Syntax**
 
@@ -7226,6 +7226,45 @@ Result:
 ┌─toUnixTimestamp64Milli(dt64)─┐
 │                1234567891011 │
 └──────────────────────────────┘
+```
+
+## toUnixTimestamp64Second
+
+Converts a `DateTime64` to a `Int64` value with fixed second precision. The input value is scaled up or down appropriately depending on its precision.
+
+:::note
+The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+:::
+
+**Syntax**
+
+```sql
+toUnixTimestamp64Second(value)
+```
+
+**Arguments**
+
+- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime64('2009-02-13 23:31:31.011', 3, 'UTC') AS dt64
+SELECT toUnixTimestamp64Second(dt64);
+```
+
+Result:
+
+```response
+┌─toUnixTimestamp64Second(dt64)─┐
+│                    1234567891 │
+└───────────────────────────────┘
 ```
 
 ## toUnixTimestamp64Micro

@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {

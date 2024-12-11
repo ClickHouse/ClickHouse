@@ -857,6 +857,7 @@ toUnixTimestamp
 toUnixTimestamp64Micro
 toUnixTimestamp64Milli
 toUnixTimestamp64Nano
+toUnixTimestamp64Second
 toValidUTF8
 toWeek
 toYYYYMM

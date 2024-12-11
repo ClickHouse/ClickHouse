@@ -1,4 +1,5 @@
 #include <base/phdr_cache.h>
+#include <base/scope_guard.h>
 #include <Common/EnvironmentChecks.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
