@@ -252,7 +252,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
 
     /// Store information about each file and compress it
     FileData* files_data = new FileData[count + is_exec];
-    const char * names[count + is_exec];
+    std::vector<const char *> names(count + is_exec);
     for (int i = 0; i <= count; ++i)
     {
         const char* filename = nullptr;
@@ -342,7 +342,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
     /// save location of files information
     metadata.start_of_files_data = htole64(pointer);
 
-    if (0 != saveMetaData(names, count + is_exec, output_fd, metadata, files_data, pointer, sum_file_size))
+    if (0 != saveMetaData(names.data(), count + is_exec, output_fd, metadata, files_data, pointer, sum_file_size))
     {
         delete [] files_data;
         return 1;
