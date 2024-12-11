@@ -14,6 +14,9 @@ select floor(arrayPrAUC(cast([-10, -40, -35, -80] as Array(Int32)), [0, 0, 1, 1]
 select floor(arrayPrAUC(cast([-10, -40, -35, -80] as Array(Int64)), [0, 0, 1, 1]), 10);
 select floor(arrayPrAUC(cast([-0.1, -0.4, -0.35, -0.8] as Array(Float32)) , [0, 0, 1, 1]), 10);
 
+-- alias test
+select floor(arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10);
+
 -- output value correctness test
 select floor(arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10);
 select floor(arrayPrAUC([0.1, 0.4, 0.4, 0.35, 0.8], [0, 0, 1, 1, 1]), 10);

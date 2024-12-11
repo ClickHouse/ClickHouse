@@ -241,6 +241,7 @@ public:
 REGISTER_FUNCTION(ArrayPrAUC)
 {
     factory.registerFunction<FunctionArrayPrAUC>();
+    factory.registerAlias("arrayPRAUC", "arrayPrAUC");
 }
 
 }
