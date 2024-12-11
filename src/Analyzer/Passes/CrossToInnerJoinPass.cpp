@@ -207,10 +207,7 @@ public:
                 for (const auto & [dest, edge] : graph.nodes[node].edges)
                 {
                     if (visited[dest])
-                    {
-                        std::cerr << node << " -> " << dest << std::endl;
                         equi_conditions.insert(equi_conditions.end(), edge->equi_conditions.begin(), edge->equi_conditions.end());
-                    }
                     else
                         active_set.insert(dest);
                 }
