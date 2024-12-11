@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include "Analyzer/IQueryTreeNode.h"
 
 namespace DB
 {
@@ -208,13 +207,13 @@ std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode &
         auto maybe_flattened = getFlattenedLogicalExpression(*maybe_function, context);
         if (maybe_flattened)
         {
-            for (auto & flattened_argument : maybe_flattened->getArguments().getNodes())
-                new_arguments.emplace_back(std::move(flattened_argument));
+            auto & flattened_arguments = maybe_flattened->getArguments().getNodes();
+            std::move(flattened_arguments.begin(), flattened_arguments.end(), std::back_inserter(new_arguments));
         }
         else
         {
-            for (auto & nested_argument : maybe_function->getArguments().getNodes())
-                new_arguments.push_back(nested_argument);
+            const auto & nested_arguments = maybe_function->getArguments().getNodes();
+            std::copy(nested_arguments.begin(), nested_arguments.end(), std::back_inserter(new_arguments));
         }
     }
 
@@ -226,15 +225,14 @@ std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode &
 
     flattened->getArguments().getNodes() = std::move(new_arguments);
 
-    auto function_resolver = FunctionFactory::instance().get(function_name, context);
-    flattened->resolveAsFunction(function_resolver);
+    resolveOrdinaryFunctionNodeByName(*flattened, function_name, context);
 
     return flattened;
 }
 
 struct CommonExpressionExtractionResult
 {
-    // new_node: if the new node is empty, then contain the new node, otherwise nullptr
+    // new_node: if the new node is not empty, then it contains the new node, otherwise nullptr
     // common_expressions: the extracted common expressions. The new expressions can be created
     // as the conjunction of new_node and the nodes in common_expressions. It is guaranteed that
     // the common expressions are deduplicated.
@@ -352,8 +350,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
         {
             auto new_and_node = std::make_shared<FunctionNode>("and");
             new_and_node->getArguments().getNodes() = std::move(filtered_and_arguments);
-            auto and_function_resolver = FunctionFactory::instance().get("and", context);
-            new_and_node->resolveAsFunction(and_function_resolver);
+            resolveOrdinaryFunctionNodeByName(*new_and_node, "and", context);
 
             insertIfNotPresentInSet(new_or_arguments_set, new_or_arguments, std::move(new_and_node));
         }
@@ -370,8 +367,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     auto new_or_node = std::make_shared<FunctionNode>("or");
     new_or_node->getArguments().getNodes() = std::move(new_or_arguments);
 
-    auto or_function_resolver = FunctionFactory::instance().get("or", context);
-    new_or_node->resolveAsFunction(or_function_resolver);
+    resolveOrdinaryFunctionNodeByName(*new_or_node, "or", context);
 
     return CommonExpressionExtractionResult{new_or_node, common_exprs};
 }
@@ -427,7 +423,7 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
 
     for (const auto & argument : root_node->getArguments())
     {
-        if (auto maybe_result = tryExtractCommonExpressions(argument, context); maybe_result.has_value())
+        if (auto maybe_result = tryExtractCommonExpressions(argument, context))
         {
             extracted_something = true;
             auto & result = *maybe_result;
@@ -472,7 +468,7 @@ class JoinOnLogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWi
 public:
     using Base = InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>;
 
-    explicit JoinOnLogicalExpressionOptimizerVisitor(const JoinNode * join_node_, ContextPtr context)
+    explicit JoinOnLogicalExpressionOptimizerVisitor(const JoinNode & join_node_, ContextPtr context)
         : Base(std::move(context))
         , join_node(join_node_)
     {}
@@ -525,14 +521,14 @@ public:
             rerunFunctionResolve(function_node, getContext());
 
         // The optimization only makes sense on the top level
-        if (node != join_node->getJoinExpression() || !getSettings()[Setting::optimize_extract_common_expressions])
+        if (node != join_node.getJoinExpression() || !getSettings()[Setting::optimize_extract_common_expressions])
             return;
 
         tryOptimizeCommonExpressions(node, *function_node, getContext());
     }
 
 private:
-    const JoinNode * join_node;
+    const JoinNode & join_node;
     bool need_rerun_resolve = false;
 
     /// Returns optimized node or nullptr if nothing have been changed
@@ -575,7 +571,7 @@ private:
             const auto & func_name = argument_function->getFunctionName();
             if (func_name == "equals" || func_name == "isNotDistinctFrom")
             {
-                if (isTwoArgumentsFromDifferentSides(*argument_function, *join_node))
+                if (isTwoArgumentsFromDifferentSides(*argument_function, join_node))
                     equals_functions_indices.push_back(or_operands.size() - 1);
             }
             else if (func_name == "and")
@@ -620,7 +616,7 @@ private:
                         is_anything_changed = true;
                         or_operands.pop_back();
                         or_operands.push_back(equals_function);
-                        if (isTwoArgumentsFromDifferentSides(equals_function->as<FunctionNode &>(), *join_node))
+                        if (isTwoArgumentsFromDifferentSides(equals_function->as<FunctionNode &>(), join_node))
                             equals_functions_indices.push_back(or_operands.size() - 1);
                     }
                 }
@@ -706,10 +702,9 @@ private:
             return new_or_operands[0];
 
         /// Rebuild OR function
-        auto or_function_resolver = FunctionFactory::instance().get("or", context);
         auto function_node = std::make_shared<FunctionNode>("or");
         function_node->getArguments().getNodes() = std::move(new_or_operands);
-        function_node->resolveAsFunction(or_function_resolver);
+        resolveOrdinaryFunctionNodeByName(*function_node, "or", context);
         return function_node;
     }
 };
@@ -730,7 +725,7 @@ public:
             /// Operator <=> is not supported outside of JOIN ON section
             if (join_node->hasJoinExpression())
             {
-                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(join_node, getContext());
+                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(*join_node, getContext());
                 join_on_visitor.visit(join_node->getJoinExpression());
             }
             return;

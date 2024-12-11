@@ -96,7 +96,16 @@ EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE A OR (B AND ((C AND 
 
 DROP TABLE IF EXISTS y;
 CREATE TABLE y (x Int64, A UInt8, B UInt8, C UInt8, D UInt8, E UInt8, F UInt8) ENGINE = MergeTree ORDER BY x;
-INSERT INTO y SELECT x, A%2 AS A, B%2 AS B, C%2 AS C, D%2 AS D, E%2 AS E, F%2 AS F FROM generateRandom('x Int64, A UInt8, B UInt8, C UInt8, D UInt8, E UInt8, F UInt8', 43) LIMIT 2000;
+INSERT INTO y
+    SELECT
+        murmurHash3_64(number) AS x,
+        murmurHash3_64(number + 1) % 2 AS A,
+        murmurHash3_64(number + 2) % 2 AS B,
+        murmurHash3_64(number + 3) % 2 AS C,
+        murmurHash3_64(number + 4) % 2 AS D,
+        murmurHash3_64(number + 5) % 2 AS E,
+        murmurHash3_64(number + 6) % 2 AS F
+    FROM numbers(2000);
 
 -- JOIN expressions
 -- As the optimization code is shared between ON and WHERE, it is enough to test that the optimization is done also in ON

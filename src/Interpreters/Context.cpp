@@ -41,6 +41,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
@@ -2520,7 +2521,7 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     applySettingsChangesWithLock(changes, lock);
 }
 
-void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source)
+void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
@@ -2560,7 +2561,7 @@ void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings 
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
 }
 
-void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source)
+void Context::checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(profile_elements, source);
@@ -2712,7 +2713,7 @@ bool Context::isBackgroundOperationContext() const
 void Context::killCurrentQuery() const
 {
     if (auto elem = getProcessListElement())
-        elem->cancelQuery(true);
+        elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 bool Context::isCurrentQueryKilled() const

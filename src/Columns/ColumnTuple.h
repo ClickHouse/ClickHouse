@@ -125,7 +125,7 @@ public:
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
     bool isCollationSupported() const override;
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
     void finalize() override;
     bool isFinalized() const override;
 

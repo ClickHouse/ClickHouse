@@ -42,6 +42,7 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/quoteString.h>
 #include <base/sleep.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>

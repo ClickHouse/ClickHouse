@@ -67,8 +67,8 @@ C++ 依存関係と同様に、ClickHouse はベンダリングを使用して�
 サニタイザを有効にする予定がある場合は、CI で使用されるものと同じ `std` と一致するバージョンを使用する必要があります（crates をベンダリングしています）:
 
 ```bash
-rustup toolchain install nightly-2024-04-01
-rustup default nightly-2024-04-01
+rustup toolchain install nightly-2024-12-01
+rustup default nightly-2024-12-01
 rustup component add rust-src
 ```
 
