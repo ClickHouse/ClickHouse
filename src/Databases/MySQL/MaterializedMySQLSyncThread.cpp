@@ -171,8 +171,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     std::unordered_map<String, String> variables_error_message{
         {"log_bin", "ON"},
         {"binlog_format", "ROW"},
-        {"binlog_row_image", "FULL"},
-        {"default_authentication_plugin", "mysql_native_password"}
+        {"binlog_row_image", "FULL"}
     };
 
     QueryPipeline pipeline(std::move(variables_input));
