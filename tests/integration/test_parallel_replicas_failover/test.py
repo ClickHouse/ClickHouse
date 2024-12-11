@@ -86,8 +86,41 @@ def test_skip_replicas_without_table(start_cluster):
         )
         == "1\t1\n"
     )
-    node1.query(f"DROP TABLE {table_name} SYNC")
-    node2.query(f"DROP TABLE {table_name} SYNC")
+
+    old_error_count = int(
+        node1.query(
+            f"SELECT errors_count FROM system.clusters WHERE cluster = 'test_1_shard_3_replicas' AND host_name = 'node3'"
+        ).strip()
+    )
+
+    cluster.pause_container("node3")
+    try:
+        assert (
+            node1.query(
+                f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",
+                settings={
+                    "enable_parallel_replicas": 2,
+                    "max_parallel_replicas": 3,
+                    "cluster_for_parallel_replicas": cluster_name,
+                    "log_comment": log_comment,
+                },
+            )
+            == expected_result
+        )
+
+        assert (
+            int(
+                node1.query(
+                    f"SELECT errors_count FROM system.clusters WHERE cluster = 'test_1_shard_3_replicas' AND host_name = 'node3'"
+                ).strip()
+            )
+            > old_error_count
+        )
+
+    finally:
+        cluster.unpause_container("node3")
+        node1.query(f"DROP TABLE {table_name} SYNC")
+        node2.query(f"DROP TABLE {table_name} SYNC")
 
 
 def test_skip_unresponsive_replicas(start_cluster):
