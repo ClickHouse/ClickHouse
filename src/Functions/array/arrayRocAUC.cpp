@@ -252,6 +252,7 @@ REGISTER_FUNCTION(ArrayRocAUC)
     factory.registerFunction<FunctionArrayRocAUC>();
     /// Backward compatibility, also the ROC AUC is the more commonly used AUC
     factory.registerAlias("arrayAUC", "arrayRocAUC");
+    factory.registerAlias("arrayROCAUC", "arrayRocAUC");
 }
 
 }
