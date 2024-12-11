@@ -1,0 +1,27 @@
+<test>
+    <create_query>
+        CREATE TABLE agg_deserialize
+        (
+            t DateTime,
+            v1 AggregateFunction(avgState, UInt64),
+            v2 AggregateFunction(argMax, UInt64, DateTime)
+        )
+        ENGINE = MergeTree() ORDER BY t
+    </create_query>
+
+    <fill_query>
+        INSERT INTO agg_deserialize SELECT
+            now() + number AS t,
+            initializeAggregation('avgState', number),
+            initializeAggregation('argMaxState', number, t)
+        FROM numbers(50000000)
+    </fill_query>
+
+    <query>SELECT v1 FROM agg_deserialize FORMAT Null</query>
+    <query>SELECT toStartOfHour(t) AS h, avgMerge(v1) FROM agg_deserialize GROUP BY h FORMAT Null</query>
+
+    <query>SELECT v2 FROM agg_deserialize FORMAT Null</query>
+    <query>SELECT toStartOfHour(t) AS h, argMaxMerge(v2) FROM agg_deserialize GROUP BY h FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS agg_deserialize</drop_query>
+</test>

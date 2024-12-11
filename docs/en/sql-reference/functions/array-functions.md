@@ -770,7 +770,8 @@ i
 
 ## indexOf(arr, x)
 
-Returns the index of the first ‘x’ element (starting from 1) if it is in the array, or 0 if it is not.
+Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
+If the array does not contain the searched-for value, the function returns 0.
 
 Example:
 
@@ -788,9 +789,11 @@ Elements set to `NULL` are handled as normal values.
 
 ## indexOfAssumeSorted(arr, x)
 
-Returns the index of the first ‘x’ element (starting from 1) if it is in the array, or 0 if it is not.
-The function should be used for an array sorted not in descending order since binary search is used for the search.
-If the internal array type is Nullable, the ‘indexOf‘ function will be used.
+Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
+If the array does not contain the searched-for value, the function returns 0.
+Assumes that the array is sorted in ascending order (i.e., the function uses binary search).
+If the array is not sorted, results are undefined.
+If the internal array is of type Nullable, function ‘indexOf‘ will be called.
 
 Example:
 
@@ -799,9 +802,9 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 ```
 
 ``` text
-┌─indexOf([1, 3, 3, 3, 4, 4, 5], NULL)─┐
-│                                 5    │
-└──────────────────────────────────--─-┘
+┌─indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)─┐
+│                                             5 │
+└───────────────────────────────────────────────┘
 ```
 
 ## arrayCount(\[func,\] arr1, ...)
@@ -2173,6 +2176,41 @@ Result:
 ┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                                          0.75 │
 └───────────────────────────────────────────────┘
+```
+
+## arrayPrAUC
+
+Calculate AUC (Area Under the Curve) for the Precision Recall curve.
+
+**Syntax**
+
+``` sql
+arrayPrAUC(arr_scores, arr_labels)
+```
+
+**Arguments**
+
+- `arr_scores` — scores prediction model gives.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+
+**Returned value**
+
+Returns PR-AUC value with type Float64.
+
+**Example**
+
+Query:
+
+``` sql
+select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+```
+
+Result:
+
+``` text
+┌─arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                              0.8333333333333333 │
+└─────────────────────────────────────────────────┘
 ```
 
 ## arrayMap(func, arr1, ...)

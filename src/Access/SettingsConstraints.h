@@ -74,10 +74,11 @@ public:
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
-    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
     void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
+    void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;

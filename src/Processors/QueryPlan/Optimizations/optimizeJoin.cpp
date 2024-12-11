@@ -21,16 +21,35 @@
 namespace DB::QueryPlanOptimizations
 {
 
-static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node)
+static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        if (auto analyzed_result = reading->getAnalyzedResult())
-            return analyzed_result->selected_rows;
-        if (auto analyzed_result = reading->selectRangesToRead())
-            return analyzed_result->selected_rows;
-        return {};
+        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
+        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
+        analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
+        if (!analyzed_result)
+            return {};
+
+        bool is_filtered_by_index = false;
+        for (const auto & idx_stat : analyzed_result->index_stats)
+        {
+            is_filtered_by_index = is_filtered_by_index
+                || (idx_stat.type == ReadFromMergeTree::IndexType::PrimaryKey && !idx_stat.used_keys.empty())
+                || idx_stat.type == ReadFromMergeTree::IndexType::Skip
+                || idx_stat.type == ReadFromMergeTree::IndexType::MinMax;
+            if (is_filtered_by_index)
+                break;
+        }
+        has_filter = has_filter || reading->getPrewhereInfo();
+
+        /// If any conditions are pushed down to storage but not used in the index,
+        /// we cannot precisely estimate the row count
+        if (has_filter && !is_filtered_by_index)
+            return {};
+
+        return analyzed_result->selected_rows;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -39,8 +58,10 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node)
     if (node.children.size() != 1)
         return {};
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step))
-        return estimateReadRowsCount(*node.children.front());
+    if (typeid_cast<ExpressionStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), has_filter);
+    if (typeid_cast<FilterStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), true);
 
     return {};
 }

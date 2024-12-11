@@ -1078,7 +1078,7 @@ Default value: throw
 
 ## min_free_disk_bytes_to_perform_insert
 
-The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_throw_insert` then an exception is thrown and the insert is not executed. Note that this setting:
+The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_perform_insert` then an exception is thrown and the insert is not executed. Note that this setting:
 - takes into account the `keep_free_space_bytes` setting.
 - does not take into account the amount of data that will be written by the `INSERT` operation.
 - is only checked if a positive (non-zero) number of bytes is specified

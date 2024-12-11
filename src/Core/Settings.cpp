@@ -5761,6 +5761,11 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
 
 In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 )", 0) \
+    DECLARE(Bool, optimize_extract_common_expressions, false, R"(
+Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
+- indices in simple filtering expressions
+- cross to inner join optimization
+)", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \

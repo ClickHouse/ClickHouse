@@ -16,6 +16,8 @@
 #include <Core/Settings.h>
 #include <Poco/Environment.h>
 
+#include <thread>
+
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 namespace DB

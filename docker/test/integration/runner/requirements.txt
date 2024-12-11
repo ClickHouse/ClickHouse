@@ -101,3 +101,4 @@ wadllib==1.3.6
 websocket-client==1.8.0
 wheel==0.38.1
 zipp==1.0.0
+jinja2==3.1.3

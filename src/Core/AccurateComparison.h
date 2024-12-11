@@ -209,14 +209,12 @@ template <typename A, typename B> struct EqualsOp
     using SymmetricOp = EqualsOp<B, A>;
 
     static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
-    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct NotEqualsOp
 {
     using SymmetricOp = NotEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); }
-    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct GreaterOp;
@@ -225,14 +223,12 @@ template <typename A, typename B> struct LessOp
 {
     using SymmetricOp = GreaterOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); }
-    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct GreaterOp
 {
     using SymmetricOp = LessOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); }
-    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct GreaterOrEqualsOp;
@@ -241,14 +237,12 @@ template <typename A, typename B> struct LessOrEqualsOp
 {
     using SymmetricOp = GreaterOrEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); }
-    static constexpr bool compilable = true;
 };
 
 template <typename A, typename B> struct GreaterOrEqualsOp
 {
     using SymmetricOp = LessOrEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); }
-    static constexpr bool compilable = true;
 };
 
 }

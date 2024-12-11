@@ -6,13 +6,7 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-#include "DataTypes/Native.h"
 #include "config.h"
-
-#if USE_EMBEDDED_COMPILER
-#    include <Core/ValuesWithType.h>
-#    include <llvm/IR/IRBuilder.h>
-#endif
 
 
 namespace DB
@@ -21,41 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
-    extern const int LOGICAL_ERROR;
 }
-
-#if USE_EMBEDDED_COMPILER
-
-template <typename F>
-static llvm::Value * compileWithNullableValues(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed, F && compile_func)
-{
-    auto * left_type = left->getType();
-    auto * right_type = right->getType();
-
-    if (!left_type->isStructTy() && !right_type->isStructTy())
-    {
-        // Both arguments are not nullable.
-        return compile_func(b, left, right, is_signed);
-    }
-
-    auto * denull_left = left_type->isStructTy() ? b.CreateExtractValue(left, {1}) : left;
-    auto * denull_right = right_type->isStructTy() ? b.CreateExtractValue(right, {1}) : right;
-    auto * denull_result = compile_func(b, denull_left, denull_right, is_signed);
-
-    auto * nullable_result_type = toNullableType(b, denull_result->getType());
-    llvm::Value * nullable_result = llvm::Constant::getNullValue(nullable_result_type);
-    nullable_result = b.CreateInsertValue(nullable_result, denull_result, {0});
-
-    auto * result_is_null = b.CreateExtractValue(nullable_result, {1});
-    if (left_type->isStructTy())
-        result_is_null = b.CreateOr(result_is_null, b.CreateExtractValue(left, {1}));
-    if (right_type->isStructTy())
-        result_is_null = b.CreateOr(result_is_null, b.CreateExtractValue(right, {1}));
-
-    return b.CreateInsertValue(nullable_result, result_is_null, {1});
-}
-
-#endif
 
 template <typename A, typename B>
 inline void throwIfDivisionLeadsToFPE(A a, B b)
@@ -198,39 +158,14 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true; /// Ignore exceptions in LLVM IR
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
-    {
-        return compileWithNullableValues(
-            b,
-            left,
-            right,
-            is_signed,
-            [](auto & b_, auto * left_, auto * right_, auto is_signed_) { return compileImpl(b_, left_, right_, is_signed_); });
-    }
-
-    static llvm::Value * compileImpl(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
-    {
-        if (left->getType()->isFloatingPointTy())
-            return b.CreateFRem(left, right);
-        else if (left->getType()->isIntegerTy())
-            return is_signed ? b.CreateSRem(left, right) : b.CreateURem(left, right);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ModuloImpl compilation expected native integer or floating point type");
-    }
-
-    #endif
+    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+#endif
 };
 
 template <typename A, typename B>
 struct ModuloLegacyImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// moduloLegacy is only used in partition key expression
-#endif
 };
 
 template <typename A, typename B>
@@ -259,36 +194,6 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
         }
         return static_cast<ResultType>(res);
     }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true; /// Ignore exceptions in LLVM IR
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
-    {
-        return compileWithNullableValues(
-            b,
-            left,
-            right,
-            is_signed,
-            [](auto & b_, auto * left_, auto * right_, auto is_signed_) { return compileImpl(b_, left_, right_, is_signed_); });
-    }
-
-    static llvm::Value * compileImpl(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
-    {
-        auto * result = ModuloImpl<A, B>::compileImpl(b, left, right, is_signed);
-        if (is_signed)
-        {
-            /// If result is negative, result += abs(right).
-            auto * zero = llvm::Constant::getNullValue(result->getType());
-            auto * is_negative = b.CreateICmpSLT(result, zero);
-            auto * abs_right = b.CreateSelect(b.CreateICmpSLT(right, zero), b.CreateNeg(right), right);
-            return b.CreateSelect(is_negative, b.CreateAdd(result, abs_right), result);
-        }
-        else
-            return result;
-    }
-#endif
-
 };
 
 }

@@ -29,6 +29,8 @@ public:
     using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
 
+    static constexpr size_t min_size_to_compress = 4096;
+
 private:
     friend class COWHelper<IColumnHelper<ColumnString>, ColumnString>;
 
@@ -272,7 +274,7 @@ public:
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void reserve(size_t n) override;
     size_t capacity() const override;

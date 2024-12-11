@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/RestoreSettings.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -8,7 +9,9 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadPool_fwd.h>
+
 #include <filesystem>
+#include <future>
 
 
 namespace DB
@@ -83,6 +86,7 @@ private:
     std::chrono::milliseconds create_table_timeout;
     LoggerPtr log;
 
+    const ZooKeeperRetriesInfo zookeeper_retries_info;
     Mode mode = Mode::RESTORE;
     Strings all_hosts;
     DDLRenamingMap renaming_map;
@@ -170,7 +174,6 @@ private:
     TablesDependencyGraph tables_dependencies TSA_GUARDED_BY(mutex);
     std::vector<DataRestoreTask> data_restore_tasks TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessRestorerFromBackup> access_restorer TSA_GUARDED_BY(mutex);
-    bool access_restored TSA_GUARDED_BY(mutex) = false;
 
     std::vector<std::future<void>> futures TSA_GUARDED_BY(mutex);
     std::atomic<bool> exception_caught = false;

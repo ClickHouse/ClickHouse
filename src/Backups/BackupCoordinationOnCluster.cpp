@@ -182,6 +182,7 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     , current_host(current_host_)
     , current_host_index(findCurrentHostIndex(current_host, all_hosts))
     , plain_backup(is_plain_backup_)
+    , process_list_element(process_list_element_)
     , log(getLogger("BackupCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
     , cleaner(/* is_restore = */ false, zookeeper_path, with_retries, log)
@@ -273,7 +274,8 @@ ZooKeeperRetriesInfo BackupCoordinationOnCluster::getOnClusterInitializationKeep
 {
     return ZooKeeperRetriesInfo{keeper_settings.max_retries_while_initializing,
                                 static_cast<UInt64>(keeper_settings.retry_initial_backoff_ms.count()),
-                                static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count())};
+                                static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count()),
+                                process_list_element};
 }
 
 void BackupCoordinationOnCluster::serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name)
