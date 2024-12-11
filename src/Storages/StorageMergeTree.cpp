@@ -34,6 +34,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <fmt/core.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
@@ -92,6 +93,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TOO_MANY_PARTS;
+    extern const int PART_IS_LOCKED;
 }
 
 namespace ActionLocks
@@ -576,7 +578,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
 }
 
 
-void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message)
+void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name)
 {
     /// Update the information about failed parts in the system.mutations table.
 
@@ -601,6 +603,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     entry.latest_failed_part_info = MergeTreePartInfo();
                     entry.latest_fail_time = 0;
                     entry.latest_fail_reason.clear();
+                    entry.latest_fail_error_code_name.clear();
                     if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                         mutation_backoff_policy.removePartFromFailed(failed_part->name);
 
@@ -613,6 +616,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                 entry.latest_failed_part_info = failed_part->info;
                 entry.latest_fail_time = time(nullptr);
                 entry.latest_fail_reason = exception_message;
+                entry.latest_fail_error_code_name = error_code_name;
 
                 if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                 {
@@ -758,6 +762,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             {
                 result.latest_failed_part = mutation_entry.latest_failed_part;
                 result.latest_fail_reason = mutation_entry.latest_fail_reason;
+                result.latest_fail_error_code_name = mutation_entry.latest_fail_error_code_name;
                 result.latest_fail_time = mutation_entry.latest_fail_time;
 
                 /// Fill all mutations which failed with the same error
@@ -780,6 +785,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                 {
                     result.latest_failed_part = data_part->name;
                     result.latest_fail_reason = fmt::format("Serialization error: part {} is locked by transaction {}", data_part->name, part_locked);
+                    result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::PART_IS_LOCKED);
                     result.latest_fail_time = time(nullptr);
                 }
             }
@@ -860,6 +866,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
+                entry.latest_fail_error_code_name,
             });
         }
     }
@@ -1352,6 +1359,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                     MergeTreeMutationEntry & entry = it->second;
                     entry.latest_fail_time = time(nullptr);
                     entry.latest_fail_reason = getCurrentExceptionMessage(false);
+                    entry.latest_fail_error_code_name = ErrorCodes::getName(getCurrentExceptionCode());
                     /// NOTE we should not skip mutations, because exception may be retryable (e.g. MEMORY_LIMIT_EXCEEDED)
                     break;
                 }

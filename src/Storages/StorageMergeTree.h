@@ -249,7 +249,7 @@ private:
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
     /// in mutation entries.
-    void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message);
+    void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name);
 
     /// Return empty optional if mutation was killed. Otherwise return partially
     /// filled mutation status with information about error (latest_fail*) and
