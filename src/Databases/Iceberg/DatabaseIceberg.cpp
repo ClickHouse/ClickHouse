@@ -259,26 +259,16 @@ DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
     auto catalog = getCatalog();
     const auto iceberg_tables = catalog->getTables();
 
-    auto & pool = context_->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
-    std::mutex mutexx;
-
     for (const auto & table_name : iceberg_tables)
     {
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        runner([=, &tables, &mutexx, this]{
-            auto storage = tryGetTable(table_name, context_);
-            {
-                std::lock_guard lock(mutexx);
-                [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
-                chassert(inserted);
-            }
-        });
+        auto storage = tryGetTable(table_name, context_);
+        [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+        chassert(inserted);
     }
 
-    runner.waitForAllToFinishAndRethrowFirstError();
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 

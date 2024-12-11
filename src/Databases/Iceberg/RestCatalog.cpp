@@ -289,9 +289,10 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     }
     catch (const DB::HTTPException & e)
     {
+        const auto status = e.getHTTPStatus();
         if (update_token_if_expired &&
-            (e.code() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
-             || e.code() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN))
+            (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
+             || status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN))
         {
             return create_buffer(true);
         }
