@@ -40,7 +40,6 @@ no_warning(padded)
 no_warning(switch-enum)
 no_warning(undefined-func-template)
 no_warning(unused-template)
-no_warning(vla)
 no_warning(weak-template-vtables)
 no_warning(weak-vtables)
 no_warning(thread-safety-negative) # experimental flag, too many false positives
