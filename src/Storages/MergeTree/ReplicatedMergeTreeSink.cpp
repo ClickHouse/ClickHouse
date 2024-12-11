@@ -179,8 +179,6 @@ ReplicatedMergeTreeSinkImpl<async_insert>::~ReplicatedMergeTreeSinkImpl()
     if (!delayed_chunk)
         return;
 
-    chassert(isCancelled() || std::uncaught_exceptions());
-
     for (auto & partition : delayed_chunk->partitions)
     {
         partition.temp_part.cancel();
@@ -203,8 +201,8 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
         log,
         {settings[Setting::insert_keeper_max_retries],
          settings[Setting::insert_keeper_retry_initial_backoff_ms],
-         settings[Setting::insert_keeper_retry_max_backoff_ms]},
-        context->getProcessListElement());
+         settings[Setting::insert_keeper_retry_max_backoff_ms],
+         context->getProcessListElement()});
     quorum_retries_ctl.retryLoop(
         [&]()
         {
@@ -727,8 +725,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         log,
         {settings[Setting::insert_keeper_max_retries],
          settings[Setting::insert_keeper_retry_initial_backoff_ms],
-         settings[Setting::insert_keeper_retry_max_backoff_ms]},
-        context->getProcessListElement());
+         settings[Setting::insert_keeper_retry_max_backoff_ms],
+         context->getProcessListElement()});
 
     auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
     {
