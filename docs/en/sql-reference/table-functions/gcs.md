@@ -39,7 +39,7 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
 - `hmac_key` and `hmac_secret` — Keys that specify credentials to use with given endpoint. Optional.
 - `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-- `compression_method` — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression method by file extension.
+- `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
 
 Arguments can also be passed using [named collections](/docs/en/operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 

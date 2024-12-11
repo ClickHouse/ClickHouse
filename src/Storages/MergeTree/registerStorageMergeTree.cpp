@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
@@ -38,6 +39,9 @@ namespace Setting
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool create_table_empty_primary_key_by_default;
     extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
 }
 
 namespace MergeTreeSetting
@@ -878,6 +882,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
 
+        ZooKeeperRetriesInfo create_query_zk_retries_info{
+            local_settings[Setting::keeper_max_retries],
+            local_settings[Setting::keeper_retry_initial_backoff_ms],
+            local_settings[Setting::keeper_retry_max_backoff_ms],
+            args.getLocalContext()->getProcessListElementSafe()};
+
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_info,
             args.mode,
@@ -888,8 +898,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            need_check_table_structure);
+            need_check_table_structure,
+            create_query_zk_retries_info);
     }
+
     return std::make_shared<StorageMergeTree>(
         args.table_id,
         args.relative_data_path,

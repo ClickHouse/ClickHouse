@@ -24,7 +24,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 - `session_token` - Session token to use with the given keys. Optional when passing keys.
 - `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-- `compression_method` — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression method by file extension.
+- `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
 
 Arguments can also be passed using [named collections](/docs/en/operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 

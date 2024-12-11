@@ -3,6 +3,7 @@
 
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
+#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <Common/DNSResolver.h>
 #include <Common/InterruptListener.h>

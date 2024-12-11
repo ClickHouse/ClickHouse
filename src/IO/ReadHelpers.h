@@ -1,12 +1,9 @@
 #pragma once
 
-#include <cmath>
 #include <cstring>
 #include <string>
 #include <string_view>
 #include <limits>
-#include <algorithm>
-#include <iterator>
 #include <bit>
 #include <span>
 
@@ -18,14 +15,11 @@
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/transformEndianness.h>
-#include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
-#include <base/sort.h>
 #include <base/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Allocator.h>
@@ -35,7 +29,6 @@
 
 #include <Formats/FormatSettings.h>
 
-#include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
@@ -1727,8 +1720,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
-bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
+void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
+bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
 
 
 /** Read serialized exception.

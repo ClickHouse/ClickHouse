@@ -29,7 +29,7 @@ public:
     void serialializeKindBinary(WriteBuffer & out) const override;
     void deserializeFromKindsBinary(ReadBuffer & in) override;
 
-    Poco::JSON::Object toJSON() const override;
+    void toJSON(Poco::JSON::Object & object) const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
