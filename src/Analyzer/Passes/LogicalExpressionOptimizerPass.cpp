@@ -205,8 +205,16 @@ std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode &
 
         // If the nested function is the same, just lift the its or its flattened form's arguments
         auto maybe_flattened = getFlattenedLogicalExpression(*maybe_function, context);
-        auto & new_arguments_list = maybe_flattened ? maybe_flattened->getArguments() : maybe_function->getArguments();
-        std::move(new_arguments_list.begin(), new_arguments_list.end(), std::back_inserter(new_arguments));
+        if (maybe_flattened)
+        {
+            auto & flattened_arguments = maybe_flattened->getArguments().getNodes();
+            std::move(flattened_arguments.begin(), flattened_arguments.end(), std::back_inserter(new_arguments));
+        }
+        else
+        {
+            const auto & nested_arguments = maybe_function->getArguments().getNodes();
+            std::copy(nested_arguments.begin(), nested_arguments.end(), std::back_inserter(new_arguments));
+        }
     }
 
     // Nothing has changed, let's no create a flattened node
