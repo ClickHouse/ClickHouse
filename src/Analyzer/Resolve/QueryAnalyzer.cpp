@@ -4998,7 +4998,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*ignore_alias*/);
 
-        auto process_array_join_expression = [&](QueryTreeNodePtr & expression)
+        auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
         {
             auto result_type = expression->getResultType();
             bool is_array_type = isArray(result_type);
@@ -5056,6 +5056,19 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         {
             for (auto & array_join_subexpression : columns_list->getNodes())
                 process_array_join_expression(array_join_subexpression);
+        }
+        else if (auto * function_node = array_join_expression->as<FunctionNode>();
+            function_node != nullptr && function_node->getFunctionName() == "nested")
+        {
+            const auto & nested_arguments = function_node->getArguments().getNodes();
+            for (size_t i = 1; i < nested_arguments.size(); ++i)
+            {
+                auto * nested_column = nested_arguments[i]->as<ColumnNode>();
+                chassert(nested_column);
+
+                auto new_column = std::make_shared<ColumnNode>(nested_column->getColumn(), nested_arguments[i], array_join_node);
+                process_array_join_expression(new_column);
+            }
         }
         else
         {
