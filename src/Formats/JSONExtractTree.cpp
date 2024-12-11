@@ -1780,7 +1780,9 @@ private:
 
             paths_and_values_for_shared_data.emplace_back(current_path, "");
             WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
-            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, format_settings);
+            /// Use default format settings for binary serialization. Non-default settings may change
+            /// the binary representation of the values and break the future deserialization.
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, getDefaultFormatSettings());
         }
 
         return true;
@@ -1805,6 +1807,12 @@ private:
         }
 
         return false;
+    }
+
+    const FormatSettings & getDefaultFormatSettings() const
+    {
+        static const FormatSettings settings;
+        return settings;
     }
 
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
