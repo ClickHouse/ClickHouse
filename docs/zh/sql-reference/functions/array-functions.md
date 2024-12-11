@@ -1214,7 +1214,7 @@ SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 arrayRocAUC(arr_scores, arr_labels)
 ```
 
-别名: `arrayAUC`.
+别名: `arrayAUC`, `arrayROCAUC`.
 
 **参数**
 

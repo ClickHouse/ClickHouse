@@ -1645,7 +1645,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 arrayRocAUC(arr_scores, arr_labels)
 ```
 
-Синоним: `arrayAUC`.
+Синоним: `arrayAUC`, `arrayROCAUC`.
 
 **Аргументы**
 
