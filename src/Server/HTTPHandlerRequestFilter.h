@@ -9,6 +9,8 @@
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <absl/container/inlined_vector.h>
+
 #include <unordered_map>
 
 namespace DB
@@ -25,8 +27,9 @@ static inline bool checkRegexExpression(std::string_view match_str, const Compil
 {
     int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-    std::string_view matches[num_captures];
-    return compiled_regex->Match({match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
+    absl::InlinedVector<std::string_view, 5> matches(num_captures);
+    return compiled_regex->Match(
+        {match_str.data(), match_str.size()}, 0, match_str.size(), re2::RE2::Anchor::ANCHOR_BOTH, matches.data(), num_captures);
 }
 
 static inline bool checkExpression(std::string_view match_str, const std::pair<String, CompiledRegexPtr> & expression)
