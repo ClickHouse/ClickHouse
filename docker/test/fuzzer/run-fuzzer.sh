@@ -450,19 +450,7 @@ case "$stage" in
 "fuzz")
     time fuzz
     ;&
-"report")
-
-CORE_LINK=''
-if [ -f core.zst ]; then
-    CORE_LINK='<a href="core.zst">core.zst</a>'
-fi
-
-# Keep all the lines in the paragraphs containing <Fatal> that either contain <Fatal> or don't start with 20... (year)
-sed -n '/<Fatal>/,/^$/p' server.log | awk '/<Fatal>/ || !/^20/' > fatal.log ||:
-FATAL_LINK=''
-if [ -s fatal.log ]; then
-    FATAL_LINK='<a href="fatal.log">fatal.log</a>'
-fi
+esac
 
 dmesg -T > dmesg.log ||:
 
