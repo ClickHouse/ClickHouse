@@ -66,7 +66,7 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
         return builder.getInt16Ty();
     if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime() || data_type.isDecimal32())
         return builder.getInt32Ty();
-    if (data_type.isInt64() || data_type.isUInt64() || data_type.isDecimal64())
+    if (data_type.isInt64() || data_type.isUInt64() || data_type.isDecimal64() || data_type.isDateTime64())
         return builder.getInt64Ty();
     if (data_type.isInt128() || data_type.isUInt128() || data_type.isDecimal128())
         return builder.getInt128Ty();
@@ -80,7 +80,7 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
         return builder.getInt8Ty();
     if (data_type.isEnum16())
         return builder.getInt16Ty();
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native type");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast from {} to native type", type.getName());
 }
 
 llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)

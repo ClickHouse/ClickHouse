@@ -51,14 +51,19 @@ using NewInt256 = signed _BitInt(256);
 using NewUInt256 = unsigned _BitInt(256);
 #pragma clang diagnostic pop
 
-NewInt256 divideInt256(NewInt256 left, NewInt256 right)
+static NewInt256 divideInt256(NewInt256 left, NewInt256 right)
 {
     return left / right;
 }
 
-NewInt128 divideInt128(NewInt128 left, NewInt128 right)
+static NewInt128 divideInt128(NewInt128 left, NewInt128 right)
 {
     return left / right;
+}
+
+static NewInt128 castDoubleToInt128(double from)
+{
+    return static_cast<NewInt128>(from);
 }
 
 /** Simple module to object file compiler.
@@ -394,6 +399,7 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
     symbol_resolver->registerSymbol("__divei4", reinterpret_cast<void *>(&divideInt256));
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&divideInt128));
+    symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&castDoubleToInt128));
 }
 
 CHJIT::~CHJIT() = default;
