@@ -789,9 +789,10 @@ Elements set to `NULL` are handled as normal values.
 
 ## indexOfAssumeSorted(arr, x)
 
+Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
 If the array does not contain the searched-for value, the function returns 0.
-Returns the index of the first element with value ‘x’ (starting from 1).
-Assumes that the array is sorted in ascending order (the function uses binary search).
+Assumes that the array is sorted in ascending order (i.e., the function uses binary search).
+If the array is not sorted, results are undefined.
 If the internal array is of type Nullable, function ‘indexOf‘ will be called.
 
 Example:
