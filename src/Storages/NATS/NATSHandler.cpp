@@ -43,11 +43,7 @@ void NATSHandler::runLoop()
 
         loop_state = Loop::RUN;
     }
-
-    SCOPE_EXIT({
-        nats_ReleaseThreadMemory();
-        uv_key_delete(&uvLoopThreadKey);
-    });
+    SCOPE_EXIT(nats_ReleaseThreadMemory());
 
     LOG_DEBUG(log, "Background loop started");
 
