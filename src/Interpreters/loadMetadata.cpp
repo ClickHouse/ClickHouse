@@ -20,11 +20,12 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
 #include <Core/Settings.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
+#include "IO/ReadSettings.h"
 
 #include <filesystem>
 
@@ -108,7 +109,7 @@ static void loadDatabase(
     if (db_disk->existsFile(fs::path(database_metadata_file)))
     {
         /// There is .sql file with database creation statement.
-        ReadSettings read_settings;
+        ReadSettings read_settings = getReadSettings();
         read_settings.local_fs_buffer_size = 1024;
         auto in = db_disk->readFile(database_metadata_file, read_settings);
         readStringUntilEOF(database_attach_query, *in);

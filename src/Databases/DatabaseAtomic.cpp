@@ -700,8 +700,10 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 
     if (db_disk->isSymlinkSupported())
+    {
         db_disk->moveDirectory(old_path_to_table_symlinks, path_to_table_symlinks);
-    tryCreateMetadataSymlink();
+        tryCreateMetadataSymlink();
+    }
 }
 
 void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)

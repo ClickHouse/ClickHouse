@@ -362,16 +362,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
 
     bool need_write_metadata = !create.attach || !db_disk->existsFile(metadata_file_path);
-
-    LOG_DEBUG(
-        getLogger("InterpreterCreateQuery"),
-        "InterpreterCreateQuery metadata_file_path {}, create.attach {}, existsFile {}, need_write_metadata {}",
-        metadata_file_path,
-        create.attach,
-        db_disk->existsFile(metadata_file_path),
-        need_write_metadata);
-
-
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 

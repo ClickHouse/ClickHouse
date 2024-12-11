@@ -581,7 +581,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     String statement;
 
     {
-        ReadSettings settings;
+        ReadSettings settings = getReadSettings();
         settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
         auto in = db_disk->readFile(table_metadata_path, settings);
         readStringUntilEOF(statement, *in);
