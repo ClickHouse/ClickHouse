@@ -186,6 +186,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool group_by_use_sharding;
 }
 
 namespace ServerSetting
@@ -2858,7 +2859,8 @@ void InterpreterSelectQuery::executeAggregation(
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        !group_by_info && settings[Setting::force_aggregation_in_order]);
+        !group_by_info && settings[Setting::force_aggregation_in_order],
+        settings[Setting::group_by_use_sharding]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
