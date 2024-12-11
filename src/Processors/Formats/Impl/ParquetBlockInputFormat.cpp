@@ -633,16 +633,31 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     }
     if (format_settings.parquet.use_native_reader)
     {
-        auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(in);
+        SeekableReadBuffer * seekable_in = nullptr;
+        if (auto * buffer_reader = dynamic_cast<arrow::io::BufferReader*>(arrow_file.get()))
+        {
+            memory_buffer_reader = std::make_shared<ReadBufferFromMemory>(buffer_reader->buffer()->data(), buffer_reader->buffer()->size());
+            seekable_in = memory_buffer_reader.get();
+        }
         if (!seekable_in)
-            throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "native ParquetReader only supports SeekableReadBuffer");
+        {
+            seekable_in = dynamic_cast<SeekableReadBuffer *>(in);
+            if (!seekable_in)
+                throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "native ParquetReader only supports SeekableReadBuffer");
+        }
+        std::vector<int> row_groups_indices;
+        std::cerr << fmt::format("read data : {}", getPort().getHeader().dumpStructure());
         new_native_reader = std::make_shared<ParquetReader>(
             getPort().getHeader(),
             *seekable_in,
             parquet::ArrowReaderProperties{},
             parquet::ReaderProperties(ArrowMemoryPool::instance()),
             arrow_file,
-            format_settings);
+            format_settings,
+            row_groups_indices,
+            metadata,
+            io_pool
+        );
         if (filter.has_value())
             pushFilterToParquetReader(filter.value(), *new_native_reader);
     }

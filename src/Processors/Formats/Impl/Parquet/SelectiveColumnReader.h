@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <vector>
+#include <bit>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
@@ -135,36 +136,55 @@ struct ScanState
 
 Int32 loadLength(const uint8_t * data);
 
-using ValueConverter = std::function<void(const uint8_t *, uint8_t *)>;
+using ValueConverter = std::function<void(const uint8_t *, const size_t, uint8_t *)>;
 
 template <typename Type>
 struct ValueConverterImpl
 {
-    static void convert(const uint8_t *, uint8_t *)
+    static void convert(const uint8_t *, const size_t, uint8_t *)
     {
         throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported type: {}", typeid(Type).name());
+    }
+};
+
+/// TODO handle big endian machine
+template <>
+struct ValueConverterImpl<Decimal32>
+{
+    static void convert(const uint8_t * src, const size_t , uint8_t * dst)
+    {
+        *reinterpret_cast<Decimal<Int32>*>(dst) = std::byteswap(*reinterpret_cast<const int32_t *>(src));
+    }
+};
+
+template <>
+struct ValueConverterImpl<Decimal64>
+{
+    static void convert(const uint8_t * src, const size_t , uint8_t * dst)
+    {
+        *reinterpret_cast<Decimal<Int64>*>(dst) = std::byteswap(*reinterpret_cast<const int64_t *>(src));
     }
 };
 
 template <>
 struct ValueConverterImpl<Decimal128>
 {
-    static void convert(const uint8_t * src, uint8_t * dst)
+    static void convert(const uint8_t * src, const size_t len, uint8_t * dst)
     {
-        auto status = arrow::Decimal128::FromBigEndian(src, 16);
+        auto status = arrow::Decimal128::FromBigEndian(src, static_cast<int32_t>(len));
         assert(status.ok());
-        status.ValueUnsafe().ToBytes(reinterpret_cast<uint8_t *>(dst));
+        status.ValueUnsafe().ToBytes(dst);
     }
 };
 
 template <>
 struct ValueConverterImpl<Decimal256>
 {
-    static void convert(const uint8_t * src, uint8_t * dst)
+    static void convert(const uint8_t * src, const size_t len, uint8_t * dst)
     {
-        auto status = arrow::Decimal256::FromBigEndian(src, 32);
+        auto status = arrow::Decimal256::FromBigEndian(src, static_cast<int32_t>(len));
         assert(status.ok());
-        status.ValueUnsafe().ToBytes(reinterpret_cast<uint8_t *>(dst));
+        status.ValueUnsafe().ToBytes(dst);
     }
 };
 
@@ -181,7 +201,7 @@ public:
 
     template <typename T>
     void
-    decodeFixedLengthData(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read, ValueConverter value_converter);
+    decodeFixedLengthData(PaddedPODArray<T> & data, const OptionalRowSet & row_set, const size_t rows_to_read, const size_t element_size, ValueConverter value_converter);
 
     void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read);
 
@@ -197,7 +217,8 @@ public:
         PaddedPODArray<T> & data,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read,
+        const size_t rows_to_read,
+        const size_t element_size,
         ValueConverter value_converter);
 
     void decodeStringSpace(
@@ -294,7 +315,8 @@ public:
         ColumnFixedString::Chars & chars,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
+        size_t rows_to_read,
+        size_t element_size);
 
     template <class DictValueType>
     void decodeFixedLengthDataSpace(
@@ -316,14 +338,20 @@ class SelectiveColumnReader
 
 public:
     SelectiveColumnReader(PageReaderCreator page_reader_creator_, const ScanSpec & scan_spec_)
-        : page_reader_creator(std::move(page_reader_creator_)), scan_spec(scan_spec_)
+        : page_reader_creator(page_reader_creator_), scan_spec(scan_spec_)
     {
     }
     virtual ~SelectiveColumnReader() = default;
     void initPageReaderIfNeed()
     {
         if (!page_reader)
+        {
+            if (!page_reader_creator)
+            {
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Page reader creator is not set");
+            }
             page_reader = page_reader_creator();
+        }
     }
     /// calculate row mask on decompression buffer
     virtual void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) = 0;
@@ -349,18 +377,23 @@ public:
     void readAndDecodePage()
     {
         readPageIfNeeded();
+        if (!page_reader)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Page exhausted");
+        }
         decodePage();
     }
+    virtual DataTypePtr getResultType() = 0;
     /// create empty result column
     virtual MutableColumnPtr createColumn() = 0;
     /// get all definition levels of current page
-    const PaddedPODArray<Int16> & getDefinitionLevels()
+    virtual const PaddedPODArray<Int16> & getDefinitionLevels()
     {
         readAndDecodePage();
         return state.def_levels;
     }
     /// get all repetition levels of current page
-    const PaddedPODArray<Int16> & getRepetitionLevels()
+    virtual const PaddedPODArray<Int16> & getRepetitionLevels()
     {
         readAndDecodePage();
         return state.rep_levels;
@@ -407,6 +440,7 @@ class NumberColumnDirectReader : public SelectiveColumnReader
 public:
     NumberColumnDirectReader(PageReaderCreator page_reader_creator_, ScanSpec scan_spec_, DataTypePtr datatype_);
     ~NumberColumnDirectReader() override = default;
+    DataTypePtr getResultType() override { return datatype; }
     MutableColumnPtr createColumn() override;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
@@ -430,6 +464,7 @@ public:
     void computeRowSetSpace(OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
     void readSpace(MutableColumnPtr & ptr, OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t size) override;
+    DataTypePtr getResultType() override { return datatype; }
     MutableColumnPtr createColumn() override { return datatype->createColumn(); }
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
@@ -466,6 +501,7 @@ public:
     void
     readSpace(MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
         override;
+    DataTypePtr getResultType() override { return data_type; }
     MutableColumnPtr createColumn() override { return data_type->createColumn(); }
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
@@ -482,6 +518,7 @@ public:
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
     void readSpace(MutableColumnPtr & ptr, OptionalRowSet & set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t size) override;
+    DataTypePtr getResultType() override { return data_type; }
     MutableColumnPtr createColumn() override { return data_type->createColumn(); }
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
@@ -535,6 +572,7 @@ public:
 
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
+    DataTypePtr getResultType() override;
     MutableColumnPtr createColumn() override { return ColumnString::create(); }
 };
 
@@ -545,6 +583,8 @@ public:
         : SelectiveColumnReader(std::move(page_reader_creator_), scan_spec_)
     {
     }
+
+    DataTypePtr getResultType() override;
 
     MutableColumnPtr createColumn() override { return ColumnString::create(); }
 
@@ -590,7 +630,10 @@ public:
 
     ~OptionalColumnReader() override = default;
 
+    const PaddedPODArray<Int16, 4096> & getDefinitionLevels() override;
+    const PaddedPODArray<Int16, 4096> & getRepetitionLevels() override;
     void readPageIfNeeded() override { child->readPageIfNeeded(); }
+    DataTypePtr getResultType() override;
     MutableColumnPtr createColumn() override;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
@@ -598,6 +641,7 @@ public:
     int16_t maxDefinitionLevel() const override { return child->maxDefinitionLevel(); }
     int16_t maxRepetitionLevel() const override { return child->maxRepetitionLevel(); }
     size_t availableRows() const override;
+    size_t levelsOffset() const override;
 
 private:
     void applyLazySkip();
@@ -632,12 +676,16 @@ public:
 
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
 
+    const PaddedPODArray<Int16> & getDefinitionLevels() override;
+    const PaddedPODArray<Int16> & getRepetitionLevels() override;
     int16_t maxDefinitionLevel() const override { return def_level; }
     int16_t maxRepetitionLevel() const override { return rep_level; }
     void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) override;
+    DataTypePtr getResultType() override;
     MutableColumnPtr createColumn() override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
     size_t availableRows() const override;
+    size_t levelsOffset() const override;
 
 private:
     SelectiveColumnReaderPtr child;
@@ -657,12 +705,16 @@ public:
 
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
 
+    const PaddedPODArray<Int16> & getDefinitionLevels() override;
+    const PaddedPODArray<Int16> & getRepetitionLevels() override;
     int16_t maxDefinitionLevel() const override { return def_level; }
     int16_t maxRepetitionLevel() const override { return rep_level; }
     void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) override;
+    DataTypePtr getResultType() override;
     MutableColumnPtr createColumn() override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
     size_t availableRows() const override;
+    size_t levelsOffset() const override;
 
 private:
     SelectiveColumnReaderPtr key_reader;
@@ -679,11 +731,17 @@ public:
     {
     }
     ~StructColumnReader() override = default;
+
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     MutableColumnPtr createColumn() override;
+    DataTypePtr getResultType() override;
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
     size_t availableRows() const override;
+    size_t levelsOffset() const override;
+
+    const PaddedPODArray<Int16> & getDefinitionLevels() override;
+    const PaddedPODArray<Int16> & getRepetitionLevels() override;
 
 private:
     std::unordered_map<String, SelectiveColumnReaderPtr> children;

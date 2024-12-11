@@ -3,6 +3,13 @@
 #include <Common/ThreadPool.h>
 #include <arrow/io/util_internal.h>
 
+namespace CurrentMetrics
+{
+extern const Metric ParquetDecoderIOThreads;
+extern const Metric ParquetDecoderIOThreadsActive;
+extern const Metric ParquetDecoderIOThreadsScheduled;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -44,7 +51,8 @@ ParquetReader::ParquetReader(
     std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file_,
     const FormatSettings & format_settings,
     std::vector<int> row_groups_indices_,
-    std::shared_ptr<parquet::FileMetaData> metadata)
+    std::shared_ptr<parquet::FileMetaData> metadata,
+    std::shared_ptr<ThreadPool> io_pool_)
     : file_reader(metadata ? nullptr : createFileReader(arrow_file_, reader_properties_, metadata))
     , file(file_)
     , arrow_properties(arrow_properties_)
@@ -53,6 +61,7 @@ ParquetReader::ParquetReader(
     , properties(reader_properties_)
     , row_groups_indices(std::move(row_groups_indices_))
     , meta_data(metadata ? metadata : file_reader->metadata())
+    , io_pool(io_pool_)
 {
     if (row_groups_indices.empty())
         for (int i = 0; i < meta_data->num_row_groups(); i++)
@@ -64,6 +73,10 @@ ParquetReader::ParquetReader(
         parquet_columns.emplace(node->name(), node);
     }
     chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
+    if (!io_pool)
+    {
+        io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, format_settings.max_threads);
+    }
 }
 
 Block ParquetReader::read()
@@ -97,8 +110,8 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
     std::vector<RowGroupPrefetchPtr> row_group_condition_prefetches;
     for (auto row_group_idx : row_group_indices_)
     {
-        RowGroupPrefetchPtr prefetch = std::make_shared<RowGroupPrefetch>(file, file_mutex, arrow_properties);
-        RowGroupPrefetchPtr condition_prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties);
+        RowGroupPrefetchPtr prefetch = std::make_shared<RowGroupPrefetch>(file, file_mutex, arrow_properties, *io_pool);
+        RowGroupPrefetchPtr condition_prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties, *io_pool);
         auto row_group_meta = meta_data->RowGroup(row_group_idx);
 //        for (const auto & name : header.getNames())
 //        {

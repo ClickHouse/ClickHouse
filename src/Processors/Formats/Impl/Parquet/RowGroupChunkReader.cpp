@@ -6,6 +6,7 @@
 #include <arrow/io/util_internal.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Stopwatch.h>
+#include <Interpreters/castColumn.h>
 
 namespace ProfileEvents
 {
@@ -44,6 +45,7 @@ RowGroupChunkReader::RowGroupChunkReader(
         auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
         column_reader = builder->buildReader(node, col_with_name.type, 0, 0);
         column_readers.push_back(column_reader);
+        reader_data_types.push_back(column_reader->getResultType());
         reader_columns_mapping[col_with_name.name] = column_reader;
         if (filter)
             filter_columns.push_back(col_with_name.name);
@@ -141,7 +143,16 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
     metrics.output_rows += rows_read;
     ProfileEvents::increment(ProfileEvents::ParquetOutputRows, rows_read);
     if (rows_read)
-        return Chunk(std::move(columns), rows_read);
+    {
+        Columns casted_columns;
+        auto types = parquet_reader->header.getColumnsWithTypeAndName();
+        for (size_t i = 0; i < types.size(); i++)
+        {
+            ColumnWithTypeAndName src_col = ColumnWithTypeAndName{std::move(columns[i]), reader_data_types.at(i), types.at(i).name};
+            casted_columns.emplace_back(castColumn(src_col, types.at(i).type));
+        }
+        return Chunk(std::move(casted_columns), rows_read);
+    }
     else
         return {};
 }
@@ -159,10 +170,10 @@ arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & column_
 }
 
 
-RowGroupPrefetch::RowGroupPrefetch(SeekableReadBuffer & file_, std::mutex & mutex, const parquet::ArrowReaderProperties & arrow_properties_)
+RowGroupPrefetch::RowGroupPrefetch(SeekableReadBuffer & file_, std::mutex & mutex, const parquet::ArrowReaderProperties & arrow_properties_, ThreadPool & io_pool)
     : file(file_), file_mutex(mutex), arrow_properties(arrow_properties_)
 {
-    callback_runner = threadPoolCallbackRunnerUnsafe<ColumnChunkData>(getIOThreadPool().get(), "ParquetRead");
+    callback_runner = threadPoolCallbackRunnerUnsafe<ColumnChunkData>(io_pool, "ParquetRead");
 }
 void RowGroupPrefetch::prefetchRange(const arrow::io::ReadRange & range)
 {

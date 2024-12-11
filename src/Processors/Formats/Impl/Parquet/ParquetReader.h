@@ -47,7 +47,9 @@ public:
         std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file,
         const FormatSettings & format_settings,
         std::vector<int> row_groups_indices_ = {},
-        std::shared_ptr<parquet::FileMetaData> metadata = nullptr);
+        std::shared_ptr<parquet::FileMetaData> metadata = nullptr,
+        std::shared_ptr<ThreadPool> io_pool_ = nullptr
+    );
 
     Block read();
     void addFilter(const String & column_name, ColumnFilterPtr filter);
@@ -82,6 +84,7 @@ private:
     std::unordered_map<String, parquet::schema::NodePtr> parquet_columns;
     std::vector<std::shared_ptr<ExpressionFilter>> expression_filters;
     std::unordered_set<String> condition_columns;
+    std::shared_ptr<ThreadPool> io_pool;
 };
 
 }

@@ -346,6 +346,9 @@ private:
     bool is_initialized = false;
     std::shared_ptr<ParquetReader> new_native_reader = nullptr;
     std::optional<ActionsDAG> filter = std::nullopt;
+
+    // For native reader read from stdin
+    std::shared_ptr<ReadBufferFromMemory> memory_buffer_reader = nullptr;
 };
 
 class ParquetSchemaReader : public ISchemaReader

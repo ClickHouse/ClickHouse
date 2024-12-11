@@ -52,7 +52,7 @@ using ColumnChunkDataPtr = std::shared_ptr<ColumnChunkData>;
 class RowGroupPrefetch
 {
 public:
-    RowGroupPrefetch(SeekableReadBuffer & file_, std::mutex & mutex, const parquet::ArrowReaderProperties& arrow_properties_);
+    RowGroupPrefetch(SeekableReadBuffer & file_, std::mutex & mutex, const parquet::ArrowReaderProperties& arrow_properties_, ThreadPool & io_pool);
     void prefetchRange(const arrow::io::ReadRange& range);
     void startPrefetch();
     ColumnChunkData readRange(const arrow::io::ReadRange& range);
@@ -105,7 +105,7 @@ public:
         std::unordered_map<String, ColumnFilterPtr> filters);
     ~RowGroupChunkReader()
     {
-        printMetrics(std::cerr);
+//        printMetrics(std::cerr);
     }
     Chunk readChunk(size_t rows);
     bool hasMoreRows() const { return remain_rows > 0; }
@@ -121,6 +121,7 @@ private:
     RowGroupPrefetchPtr prefetch;
     std::unordered_map<String, SelectiveColumnReaderPtr> reader_columns_mapping;
     std::vector<SelectiveColumnReaderPtr> column_readers;
+    DataTypes reader_data_types;
     std::vector<PaddedPODArray<UInt8>> column_buffers;
     size_t remain_rows = 0;
     ReadMetrics metrics;
