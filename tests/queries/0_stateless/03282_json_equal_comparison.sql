@@ -18,5 +18,5 @@ insert into test format JSONEachRow
 {"json1" : {"a" : 42, "b" : 42, "c" : 42, "d" : 42, "e" : 42}, "json2" : {"a" : 42, "b" : 42, "d" : 42, "c" : 42, "e" : "42"}}
 {"json1" : {"a" : 42, "b" : 42, "c" : 42, "d" : 42, "e" : 42}, "json2" : {"a" : 42, "b" : 42, "d" : 42, "c" : 42, "e" : 42.0}};
 
-select json1, json2, json1 == json2 from test;
+select json1, json2, json1 == json2, json1 != json2 from test;
 drop table test;
