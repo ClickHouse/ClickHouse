@@ -5,23 +5,23 @@ SET parallel_replicas_mark_segment_size = 1;
 DROP TABLE IF EXISTS test_table_join_1 SYNC;
 CREATE TABLE test_table_join_1
 (
-    id UInt8,
-    value String
-) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_table_join_1', 'r1') ORDER BY id SETTINGS index_granularity=1;
+    id_1 UInt8,
+    value_1 String
+) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_table_join_1', 'r1') ORDER BY id_1 SETTINGS index_granularity=1;
 
 DROP TABLE IF EXISTS test_table_join_2 SYNC;
 CREATE TABLE test_table_join_2
 (
-    id UInt16,
-    value String
-) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_table_join_2', 'r1') ORDER BY id SETTINGS index_granularity=1;
+    id_2 UInt16,
+    value_2 String
+) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_table_join_2', 'r1') ORDER BY id_2 SETTINGS index_granularity=1;
 
 DROP TABLE IF EXISTS test_table_join_3 SYNC;
 CREATE TABLE test_table_join_3
 (
-    id UInt64,
-    value String
-) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_table_join_3', 'r1') ORDER BY id SETTINGS index_granularity=1;
+    id_3 UInt64,
+    value_3 String
+) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_table_join_3', 'r1') ORDER BY id_3 SETTINGS index_granularity=1;
 
 INSERT INTO test_table_join_1 SELECT number, concat('t1_value_', number) from numbers(500);
 INSERT INTO test_table_join_1 SELECT number, concat('t1_value_', number) from numbers(500, 400);
@@ -41,16 +41,15 @@ INSERT INTO test_table_join_3 SELECT number, concat('t3_value_', number) from nu
 SELECT 'First JOIN {{ first_join_type }} second JOIN {{ second_join_type }}';
 
 SELECT
-    id AS using_id,
-    t1.id AS t1_id,
-    t1.value AS t1_value,
-    t2.id AS t2_id,
-    t2.value AS t2_value,
-    t3.id AS t3_id,
-    t3.value AS t3_value
+    t1.id_1,
+    t1.value_1,
+    t2.id_2,
+    t2.value_2,
+    t3.id_3,
+    t3.value_3
 FROM test_table_join_1 AS t1
-{{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id)
-{{ second_join_type }} JOIN test_table_join_3 AS t3 USING (id)
+{{ first_join_type }} JOIN test_table_join_2 AS t2 ON t1.id_1 == t2.id_2
+{{ second_join_type }} JOIN test_table_join_3 AS t3 ON t1.id_1 == t3.id_3
 ORDER BY ALL ASC
 SETTINGS parallel_replicas_local_plan={{ parallel_replicas_local_plan }};
 
@@ -60,6 +59,6 @@ SETTINGS parallel_replicas_local_plan={{ parallel_replicas_local_plan }};
 
 -- { echoOff }
 
-DROP TABLE test_table_join_1 SYNC;
-DROP TABLE test_table_join_2 SYNC;
-DROP TABLE test_table_join_3 SYNC;
+--DROP TABLE test_table_join_1 SYNC;
+--DROP TABLE test_table_join_2 SYNC;
+--DROP TABLE test_table_join_3 SYNC;

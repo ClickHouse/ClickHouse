@@ -1,5 +1,5 @@
 SET enable_analyzer = 1;
---SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_mark_segment_size = 1;
 
 DROP TABLE IF EXISTS test_table_join_1 SYNC;
@@ -40,19 +40,27 @@ INSERT INTO test_table_join_3 SELECT number, concat('t3_value_', number) from nu
 
 SELECT 'First JOIN {{ first_join_type }} second JOIN {{ second_join_type }}';
 
-SELECT
-    id AS using_id,
-    t1.id AS t1_id,
-    t1.value AS t1_value,
-    t2.id AS t2_id,
-    t2.value AS t2_value,
-    t3.id AS t3_id,
-    t3.value AS t3_value
-FROM test_table_join_1 AS t1
-{{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id)
-{{ second_join_type }} JOIN test_table_join_3 AS t3 USING (id)
-ORDER BY ALL ASC
-SETTINGS parallel_replicas_local_plan={{ parallel_replicas_local_plan }};
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan={{ parallel_replicas_local_plan }}, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+
 
 {% endfor %}
 {% endfor %}
