@@ -640,10 +640,6 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
     {
         return db_disk->getLastModified(table_metadata_path).epochTime();
     }
-    catch (const Exception &)
-    {
-        throw;
-    }
     catch (const fs::filesystem_error & e)
     {
         if (e.code() == std::errc::no_such_file_or_directory)
@@ -763,7 +759,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
             metadata_file_path);
     }
 
-    ReadSettings read_settings;
+    ReadSettings read_settings = getReadSettings();
     read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
     auto read_buf = db_disk->readFile(metadata_file_path, read_settings);
     String query;

@@ -265,7 +265,7 @@ MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & 
 
     if (db_disk->existsFile(persistent_path))
     {
-        ReadSettings read_settings;
+        ReadSettings read_settings = getReadSettings();
         read_settings.local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
         auto in = db_disk->readFile(persistent_path, read_settings);
 
