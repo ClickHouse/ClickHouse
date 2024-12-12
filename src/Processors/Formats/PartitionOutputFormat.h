@@ -69,6 +69,8 @@ private:
     DynamicWriteBufferManager& write_buffers_manager;
 };
 
+void throwIfTemplateIsNotValid(const String & out_file_template, const ASTPtr & partition_by);
+
 std::vector<StringRef> copyStringsInArena(Arena & arena, const StringRefs & strings);
 
 };

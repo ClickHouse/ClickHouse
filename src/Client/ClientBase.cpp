@@ -1243,6 +1243,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         out_file);
                 }
             }
+
+            if (query_with_output->partition_by)
+            {
+                throwIfTemplateIsNotValid(out_file, query_with_output->partition_by);
+            }
         }
     }
 
