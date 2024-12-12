@@ -27,6 +27,8 @@ public:
 
     ~DatabaseReplicated() override;
 
+    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
+
     String getEngineName() const override { return "Replicated"; }
 
     /// If current query is initial, then the following methods add metadata updating ZooKeeper operations to current ZooKeeperMetadataTransaction.
