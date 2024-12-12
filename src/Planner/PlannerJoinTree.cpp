@@ -1575,7 +1575,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
         auto right_plan = std::move(right_join_tree_query_plan.query_plan);
 
         JoinClausesAndActions join_clauses_and_actions;
-        auto join_type = cross_join_node.getJoinTypes()[i];
+        auto join_type = cross_join_node.getJoinTypes()[i - 1];
 
         auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume(), query_context->getTempDataOnDisk());
         table_join->getTableJoin().kind = JoinKind::Cross;
