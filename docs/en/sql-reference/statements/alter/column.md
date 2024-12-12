@@ -279,7 +279,7 @@ For columns with a new or updated `MATERIALIZED` value expression, all existing 
 
 For columns with a new or updated `DEFAULT` value expression, the behavior depends on the ClickHouse version:
 - In ClickHouse < v24.2, all existing rows are rewritten.
-- ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
+- ClickHouse >= v24.2 distinguishes if a row value in a column with `DEFAULT` value expression was explicitly specified when it was inserted, or not, i.e. calculated from the `DEFAULT` value expression. If the value was explicitly specified, ClickHouse keeps it as is. If the value was calculated, ClickHouse changes it to the new or updated `MATERIALIZED` value expression.
 
 Syntax:
 

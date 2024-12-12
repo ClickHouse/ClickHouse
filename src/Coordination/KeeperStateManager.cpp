@@ -4,6 +4,7 @@
 #include <Coordination/Defines.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>

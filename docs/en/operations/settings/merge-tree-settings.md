@@ -78,6 +78,16 @@ If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 
 Default value: `10 * 1024 * 1024 * 1024` bytes.
 
+## ttl_only_drop_parts
+
+Controls whether data parts are fully dropped in MergeTree tables when all rows in that part have expired according to their `TTL` settings.
+
+When `ttl_only_drop_parts` is disabled (by default), only the rows that have expired based on their TTL settings are removed.
+
+When `ttl_only_drop_parts` is enabled, the entire part is dropped if all rows in that part have expired according to their `TTL` settings.
+
+Default value: 0.
+
 ## merge_with_ttl_timeout
 
 Minimum delay in seconds before repeating a merge with delete TTL.
@@ -1068,7 +1078,7 @@ Default value: throw
 
 ## min_free_disk_bytes_to_perform_insert
 
-The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_throw_insert` then an exception is thrown and the insert is not executed. Note that this setting:
+The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_perform_insert` then an exception is thrown and the insert is not executed. Note that this setting:
 - takes into account the `keep_free_space_bytes` setting.
 - does not take into account the amount of data that will be written by the `INSERT` operation.
 - is only checked if a positive (non-zero) number of bytes is specified
@@ -1095,3 +1105,13 @@ Possible values:
 Default value: 0.0
 
 Note that if both `min_free_disk_ratio_to_perform_insert` and `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
+
+## cache_populated_by_fetch
+
+A Cloud only setting. 
+
+When `cache_populated_by_fetch` is disabled (the default setting), new data parts are loaded into the cache only when a query is run that requires those parts.
+
+If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action. 
+
+Default value: 0.

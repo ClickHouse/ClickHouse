@@ -210,7 +210,10 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     )
     assert create_multipart == 1
     assert upload_parts >= 2
-    assert s3_errors == 1
+    # the first error is the injected error
+    # the second is `void DB::WriteBufferFromS3::tryToAbortMultipartUpload(): Code: 499. DB::Exception: The specified multipart upload does not exist.`
+    # due to `broken_s3.setup_fake_multpartuploads()`
+    assert s3_errors == 2
 
 
 @pytest.mark.parametrize(

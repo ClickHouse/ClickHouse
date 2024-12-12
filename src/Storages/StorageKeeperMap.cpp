@@ -189,8 +189,8 @@ public:
             ZooKeeperRetriesInfo{
                 settings[Setting::insert_keeper_max_retries],
                 settings[Setting::insert_keeper_retry_initial_backoff_ms],
-                settings[Setting::insert_keeper_retry_max_backoff_ms]},
-            context->getProcessListElement()};
+                settings[Setting::insert_keeper_retry_max_backoff_ms],
+                context->getProcessListElement()}};
 
         zk_retry.retryLoop([&]()
         {
@@ -425,8 +425,10 @@ StorageKeeperMap::StorageKeeperMap(
         getName(),
         getLogger(getName()),
         ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-        context_->getProcessListElement()};
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            context_->getProcessListElement()}};
 
     zk_retry.retryLoop(
         [&]
@@ -670,8 +672,10 @@ Pipe StorageKeeperMap::read(
             getName(),
             getLogger(getName()),
             ZooKeeperRetriesInfo{
-                settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-            context_->getProcessListElement()};
+                settings[Setting::keeper_max_retries],
+                settings[Setting::keeper_retry_initial_backoff_ms],
+                settings[Setting::keeper_retry_max_backoff_ms],
+                context_->getProcessListElement()}};
 
         std::vector<std::string> children;
         zk_retry.retryLoop([&]
@@ -699,8 +703,10 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         getName(),
         getLogger(getName()),
         ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-        local_context->getProcessListElement()};
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            local_context->getProcessListElement()}};
 
     zk_retry.retryLoop([&]
     {
@@ -1136,8 +1142,10 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
                 getName(),
                 getLogger(getName()),
                 ZooKeeperRetriesInfo{
-                    settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-                local_context->getProcessListElement()};
+                    settings[Setting::keeper_max_retries],
+                    settings[Setting::keeper_retry_initial_backoff_ms],
+                    settings[Setting::keeper_retry_max_backoff_ms],
+                    local_context->getProcessListElement()}};
 
             zk_retry.retryLoop([&]
             {
@@ -1248,8 +1256,10 @@ Chunk StorageKeeperMap::getBySerializedKeys(
         getName(),
         getLogger(getName()),
         ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-        local_context->getProcessListElement()};
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            local_context->getProcessListElement()}};
 
     zkutil::ZooKeeper::MultiTryGetResponse values;
     zk_retry.retryLoop([&]{
@@ -1394,8 +1404,10 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 getName(),
                 getLogger(getName()),
                 ZooKeeperRetriesInfo{
-                    settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-                local_context->getProcessListElement()};
+                    settings[Setting::keeper_max_retries],
+                    settings[Setting::keeper_retry_initial_backoff_ms],
+                    settings[Setting::keeper_retry_max_backoff_ms],
+                    local_context->getProcessListElement()}};
 
             Coordination::Error status;
             zk_retry.retryLoop([&]

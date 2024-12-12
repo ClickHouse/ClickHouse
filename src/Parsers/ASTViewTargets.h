@@ -106,11 +106,11 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
     /// Formats information only about a specific target table.
-    void formatTarget(ViewTarget::Kind kind, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;
-    static void formatTarget(const ViewTarget & target, const FormatSettings & s, FormatState & state, FormatStateStacked frame);
+    void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;
+    static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame);
 
     /// Helper functions for class ParserViewTargets. Returns a prefix keyword matching a specified target kind.
     static std::optional<Keyword> getKeywordForTableID(ViewTarget::Kind kind);

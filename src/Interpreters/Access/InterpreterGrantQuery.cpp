@@ -418,7 +418,7 @@ BlockIO InterpreterGrantQuery::execute()
     auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(getContext()->getUserName());
-    query.access_rights_elements.eraseNonGrantable();
+    query.access_rights_elements.eraseNotGrantable();
 
     if (!query.access_rights_elements.sameOptions())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");

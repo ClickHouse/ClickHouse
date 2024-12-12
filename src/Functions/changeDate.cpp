@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/DateLUT.h>
 #include <Common/typeid_cast.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>

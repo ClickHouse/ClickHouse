@@ -130,7 +130,7 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
     }
 }
 
-NamesAndTypesList getCommonVirtualsForFileLikeStorage()
+static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
     return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
@@ -144,7 +144,7 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
+static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
 {
     std::string pattern = "([^/]+)=([^/]+)/";
     re2::StringPiece input_piece(path);

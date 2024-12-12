@@ -137,6 +137,13 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 }
 
 
+void SettingsConstraints::check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const
+{
+    check(current_settings, profile_elements.add_settings, source);
+    check(current_settings, profile_elements.modify_settings, source);
+    /// We don't check `drop_settings` here.
+}
+
 void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const
 {
     for (const auto & element : profile_elements)
@@ -397,12 +404,34 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
 
     /** The `readonly` value is understood as follows:
       * 0 - no read-only restrictions.
-      * 1 - only read requests, as well as changing settings with `changable_in_readonly` flag.
+      * 1 - only read requests, as well as changing settings with `changeable_in_readonly` flag.
       * 2 - only read requests, as well as changing settings, except for the `readonly` setting.
       */
 
     if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly")
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
+
+    if (access_control)
+    {
+        bool allowed_experimental = access_control->getAllowExperimentalTierSettings();
+        bool allowed_beta = access_control->getAllowBetaTierSettings();
+        if (!allowed_experimental || !allowed_beta)
+        {
+            auto setting_tier = current_settings.getTier(resolved_name);
+            if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
+                return Checker(
+                    PreformattedMessage::create(
+                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allow_feature_tier')",
+                        setting_name),
+                    ErrorCodes::READONLY);
+            if (setting_tier == SettingsTierType::BETA && !allowed_beta)
+                return Checker(
+                    PreformattedMessage::create(
+                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
+                        setting_name),
+                    ErrorCodes::READONLY);
+        }
+    }
 
     auto it = constraints.find(resolved_name);
     if (current_settings[Setting::readonly] == 1)

@@ -30,8 +30,6 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 #include <cmath>
-#include <cstdint>
-#include <cstdio>
 
 double preciseExp10(double x)
 {

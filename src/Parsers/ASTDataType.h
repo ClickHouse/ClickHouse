@@ -16,7 +16,7 @@ public:
     String getID(char delim) const override;
     ASTPtr clone() const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 template <typename... Args>

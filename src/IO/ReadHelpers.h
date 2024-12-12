@@ -1,12 +1,9 @@
 #pragma once
 
-#include <cmath>
 #include <cstring>
 #include <string>
 #include <string_view>
 #include <limits>
-#include <algorithm>
-#include <iterator>
 #include <bit>
 #include <span>
 
@@ -18,14 +15,11 @@
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/transformEndianness.h>
-#include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
-#include <base/sort.h>
 #include <base/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Allocator.h>
@@ -35,12 +29,9 @@
 
 #include <Formats/FormatSettings.h>
 
-#include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
-
-#include <pcg_random.hpp>
 
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
@@ -61,7 +52,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
-    extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
@@ -113,7 +103,19 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
-    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
+    static constexpr size_t size = sizeof(T); /// NOLINT
+
+    /// If the whole value fits in buffer do not call readStrict and copy with
+    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
+    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
+    {
+        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), size);
+        buf.position() += size;
+    }
+    else
+    {
+        buf.readStrict(reinterpret_cast<char *>(&x), size);
+    }
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
@@ -1420,7 +1422,9 @@ inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, 
 inline bool tryReadText(IPv4 & x, ReadBuffer & buf) { return tryReadIPv4Text(x, buf); }
 inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, buf); }
 
-inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
+template <typename T>
+requires is_floating_point<T>
+inline void readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 
@@ -1716,8 +1720,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
-bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings);
+void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
+bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
 
 
 /** Read serialized exception.
@@ -1914,26 +1918,6 @@ bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * &
 /// Skip data until start of the next row or eof (the end of row is determined by two delimiters:
 /// row_after_delimiter and row_between_delimiter).
 void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
-
-struct PcgDeserializer
-{
-    static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
-    {
-        decltype(rng.state_) multiplier, increment, state;
-        readText(multiplier, buf);
-        assertChar(' ', buf);
-        readText(increment, buf);
-        assertChar(' ', buf);
-        readText(state, buf);
-
-        if (multiplier != pcg32_fast::multiplier())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", pcg32_fast::multiplier(), multiplier);
-        if (increment != pcg32_fast::increment())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", pcg32_fast::increment(), increment);
-
-        rng.state_ = state;
-    }
-};
 
 void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func);
 

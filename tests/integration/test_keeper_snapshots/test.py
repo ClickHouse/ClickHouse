@@ -191,8 +191,9 @@ def test_invalid_snapshot(started_cluster):
             ]
         )
         node.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
+        assert node.contains_in_log("Failure to load from latest snapshot with index")
         assert node.contains_in_log(
-            "Aborting because of failure to load from latest snapshot with index"
+            "Manual intervention is necessary for recovery. Problematic snapshot can be removed but it will lead to data loss"
         )
 
         node.stop_clickhouse()
