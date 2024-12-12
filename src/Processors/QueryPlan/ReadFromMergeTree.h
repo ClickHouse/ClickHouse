@@ -187,7 +187,7 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, std::optional<ActionsDAG> virtual_row_conversion_);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -281,9 +281,6 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
-
-    ExpressionActionsPtr virtual_row_conversion;
-
     std::optional<size_t> number_of_current_replica;
 };
 

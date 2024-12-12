@@ -15,15 +15,14 @@ namespace ErrorCodes
 
 struct ZooKeeperRetriesInfo
 {
-    ZooKeeperRetriesInfo() = default;
     ZooKeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
         : max_retries(max_retries_), initial_backoff_ms(std::min(initial_backoff_ms_, max_backoff_ms_)), max_backoff_ms(max_backoff_ms_)
     {
     }
 
-    UInt64 max_retries = 0; /// "max_retries = 0" means only one attempt.
-    UInt64 initial_backoff_ms = 100;
-    UInt64 max_backoff_ms = 5000;
+    UInt64 max_retries;
+    UInt64 initial_backoff_ms;
+    UInt64 max_backoff_ms;
 };
 
 class ZooKeeperRetriesControl
@@ -221,7 +220,6 @@ private:
             return false;
         }
 
-        /// Check if the query was cancelled.
         if (process_list_element)
             process_list_element->checkTimeLimit();
 
@@ -229,10 +227,6 @@ private:
         logLastError("will retry due to error");
         sleepForMilliseconds(current_backoff_ms);
         current_backoff_ms = std::min(current_backoff_ms * 2, retries_info.max_backoff_ms);
-
-        /// Check if the query was cancelled again after sleeping.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
 
         return true;
     }

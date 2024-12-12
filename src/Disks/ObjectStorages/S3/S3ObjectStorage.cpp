@@ -9,7 +9,6 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/IO/getThreadPoolReader.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>

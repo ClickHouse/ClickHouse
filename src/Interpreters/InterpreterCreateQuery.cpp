@@ -1467,7 +1467,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
+    if (!create.sql_security && create.supportSQLSecurity() && !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query])
         create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
@@ -1986,12 +1986,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// Avoid different table name on database replicas
             UInt16 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
             random_suffix = getHexUIntLowercase(hashed_zk_path);
-        }
-        else if (!current_context->getCurrentQueryId().empty())
-        {
-            random_suffix = getRandomASCIIString(/*length=*/2);
-            UInt8 hashed_query_id = sipHash64(current_context->getCurrentQueryId());
-            random_suffix += getHexUIntLowercase(hashed_query_id);
         }
         else
         {

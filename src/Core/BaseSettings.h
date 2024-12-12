@@ -2,7 +2,6 @@
 
 #include <unordered_map>
 #include <Core/SettingsFields.h>
-#include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <IO/Operators.h>
 #include <base/range.h>
@@ -21,27 +20,6 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
-
-struct BaseSettingsHelpers
-{
-    [[noreturn]] static void throwSettingNotFound(std::string_view name);
-    static void warningSettingNotFound(std::string_view name);
-
-    static void writeString(std::string_view str, WriteBuffer & out);
-    static String readString(ReadBuffer & in);
-
-    enum Flags : UInt64
-    {
-        IMPORTANT = 0x01,
-        CUSTOM = 0x02,
-        TIER = 0x0c, /// 0b1100 == 2 bits
-        /// If adding new flags, consider first if Tier might need more bits
-    };
-
-    static SettingsTierType getTier(UInt64 flags);
-    static void writeFlags(Flags flags, WriteBuffer & out);
-    static UInt64 readFlags(ReadBuffer & in);
-};
 
 /** Template class to define collections of settings.
   * If you create a new setting, please also add it to ./utils/check-style/check-settings-style
@@ -160,7 +138,7 @@ public:
         const char * getTypeName() const;
         const char * getDescription() const;
         bool isCustom() const;
-        SettingsTierType getTier() const;
+        bool isObsolete() const;
 
         bool operator==(const SettingFieldRef & other) const { return (getName() == other.getName()) && (getValue() == other.getValue()); }
         bool operator!=(const SettingFieldRef & other) const { return !(*this == other); }
@@ -245,6 +223,24 @@ private:
     const SettingFieldCustom * tryGetCustomSetting(std::string_view name) const;
 
     std::conditional_t<Traits::allow_custom_settings, CustomSettingMap, boost::blank> custom_settings_map;
+};
+
+struct BaseSettingsHelpers
+{
+    [[noreturn]] static void throwSettingNotFound(std::string_view name);
+    static void warningSettingNotFound(std::string_view name);
+
+    static void writeString(std::string_view str, WriteBuffer & out);
+    static String readString(ReadBuffer & in);
+
+    enum Flags : UInt64
+    {
+        IMPORTANT = 0x01,
+        CUSTOM = 0x02,
+        OBSOLETE = 0x04,
+    };
+    static void writeFlags(Flags flags, WriteBuffer & out);
+    static Flags readFlags(ReadBuffer & in);
 };
 
 template <typename TTraits>
@@ -481,7 +477,7 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         size_t index = accessor.find(name);
 
         using Flags = BaseSettingsHelpers::Flags;
-        UInt64 flags{0};
+        Flags flags{0};
         if (format >= SettingsWriteFormat::STRINGS_WITH_FLAGS)
             flags = BaseSettingsHelpers::readFlags(in);
         bool is_important = (flags & Flags::IMPORTANT);
@@ -801,14 +797,14 @@ bool BaseSettings<TTraits>::SettingFieldRef::isCustom() const
 }
 
 template <typename TTraits>
-SettingsTierType BaseSettings<TTraits>::SettingFieldRef::getTier() const
+bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return SettingsTierType::PRODUCTION;
+            return false;
     }
-    return accessor->getTier(index);
+    return accessor->isObsolete(index);
 }
 
 using AliasMap = std::unordered_map<std::string_view, std::string_view>;
@@ -839,8 +835,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             const String & getName(size_t index) const { return field_infos[index].name; } \
             const char * getTypeName(size_t index) const { return field_infos[index].type; } \
             const char * getDescription(size_t index) const { return field_infos[index].description; } \
-            bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
-            SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
+            bool isImportant(size_t index) const { return field_infos[index].is_important; } \
+            bool isObsolete(size_t index) const { return field_infos[index].is_obsolete; } \
             Field castValueUtil(size_t index, const Field & value) const { return field_infos[index].cast_value_util_function(value); } \
             String valueToStringUtil(size_t index, const Field & value) const { return field_infos[index].value_to_string_util_function(value); } \
             Field stringToValueUtil(size_t index, const String & str) const { return field_infos[index].string_to_value_util_function(str); } \
@@ -860,7 +856,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 String name; \
                 const char * type; \
                 const char * description; \
-                UInt64 flags; \
+                bool is_important; \
+                bool is_obsolete; \
                 Field (*cast_value_util_function)(const Field &); \
                 String (*value_to_string_util_function)(const Field &); \
                 Field (*string_to_value_util_function)(const String &); \
@@ -971,8 +968,8 @@ struct DefineAliases
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \
-        FieldInfo{#NAME, #TYPE, DESCRIPTION, \
-            static_cast<UInt64>(FLAGS), \
+        FieldInfo{#NAME, #TYPE, DESCRIPTION, (FLAGS) & IMPORTANT, \
+            static_cast<bool>((FLAGS) & BaseSettingsHelpers::Flags::OBSOLETE), \
             [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
             [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
             [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \

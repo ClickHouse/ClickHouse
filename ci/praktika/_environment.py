@@ -29,9 +29,9 @@ class _Environment(MetaClasses.Serializable):
     INSTANCE_TYPE: str
     INSTANCE_ID: str
     INSTANCE_LIFE_CYCLE: str
-    LOCAL_RUN: bool = False
     PARAMETER: Any = None
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
+    LOCAL_RUN_PARAM: str = ""
     name = "environment"
 
     @classmethod
@@ -184,9 +184,6 @@ class _Environment(MetaClasses.Serializable):
                 break
         REPORT_URL = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={self.PR_NUMBER}&sha={self.SHA}&name_0={urllib.parse.quote(self.WORKFLOW_NAME, safe='')}&name_1={urllib.parse.quote(self.JOB_NAME, safe='')}"
         return REPORT_URL
-
-    def is_local_run(self):
-        return self.LOCAL_RUN
 
 
 def _to_object(data):

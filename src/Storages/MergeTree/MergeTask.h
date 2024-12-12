@@ -5,7 +5,6 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
-#include <Formats/MarkInCompressedFile.h>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -133,13 +132,6 @@ public:
         return nullptr;
     }
 
-    PlainMarksByName releaseCachedMarks() const
-    {
-        PlainMarksByName res;
-        std::swap(global_ctx->cached_marks, res);
-        return res;
-    }
-
     bool execute();
 
 private:
@@ -190,6 +182,7 @@ private:
         NamesAndTypesList merging_columns{};
         NamesAndTypesList storage_columns{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
+        ColumnsWithTypeAndName gathered_columns_samples{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
@@ -217,7 +210,6 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
-        PlainMarksByName cached_marks;
 
         MergeTreeTransactionPtr txn;
         bool need_prefix;

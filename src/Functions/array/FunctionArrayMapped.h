@@ -282,9 +282,7 @@ public:
             if (!column_with_type_and_name.column)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
-            auto column_function_materialized = column_with_type_and_name.column->convertToFullColumnIfConst();
-
-            const auto * column_function = typeid_cast<const ColumnFunction *>(column_function_materialized.get());
+            const auto * column_function = typeid_cast<const ColumnFunction *>(column_with_type_and_name.column.get());
             if (!column_function)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 

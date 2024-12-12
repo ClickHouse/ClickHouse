@@ -184,7 +184,7 @@ public:
 
     /** If function isSuitableForConstantFolding then, this method will be called during query analysis
       * if some arguments are constants. For example logical functions (AndFunction, OrFunction) can
-      * return the result based on some constant arguments.
+      * return they result based on some constant arguments.
       * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForNothing,
       * useDefaultImplementationForConstants, useDefaultImplementationForLowCardinality are not applied.
       */

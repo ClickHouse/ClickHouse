@@ -1085,7 +1085,7 @@ public:
         }
 
         auto & col_lc = assert_cast<ColumnLowCardinality &>(column);
-        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn()->cloneEmpty())->assumeMutable();
+        auto tmp_nested = col_lc.getDictionary().getNestedColumn()->cloneEmpty();
         if (!nested->insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
             return false;
 

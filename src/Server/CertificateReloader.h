@@ -77,9 +77,6 @@ public:
     /// Handle configuration reload for default path
     void tryLoad(const Poco::Util::AbstractConfiguration & config);
 
-    /// Handle configuration reload client for default path
-    void tryLoadClient(const Poco::Util::AbstractConfiguration & config);
-
     /// Handle configuration reload
     void tryLoad(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix);
 

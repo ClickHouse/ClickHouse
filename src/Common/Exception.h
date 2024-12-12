@@ -7,7 +7,6 @@
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
-#include <Core/LogsLevel.h>
 
 #include <cerrno>
 #include <exception>
@@ -277,10 +276,10 @@ using Exceptions = std::vector<std::exception_ptr>;
   * Can be used in destructors in the catch-all block.
   */
 /// TODO: Logger leak constexpr overload
-void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
-void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
-void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "");
+void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "");
 
 
 /** Prints current exception in canonical format.
@@ -330,7 +329,7 @@ void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const st
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace = false);
-std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool check_embedded_stacktrace = false);
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
 
 
 template <typename T>

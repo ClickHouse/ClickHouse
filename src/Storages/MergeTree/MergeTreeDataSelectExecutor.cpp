@@ -71,7 +71,10 @@ namespace Setting
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
     extern const SettingsInt64 max_partitions_to_read;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -80,6 +83,8 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
 }
 
 namespace MergeTreeSetting
@@ -631,17 +636,39 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes,
     bool find_exact_ranges)
 {
-    RangesInDataParts parts_with_ranges;
-    parts_with_ranges.resize(parts.size());
     const Settings & settings = context->getSettingsRef();
+
+    if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
+    {
+        // Skip index analysis and return parts with all marks
+        // The coordinator will chose ranges to read for workers based on index analysis on its side
+        RangesInDataParts parts_with_ranges;
+        parts_with_ranges.reserve(parts.size());
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        {
+            const auto & part = parts[part_index];
+            parts_with_ranges.emplace_back(part, part_index, MarkRanges{{0, part->getMarksCount()}});
+        }
+        return parts_with_ranges;
+    }
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
-        const auto & indices_str = settings[Setting::force_data_skipping_indices].toString();
-        auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
+        const auto & indices = settings[Setting::force_data_skipping_indices].toString();
+
+        Strings forced_indices;
+        {
+            Tokens tokens(indices.data(), indices.data() + indices.size(), settings[Setting::max_query_size]);
+            IParser::Pos pos(
+                tokens, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
+            Expected expected;
+            if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
+                throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse force_data_skipping_indices ('{}')", indices);
+        }
 
         if (forced_indices.empty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices);
 
         std::unordered_set<std::string> useful_indices_names;
         for (const auto & useful_index : skip_indexes.useful_indices)
@@ -672,6 +699,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
+
+    RangesInDataParts parts_with_ranges(parts.size());
 
     /// Let's find what range to read from each part.
     {

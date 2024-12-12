@@ -348,9 +348,9 @@ class Utils:
         return multiprocessing.cpu_count()
 
     @staticmethod
-    def raise_with_error(error_message, stdout="", stderr="", ex=None):
+    def raise_with_error(error_message, stdout="", stderr=""):
         Utils.print_formatted_error(error_message, stdout, stderr)
-        raise ex or RuntimeError()
+        raise
 
     @staticmethod
     def timestamp():

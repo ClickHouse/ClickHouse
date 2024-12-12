@@ -54,7 +54,7 @@ Parameters:
 - `distance_function`: either `L2Distance` (the [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance) - the length of a
   line between two points in Euclidean space), or `cosineDistance` (the [cosine
   distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)- the angle between two non-zero vectors).
-- `quantization`: either `f64`, `f32`, `f16`, `bf16`, or `i8` for storing vectors with reduced precision (optional, default: `bf16`)
+- `quantization`: either `f64`, `f32`, `f16`, `bf16`, or `i8` for storing the vector with reduced precision (optional, default: `bf16`)
 - `hnsw_max_connections_per_layer`: the number of neighbors per HNSW graph node, also known as `M` in the [HNSW
   paper](https://doi.org/10.1109/TPAMI.2018.2889473) (optional, default: 32)
 - `hnsw_candidate_list_size_for_construction`: the size of the dynamic candidate list when constructing the HNSW graph, also known as
@@ -92,8 +92,8 @@ Vector similarity indexes currently support two distance functions:
 - `cosineDistance`, also called cosine similarity, is the cosine of the angle between two (non-zero) vectors
   ([Wikipedia](https://en.wikipedia.org/wiki/Cosine_similarity)).
 
-Vector similarity indexes allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16`, `bf16`,
-and `i8`. If no scalar kind was specified during index creation, `bf16` is used as default.
+Vector similarity indexes allows storing the vectors in reduced precision formats. Supported scalar kinds are `f64`, `f32`, `f16` or `i8`.
+If no scalar kind was specified during index creation, `f16` is used as default.
 
 For normalized data, `L2Distance` is usually a better choice, otherwise `cosineDistance` is recommended to compensate for scale. If no
 distance function was specified during index creation, `L2Distance` is used as default.

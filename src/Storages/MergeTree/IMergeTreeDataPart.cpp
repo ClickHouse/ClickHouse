@@ -544,6 +544,14 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return it == serializations.end() ? nullptr : it->second;
 }
 
+bool IMergeTreeDataPart::isMovingPart() const
+{
+    fs::path part_directory_path = getDataPartStorage().getRelativePath();
+    if (part_directory_path.filename().empty())
+        part_directory_path = part_directory_path.parent_path();
+    return part_directory_path.parent_path().filename() == "moving";
+}
+
 void IMergeTreeDataPart::removeIfNeeded()
 {
     assert(assertHasValidVersionMetadata());
@@ -568,10 +576,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set",
                                 getDataPartStorage().getPartDirectory(), name);
 
-            fs::path part_directory_path = getDataPartStorage().getRelativePath();
-            if (part_directory_path.filename().empty())
-                part_directory_path = part_directory_path.parent_path();
-            bool is_moving_part = part_directory_path.parent_path().filename() == "moving";
+            bool is_moving_part = isMovingPart();
             if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
             {
                 LOG_ERROR(
@@ -622,15 +627,6 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     for (const ColumnPtr & column : *index)
         res += column->allocatedBytes();
     return res;
-}
-
-UInt64 IMergeTreeDataPart::getIndexGranularityBytes() const
-{
-    return index_granularity.getBytesSize();
-}
-UInt64 IMergeTreeDataPart::getIndexGranularityAllocatedBytes() const
-{
-    return index_granularity.getBytesAllocated();
 }
 
 void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
@@ -744,9 +740,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadUUID();
         loadColumns(require_columns_checksums);
         loadChecksums(require_columns_checksums);
-
         loadIndexGranularity();
-        index_granularity.shrinkToFitInMemory();
 
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
             getIndex();
@@ -844,7 +838,7 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(const Stri
 {
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
-    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings());
+    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage);
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this);
 }
 
@@ -2263,18 +2257,18 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
         proj_part->checkConsistency(require_part_metadata);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample)
 {
-    calculateColumnsSizesOnDisk();
+    calculateColumnsSizesOnDisk(columns_sample);
     calculateSecondaryIndicesSizesOnDisk();
 }
 
-void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
+void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> columns_sample)
 {
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
-    calculateEachColumnSizes(columns_sizes, total_columns_size);
+    calculateEachColumnSizes(columns_sizes, total_columns_size, columns_sample);
 }
 
 void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
@@ -2521,22 +2515,24 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+    MergeTreeReaderSettings settings;
+    settings.can_read_part_without_marks = true;
 
     MergeTreeReaderPtr reader = getReader(
         cols,
         storage_snapshot_ptr,
-        MarkRanges{MarkRange(0, 1)},
+        MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
         std::make_shared<AlterConversions>(),
-        MergeTreeReaderSettings{},
+        settings,
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
     Columns result;
     result.resize(1);
-    reader->readRows(0, 1, false, 0, result);
+    reader->readRows(0, total_mark, false, 0, result);
     return result[0];
 }
 

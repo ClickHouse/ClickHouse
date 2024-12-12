@@ -243,8 +243,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         }
     }
 
-    history_max_entries = config().getUInt("history-max-entries", 1000000);
-
     String default_log_level;
     if (config().has("query"))
         /// We don't want to see any information log in query mode, unless it was set explicitly
@@ -321,7 +319,6 @@ void KeeperClient::runInteractiveReplxx()
     ReplxxLineReader lr(
         suggest,
         history_file,
-        history_max_entries,
         /* multiline= */ false,
         /* ignore_shell_suspend= */ false,
         query_extenders,
@@ -448,8 +445,7 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        auto code = DB::getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
+        return 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -459,7 +455,6 @@ int mainEntryClickHouseKeeperClient(int argc, char ** argv)
     catch (...)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        auto code = DB::getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
+        return 1;
     }
 }

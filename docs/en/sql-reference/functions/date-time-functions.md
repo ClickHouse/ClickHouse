@@ -4773,7 +4773,7 @@ Result:
 
 ## toUTCTimestamp
 
-Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp. This function is mainly included for compatibility with Apache Spark and similar frameworks.
+Convert DateTime/DateTime64 type value from other time zone to UTC timezone timestamp
 
 **Syntax**
 
@@ -4799,14 +4799,14 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai');
 Result:
 
 ``` text
-┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')┐
+┌─toUTCTimestamp(toDateTime('2023-03-16'),'Asia/Shanghai')┐
 │                                     2023-03-15 16:00:00 │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## fromUTCTimestamp
 
-Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp.  This function is mainly included for compatibility with Apache Spark and similar frameworks.
+Convert DateTime/DateTime64 type value from UTC timezone to other time zone timestamp
 
 **Syntax**
 
@@ -4832,7 +4832,7 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 Result:
 
 ``` text
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3),'Asia/Shanghai')─┐
 │                                                 2023-03-16 18:00:00.000 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

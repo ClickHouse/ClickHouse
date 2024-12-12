@@ -55,8 +55,8 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         serialized_query.data() + serialized_query.size(),
         "after altering table ",
         0,
-        context->getSettingsRef()[Setting::max_parser_backtracks],
-        context->getSettingsRef()[Setting::max_parser_depth]);
+        context->getSettingsRef()[Setting::max_parser_depth],
+        context->getSettingsRef()[Setting::max_parser_backtracks]);
     const auto & new_query = new_query_raw->as<const ASTCreateQuery &>();
     /// If there are no columns, then there is nothing much we can do
     if (!new_query.columns_list || !new_query.columns_list->columns)

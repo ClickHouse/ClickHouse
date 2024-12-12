@@ -332,7 +332,7 @@
 	url = https://github.com/ClickHouse/usearch.git
 [submodule "contrib/SimSIMD"]
 	path = contrib/SimSIMD
-	url = https://github.com/ClickHouse/SimSIMD.git
+	url = https://github.com/ashvardanian/SimSIMD.git
 [submodule "contrib/FP16"]
 	path = contrib/FP16
 	url = https://github.com/Maratyszcza/FP16.git
@@ -348,6 +348,9 @@
 [submodule "contrib/idna"]
 	path = contrib/idna
 	url = https://github.com/ada-url/idna.git
+[submodule "contrib/google-cloud-cpp"]
+	path = contrib/google-cloud-cpp
+	url = https://github.com/ClickHouse/google-cloud-cpp.git
 [submodule "contrib/rust_vendor"]
 	path = contrib/rust_vendor
 	url = https://github.com/ClickHouse/rust_vendor.git
