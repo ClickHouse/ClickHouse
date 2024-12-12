@@ -376,6 +376,11 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false, profile);
+    if constexpr (with_profile)
+    {
+        for (const auto & arg_profile : profile->arguments_profiles)
+            profile->elapsed_ns += arg_profile.second.elapsed_ns;
+    }
     if (res.column->getDataType() != res.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

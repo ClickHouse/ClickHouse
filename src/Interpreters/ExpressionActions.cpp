@@ -380,6 +380,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         if (node.children.empty())
             ready_nodes.emplace(&node);
     }
+    std::unordered_map<const Node *, size_t> node_in_actions_pos;
 
     /// Every argument will have fixed position in columns list.
     /// If argument is removed, it's position may be reused by other action.
@@ -423,6 +424,9 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             ExpressionActions::Argument argument;
             argument.pos = arg.position;
             argument.needed_later = arg_info.used_in_result || arg.num_created_parents != arg_info.parents.size();
+            if (!node_in_actions_pos.contains(arg.node))
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid node");
+            argument.actions_pos = node_in_actions_pos[arg.node];
 
             if (!argument.needed_later)
                 free_positions.push(argument.pos);
@@ -440,7 +444,12 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             //required_columns.push_back({node->result_name, node->result_type});
         }
 
-        actions.push_back({node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        IFunctionBase::ShortCircuitSettings short_circuit_settings;
+        bool is_short_circuit_node = node->type == ActionsDAG::ActionType::FUNCTION &&
+                    node->function_base->isShortCircuit(short_circuit_settings, node->children.size()) &&
+                    !node->children.empty();
+        node_in_actions_pos[node] = actions.size();
+        actions.emplace_back(node, arguments, free_position, lazy_executed_nodes.contains(node), is_short_circuit_node);
 
         for (const auto & parent : cur_info.parents)
         {
@@ -572,8 +581,8 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
     }
 }
 
-namespace
-{
+//namespace
+//{
     /// This struct stores context needed to execute actions.
     ///
     /// Execution model is following:
@@ -590,9 +599,9 @@ namespace
         std::vector<ssize_t> inputs_pos = {};
         size_t num_rows = 0;
     };
-}
+//}
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
+void ExpressionActions::executeAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -638,8 +647,14 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
                 if (action.node->is_function_compiled)
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-
-                res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+                if (action.is_short_circuit_node)
+                {
+                    FunctionExecuteProfile profile;
+                    res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run, &profile);
+                    updateActionsProfile(action, profile);
+                }
+                else
+                    res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
                 if (res_column.column->getDataType() != res_column.type->getColumnType())
                 {
                     throw Exception(
@@ -739,7 +754,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
 {
     ExecutionContext execution_context
     {
@@ -769,7 +784,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
 
     execution_context.columns.resize(num_columns);
 
-    for (const auto & action : actions)
+    for (auto & action : actions)
     {
         try
         {
@@ -815,7 +830,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input)
 {
     size_t num_rows = block.rows();
 
@@ -843,6 +858,23 @@ void ExpressionActions::assertDeterministic() const
     getActionsDAG().assertDeterministic();
 }
 
+void ExpressionActions::updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile)
+{
+    action.elapsed_ns += profile.elapsed_ns;
+    action.input_rows += profile.input_rows;
+    action.valid_output_rows += profile.valid_output_rows;
+    for (const auto & [arg_pos, arg_profile] : profile.arguments_profiles)
+    {
+        const auto & arg = action.arguments[arg_pos];
+        auto & arg_action = actions[arg.actions_pos];
+        updateActionsProfile(arg_action, arg_profile);
+    }
+}
+
+void ExpressionActions::dumpLazyNodeProfile() const
+{
+    
+}
 
 NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {

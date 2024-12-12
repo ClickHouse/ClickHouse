@@ -25,6 +25,8 @@ using JoinPtr = std::shared_ptr<IJoin>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+struct ExecutionContext;
+struct FunctionExecuteProfile;
 
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
@@ -42,6 +44,7 @@ public:
         /// True if there is another action which will use this column.
         /// Otherwise column will be removed.
         bool needed_later = false;
+        size_t actions_pos = 0;
     };
 
     using Arguments = std::vector<Argument>;
@@ -55,6 +58,17 @@ public:
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         bool is_lazy_executed;
+        bool is_short_circuit_node;
+        Action(const Node * node_, const Arguments & arguments_, size_t result_position_, bool is_lazy_executed_, bool is_short_circuit_node_)
+            : node(node_),
+            arguments(arguments_),
+            result_position(result_position_),
+            is_lazy_executed(is_lazy_executed_),
+            is_short_circuit_node(is_short_circuit_node_)
+        {}
+        size_t elapsed_ns = 0;
+        size_t input_rows = 0;
+        size_t valid_output_rows = 0;
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -108,9 +122,9 @@ public:
     /// preliminary query filtering (filterBlockWithExpression()), because they just
     /// pass available virtual columns, which cannot be moved in case they are
     /// used multiple times.
-    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false);
     /// The same, but without `num_rows`. If result block is empty, adds `_dummy` column to keep block size.
-    void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false);
 
     bool hasArrayJoin() const;
     void assertDeterministic() const;
@@ -137,6 +151,11 @@ private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
+
+    void executeAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input);
+
+    void updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
+    void dumpLazyNodeProfile() const;
 };
 
 

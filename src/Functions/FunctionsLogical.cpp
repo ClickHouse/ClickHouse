@@ -582,8 +582,6 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
-    executeColumnIfNeeded(arguments[0]);
-
     /// Let's denote x_i' = maskedExecute(x_i, mask).
     /// 1) AND(x_0, x_1, x_2, ..., x_n)
     /// We will support mask_i = x_0 & x_1 & ... & x_i.
@@ -608,6 +606,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
     Stopwatch watch;
     bool inverted = Name::name != NameAnd::name;
     UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
+    size_t rows = arguments[0].column->size();
     IColumn::Filter mask(arguments[0].column->size(), 1);
 
     /// If result is nullable, we need to create null bytemap of the resulting column.
@@ -617,12 +616,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
     MaskInfo mask_info{.has_ones = true, .has_zeros = false, .ones_count = arguments[0].column->size()};
-    for (size_t i = 0; i <= arguments.size(); ++i)
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-
         /// If mask doesn't have ones, we don't need to execute the rest arguments,
         /// because the result won't change.
-        if (!mask_info.has_ones || i == arguments.size())
+        if (!mask_info.has_ones)
             break;
         if constexpr (with_profile)
         {
@@ -655,17 +653,18 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
     auto res = ColumnUInt8::create();
     res->getData() = std::move(mask);
 
+    if constexpr (with_profile)
+    {
+        profile->elapsed_ns = watch.elapsed();
+        profile->input_rows = rows;
+        profile->valid_output_rows = res->size();
+    }
+
     if (!nulls)
         return res;
 
     auto bytemap = ColumnUInt8::create();
     bytemap->getData() = std::move(*nulls);
-    if constexpr (with_profile)
-    {
-        profile->elapsed_ns = watch.elapsed();
-        profile->input_rows = arguments[0].column->size();
-        profile->input_rows = res->size();
-    }
     return ColumnNullable::create(std::move(res), std::move(bytemap));
 }
 template <typename Impl, typename Name>
