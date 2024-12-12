@@ -1847,7 +1847,7 @@ private:
         write_buf.reset();
     }
 
-    void cancelBuffers()
+    void cancelBuffers() noexcept
     {
         if (writer)
             writer->cancel();
