@@ -71,15 +71,15 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * This implementation is not interpolated and is different from computing the AUC with the trapezoidal rule,
   *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   *
-  * 
+  *
   * A third argument is optional and is used to calculate the PR AUC distributedly.
   *
   * The PR AUC can be calculated distributedly as long as the data is partitioned by scores.
-  *  The same score should not appear in different partitions. Also, each partition must know 
+  *  The same score should not appear in different partitions. Also, each partition must know
   *  how many true positives and total labels are there on higher scores partitions.
   *
   * After calculating the partial PR AUC for each partition, the whole PR AUC can be obtained by summing the partial areas.
-  * 
+  *
   * The needed information is passed as the third argument, which is an Array of three integers:
   * - higher_partitions_tp: how many positive labels are there on higher scores partitions
   * - higher_partitions_total: how many labels are there on higher scores partitions
@@ -123,7 +123,7 @@ private:
         /// Sorting scores in descending order to traverse the Precision Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
-        /* If the PR AUC is being partially calculated, we need to account for positive labels and total labels from partitions with higher scores 
+        /* If the PR AUC is being partially calculated, we need to account for positive labels and total labels from partitions with higher scores
          * A higher score partition will have all its labels predicted as positive when considering thresholds equal to current partition's scores
          * For that reason, we consider the following offsets:
          * - higher_partitions_tp: the number of positive labels on higher scores partitions increases the true positives count
