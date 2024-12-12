@@ -44,12 +44,12 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     }
     else
     {
-        const char * servers[configuration.servers.size()];
+        std::vector<const char *> servers(configuration.servers.size());
         for (size_t i = 0; i < configuration.servers.size(); ++i)
         {
             servers[i] = configuration.servers[i].c_str();
         }
-        natsOptions_SetServers(options.get(), servers, static_cast<int>(configuration.servers.size()));
+        natsOptions_SetServers(options.get(), servers.data(), static_cast<int>(configuration.servers.size()));
     }
 
     static constexpr int infinite_reconnect_count = -1;
