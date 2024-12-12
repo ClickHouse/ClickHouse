@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/like.h>
 #include <Functions/array/arrayConcat.h>
 #include <Functions/array/arrayFilter.h>
@@ -51,6 +52,8 @@ public:
 
     bool isVariadic() const override { return impl.isVariadic(); }
     size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
+    bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
 
@@ -184,7 +187,7 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
 template <typename Name, size_t position>
 struct MapToSubcolumnAdapter
 {
-    static_assert(position <= 1);
+    static_assert(position <= 1, "position of Map subcolumn must be 0 or 1");
 
     static void extractNestedTypes(DataTypes & types)
     {
@@ -357,7 +360,7 @@ struct NameMapValues { static constexpr auto name = "mapValues"; };
 using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapValues, 1>, NameMapValues>;
 
 struct NameMapContains { static constexpr auto name = "mapContains"; };
-using FunctionMapContains = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContains>, MapToSubcolumnAdapter<NameMapKeys, 0>, NameMapContains>;
+using FunctionMapContains = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContains>, MapToSubcolumnAdapter<NameMapContains, 0>, NameMapContains>;
 
 struct NameMapFilter { static constexpr auto name = "mapFilter"; };
 using FunctionMapFilter = FunctionMapToArrayAdapter<FunctionArrayFilter, MapToNestedAdapter<NameMapFilter>, NameMapFilter>;

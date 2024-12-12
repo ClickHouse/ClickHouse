@@ -69,6 +69,15 @@ public:
         return dictionary_id.getNameForLogs();
     }
 
+    /// Returns fully qualified unquoted dictionary name
+    std::string getQualifiedName() const
+    {
+        std::lock_guard lock{mutex};
+        if (dictionary_id.database_name.empty())
+            return dictionary_id.table_name;
+        return dictionary_id.database_name + "." + dictionary_id.table_name;
+    }
+
     StorageID getDictionaryID() const
     {
         std::lock_guard lock{mutex};
@@ -154,8 +163,8 @@ public:
 
             auto & key_column_to_cast = key_columns[key_attribute_type_index];
             ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-            auto casted_column = castColumnAccurate(column_to_cast, key_attribute_type);
-            key_column_to_cast = std::move(casted_column);
+            auto cast_column = castColumnAccurate(column_to_cast, key_attribute_type);
+            key_column_to_cast = std::move(cast_column);
             key_type = key_attribute_type;
         }
     }

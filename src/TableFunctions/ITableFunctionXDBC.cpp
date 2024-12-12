@@ -1,8 +1,10 @@
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -22,6 +24,13 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool external_table_functions_use_nulls;
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsBool odbc_bridge_use_connection_pooling;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -133,7 +142,11 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
 {
     if (!helper)
     {
-        helper = createBridgeHelper(context, context->getSettingsRef().http_receive_timeout.value, connection_string, context->getSettingsRef().odbc_bridge_use_connection_pooling.value);
+        helper = createBridgeHelper(
+            context,
+            context->getSettingsRef()[Setting::http_receive_timeout].value,
+            connection_string,
+            context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
         helper->startBridgeSync();
     }
 }
@@ -149,7 +162,7 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
         columns_info_uri.addQueryParameter("schema", schema_name);
     columns_info_uri.addQueryParameter("table", remote_table_name);
 
-    bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
+    bool use_nulls = context->getSettingsRef()[Setting::external_table_functions_use_nulls];
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls", toString(use_nulls));
 
     Poco::Net::HTTPBasicCredentials credentials{};
@@ -158,7 +171,7 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(
                         context->getSettingsRef(),
-                        context->getServerSettings().keep_alive_timeout))
+                        context->getServerSettings()))
                    .create(credentials);
 
     std::string columns_info;

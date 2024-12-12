@@ -112,8 +112,7 @@ bool AtomicBitSet::set(size_t i, bool val) const
 {
     if (val)
         return set(i);
-    else
-        return unset(i);
+    return unset(i);
 }
 
 bool AtomicBitSet::unset(size_t i) const
@@ -424,7 +423,7 @@ static void logUnexpectedSyscallError(std::string name)
 {
     std::string message = fmt::format("{} failed: {}", name, errnoToString());
     LOG_WARNING(&Poco::Logger::get("PageCache"), "{}", message);
-#if defined(ABORT_ON_LOGICAL_ERROR)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     volatile bool true_ = true;
     if (true_) // suppress warning about missing [[noreturn]]
         abortOnFailedAssertion(message);
@@ -526,7 +525,7 @@ PageChunk * PageCache::getFreeChunk()
     PageChunk * chunk = &lru.front();
     lru.erase(lru.iterator_to(*chunk));
 
-    size_t prev_pin_count = chunk->pin_count.fetch_add(1);
+    size_t prev_pin_count = chunk->pin_count.fetch_add(1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(prev_pin_count == 0);
 
     evictChunk(chunk);
@@ -538,7 +537,7 @@ void PageCache::evictChunk(PageChunk * chunk)
 {
     if (chunk->key.has_value())
     {
-        size_t erased = chunk_by_key.erase(chunk->key.value());
+        size_t erased = chunk_by_key.erase(chunk->key.value());  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(erased);
         chunk->key.reset();
     }

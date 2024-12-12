@@ -57,7 +57,8 @@ option(WITH_COVERAGE "Instrumentation for code coverage with default implementat
 
 if (WITH_COVERAGE)
     message (STATUS "Enabled instrumentation for code coverage")
-    set(COVERAGE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
+    set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 endif()
 
 option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)

@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
+#include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -10,12 +11,14 @@ class IMergingAlgorithmWithSharedChunks : public IMergingAlgorithm
 {
 public:
     IMergingAlgorithmWithSharedChunks(
-        Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs);
+        Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
     size_t prev_unequal_column = 0;
+    MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
+    
 private:
     Block header;
     SortDescription description;
@@ -26,7 +29,6 @@ private:
     SortCursorImpls cursors;
 
 protected:
-
     struct Source
     {
         detail::SharedChunkPtr chunk;
@@ -43,6 +45,8 @@ protected:
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf = nullptr;
+
+    std::unique_ptr<MergedData> merged_data;
 
     using RowRef = detail::RowRefWithOwnedChunk;
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }

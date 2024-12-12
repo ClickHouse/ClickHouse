@@ -43,9 +43,9 @@ protected:
         return true;
     }
 
-private:
     Block header;
 
+private:
     /// Inputs currently being merged.
     Inputs current_inputs;
     SortCursorImpls cursors;

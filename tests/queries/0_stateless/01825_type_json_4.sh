@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_json_4"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_4(id UInt64, data JSON) \
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_4(id UInt64, data Object('json')) \
 ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
 
 echo '{"id": 1, "data": {"k1": "v1"}}, {"id": 2, "data": {"k1": [1, 2]}}' \

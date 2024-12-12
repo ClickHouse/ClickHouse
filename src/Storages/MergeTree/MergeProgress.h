@@ -8,10 +8,10 @@
 
 namespace ProfileEvents
 {
-    extern const Event MergesTimeMilliseconds;
     extern const Event MergedUncompressedBytes;
     extern const Event MergedRows;
-    extern const Event Merge;
+    extern const Event MutatedRows;
+    extern const Event MutatedUncompressedBytes;
 }
 
 namespace DB
@@ -63,18 +63,17 @@ public:
     void updateWatch()
     {
         UInt64 watch_curr_elapsed = merge_list_element_ptr->watch.elapsed();
-        ProfileEvents::increment(ProfileEvents::MergesTimeMilliseconds, (watch_curr_elapsed - watch_prev_elapsed) / 1000000);
         watch_prev_elapsed = watch_curr_elapsed;
     }
 
-    void operator() (const Progress & value)
+    void operator()(const Progress & value)
     {
-        ProfileEvents::increment(ProfileEvents::MergedUncompressedBytes, value.read_bytes);
-        if (stage.is_first)
-        {
-            ProfileEvents::increment(ProfileEvents::MergedRows, value.read_rows);
-            ProfileEvents::increment(ProfileEvents::Merge);
-        }
+        if (merge_list_element_ptr->is_mutation)
+            updateProfileEvents(value, ProfileEvents::MutatedRows, ProfileEvents::MutatedUncompressedBytes);
+        else
+            updateProfileEvents(value, ProfileEvents::MergedRows, ProfileEvents::MergedUncompressedBytes);
+
+
         updateWatch();
 
         merge_list_element_ptr->bytes_read_uncompressed += value.read_bytes;
@@ -89,6 +88,14 @@ public:
                 stage.initial_progress + stage.weight * stage.rows_read / stage.total_rows,
                 std::memory_order_relaxed);
         }
+    }
+
+private:
+    void updateProfileEvents(const Progress & value, ProfileEvents::Event rows_event, ProfileEvents::Event bytes_event) const
+    {
+        ProfileEvents::increment(bytes_event, value.read_bytes);
+        if (stage.is_first)
+            ProfileEvents::increment(rows_event, value.read_rows);
     }
 };
 

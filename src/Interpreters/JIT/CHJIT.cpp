@@ -119,9 +119,9 @@ public:
         return result;
     }
 
-    inline size_t getAllocatedSize() const { return allocated_size; }
+    size_t getAllocatedSize() const { return allocated_size; }
 
-    inline size_t getPageSize() const { return page_size; }
+    size_t getPageSize() const { return page_size; }
 
     ~PageArena()
     {
@@ -177,10 +177,10 @@ private:
         {
         }
 
-        inline void * base() const { return pages_base; }
-        inline size_t pagesSize() const { return pages_size; }
-        inline size_t pageSize() const { return page_size; }
-        inline size_t blockSize() const { return pages_size * page_size; }
+        void * base() const { return pages_base; }
+        size_t pagesSize() const { return pages_size; }
+        size_t pageSize() const { return page_size; }
+        size_t blockSize() const { return pages_size * page_size; }
 
     private:
         void * pages_base;
@@ -217,10 +217,8 @@ private:
 
             return static_cast<char *>(result);
         }
-        else
-        {
-            return nullptr;
-        }
+
+        return nullptr;
     }
 
     void allocateNextPageBlock(size_t size)
@@ -287,8 +285,7 @@ public:
     {
         if (is_read_only)
             return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
-        else
-            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+        return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
     }
 
     bool finalizeMemory(std::string *) override
@@ -298,7 +295,7 @@ public:
         return true;
     }
 
-    inline size_t allocatedSize() const
+    size_t allocatedSize() const
     {
         size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
         size_t code_size = ex_page_arena.getAllocatedSize();

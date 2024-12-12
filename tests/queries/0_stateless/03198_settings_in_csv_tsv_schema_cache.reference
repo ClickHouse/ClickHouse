@@ -1,0 +1,28 @@
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
+c3	Nullable(Int64)					
+a	Nullable(Int64)					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+2
+a	Nullable(Int64)					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+a	Nullable(String)					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+2
+a	Nullable(String)					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+a	Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64))					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+2
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
+c3	Nullable(Int64)					
+a	Nullable(Int64)					
+b	Nullable(Int64)					
+c	Nullable(Int64)					
+2

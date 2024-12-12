@@ -7,15 +7,15 @@ sidebar_label: Tuples
 ## tuple
 
 A function that allows grouping multiple columns.
-For columns with the types T1, T2, …, it returns a Tuple(T1, T2, …) type tuple containing these columns. There is no cost to execute the function.
+For columns C1, C2, ... with the types T1, T2, ..., it returns a named Tuple(C1 T1, C2 T2, ...) type tuple containing these columns if their names are unique and can be treated as unquoted identifiers, otherwise a Tuple(T1, T2, ...) is returned. There is no cost to execute the function.
 Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can’t be written to a table.
 
-The function implements the operator `(x, y, …)`.
+The function implements the operator `(x, y, ...)`.
 
 **Syntax**
 
 ``` sql
-tuple(x, y, …)
+tuple(x, y, ...)
 ```
 
 ## tupleElement
@@ -35,7 +35,7 @@ tupleElement(tuple, name, [, default_value])
 
 ## untuple
 
-Performs syntactic substitution of [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) elements in the call location.
+Performs syntactic substitution of [tuple](../data-types/tuple.md#tuplet1-t2) elements in the call location.
 
 The names of the result columns are implementation-specific and subject to change. Do not assume specific column names after `untuple`.
 
@@ -49,7 +49,7 @@ You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 **Arguments**
 
-- `x` — A `tuple` function, column, or tuple of elements. [Tuple](../../sql-reference/data-types/tuple.md).
+- `x` — A `tuple` function, column, or tuple of elements. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
@@ -111,7 +111,7 @@ Result:
 
 **See Also**
 
-- [Tuple](../../sql-reference/data-types/tuple.md)
+- [Tuple](../data-types/tuple.md)
 
 ## tupleHammingDistance
 
@@ -125,8 +125,8 @@ tupleHammingDistance(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 Tuples should have the same type of the elements.
 
@@ -134,7 +134,9 @@ Tuples should have the same type of the elements.
 
 - The Hamming distance.
 
-Type: The result type is calculated the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
+:::note
+The result type is calculated the same way it is for [Arithmetic functions](../../sql-reference/functions/arithmetic-functions.md), based on the number of elements in the input tuples.
+:::
 
 ``` sql
 SELECT
@@ -196,13 +198,11 @@ tupleToNameValuePairs(tuple)
 
 **Arguments**
 
-- `tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any types of values.
+- `tuple` — Named tuple. [Tuple](../data-types/tuple.md) with any types of values.
 
 **Returned value**
 
-- An array with (name, value) pairs.
-
-Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
+- An array with (name, value) pairs. [Array](../data-types/array.md)([Tuple](../data-types/tuple.md)([String](../data-types/string.md), ...)).
 
 **Example**
 
@@ -259,6 +259,60 @@ Result:
 └───────────────────────────────────────┘
 ```
 
+## tupleNames
+
+Converts a tuple into an array of column names. For a tuple in the form `Tuple(a T, b T, ...)`, it returns an array of strings representing the named columns of the tuple. If the tuple elements do not have explicit names, their indices will be used as the column names instead.
+
+**Syntax**
+
+``` sql
+tupleNames(tuple)
+```
+
+**Arguments**
+
+- `tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any types of values.
+
+**Returned value**
+
+- An array with strings.
+
+Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE tupletest (col Tuple(user_ID UInt64, session_ID UInt64)) ENGINE = Memory;
+
+INSERT INTO tupletest VALUES (tuple(1, 2));
+
+SELECT tupleNames(col) FROM tupletest;
+```
+
+Result:
+
+``` text
+┌─tupleNames(col)──────────┐
+│ ['user_ID','session_ID'] │
+└──────────────────────────┘
+```
+
+If you pass a simple tuple to the function, ClickHouse uses the indexes of the columns as their names:
+
+``` sql
+SELECT tupleNames(tuple(3, 2, 1));
+```
+
+Result:
+
+``` text
+┌─tupleNames((3, 2, 1))─┐
+│ ['1','2','3']         │
+└───────────────────────┘
+```
+
 ## tuplePlus
 
 Calculates the sum of corresponding values of two tuples of the same size.
@@ -273,14 +327,12 @@ Alias: `vectorSum`.
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the sum.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the sum. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -312,14 +364,12 @@ Alias: `vectorDifference`.
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of subtraction.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of subtraction. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -349,14 +399,12 @@ tupleMultiply(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the multiplication.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the multiplication. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -386,14 +434,12 @@ tupleDivide(tuple1, tuple2)
 
 **Arguments**
 
-- `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
-- `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple1` — First tuple. [Tuple](../data-types/tuple.md).
+- `tuple2` — Second tuple. [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of division.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of division. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -423,13 +469,11 @@ tupleNegate(tuple)
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
 
 **Returned value**
 
-- Tuple with the result of negation.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with the result of negation. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -459,14 +503,12 @@ tupleMultiplyByNumber(tuple, number)
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
-- `number` — Multiplier. [Int/UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
+- `number` — Multiplier. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 
 **Returned value**
 
-- Tuple with multiplied values.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with multiplied values. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -496,14 +538,12 @@ tupleDivideByNumber(tuple, number)
 
 **Arguments**
 
-- `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
-- `number` — Divider. [Int/UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Decimal](../../sql-reference/data-types/decimal.md).
+- `tuple` — [Tuple](../data-types/tuple.md).
+- `number` — Divider. [Int/UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Decimal](../data-types/decimal.md).
 
 **Returned value**
 
-- Tuple with divided values.
-
-Type: [Tuple](../../sql-reference/data-types/tuple.md).
+- Tuple with divided values. [Tuple](../data-types/tuple.md).
 
 **Example**
 
@@ -531,7 +571,7 @@ tupleConcat(tuples)
 
 **Arguments**
 
-- `tuples` – Arbitrary number of arguments of [Tuple](../../sql-reference/data-types/tuple.md) type.
+- `tuples` – Arbitrary number of arguments of [Tuple](../data-types/tuple.md) type.
 
 **Example**
 

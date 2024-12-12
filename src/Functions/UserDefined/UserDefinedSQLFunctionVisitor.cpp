@@ -24,91 +24,21 @@ namespace ErrorCodes
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
 {
-    if (!ast)
-    {
-        chassert(false);
-        return;
-    }
+    chassert(ast);
 
-    /// FIXME: this helper should use updatePointerToChild(), but
-    /// forEachPointerToChild() is not implemented for ASTColumnDeclaration
-    /// (and also some members should be adjusted for this).
-    const auto visit_child_with_shared_ptr = [&](ASTPtr & child)
+    for (auto & child : ast->children)
     {
         if (!child)
             return;
 
-        auto * old_value = child.get();
+        auto * old_ptr = child.get();
         visit(child);
+        auto * new_ptr = child.get();
 
-        // child did not change
-        if (old_value == child.get())
-            return;
-
-        // child changed, we need to modify it in the list of children of the parent also
-        for (auto & current_child : ast->children)
-        {
-            if (current_child.get() == old_value)
-                current_child = child;
-        }
-    };
-
-    if (auto * col_decl = ast->as<ASTColumnDeclaration>())
-    {
-        visit_child_with_shared_ptr(col_decl->default_expression);
-        visit_child_with_shared_ptr(col_decl->ttl);
-        return;
-    }
-
-    if (auto * storage = ast->as<ASTStorage>())
-    {
-        const auto visit_child = [&](IAST * & child)
-        {
-            if (!child)
-                return;
-
-            if (const auto * function = child->template as<ASTFunction>())
-            {
-                std::unordered_set<std::string> udf_in_replace_process;
-                auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
-                if (replace_result)
-                    ast->setOrReplace(child, replace_result);
-            }
-
-            visit(child);
-        };
-
-        visit_child(storage->partition_by);
-        visit_child(storage->primary_key);
-        visit_child(storage->order_by);
-        visit_child(storage->sample_by);
-        visit_child(storage->ttl_table);
-
-        return;
-    }
-
-    if (auto * alter = ast->as<ASTAlterCommand>())
-    {
-        /// It is OK to use updatePointerToChild() because ASTAlterCommand implements forEachPointerToChild()
-        const auto visit_child_update_parent = [&](ASTPtr & child)
-        {
-            if (!child)
-                return;
-
-            auto * old_ptr = child.get();
-            visit(child);
-            auto * new_ptr = child.get();
-
-            /// Some AST classes have naked pointers to children elements as members.
-            /// We have to replace them if the child was replaced.
-            if (new_ptr != old_ptr)
-                ast->updatePointerToChild(old_ptr, new_ptr);
-        };
-
-        for (auto & children : alter->children)
-            visit_child_update_parent(children);
-
-        return;
+        /// Some AST classes have naked pointers to children elements as members.
+        /// We have to replace them if the child was replaced.
+        if (new_ptr != old_ptr)
+            ast->updatePointerToChild(old_ptr, new_ptr);
     }
 
     if (const auto * function = ast->template as<ASTFunction>())
@@ -118,9 +48,6 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
         if (replace_result)
             ast = replace_result;
     }
-
-    for (auto & child : ast->children)
-        visit(child);
 }
 
 void UserDefinedSQLFunctionVisitor::visit(IAST * ast)

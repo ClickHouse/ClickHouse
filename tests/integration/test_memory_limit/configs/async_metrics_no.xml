@@ -1,0 +1,22 @@
+<clickhouse>
+    <!-- this update period also syncs MemoryTracking with RSS, disable this, by using period = 1 day -->
+    <asynchronous_metrics_update_period_s>86400</asynchronous_metrics_update_period_s>
+    <query_masking_rules remove="remove"/>
+
+    <query_thread_log remove="remove"/>
+    <query_log remove="remove" />
+    <query_metric_log remove="remove" />
+    <query_views_log remove="remove" />
+    <metric_log remove="remove"/>
+    <error_log remove="remove"/>
+    <text_log remove="remove"/>
+    <trace_log remove="remove"/>
+    <asynchronous_metric_log remove="remove" />
+    <session_log remove="remove" />
+    <part_log remove="remove" />
+    <crash_log remove="remove" />
+    <opentelemetry_span_log remove="remove" />
+    <!-- just in case it will be enabled by default -->
+    <zookeeper_log remove="remove" />
+    <transactions_info_log remove="remove" />
+</clickhouse>

@@ -10,6 +10,7 @@
 #include <set>
 #include <vector>
 #include <sparsehash/dense_hash_map>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 
 namespace DB
@@ -99,6 +100,7 @@ public:
     NameMap getNamesToIndexesMap() const;
 
     Serializations getSerializations() const;
+    Serializations getSerializations(const SerializationInfoByName & hints) const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -138,6 +140,9 @@ public:
 
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
+
+    /** Get empty columns with the same types as in block and given serializations. */
+    MutableColumns cloneEmptyColumns(const Serializations & serializations) const;
 
     /** Get columns from block for mutation. Columns in block will be nullptr. */
     MutableColumns mutateColumns();

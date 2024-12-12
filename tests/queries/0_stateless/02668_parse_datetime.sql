@@ -162,7 +162,7 @@ select sTr_To_DaTe('10:04:11 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') = toDateTi
 select str_to_date('10:04:11 invalid 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') IS NULL;
 
 -- Error handling
-select parseDateTime('12 AM'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select parseDateTime(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select parseDateTime('12 AM', '%h %p', 'UTC', 'a fourth argument'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- Fuzzer crash bug #53715
@@ -186,5 +186,39 @@ select parseDateTime('08 13, 2022, 07:58:32', '%m %e, %G, %k:%i:%s', 'UTC');
 -- %c accepts single or double digits inputs
 select parseDateTime('8 13, 2022, 7:58:32', '%c %e, %G, %k:%i:%s', 'UTC');
 select parseDateTime('08 13, 2022, 07:58:32', '%c %e, %G, %k:%i:%s', 'UTC');
+
+-- The format string argument is optional
+set session_timezone = 'UTC'; -- don't randomize the session timezone
+select parseDateTime('2021-01-04 23:12:34') = toDateTime('2021-01-04 23:12:34');
+select parseDateTime(''); -- { serverError NOT_ENOUGH_SPACE }
+
+-- -------------------------------------------------------------------------------------------------------------------------
+-- Tests for parseDateTime64, these are not systematic
+
+select parseDateTime64(''); -- { serverError NOT_ENOUGH_SPACE }
+select parseDateTime64('2021-01-04 23:12:34.118'); -- { serverError NOT_ENOUGH_SPACE }
+select parseDateTime64('2177-10-09 10:30:10.123'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64('2021-01-04 23:12:34.118112') = toDateTime64('2021-01-04 23:12:34.118112', 6);
+select parseDateTime64('2021-01-04 23:12:34.118112', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2021-01-04 23:12:34.118112', 6);
+select parseDateTime64('2021-01-04 23:12:34.118', '%Y-%m-%d %H:%i:%s.%f'); -- { serverError NOT_ENOUGH_SPACE }
+select parseDateTime64('2021-01-04 23:12:34.11811235', '%Y-%m-%d %H:%i:%s.%f'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64('2021-01-04 23:12:34.118112', '%Y-%m-%d %H:%i:%s'); -- { serverError CANNOT_PARSE_DATETIME }
+-- leap vs non-leap years
+select parseDateTime64('2024-02-29 11:23:34.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2024-02-29 11:23:34.123433', 6);
+select parseDateTime64('2023-02-29 11:22:33.123433', '%Y-%m-%d %H:%i:%s.%f'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64('2024-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2024-02-28 23:22:33.123433', 6);
+select parseDateTime64('2023-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2023-02-28 23:22:33.123433', 6);
+-- parseDateTime64OrNull
+select parseDateTime64OrNull('2021-01-04 23:12:34.118') IS NULL;
+select parseDateTime64OrNull('2021-01-04 23:12:34.118', '%Y-%m-%d %H:%i:%s.%f') IS NULL;
+select parseDateTime64OrNull('2021-01-04 23:12:34.118112', '%Y-%m-%d %H:%i:%s') IS NULL;
+select parseDateTime64OrNull('2021-01-04 23:12:34.11811235', '%Y-%m-%d %H:%i:%s.%f') IS NULL;
+-- parseDateTime64OrZero
+select parseDateTime64OrZero('2021-01-04 23:12:34.118') = toDateTime64('1970-01-01 00:00:00', 6);
+select parseDateTime64OrZero('2021-01-04 23:12:34.118', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1970-01-01 00:00:00', 6);
+select parseDateTime64OrZero('2021-01-04 23:12:34.118112', '%Y-%m-%d %H:%i:%s') = toDateTime64('1970-01-01 00:00:00', 6);
+select parseDateTime64OrZero('2021-01-04 23:12:34.11811235', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1970-01-01 00:00:00', 6);
+-- -------------------------------------------------------------------------------------------------------------------------
+
 
 -- { echoOff }

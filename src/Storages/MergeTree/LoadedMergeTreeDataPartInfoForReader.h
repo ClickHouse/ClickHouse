@@ -36,7 +36,10 @@ public:
 
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
-    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const override { return data_part->getColumnNameWithMinimumCompressedSize(with_subcolumns); }
+    String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
+    {
+        return data_part->getColumnNameWithMinimumCompressedSize(available_columns);
+    }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
@@ -48,7 +51,7 @@ public:
 
     const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { return data_part->index_granularity_info; }
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const override { return data_part->index_granularity; }
+    const MergeTreeIndexGranularity & getIndexGranularity() const override { return *data_part->index_granularity; }
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 

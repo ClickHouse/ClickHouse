@@ -1,15 +1,15 @@
+import logging
+import random
+import threading
 import time
+from multiprocessing.dummy import Pool
 
 import pymysql.cursors
 import pytest
-from helpers.network import PartitionManager
-import logging
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import get_docker_compose_path, run_and_check
-import random
-
-import threading
-from multiprocessing.dummy import Pool
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 
@@ -2353,7 +2353,7 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
     )
     check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
     show_db = clickhouse_node.query("SHOW CREATE DATABASE table_overrides")
-    assert "TABLE OVERRIDE `t1`\\n(\\n\\n)" in show_db, show_db
+    assert "TABLE OVERRIDE t1\\n(\\n\\n)" in show_db, show_db
 
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")

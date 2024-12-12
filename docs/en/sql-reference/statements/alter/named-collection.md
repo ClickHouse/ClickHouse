@@ -3,6 +3,10 @@ slug: /en/sql-reference/statements/alter/named-collection
 sidebar_label: NAMED COLLECTION
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+<CloudNotSupportedBadge />
+
 # ALTER NAMED COLLECTION
 
 This query intends to modify already existing named collections.

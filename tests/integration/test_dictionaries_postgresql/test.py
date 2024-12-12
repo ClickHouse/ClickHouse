@@ -1,12 +1,13 @@
-import pytest
-import time
 import logging
-import psycopg2
+import time
 from multiprocessing.dummy import Pool
+
+import psycopg2
+import pytest
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
 from helpers.postgres_utility import get_postgres_conn
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -530,10 +531,61 @@ def test_bad_configuration(started_cluster):
     """
     )
 
-    node1.query_and_get_error(
+    assert "Unexpected key `dbbb`" in node1.query_and_get_error(
         "SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(1))"
     )
-    assert node1.contains_in_log("Unexpected key `dbbb`")
+
+
+def test_named_collection_from_ddl(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("CREATE TABLE test_table (id integer, value integer)")
+
+    node1.query(
+        """
+        DROP NAMED COLLECTION IF EXISTS pg_conn;
+        CREATE NAMED COLLECTION pg_conn
+        AS user = 'postgres', password = 'mysecretpassword', host = 'postgres1', port = 5432, database = 'postgres', table = 'test_table';
+    """
+    )
+
+    cursor.execute(
+        "INSERT INTO test_table SELECT i, i FROM generate_series(0, 99) as t(i)"
+    )
+
+    node1.query(
+        """
+    DROP DICTIONARY IF EXISTS postgres_dict;
+    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
+    PRIMARY KEY id
+    SOURCE(POSTGRESQL(NAME pg_conn))
+        LIFETIME(MIN 1 MAX 2)
+        LAYOUT(HASHED());
+    """
+    )
+    result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
+    assert int(result.strip()) == 99
+
+    node1.query(
+        """
+        DROP NAMED COLLECTION IF EXISTS pg_conn_2;
+        CREATE NAMED COLLECTION pg_conn_2
+        AS user = 'postgres', password = 'mysecretpassword', host = 'postgres1', port = 5432, dbbb = 'postgres', table = 'test_table';
+    """
+    )
+    node1.query(
+        """
+    DROP DICTIONARY IF EXISTS postgres_dict;
+    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
+    PRIMARY KEY id
+    SOURCE(POSTGRESQL(NAME pg_conn_2))
+        LIFETIME(MIN 1 MAX 2)
+        LAYOUT(HASHED());
+    """
+    )
+    assert "Unexpected key `dbbb`" in node1.query_and_get_error(
+        "SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))"
+    )
 
 
 if __name__ == "__main__":

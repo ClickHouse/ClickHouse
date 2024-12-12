@@ -1,9 +1,14 @@
 #include <Client/ConnectionPool.h>
+#include <Core/Settings.h>
 
 #include <boost/functional/hash.hpp>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsMilliseconds connection_pool_max_wait_ms;
+}
 
 ConnectionPoolPtr ConnectionPoolFactory::get(
     unsigned max_connections,
@@ -12,6 +17,8 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     String default_database,
     String user,
     String password,
+    String proto_send_chunked,
+    String proto_recv_chunked,
     String quota_key,
     String cluster,
     String cluster_secret,
@@ -21,7 +28,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     Priority priority)
 {
     Key key{
-        max_connections, host, port, default_database, user, password, quota_key, cluster, cluster_secret, client_name, compression, secure, priority};
+        max_connections, host, port, default_database, user, password, proto_send_chunked, proto_recv_chunked, quota_key, cluster, cluster_secret, client_name, compression, secure, priority};
 
     std::lock_guard lock(mutex);
     auto [it, inserted] = pools.emplace(key, ConnectionPoolPtr{});
@@ -38,6 +45,8 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
             default_database,
             user,
             password,
+            proto_send_chunked,
+            proto_recv_chunked,
             quota_key,
             cluster,
             cluster_secret,
@@ -83,6 +92,17 @@ ConnectionPoolFactory & ConnectionPoolFactory::instance()
 {
     static ConnectionPoolFactory ret;
     return ret;
+}
+
+IConnectionPool::Entry ConnectionPool::get(const DB::ConnectionTimeouts& timeouts, const DB::Settings& settings,
+        bool force_connected)
+{
+    Entry entry = Base::get(settings[Setting::connection_pool_max_wait_ms].totalMilliseconds());
+
+    if (force_connected)
+        entry->forceConnected(timeouts);
+
+    return entry;
 }
 
 }

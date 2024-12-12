@@ -432,13 +432,13 @@ regionIn(lhs, rhs\[, geobase\])
 
 **Parameters**
 
-- `lhs` — Lhs region ID from the geobase. [UInt32](../../sql-reference/data-types/int-uint).
-- `rhs` — Rhs region ID from the geobase. [UInt32](../../sql-reference/data-types/int-uint).
+- `lhs` — Lhs region ID from the geobase. [UInt32](../data-types/int-uint).
+- `rhs` — Rhs region ID from the geobase. [UInt32](../data-types/int-uint).
 - `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../data-types/string). Optional.
 
 **Returned value**
 
-- 1, if it belongs. [UInt8](../../sql-reference/data-types/int-uint).
+- 1, if it belongs. [UInt8](../data-types/int-uint).
 - 0, if it doesn't belong.
 
 **Implementation details**

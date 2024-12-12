@@ -66,8 +66,11 @@ struct MergeTreeReadTaskInfo
     MergeTreeReadTaskColumns task_columns;
     /// Shared initialized size predictor. It is copied for each new task.
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
-    /// TODO: comment
+    /// Shared constant fields for virtual columns.
     VirtualFields const_virtual_fields;
+    /// The amount of data to read per task based on size of the queried columns.
+    size_t min_marks_per_task = 0;
+    size_t approx_size_of_mark = 0;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -108,7 +111,6 @@ public:
         UInt64 max_block_size_rows = DEFAULT_BLOCK_SIZE;
         UInt64 preferred_block_size_bytes = 1000000;
         UInt64 preferred_max_column_in_block_size_bytes = 0;
-        UInt64 min_marks_to_read = 0;
         double min_filtration_ratio = 0.00001;
     };
 
@@ -125,12 +127,12 @@ public:
         MergeTreeReadTaskInfoPtr info_,
         Readers readers_,
         MarkRanges mark_ranges_,
-
+        const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
     void initializeRangeReaders(const PrewhereExprInfo & prewhere_actions);
 
-    BlockAndProgress read(const BlockSizeParams & params);
+    BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && range_readers.main.isCurrentRangeFinished(); }
 
     const MergeTreeReadTaskInfo & getInfo() const { return *info; }
@@ -143,7 +145,7 @@ public:
     static RangeReaders createRangeReaders(const Readers & readers, const PrewhereExprInfo & prewhere_actions);
 
 private:
-    UInt64 estimateNumRows(const BlockSizeParams & params) const;
+    UInt64 estimateNumRows() const;
 
     /// Shared information required for reading.
     MergeTreeReadTaskInfoPtr info;
@@ -157,6 +159,8 @@ private:
 
     /// Ranges to read from data_part
     MarkRanges mark_ranges;
+
+    BlockSizeParams block_size_params;
 
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;

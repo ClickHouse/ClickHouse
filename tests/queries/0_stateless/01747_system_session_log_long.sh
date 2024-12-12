@@ -82,7 +82,7 @@ trap "cleanup" EXIT
 function executeQueryExpectError()
 {
     cat - > "${TMP_QUERY_FILE}"
-    ! ${CLICKHOUSE_CLIENT} --multiquery --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a "${TMP_QUERY_FILE}"
+    ! ${CLICKHOUSE_CLIENT} --queries-file "${TMP_QUERY_FILE}" "${@}"  2>&1 | tee -a "${TMP_QUERY_FILE}"
 }
 
 function createUser()
@@ -228,13 +228,13 @@ function testMySQL()
         echo "MySQL 'successful login' case is skipped for ${auth_type}."
     else
         executeQuery \
-            <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${username}', '${password}') LIMIT 1 \
+            <<< "SELECT 1 FROM mysql('127.0.0.1:${CLICKHOUSE_PORT_MYSQL}', 'system', 'one', '${username}', '${password}') LIMIT 1 \
             FORMAT Null"
     fi
 
     echo 'Wrong username'
     executeQueryExpectError \
-        <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 \
+        <<< "SELECT 1 FROM mysql('127.0.0.1:${CLICKHOUSE_PORT_MYSQL}', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 \
         FORMAT Null" \
         | grep -Eq "Code: 279\. DB::Exception: .* invalid_${username}"
 
@@ -246,7 +246,7 @@ function testMySQL()
         echo "MySQL 'wrong password' case is skipped for ${auth_type}."
     else
         executeQueryExpectError \
-            <<< "SELECT 1 FROM mysql('127.0.0.1:9004', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 \
+            <<< "SELECT 1 FROM mysql('127.0.0.1:${CLICKHOUSE_PORT_MYSQL}', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 \
             FORMAT Null" | grep -Eq "Code: 279\. DB::Exception: .* ${username}"
     fi
 }
@@ -267,11 +267,11 @@ function testMySQL()
     ## Loging\Logout
     ## CH is being able to log into itself via PostgreSQL protocol but query fails.
     #executeQueryExpectError \
-    #    <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', '${username}', '${password}') LIMIT 1 FORMAT Null" \
+    #    <<< "SELECT 1 FROM postgresql('localhost:${CLICKHOUSE_PORT_POSTGRESQL', 'system', 'one', '${username}', '${password}') LIMIT 1 FORMAT Null" \
 
     # Wrong username
     executeQueryExpectError \
-        <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 FORMAT Null" \
+        <<< "SELECT 1 FROM postgresql('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', 'system', 'one', 'invalid_${username}', '${password}') LIMIT 1 FORMAT Null" \
         | grep -Eq "Invalid user or password"
 
     if [[ "${auth_type}" == "no_password" ]]
@@ -281,7 +281,7 @@ function testMySQL()
     else
         # Wrong password
         executeQueryExpectError \
-            <<< "SELECT 1 FROM postgresql('localhost:9005', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 FORMAT Null" \
+            <<< "SELECT 1 FROM postgresql('localhost:${CLICKHOUSE_PORT_POSTGRESQL}', 'system', 'one', '${username}', 'invalid_${password}') LIMIT 1 FORMAT Null" \
             | grep -Eq "Invalid user or password"
     fi
  }
@@ -303,7 +303,7 @@ function runEndpointTests()
     if [[ -n "${setup_queries}" ]]
     then
         # echo "Executing setup queries: ${setup_queries}"
-        echo "${setup_queries}" | executeQuery --multiquery
+        echo "${setup_queries}" | executeQuery
     fi
 
     testTCP "${auth_type}" "${username}" "${password}"
@@ -357,7 +357,7 @@ testAsUserIdentifiedBy "plaintext_password"
 testAsUserIdentifiedBy "sha256_password"
 testAsUserIdentifiedBy "double_sha1_password"
 
-executeQuery --multiquery <<EOF
+executeQuery <<EOF
 SYSTEM FLUSH LOGS;
 
 WITH

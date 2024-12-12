@@ -22,7 +22,7 @@ function thread_insert()
     set -eu
     val=1
     while true; do
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES /* ($val, 1) */ ($val, 1);
         INSERT INTO src VALUES /* ($val, 2) */ ($val, 2);
@@ -210,7 +210,7 @@ function thread_select()
     set -eu
     while true; do
         output=$(
-        $CLICKHOUSE_CLIENT --multiquery --query "
+        $CLICKHOUSE_CLIENT --query "
         BEGIN TRANSACTION;
         -- no duplicates
         SELECT type, throwIf(count(n) != countDistinct(n)) FROM src GROUP BY type FORMAT Null;

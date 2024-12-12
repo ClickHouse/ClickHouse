@@ -73,7 +73,7 @@ Data can be passed to the INSERT in any [format](../../interfaces/formats.md#for
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
-For example, the following query format is identical to the basic version of INSERT … VALUES:
+For example, the following query format is identical to the basic version of INSERT ... VALUES:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
@@ -120,6 +120,14 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 `FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../../sql-reference/table-functions/input.md).
 
 To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.
+
+`INSERT` also supports CTE(common table expression). For example, the following two statements are equivalent:
+
+``` sql
+INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
+WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
+```
+
 
 ## Inserting Data from a File
 

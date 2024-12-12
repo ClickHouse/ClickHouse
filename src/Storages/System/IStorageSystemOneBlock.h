@@ -22,7 +22,15 @@ class Context;
 class IStorageSystemOneBlock : public IStorage
 {
 protected:
+    /// If this method uses `predicate`, getFilterSampleBlock() must list all columns to which
+    /// it's applied. (Otherwise there'll be a LOGICAL_ERROR "Not-ready Set is passed" on subqueries.)
     virtual void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const = 0;
+
+    /// Columns to which fillData() applies the `predicate`.
+    virtual Block getFilterSampleBlock() const
+    {
+        return {};
+    }
 
     virtual bool supportsColumnsMask() const { return false; }
 

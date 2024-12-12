@@ -2,7 +2,7 @@
 
 -- set distributed_foreground_insert = 1;  -- see https://github.com/ClickHouse/ClickHouse/issues/18971
 
-SET allow_experimental_parallel_reading_from_replicas = 0; -- see https://github.com/ClickHouse/ClickHouse/issues/34525
+SET enable_parallel_replicas = 0; -- see https://github.com/ClickHouse/ClickHouse/issues/34525
 SET prefer_localhost_replica = 1;
 
 DROP TABLE IF EXISTS local_01099_a;

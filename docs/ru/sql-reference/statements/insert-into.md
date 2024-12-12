@@ -73,7 +73,7 @@ INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
-Например, следующий формат запроса идентичен базовому варианту INSERT … VALUES:
+Например, следующий формат запроса идентичен базовому варианту INSERT ... VALUES:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...

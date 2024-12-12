@@ -10,12 +10,14 @@
 
 namespace DB
 {
+struct ColumnWithTypeAndName;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class CatBoostLibraryBridgeHelper final : public LibraryBridgeHelper
 {
 public:
-    static constexpr inline auto PING_HANDLER = "/catboost_ping";
-    static constexpr inline auto MAIN_HANDLER = "/catboost_request";
+    static constexpr auto PING_HANDLER = "/catboost_ping";
+    static constexpr auto MAIN_HANDLER = "/catboost_request";
 
     explicit CatBoostLibraryBridgeHelper(
         ContextPtr context_,
@@ -38,11 +40,11 @@ protected:
     bool bridgeHandShake() override;
 
 private:
-    static constexpr inline auto CATBOOST_LIST_METHOD = "catboost_list";
-    static constexpr inline auto CATBOOST_REMOVEMODEL_METHOD = "catboost_removeModel";
-    static constexpr inline auto CATBOOST_REMOVEALLMODELS_METHOD = "catboost_removeAllModels";
-    static constexpr inline auto CATBOOST_GETTREECOUNT_METHOD = "catboost_GetTreeCount";
-    static constexpr inline auto CATBOOST_LIB_EVALUATE_METHOD = "catboost_libEvaluate";
+    static constexpr auto CATBOOST_LIST_METHOD = "catboost_list";
+    static constexpr auto CATBOOST_REMOVEMODEL_METHOD = "catboost_removeModel";
+    static constexpr auto CATBOOST_REMOVEALLMODELS_METHOD = "catboost_removeAllModels";
+    static constexpr auto CATBOOST_GETTREECOUNT_METHOD = "catboost_GetTreeCount";
+    static constexpr auto CATBOOST_LIB_EVALUATE_METHOD = "catboost_libEvaluate";
 
     Poco::URI createRequestURI(const String & method) const;
 

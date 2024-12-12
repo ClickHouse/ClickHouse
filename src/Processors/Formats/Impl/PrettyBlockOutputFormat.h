@@ -38,21 +38,16 @@ protected:
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
-    void writeReadableNumberTip(const Chunk & chunk);
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, size_t table_border_width);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths);
 
     void writeValueWithPadding(
-        String & value, size_t value_width, size_t pad_to_width, size_t cut_to_width,
-        bool align_right, bool is_number, bool has_break_line, bool is_transferred_value);
-
-    void writeTransferredRow(const Widths & max_widths, const Block & header, std::vector<String> & transferred_row, size_t cut_to_width, bool space_block);
-
-    void splitValueAtBreakLine(String & value, String & transferred_value, size_t & value_width, size_t cut_to_width, size_t prefix);
+        const IColumn & column, const ISerialization & serialization, size_t row_num,
+        size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
 
     void resetFormatterImpl() override
     {
@@ -60,9 +55,9 @@ protected:
     }
 
     bool color;
+    bool readable_number_tip = false;
 
 private:
-    bool readable_number_tip = false;
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;
@@ -78,7 +73,8 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             const Block & sample,
             const FormatSettings & format_settings)
         {
-            bool color = !no_escapes && format_settings.pretty.color.valueOr(format_settings.is_writing_to_terminal);
+            bool color = !no_escapes
+                    && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
         });
         if (!mono_block)

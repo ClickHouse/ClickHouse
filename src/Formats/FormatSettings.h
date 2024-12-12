@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <Core/Defines.h>
+#include <Core/Names.h>
 #include <base/types.h>
 #include <base/unit.h>
-#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -36,17 +35,20 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
+    bool try_infer_variant = false;
 
     bool seekable_read = true;
+    String composed_data_type_output_format_mode = "default";
     UInt64 max_rows_to_read_for_schema_inference = 25000;
     UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
 
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
-    bool try_infer_integers = false;
-    bool try_infer_dates = false;
-    bool try_infer_datetimes = false;
+    bool try_infer_integers = true;
+    bool try_infer_dates = true;
+    bool try_infer_datetimes = true;
+    bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
     enum class DateTimeInputFormat : uint8_t
@@ -76,7 +78,7 @@ struct FormatSettings
         Raw
     };
 
-    bool schema_inference_make_columns_nullable = true;
+    UInt64 schema_inference_make_columns_nullable = 1;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
@@ -98,6 +100,8 @@ struct FormatSettings
         Saturate
     };
 
+    bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false;
+
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
     bool input_format_ipv4_default_on_conversion_error = false;
@@ -106,8 +110,6 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
-    UInt64 max_binary_string_size = 1_GiB;
-    UInt64 max_binary_array_size = 1_GiB;
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
@@ -120,6 +122,16 @@ struct FormatSettings
         LZ4_FRAME,
         ZSTD
     };
+
+    struct
+    {
+        UInt64 max_binary_string_size = 1_GiB;
+        UInt64 max_binary_array_size = 1_GiB;
+        bool encode_types_in_binary_format = false;
+        bool decode_types_in_binary_format = false;
+        bool read_json_as_string = false;
+        bool write_json_as_string = false;
+    } binary{};
 
     struct
     {
@@ -153,6 +165,8 @@ struct FormatSettings
         char delimiter = ',';
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
+        bool serialize_tuple_into_separate_columns = true;
+        bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
@@ -170,6 +184,7 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
         bool use_default_on_bad_values = false;
         bool try_infer_numbers_from_strings = true;
+        bool try_infer_strings_from_quoted_tuples = true;
     } csv{};
 
     struct HiveText
@@ -197,6 +212,7 @@ struct FormatSettings
 
     struct JSON
     {
+        size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;
@@ -205,7 +221,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
-        bool write_named_tuples_as_objects = false;
+        bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
         bool ignore_unknown_keys_in_named_tuple = false;
@@ -218,13 +234,16 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
-        bool allow_object_type = false;
+        bool allow_deprecated_object_type = false;
+        bool allow_json_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
+        bool empty_as_default = false;
+        bool type_json_skip_duplicated_paths = false;
     } json{};
 
     struct
@@ -258,19 +277,24 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
+        bool bloom_filter_push_down = true;
+        bool use_native_reader = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
-        UInt64 max_block_size = 8192;
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
+        bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
+        bool enable_row_group_prefetch = true;
     } parquet{};
 
     struct Pretty
@@ -280,11 +304,13 @@ struct FormatSettings
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
-        SettingFieldUInt64Auto color{"auto"};
+        /// Set to 2 for auto
+        UInt64 color = 2;
 
         bool output_format_pretty_row_numbers = false;
-        bool preserve_border_for_multiline_string = true;
         UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
+        UInt64 output_format_pretty_display_footer_column_names = 1;
+        UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
 
         enum class Charset : uint8_t
         {
@@ -362,6 +388,7 @@ struct FormatSettings
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
         bool allow_variable_number_of_columns = false;
+        bool crlf_end_of_line_input = false;
     } tsv{};
 
     struct
@@ -394,6 +421,9 @@ struct FormatSettings
         bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
+        String reader_time_zone_name = "GMT";
+        bool dictionary_as_low_cardinality = true;
+        double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 
     /// For capnProto format we should determine how to
@@ -449,6 +479,9 @@ struct FormatSettings
     struct
     {
         bool allow_types_conversion = true;
+        bool encode_types_in_binary_format = false;
+        bool decode_types_in_binary_format = false;
+        bool write_json_as_string = false;
     } native{};
 
     struct

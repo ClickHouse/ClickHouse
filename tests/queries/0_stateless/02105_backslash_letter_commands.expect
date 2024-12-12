@@ -20,7 +20,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
 expect ":) "
 
 # Send a command
@@ -33,7 +33,6 @@ expect "Syntax error: "
 expect ":) "
 
 send -- "  \\l ;  \\d;  \r"
-expect "Syntax error (Multi-statements are not allowed): "
 expect ":) "
 
 send -- "  \\l  ;\r"

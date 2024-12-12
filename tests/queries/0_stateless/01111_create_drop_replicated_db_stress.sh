@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper
+# Tags: race, zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +30,7 @@ function drop_db()
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [[ "$database" == "$CLICKHOUSE_DATABASE" ]]; then continue; fi
         if [ -z "$database" ]; then continue; fi
-        $CLICKHOUSE_CLIENT -n --query \
+        $CLICKHOUSE_CLIENT --query \
         "drop database if exists $database" 2>&1| grep -Fa "Exception: "
         sleep 0.$RANDOM
     done
@@ -87,7 +87,7 @@ function insert()
 
 
 
-TIMEOUT=30
+TIMEOUT=20
 
 create_db $TIMEOUT &
 sync_db $TIMEOUT &

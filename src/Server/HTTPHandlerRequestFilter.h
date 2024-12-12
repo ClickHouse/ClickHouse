@@ -2,7 +2,7 @@
 
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <base/find_symbols.h>
 #include <Common/re2.h>
 
@@ -78,7 +78,7 @@ static inline auto emptyQueryStringFilter()
     return [](const HTTPServerRequest & request)
     {
         const auto & uri = request.getURI();
-        return std::string::npos == uri.find('?');
+        return !uri.contains('?');
     };
 }
 

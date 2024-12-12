@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/topkweighted
-sidebar_position: 109
+sidebar_position: 203
 ---
 
 # topKWeighted

@@ -9,17 +9,18 @@ namespace DB
   */
 struct ReverseImpl
 {
-    static void vector(const ColumnString::Chars & data,
+    static void vector(
+        const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         res_data.resize_exact(data.size());
         res_offsets.assign(offsets);
-        size_t size = offsets.size();
 
         ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             for (size_t j = prev_offset; j < offsets[i] - 1; ++j)
                 res_data[j] = data[offsets[i] + prev_offset - 2 - j];
@@ -28,12 +29,15 @@ struct ReverseImpl
         }
     }
 
-    static void vectorFixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
+    static void vectorFixed(
+        const ColumnString::Chars & data,
+        size_t n,
+        ColumnString::Chars & res_data,
+        size_t input_rows_count)
     {
         res_data.resize_exact(data.size());
-        size_t size = data.size() / n;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
             for (size_t j = i * n; j < (i + 1) * n; ++j)
                 res_data[j] = data[(i * 2 + 1) * n - j - 1];
     }

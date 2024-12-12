@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
@@ -10,10 +11,10 @@
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Core/Settings.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -22,6 +23,14 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool implicit_select;
+}
 
 namespace ErrorCodes
 {
@@ -52,14 +61,13 @@ PostgreSQLHandler::PostgreSQLHandler(
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
     in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket, write_event);
+    out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
 }
 
 void PostgreSQLHandler::run()
 {
     setThreadName("PostgresHandler");
-    ThreadStatus thread_status;
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
@@ -87,6 +95,7 @@ void PostgreSQLHandler::run()
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
                     processQuery();
+                    message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
                     LOG_DEBUG(log, "Client closed the connection");
@@ -199,7 +208,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 #if USE_SSL
 void PostgreSQLHandler::makeSecureConnectionSSL()
 {
-    message_transport->send('S');
+    message_transport->send('S', true);
     ss = std::make_shared<Poco::Net::SecureStreamSocket>(
         Poco::Net::SecureStreamSocket::attach(socket(), Poco::Net::SSLManager::instance().defaultServerContext()));
     changeIO(*ss);
@@ -272,7 +281,7 @@ void PostgreSQLHandler::processQuery()
         }
 
         bool psycopg2_cond = query->query == "BEGIN" || query->query == "COMMIT"; // psycopg2 starts and ends queries with BEGIN/COMMIT commands
-        bool jdbc_cond = query->query.find("SET extra_float_digits") != String::npos || query->query.find("SET application_name") != String::npos; // jdbc starts with setting this parameter
+        bool jdbc_cond = query->query.contains("SET extra_float_digits") || query->query.contains("SET application_name"); // jdbc starts with setting this parameter
         if (psycopg2_cond || jdbc_cond)
         {
             message_transport->send(
@@ -283,11 +292,14 @@ void PostgreSQLHandler::processQuery()
 
         const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
-        auto parse_res = splitMultipartQuery(query->query, queries,
-            settings.max_query_size,
-            settings.max_parser_depth,
-            settings.max_parser_backtracks,
-            settings.allow_settings_after_format_in_insert);
+        auto parse_res = splitMultipartQuery(
+            query->query,
+            queries,
+            settings[Setting::max_query_size],
+            settings[Setting::max_parser_depth],
+            settings[Setting::max_parser_backtracks],
+            settings[Setting::allow_settings_after_format_in_insert],
+            settings[Setting::implicit_select]);
         if (!parse_res.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse and execute the following part of query: {}", String(parse_res.first));
 

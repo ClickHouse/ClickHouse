@@ -10,19 +10,22 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
 
+struct MergeTreeWriterSettings;
+
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -92,6 +95,14 @@ public:
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
+
+    /// Special method for vector similarity indexes:
+    /// Returns the row positions of the N nearest neighbors in the index granule
+    /// The returned row numbers are guaranteed to be sorted and unique.
+    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
+    }
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
@@ -152,7 +163,7 @@ struct IMergeTreeIndex
     /// Return pair<extension, version>.
     virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
     {
-        if (data_part_storage.exists(relative_path_prefix + ".idx"))
+        if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
             return {1, ".idx"};
         return {0 /*unknown*/, ""};
     }
@@ -167,9 +178,9 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
+        const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
 
-    virtual bool isVectorSearch() const { return false; }
+    virtual bool isVectorSimilarityIndex() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
@@ -230,17 +241,15 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
-#ifdef ENABLE_ANNOY
-MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
-void annoyIndexValidator(const IndexDescription & index, bool attach);
+#if USE_USEARCH
+MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-#ifdef ENABLE_USEARCH
-MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
-void usearchIndexValidator(const IndexDescription& index, bool attach);
-#endif
+MergeTreeIndexPtr legacyVectorSimilarityIndexCreator(const IndexDescription & index);
+void legacyVectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription& index);
-void fullTextIndexValidator(const IndexDescription& index, bool attach);
+MergeTreeIndexPtr fullTextIndexCreator(const IndexDescription & index);
+void fullTextIndexValidator(const IndexDescription & index, bool attach);
 
 }

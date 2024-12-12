@@ -1,10 +1,12 @@
 ## sudo -H pip install PyMySQL
+import logging
+import time
 import warnings
+
 import pymysql.cursors
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-import time
-import logging
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
 CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]

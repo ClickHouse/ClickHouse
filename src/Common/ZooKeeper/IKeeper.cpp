@@ -146,8 +146,6 @@ const char * errorMessage(Error code)
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
         case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
     }
-
-    UNREACHABLE();
 }
 
 bool isHardwareError(Error zk_return_code)
@@ -173,6 +171,7 @@ bool isUserError(Error zk_return_code)
 
 void CreateRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
+void RemoveRecursiveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void ExistsRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
@@ -181,12 +180,6 @@ void CheckRequest::addRootPath(const String & root_path) { Coordination::addRoot
 void SetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SyncRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
-
-void MultiRequest::addRootPath(const String & root_path)
-{
-    for (auto & request : requests)
-        request->addRootPath(root_path);
-}
 
 void CreateResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path_created, root_path); }
 void WatchResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path, root_path); }

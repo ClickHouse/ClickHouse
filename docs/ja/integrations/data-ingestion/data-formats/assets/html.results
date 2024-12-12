@@ -1,0 +1,14 @@
+<h1> Top 10 IPs </h1>
+
+<table>
+<tr><th>IP</th><th>Requests</th></tr>
+${data}
+</table>
+
+<h2>Query information</h2>
+<dl>
+  <dt>Rows read</dt>
+  <dd>${rows_read:Escaped}</dd>
+  <dt>Time spent</dt>
+  <dd>${time:Escaped}</dd>
+</dl>

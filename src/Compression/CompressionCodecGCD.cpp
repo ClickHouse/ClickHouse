@@ -256,9 +256,10 @@ UInt8 getGCDBytesSize(const IDataType * column_type)
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8 || max_size == 16 || max_size == 32)
         return static_cast<UInt8>(max_size);
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
-            column_type->getName());
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Codec GCD is only applicable for data types of size 1, 2, 4, 8, 16, 32 bytes. Given type {}",
+        column_type->getName());
 }
 
 }
@@ -273,7 +274,7 @@ void registerCodecGCD(CompressionCodecFactory & factory)
 
         if (arguments && !arguments->children.empty())
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GCD codec must have 0 parameters, given {}", arguments->children.size());
-        else if (column_type)
+        if (column_type)
             gcd_bytes_size = getGCDBytesSize(column_type);
 
         return std::make_shared<CompressionCodecGCD>(gcd_bytes_size);

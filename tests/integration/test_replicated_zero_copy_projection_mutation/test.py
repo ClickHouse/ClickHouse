@@ -1,12 +1,12 @@
 import logging
+import pathlib
 import time
 from contextlib import contextmanager
-import pathlib
 
 import pytest
 
-from helpers.mock_servers import start_s3_mock
 from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_s3_mock
 from helpers.test_tools import assert_eq_with_retry
 
 

@@ -26,7 +26,7 @@
         <verbose_logs>false</verbose_logs>
     </grpc>
     <openSSL>
-        <server> 
+        <server>
             <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
             <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
@@ -101,9 +101,9 @@
     <query_log>
         <database>system</database>
         <table>query_log</table>
-        
+
         <partition_by>toYYYYMM(event_date)</partition_by>
-        
+
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
 
@@ -121,13 +121,6 @@
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_thread_log>
-
-    <metric_log>
-        <database>system</database>
-        <table>metric_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-    </metric_log>
 
     <asynchronous_metric_log>
         <database>system</database>

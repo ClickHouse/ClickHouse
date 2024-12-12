@@ -196,7 +196,7 @@ It is possible to override the seed to produce stable results:
                 {"explicit_seed", "SELECT arrayShuffle([1, 2, 3, 4], 41)", ""},
                 {"materialize", "SELECT arrayShuffle(materialize([1, 2, 3]), 42), arrayShuffle([1, 2, 3], 42) FROM numbers(10)", ""}},
             .categories{"Array"}},
-        FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
 
     factory.registerFunction<FunctionArrayShuffleImpl<FunctionArrayPartialShuffleTraits>>(
         FunctionDocumentation{
@@ -224,7 +224,7 @@ It is possible to override the seed to produce stable results:
                 {"materialize",
                  "SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffle([1, 2, 3], 2, 42) FROM numbers(10)", ""}},
             .categories{"Array"}},
-        FunctionFactory::CaseInsensitive);
+        FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 /// Embedded timezones.
-std::string_view getTimeZone(const char * name);
+std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
 
 
 namespace
@@ -41,7 +41,6 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
-    UNREACHABLE();
 }
 
 inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_time_zone, const cctz::civil_day & date)
@@ -268,11 +267,9 @@ namespace cctz_extension
                     size -= offset;
                     return 0;
                 }
-                else
-                {
-                    errno = EINVAL;
-                    return -1;
-                }
+
+                errno = EINVAL;
+                return -1;
             }
         private:
             const char * data;

@@ -11,11 +11,20 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 import magic
+
 from docker_images_helper import get_docker_image, pull_image
-from env_helper import CI, REPO_COPY, TEMP_PATH
+from env_helper import GITHUB_EVENT_PATH, IS_CI, REPO_COPY, TEMP_PATH
 from git_helper import GIT_PREFIX, git_runner
 from pr_info import PRInfo
-from report import ERROR, FAILURE, SUCCESS, JobReport, TestResults, read_test_results
+from report import (
+    ERROR,
+    FAIL,
+    FAILURE,
+    SUCCESS,
+    JobReport,
+    TestResults,
+    read_test_results,
+)
 from ssh import SSHKey
 from stopwatch import Stopwatch
 
@@ -121,12 +130,21 @@ def _check_mime(file: Union[Path, str], mime: str) -> bool:
 
 def is_python(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is python script"""
-    return _check_mime(file, "text/x-script.python")
+    return (
+        _check_mime(file, "text/x-script.python")
+        or str(file).endswith(".py")
+        or str(file) == "pyproject.toml"
+    )
 
 
 def is_shell(file: Union[Path, str]) -> bool:
     """returns if the changed file in the repository is shell script"""
-    return _check_mime(file, "text/x-shellscript")
+    return _check_mime(file, "text/x-shellscript") or str(file).endswith(".sh")
+
+
+def is_style_image(file: Union[Path, str]) -> bool:
+    """returns if the changed file is related to an updated docker image for style check"""
+    return str(file).startswith("docker/test/style/")
 
 
 def main():
@@ -151,13 +169,18 @@ def main():
     run_cpp_check = True
     run_shell_check = True
     run_python_check = True
-    if CI and pr_info.number > 0:
+    if IS_CI and pr_info.number > 0:
         pr_info.fetch_changed_files()
         run_cpp_check = any(
-            not (is_python(file) or is_shell(file)) for file in pr_info.changed_files
+            is_style_image(file) or not (is_python(file) or is_shell(file))
+            for file in pr_info.changed_files
         )
-        run_shell_check = any(is_shell(file) for file in pr_info.changed_files)
-        run_python_check = any(is_python(file) for file in pr_info.changed_files)
+        run_shell_check = any(
+            is_style_image(file) or is_shell(file) for file in pr_info.changed_files
+        )
+        run_python_check = any(
+            is_style_image(file) or is_python(file) for file in pr_info.changed_files
+        )
 
     IMAGE_NAME = "clickhouse/style-test"
     image = pull_image(get_docker_image(IMAGE_NAME))
@@ -191,15 +214,6 @@ def main():
             future = executor.submit(subprocess.run, cmd_shell, shell=True)
             _ = future.result()
 
-    autofix_description = ""
-    if args.push:
-        try:
-            commit_push_staged(pr_info)
-        except subprocess.SubprocessError:
-            # do not fail the whole script if the autofix didn't work out
-            logging.error("Unable to push the autofix. Continue.")
-            autofix_description = "Failed to push autofix to the PR. "
-
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "
         f"--out-results-file {temp_path}/test_results.tsv --out-status-file {temp_path}/check_status.tsv || "
@@ -209,13 +223,29 @@ def main():
 
     state, description, test_results, additional_files = process_result(temp_path)
 
+    autofix_description = ""
+    push_fix = args.push
+    for result in test_results:
+        if result.status in (FAILURE, FAIL) and push_fix:
+            # do not autofix if something besides isort and black is failed
+            push_fix = any(result.name.endswith(check) for check in ("isort", "black"))
+
+    if push_fix:
+        try:
+            commit_push_staged(pr_info)
+        except subprocess.SubprocessError:
+            # do not fail the whole script if the autofix didn't work out
+            logging.error("Unable to push the autofix. Continue.")
+            autofix_description = "Failed to push autofix to the PR. "
+
     JobReport(
         description=f"{autofix_description}{description}",
         test_results=test_results,
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=additional_files,
+        # add GITHUB_EVENT_PATH json file to have it in style check report. sometimes it's needed for debugging.
+        additional_files=additional_files + [Path(GITHUB_EVENT_PATH)],
     ).dump()
 
     if state in [ERROR, FAILURE]:

@@ -141,22 +141,21 @@ std::shared_ptr<NumpyDataType> parseType(String type)
     /// Parse type
     if (type[1] == 'i')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), true);
-    else if (type[1] == 'b')
+    if (type[1] == 'b')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
-    else if (type[1] == 'u')
+    if (type[1] == 'u')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
-    else if (type[1] == 'f')
+    if (type[1] == 'f')
         return std::make_shared<NumpyDataTypeFloat>(endianness, parseTypeSize(type.substr(2)));
-    else if (type[1] == 'S')
+    if (type[1] == 'S')
         return std::make_shared<NumpyDataTypeString>(endianness, parseTypeSize(type.substr(2)));
-    else if (type[1] == 'U')
+    if (type[1] == 'U')
         return std::make_shared<NumpyDataTypeUnicode>(endianness, parseTypeSize(type.substr(2)));
-    else if (type[1] == 'c')
+    if (type[1] == 'c')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support complex numeric type");
-    else if (type[1] == 'O')
+    if (type[1] == 'O')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support object types");
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
 }
 
 std::vector<int> parseShape(String shape_string)
@@ -444,6 +443,9 @@ bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*
         current_column = &array_column->getData();
         elements_in_current_column *= header.shape[i];
     }
+
+    if (typeid_cast<ColumnArray *>(current_column))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected nesting level of column '{}', expected {}", column->getName(), header.shape.size() - 1);
 
     for (size_t i = 0; i != elements_in_current_column; ++i)
         readValue(current_column);
