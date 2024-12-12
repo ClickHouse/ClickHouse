@@ -28,6 +28,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/ParquetBloomFilterCondition.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace CurrentMetrics
 {
