@@ -401,6 +401,8 @@ protected:
 
         const auto do_push_event = [&]
         {
+            back_stack.emplace(action_it, events_it, base_it);
+
             current_matched_events.push_back(events_it->first);
             current_matched_actions.push_back(action_it);
             if (best_matched_events->size() < current_matched_events.size())
