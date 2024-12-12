@@ -48,6 +48,7 @@ enum CancelReason
     UNDEFINED,
     TIMEOUT,
     CANCELLED_BY_USER,
+    CANCELLED_BY_ERROR,
 };
 
 /** Information of process list element.
