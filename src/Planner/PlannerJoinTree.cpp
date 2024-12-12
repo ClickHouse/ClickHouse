@@ -1790,13 +1790,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         if (*join_constant)
             join_kind = JoinKind::Cross;
     }
-    table_join->getTableJoin().kind = join_kind;
 
     if (join_kind == JoinKind::Comma)
-    {
         join_kind = JoinKind::Cross;
-        table_join->getTableJoin().kind = JoinKind::Cross;
-    }
+
+    table_join->getTableJoin().kind = join_kind;
 
     table_join->setIsJoinWithConstant(join_constant != std::nullopt);
 
@@ -1832,8 +1830,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             /// Same as: SELECT * FROM t1 CROSS JOIN t2 WHERE t1.x > t2.y
             if (join_clause_key_nodes_size == 0 && can_move_out_residuals)
             {
-                join_kind = JoinKind::Cross;
-                table_join->getTableJoin().kind = join_kind;
+                table_join->getTableJoin().kind = JoinKind::Cross;
                 table_join->setIsJoinWithConstant(true);
                 table_join_clauses.pop_back();
                 continue;
