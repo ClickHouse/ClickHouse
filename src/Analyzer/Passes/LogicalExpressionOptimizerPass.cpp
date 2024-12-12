@@ -449,6 +449,7 @@ public:
         if (function_node->getFunctionName() == "and")
         {
             tryOptimizeAndEqualsNotEqualsChain(node);
+            tryOptimizeAndCompareChain(node);
             return;
         }
 
@@ -627,6 +628,45 @@ private:
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.getArguments().getNodes() = std::move(and_operands);
         function_node.resolveAsFunction(and_function_resolver);
+    }
+
+    void tryOptimizeAndCompareChain(QueryTreeNodePtr & node)
+    {
+        auto & function_node = node->as<FunctionNode &>();
+        assert(function_node.getFunctionName() == "and");
+
+        if (function_node.getResultType()->isNullable())
+            return;
+
+        /// Step 1: identify constants, and store comparing pairs in hash
+        QueryTreeNodes constants;
+        QueryTreeNodePtrWithHashMap<QueryTreeNodes> less_pairs;
+
+        for (const auto & argument : function_node.getArguments())
+        {
+            auto * argument_function = argument->as<FunctionNode>();
+            const auto function_name = argument_function->getFunctionName();
+            /// temporarily only consider less
+            const auto valid_functions = std::unordered_set<std::string>{"less"};
+            if (!argument_function || !valid_functions.contains(function_name))
+            {
+                continue;
+            }
+
+            const auto & function_arguments = argument_function->getArguments().getNodes();
+            const auto & lhs = function_arguments[0];
+            const auto & rhs = function_arguments[1];
+
+            if (const auto * rhs_literal = rhs->as<ConstantNode>())
+                constants.push_back(rhs);
+
+            less_pairs[lhs].push_back(rhs);
+        }
+
+        /// Step 2: populate from constants, to generate new comparing pair with constant in one side
+
+        /// Step 3: remove some loose comparing pairs
+
     }
 
     void tryReplaceOrEqualsChainWithIn(QueryTreeNodePtr & node)
