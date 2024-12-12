@@ -21,8 +21,6 @@
 
 namespace DB
 {
-namespace Iceberg
-{
 
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
@@ -81,38 +79,41 @@ public:
 
     bool supportsExternalMetadataChange() const override { return true; }
 
+    static Int32
+    parseTableSchema(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
+
     bool supportsUpdate() const override { return true; }
 
     bool update(const ContextPtr & local_context) override;
 
 private:
-    using ManifestEntryByDataFile = std::unordered_map<String, ManifestFileEntry>;
+    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileEntry>;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
-    mutable ManifestFilesByName manifest_files_by_name;
-    mutable ManifestListsByName manifest_lists_by_name;
+    mutable Iceberg::ManifestFilesByName manifest_files_by_name;
+    mutable Iceberg::ManifestListsByName manifest_lists_by_name;
     mutable ManifestEntryByDataFile manifest_entry_by_data_file;
 
     Int32 current_metadata_version;
     Int32 format_version;
     Int32 current_schema_id;
-    std::optional<IcebergSnapshot> current_snapshot;
+    std::optional<Iceberg::IcebergSnapshot> current_snapshot;
 
     mutable std::optional<Strings> cached_files_for_current_snapshot;
 
-    ManifestList initializeManifestList(const String & manifest_list_file) const;
+    Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 
-    IcebergSnapshot getSnapshot(const String & manifest_list_file) const;
+    Iceberg::IcebergSnapshot getSnapshot(const String & manifest_list_file) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    ManifestFileEntry getManifestFile(const String & manifest_file) const;
+    Iceberg::ManifestFileEntry getManifestFile(const String & manifest_file) const;
 
-    ManifestFileEntry initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const;
+    Iceberg::ManifestFileEntry initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
@@ -123,7 +124,6 @@ private:
     DataLakePartitionColumns partition_columns;
 };
 
-}
 }
 
 #endif

@@ -6,11 +6,11 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-namespace DB
-{
-
 namespace Iceberg
 {
+
+using namespace DB;
+
 MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & header, const FormatSettings & settings)
 {
     auto deserializer = std::make_unique<DB::AvroDeserializer>(header, file_reader.dataSchema(), true, true, settings);
@@ -27,6 +27,6 @@ MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & h
 }
 
 }
-}
+
 
 #endif

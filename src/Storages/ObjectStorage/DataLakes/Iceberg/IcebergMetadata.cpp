@@ -36,11 +36,7 @@ extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
-namespace Iceberg
-{
-
-Int32 parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, const LoggerPtr & metadata_logger);
+using namespace Iceberg;
 
 std::pair<Int32, Poco::JSON::Object::Ptr>
 parseTableSchemaFromManifestFile(const avro::DataFileReaderBase & manifest_file_reader, const String & manifest_file_name)
@@ -128,8 +124,8 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-Int32 parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, const LoggerPtr & metadata_logger)
+Int32 IcebergMetadata::parseTableSchema(
+    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger)
 {
     Int32 format_version = metadata_object->getValue<Int32>("format-version");
     if (format_version == 2)
@@ -423,8 +419,6 @@ Strings IcebergMetadata::getDataFiles() const
 
     return cached_files_for_current_snapshot.value();
 }
-}
-
 }
 
 #endif

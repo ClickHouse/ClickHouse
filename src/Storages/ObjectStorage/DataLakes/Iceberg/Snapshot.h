@@ -2,11 +2,7 @@
 #include "config.h"
 
 #if USE_AVRO
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
-
-namespace DB
-{
-
+#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 namespace Iceberg
 {
 
@@ -34,8 +30,6 @@ public:
 private:
     ManifestListsByName::const_iterator reference;
 };
-
-}
 
 }
 

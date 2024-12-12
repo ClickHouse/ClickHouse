@@ -164,9 +164,7 @@ private:
 
 
 #if USE_AVRO
-using IcebergMetadata = Iceberg::IcebergMetadata;
-
-#if USE_AWS_S3
+#    if USE_AWS_S3
 using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
 #endif
 

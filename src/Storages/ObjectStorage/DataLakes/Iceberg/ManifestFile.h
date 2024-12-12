@@ -7,9 +7,6 @@
 #include <cstdint>
 #include <Common/Exception.h>
 
-namespace DB
-{
-
 namespace Iceberg
 {
 
@@ -63,8 +60,6 @@ struct ManifestFileEntry
 private:
     ManifestFilesByName::const_iterator reference;
 };
-
-}
 
 }
 

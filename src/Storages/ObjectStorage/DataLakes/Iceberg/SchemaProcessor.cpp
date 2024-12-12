@@ -33,9 +33,6 @@ extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
 }
-namespace Iceberg
-{
-
 
 namespace
 {
@@ -355,8 +352,6 @@ std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSch
     if (it == clickhouse_table_schemas_by_ids.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with id {} is unknown", id);
     return it->second;
-}
-
 }
 
 }

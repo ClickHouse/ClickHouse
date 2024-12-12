@@ -7,9 +7,6 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
-namespace DB
-{
-
 namespace Iceberg
 {
 
@@ -45,14 +42,12 @@ public:
         std::unique_ptr<avro::DataFileReaderBase> manifest_file_reader_,
         Int32 format_version_,
         const String & common_path,
-        const FormatSettings & format_settings,
+        const DB::FormatSettings & format_settings,
         Int32 schema_id_);
 
     Int32 schema_id;
     std::vector<DataFileEntry> data_files;
 };
-
-}
 
 }
 

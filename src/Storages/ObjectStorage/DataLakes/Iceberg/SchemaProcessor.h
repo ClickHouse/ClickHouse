@@ -18,10 +18,6 @@
 namespace DB
 {
 
-namespace Iceberg
-{
-
-
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
  * - Primitive types:
@@ -100,7 +96,5 @@ private:
 
     std::mutex mutex;
 };
-
-}
 
 }

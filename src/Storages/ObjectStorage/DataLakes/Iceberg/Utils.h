@@ -6,15 +6,10 @@
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 
-namespace DB
-{
-
 namespace Iceberg
 {
 
-MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & header, const FormatSettings & settings);
-
+DB::MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const DB::Block & header, const DB::FormatSettings & settings);
 }
 
-}
 #endif
