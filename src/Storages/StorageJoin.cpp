@@ -221,6 +221,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
         disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
     }
+    else
+    {
+        compressed_backup_buf.cancel();
+        backup_buf->cancel();
+    }
 }
 
 HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
