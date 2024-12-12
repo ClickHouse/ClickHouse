@@ -41,6 +41,8 @@ perform "simple__expr_with_alias" "SELECT * FROM \`${CLICKHOUSE_TEST_NAME}\` INT
 perform "simple__expr_without_alias" "SELECT * FROM \`${CLICKHOUSE_TEST_NAME}\` INTO OUTFILE '${CLICKHOUSE_TMP}/{modulo(b, 2)}' PARTITION BY modulo(b, 2);"
 perform "simple__const" "SELECT * FROM \`${CLICKHOUSE_TEST_NAME}\` INTO OUTFILE '${CLICKHOUSE_TMP}/{42}' PARTITION BY 42;"
 
+perform "simple__tulpe" "SELECT * FROM \`${CLICKHOUSE_TEST_NAME}\` INTO OUTFILE '${CLICKHOUSE_TMP}/{b}_{c}' PARTITION BY (b, c);"
+
 perform "simple__all_keys" "SELECT * FROM \`${CLICKHOUSE_TEST_NAME}\` INTO OUTFILE '${CLICKHOUSE_TMP}/{c}_{b}_{a}' PARTITION BY a, b, c;"
 perform "simple__can_reuse" "SELECT * FROM \`${CLICKHOUSE_TEST_NAME}\` INTO OUTFILE '${CLICKHOUSE_TMP}/{a}_{a}' PARTITION BY a;"
 
