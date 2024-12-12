@@ -165,7 +165,8 @@ def test_proxy_1():
     assert (
         client.query(
             f"SELECT forwarded_for, address, port, initial_address, initial_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
-        ) == "123.231.132.213:12345\t::ffff:123.231.132.213\t12345\t::ffff:123.231.132.213\t12345\n"
+        )
+        == "123.231.132.213:12345\t::ffff:123.231.132.213\t12345\t::ffff:123.231.132.213\t12345\n"
     )
 
     # user123 only allowed from 123.123.123.123
@@ -181,7 +182,8 @@ def test_proxy_1():
     assert (
         client.query(
             f"SELECT forwarded_for, address, port, initial_address, initial_port FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
-        ) == "123.123.123.123:12345\t::ffff:123.123.123.123\t12345\t::ffff:123.123.123.123\t12345\n"
+        )
+        == "123.123.123.123:12345\t::ffff:123.123.123.123\t12345\t::ffff:123.123.123.123\t12345\n"
     )
 
     # user123 is not allowed from other than 123.123.123.123
@@ -194,7 +196,6 @@ def test_proxy_1():
     try:
         proxy_client.query("SELECT currentQueryID()", user="user123")
     except Exception as e:
-        assert (str(e).find("Exception: user123: Authentication failed") >= 0)
+        assert str(e).find("Exception: user123: Authentication failed") >= 0
     else:
         assert False, "Expected 'Exception: user123: Authentication failed'"
-

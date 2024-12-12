@@ -1,11 +1,9 @@
 import socket
 import threading
 
+
 class Proxy1:
-    def __init__(
-        self,
-        proxy_string=""
-    ):
+    def __init__(self, proxy_string=""):
         self.proxy_string = proxy_string
 
     def run(self):
@@ -16,7 +14,18 @@ class Proxy1:
         self.client.connect(self.address)
         self.client.send("PROXY ".encode("utf-8"))
         if self.proxy_string == "":
-            self.client.send(("TCP4 " + addr[0] + " " + self.address[0] + " " + str(addr[1]) + " " + str(self.address[1])).encode("utf-8"))
+            self.client.send(
+                (
+                    "TCP4 "
+                    + addr[0]
+                    + " "
+                    + self.address[0]
+                    + " "
+                    + str(addr[1])
+                    + " "
+                    + str(self.address[1])
+                ).encode("utf-8")
+            )
         else:
             self.client.send(self.proxy_string.encode("utf-8"))
         self.client.send("\r\n".encode("utf-8"))
@@ -33,8 +42,12 @@ class Proxy1:
                 except Exception:
                     break
 
-        client_to_server_thread = threading.Thread(target=forward, args=(self.client, self.server))
-        server_to_client_thread = threading.Thread(target=forward, args=(self.server, self.client))
+        client_to_server_thread = threading.Thread(
+            target=forward, args=(self.client, self.server)
+        )
+        server_to_client_thread = threading.Thread(
+            target=forward, args=(self.server, self.client)
+        )
 
         client_to_server_thread.start()
         server_to_client_thread.start()
