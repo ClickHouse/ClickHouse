@@ -161,11 +161,11 @@ public:
     virtual bool isRemote() const = 0;
 
     /// Remove object. Throws exception if object doesn't exists.
-    virtual void removeObject(const StoredObject & object) = 0;
+    // virtual void removeObject(const StoredObject & object) = 0;
 
     /// Remove multiple objects. Some object storages can do batch remove in a more
     /// optimal way.
-    virtual void removeObjects(const StoredObjects & objects) = 0;
+    // virtual void removeObjects(const StoredObjects & objects) = 0;
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
