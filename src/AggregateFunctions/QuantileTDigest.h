@@ -416,10 +416,15 @@ public:
 
                 if (x <= left)
                     return checkOverflow<ResultType>(prev_mean);
-                if (x >= right)
+                else if (x >= right)
                     return checkOverflow<ResultType>(c.mean);
-                return checkOverflow<ResultType>(
-                    interpolate(static_cast<Value>(x), static_cast<Value>(left), prev_mean, static_cast<Value>(right), c.mean));
+                else
+                    return checkOverflow<ResultType>(interpolate(
+                        static_cast<Value>(x),
+                        static_cast<Value>(left),
+                        prev_mean,
+                        static_cast<Value>(right),
+                        c.mean));
             }
 
             sum += c.count;

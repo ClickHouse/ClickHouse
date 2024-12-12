@@ -1,7 +1,5 @@
 import logging
-
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -50,32 +48,9 @@ ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
     assert code == 0
 
 
-def delete_ldap_group(ldap_cluster, group_cn):
-    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
-        [
-            "sh",
-            "-c",
-            """ldapdelete -r 'cn={group_cn},dc=example,dc=org' \
--H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
-            """.format(
-                host=ldap_cluster.ldap_host,
-                port=ldap_cluster.ldap_port,
-                admin_bind_dn=LDAP_ADMIN_BIND_DN,
-                admin_password=LDAP_ADMIN_PASSWORD,
-                group_cn=group_cn,
-            ),
-        ],
-        demux=True,
-    )
-    logging.debug(
-        f"test_ldap_external_user_directory code:{code} stdout:{stdout}, stderr:{stderr}"
-    )
-    assert code == 0
-
-
 def test_authentication_pass():
     assert instance.query(
-        "SELECT currentUser()", user="janedoe", password="qwerty"
+        "select currentUser()", user="janedoe", password="qwerty"
     ) == TSV([["janedoe"]])
 
 
@@ -92,9 +67,6 @@ def test_authentication_fail():
 
 
 def test_role_mapping(ldap_cluster):
-    instance.query("DROP ROLE IF EXISTS role_1")
-    instance.query("DROP ROLE IF EXISTS role_2")
-    instance.query("DROP ROLE IF EXISTS role_3")
     instance.query("CREATE ROLE role_1")
     instance.query("CREATE ROLE role_2")
     add_ldap_group(ldap_cluster, group_cn="clickhouse-role_1", member_cn="johndoe")
@@ -121,12 +93,3 @@ def test_role_mapping(ldap_cluster):
         user="johndoe",
         password="qwertz",
     ) == TSV([["role_1"], ["role_2"], ["role_3"]])
-
-    instance.query("DROP ROLE role_1")
-    instance.query("DROP ROLE role_2")
-    instance.query("DROP ROLE role_3")
-
-    delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_1")
-    delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_2")
-    delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_3")
-    delete_ldap_group(ldap_cluster, group_cn="clickhouse-role_4")

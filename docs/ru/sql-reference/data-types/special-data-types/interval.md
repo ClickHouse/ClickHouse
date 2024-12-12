@@ -54,28 +54,29 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 └─────────────────────┴───────────────────────────────┘
 ```
 
-Также можно использовать различные типы интервалов одновременно:
+Нельзя объединять интервалы различных типов. Нельзя использовать интервалы вида `4 DAY 1 HOUR`. Вместо этого выражайте интервал в единицах меньших или равных минимальной единице интервала, например, интервал «1 день и 1 час» можно выразить как `25 HOUR` или `90000 SECOND`.
+
+Арифметические операции со значениями типов `Interval` не доступны, однако можно последовательно добавлять различные интервалы к значениям типов `Date` и `DateTime`. Например:
 
 ``` sql
-SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
 ```
 
 ``` text
-┌───current_date_time─┬─plus(current_date_time, plus(toIntervalDay(4), toIntervalHour(3)))─┐
-│ 2024-08-08 18:31:39 │                                                2024-08-12 21:31:39 │
-└─────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-И сравнивать значения из разными интервалами:
+Следующий запрос приведёт к генерированию исключения:
 
 ``` sql
-SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
+select now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
 ```
 
 ``` text
-┌─less(toIntervalMicrosecond(179999999), toIntervalMinute(3))─┐
-│                                                           1 │
-└─────────────────────────────────────────────────────────────┘
+Received exception from server (version 19.14.1):
+Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argument types for function plus: if one argument is Interval, then another must be Date or DateTime..
 ```
 
 ## Смотрите также {#smotrite-takzhe}

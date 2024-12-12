@@ -4,7 +4,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromFile.h>

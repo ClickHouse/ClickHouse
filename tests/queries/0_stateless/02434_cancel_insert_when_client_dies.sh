@@ -99,4 +99,4 @@ $CLICKHOUSE_CLIENT -q 'system flush logs'
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
   message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes',
   'Query was cancelled or a client has unexpectedly dropped the connection') or
-  message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%') SETTINGS max_rows_to_read = 0"
+  message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"

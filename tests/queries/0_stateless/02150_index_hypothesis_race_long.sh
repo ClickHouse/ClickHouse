@@ -11,21 +11,13 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_index_hypothesis (a UInt32, b UInt32, INDE
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_index_hypothesis SELECT number, number + 1 FROM numbers(10000000)"
 
-run_query() {
+for _ in {0..30}; do
     output=`$CLICKHOUSE_CLIENT -q "SELECT count() FROM t_index_hypothesis WHERE a = b"`
     if [[ $output != "0" ]]; then
         echo "output: $output, expected: 0"
         exit 1
     fi
-}
-
-export -f run_query
-parallel -j 8 run_query ::: {0..30}
-
-if [ $? -ne 0 ]; then
-    echo FAILED
-    exit 1
-fi
+done
 
 echo OK
 

@@ -543,7 +543,8 @@ uint8_t prefixToCopy(UInt64 mask)
     const UInt64 leading_zeroes = __builtin_clzll(mask);
     if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
         return 64 - leading_zeroes;
-    return 0xFF;
+    else
+        return 0xFF;
 }
 
 uint8_t suffixToCopy(UInt64 mask)

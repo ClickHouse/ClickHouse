@@ -116,7 +116,7 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
-    auto settings = getReadSettings();
+    ReadSettings settings;
     settings.enable_filesystem_cache = false;
     settings.remote_fs_method = RemoteFSReadMethod::read;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
@@ -246,23 +246,23 @@ MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewrit
     CurrentMetrics::sub(metric, path_map->map.size());
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string & path) const
 {
-    if (existsDirectory(path))
+    if (isDirectory(path))
         return true;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::isFile(const std::string & path) const
 {
-    if (existsDirectory(path))
+    if (isDirectory(path))
         return false;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::string & path) const
 {
     return path_map->getRemotePathInfoIfExists(path) != std::nullopt;
 }

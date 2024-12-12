@@ -274,8 +274,10 @@ public:
                 auto nested_column = array_type->getNestedType()->createColumn();
                 return ColumnArray::create(std::move(nested_column));
             }
-
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+            else
+            {
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+            }
         }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
@@ -679,8 +681,10 @@ static const PaddedPODArray<T> & getColumnVectorData(
 
         return backup_storage;
     }
-
-    return vector_col->getData();
+    else
+    {
+        return vector_col->getData();
+    }
 }
 
 template <typename T>

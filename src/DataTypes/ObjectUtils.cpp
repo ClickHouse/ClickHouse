@@ -313,7 +313,7 @@ static bool hasDifferentStructureInPrefix(const PathInData::Parts & lhs, const P
     {
         if (lhs[i].key != rhs[i].key)
             return false;
-        if (lhs[i] != rhs[i])
+        else if (lhs[i] != rhs[i])
             return true;
     }
     return false;
@@ -715,7 +715,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
     {
         return node.data;
     }
-    if (node.kind == Node::NESTED)
+    else if (node.kind == Node::NESTED)
     {
         auto [tuple_names, tuple_columns] = collect_tuple_elemets(node.children);
 
@@ -782,24 +782,26 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
 
         return {result_column, result_type, tuple_columns[0].array_dimensions};
     }
-
-    auto [tuple_names, tuple_columns] = collect_tuple_elemets(node.children);
-
-    size_t num_elements = tuple_columns.size();
-    Columns tuple_elements_columns(num_elements);
-    DataTypes tuple_elements_types(num_elements);
-
-    for (size_t i = 0; i < tuple_columns.size(); ++i)
+    else
     {
-        assert(tuple_columns[i].array_dimensions == tuple_columns[0].array_dimensions);
-        tuple_elements_columns[i] = tuple_columns[i].column;
-        tuple_elements_types[i] = tuple_columns[i].type;
+        auto [tuple_names, tuple_columns] = collect_tuple_elemets(node.children);
+
+        size_t num_elements = tuple_columns.size();
+        Columns tuple_elements_columns(num_elements);
+        DataTypes tuple_elements_types(num_elements);
+
+        for (size_t i = 0; i < tuple_columns.size(); ++i)
+        {
+            assert(tuple_columns[i].array_dimensions == tuple_columns[0].array_dimensions);
+            tuple_elements_columns[i] = tuple_columns[i].column;
+            tuple_elements_types[i] = tuple_columns[i].type;
+        }
+
+        auto result_column = ColumnTuple::create(tuple_elements_columns);
+        auto result_type = std::make_shared<DataTypeTuple>(tuple_elements_types, tuple_names);
+
+        return {result_column, result_type, tuple_columns[0].array_dimensions};
     }
-
-    auto result_column = ColumnTuple::create(tuple_elements_columns);
-    auto result_type = std::make_shared<DataTypeTuple>(tuple_elements_types, tuple_names);
-
-    return {result_column, result_type, tuple_columns[0].array_dimensions};
 }
 
 }

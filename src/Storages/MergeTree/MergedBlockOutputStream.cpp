@@ -25,7 +25,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     TransactionID tid,
     bool reset_columns_,
-    bool save_marks_in_cache,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     const MergeTreeIndexGranularity & computed_index_granularity)
@@ -40,7 +39,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         storage_settings,
         data_part->index_granularity_info.mark_type.adaptive,
         /* rewrite_primary_key = */ true,
-        save_marks_in_cache,
         blocks_are_granules_size);
 
     /// TODO: looks like isStoredOnDisk() is always true for MergeTreeDataPart
@@ -152,16 +150,18 @@ void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+    MergeTreeData::DataPart::Checksums * additional_column_checksums,
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
-    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums).finish();
+    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_samples).finish();
 }
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,
     const NamesAndTypesList * total_columns_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+    MergeTreeData::DataPart::Checksums * additional_column_checksums,
+    ColumnsWithTypeAndName * additional_columns_samples)
 {
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
@@ -207,9 +207,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    /// Just in case
-    new_part->index_granularity.shrinkToFitInMemory();
-    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
+    auto columns_sample = writer->getColumnsSample();
+    if (additional_columns_samples)
+    {
+       for (const auto & column : *additional_columns_samples)
+            columns_sample.insert(column);
+    }
+    new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk(columns_sample);
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count

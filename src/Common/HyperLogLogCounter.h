@@ -52,7 +52,8 @@ struct LogLUT
     {
         if (x <= M)
             return log_table[x];
-        return log(static_cast<double>(x));
+        else
+            return log(static_cast<double>(x));
     }
 
 private:
@@ -352,6 +353,18 @@ public:
         }
     }
 
+    void readAndMerge(DB::ReadBuffer & in)
+    {
+        typename RankStore::Reader reader(in);
+        while (reader.next())
+        {
+            const auto & data = reader.get();
+            update(data.first, data.second);
+        }
+
+        in.ignore(sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
+    }
+
     static void skip(DB::ReadBuffer & in)
     {
         in.ignore(sizeof(RankStore) + sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
@@ -462,11 +475,11 @@ private:
     {
         if ((mode == HyperLogLogMode::Raw) || ((mode == HyperLogLogMode::BiasCorrected) && BiasEstimator::isTrivial()))
             return raw_estimate;
-        if (mode == HyperLogLogMode::LinearCounting)
+        else if (mode == HyperLogLogMode::LinearCounting)
             return applyLinearCorrection(raw_estimate);
-        if ((mode == HyperLogLogMode::BiasCorrected) && !BiasEstimator::isTrivial())
+        else if ((mode == HyperLogLogMode::BiasCorrected) && !BiasEstimator::isTrivial())
             return applyBiasCorrection(raw_estimate);
-        if (mode == HyperLogLogMode::FullFeatured)
+        else if (mode == HyperLogLogMode::FullFeatured)
         {
             static constexpr double pow2_32 = 4294967296.0;
 
@@ -479,7 +492,8 @@ private:
 
             return fixed_estimate;
         }
-        throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
+        else
+            throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
     }
 
     double applyCorrection(double raw_estimate) const

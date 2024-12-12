@@ -86,11 +86,11 @@ constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequa
 {
     if (inequality == ASOFJoinInequality::Less)
         return ASOFJoinInequality::Greater;
-    if (inequality == ASOFJoinInequality::Greater)
+    else if (inequality == ASOFJoinInequality::Greater)
         return ASOFJoinInequality::Less;
-    if (inequality == ASOFJoinInequality::LessOrEquals)
+    else if (inequality == ASOFJoinInequality::LessOrEquals)
         return ASOFJoinInequality::GreaterOrEquals;
-    if (inequality == ASOFJoinInequality::GreaterOrEquals)
+    else if (inequality == ASOFJoinInequality::GreaterOrEquals)
         return ASOFJoinInequality::LessOrEquals;
 
     return ASOFJoinInequality::None;

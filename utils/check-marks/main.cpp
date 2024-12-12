@@ -9,7 +9,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Compression/CompressedReadBufferFromFile.h>

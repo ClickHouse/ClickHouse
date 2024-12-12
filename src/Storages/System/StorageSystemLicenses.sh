@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -e -o pipefail
-
 ROOT_PATH="$(git rev-parse --show-toplevel)"
 IFS=$'\t'
 

@@ -10,6 +10,7 @@
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
@@ -942,15 +943,14 @@ inline Field & Field::operator=(String && str)
 class ReadBuffer;
 class WriteBuffer;
 
-/// Binary serialization of generic field.
-void writeFieldBinary(const Field & x, WriteBuffer & buf);
-Field readFieldBinary(ReadBuffer & buf);
-
-void readBinaryArray(Array & x, ReadBuffer & buf);
+/// It is assumed that all elements of the array have the same type.
+void readBinary(Array & x, ReadBuffer & buf);
 [[noreturn]] inline void readText(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 [[noreturn]] inline void readQuoted(Array &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Array."); }
 
-void writeBinaryArray(const Array & x, WriteBuffer & buf);
+/// It is assumed that all elements of the array have the same type.
+/// Also write size and type into buf. UInt64 and Int64 is written in variadic size form
+void writeBinary(const Array & x, WriteBuffer & buf);
 void writeText(const Array & x, WriteBuffer & buf);
 [[noreturn]] inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Array quoted."); }
 

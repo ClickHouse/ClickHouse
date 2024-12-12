@@ -41,7 +41,8 @@ public:
 
     std::string getName() const override { return "TimeSeries"; }
 
-    const TimeSeriesSettings & getStorageSettings() const;
+    TimeSeriesSettings getStorageSettings() const;
+    TimeSeriesSettingsPtr getStorageSettingsPtr() const { return storage_settings; }
 
     StorageID getTargetTableId(ViewTarget::Kind target_kind) const;
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;

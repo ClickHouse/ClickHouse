@@ -30,8 +30,8 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
         {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a column to which access is granted."},
         {"is_partial_revoke", std::make_shared<DataTypeUInt8>(),
             "Logical value. It shows whether some privileges have been revoked. Possible values: "
-            "0 — The row describes a grant, "
-            "1 — The row describes a partial revoke."
+            "0 — The row describes a partial revoke, "
+            "1 — The row describes a grant."
         },
         {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
     };
@@ -135,13 +135,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
         for (const auto & element : elements)
         {
             auto access_types = element.access_flags.toAccessTypes();
-            if (access_types.empty() || (!element.anyColumn() && element.columns.empty()))
+            if (access_types.empty() || (!element.any_column && element.columns.empty()))
                 continue;
 
-            const auto * database = element.anyDatabase() ? nullptr : &element.database;
-            const auto * table = element.anyTable() ? nullptr : &element.table;
+            const auto * database = element.any_database ? nullptr : &element.database;
+            const auto * table = element.any_table ? nullptr : &element.table;
 
-            if (element.anyColumn())
+            if (element.any_column)
             {
                 for (const auto & access_type : access_types)
                     add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.is_partial_revoke, element.grant_option);

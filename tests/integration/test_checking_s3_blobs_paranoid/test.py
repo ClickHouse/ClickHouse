@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 import logging
+import pytest
 import os
+import minio
 import random
 import string
-
-import minio
-import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_s3_mock

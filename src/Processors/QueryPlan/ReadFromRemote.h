@@ -40,7 +40,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void enableMemoryBoundMerging();
+    void enforceSorting(SortDescription output_sort_description);
     void enforceAggregationInOrder();
 
 private:
@@ -70,7 +70,6 @@ public:
         ASTPtr query_ast_,
         ClusterPtr cluster_,
         const StorageID & storage_id_,
-        ParallelReplicasReadingCoordinatorPtr coordinator_,
         Block header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
@@ -78,15 +77,13 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         LoggerPtr log_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_,
-        std::vector<ConnectionPoolPtr> pools_to_use,
-        std::optional<size_t> exclude_pool_index_ = std::nullopt);
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void enableMemoryBoundMerging();
+    void enforceSorting(SortDescription output_sort_description);
     void enforceAggregationInOrder();
 
 private:
@@ -103,8 +100,6 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
-    std::vector<ConnectionPoolPtr> pools_to_use;
-    std::optional<size_t> exclude_pool_index;
 };
 
 }

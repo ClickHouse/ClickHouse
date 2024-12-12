@@ -32,10 +32,8 @@ WriteBufferFromFile::WriteBufferFromFile(
     ThrottlerPtr throttler_,
     mode_t mode,
     char * existing_memory,
-    size_t alignment,
-    bool use_adaptive_buffer_size_,
-    size_t adaptive_buffer_initial_size)
-    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, throttler_, alignment, file_name_, use_adaptive_buffer_size_, adaptive_buffer_initial_size)
+    size_t alignment)
+    : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, throttler_, alignment, file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -68,10 +66,8 @@ WriteBufferFromFile::WriteBufferFromFile(
     size_t buf_size,
     ThrottlerPtr throttler_,
     char * existing_memory,
-    size_t alignment,
-    bool use_adaptive_buffer_size_,
-    size_t adaptive_buffer_initial_size)
-    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, throttler_, alignment, original_file_name, use_adaptive_buffer_size_, adaptive_buffer_initial_size)
+    size_t alignment)
+    : WriteBufferFromFileDescriptor(fd_, buf_size, existing_memory, throttler_, alignment, original_file_name)
 {
     fd_ = -1;
 }
@@ -91,7 +87,7 @@ WriteBufferFromFile::~WriteBufferFromFile()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    [[maybe_unused]] int err = ::close(fd);
+    int err = ::close(fd);
     /// Everything except for EBADF should be ignored in dtor, since all of
     /// others (EINTR/EIO/ENOSPC/EDQUOT) could be possible during writing to
     /// fd, and then write already failed and the error had been reported to

@@ -3,9 +3,8 @@ import re
 import time
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

@@ -82,7 +82,7 @@ cd ./utils/check-style
 # Check duplicate includes
 ./check-duplicate-includes.sh
 
-# Check c++ formatting
+# Check c++ formatiing
 ./check-style
 
 # Check python formatting with black
