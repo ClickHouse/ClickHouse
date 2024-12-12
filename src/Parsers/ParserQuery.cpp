@@ -34,6 +34,7 @@
 #include <Parsers/Access/ParserCheckGrantQuery.h>
 #include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
+#include "Parsers/GoogleSQL/ParserGoogleSQLQuery.h"
 
 
 namespace DB
@@ -73,6 +74,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
+    GoogleSQL::ParserGoogleSQLQuery google_sql_parser;
 
     /// SELECT queries are already attempted to parse by ParserQueryWithOutput,
     /// but here we also try "implicit SELECT" after all other options.
@@ -108,6 +110,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
+        || google_sql_parser.parse(pos, node, expected)
         || (implicit_select && implicit_select_p.parse(pos, node, expected));
 
     return res;
