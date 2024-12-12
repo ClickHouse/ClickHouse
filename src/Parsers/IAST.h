@@ -264,6 +264,20 @@ public:
         formatImpl(ostr, settings, state, std::move(frame));
     }
 
+    /// TODO: Move more logic into this class (see https://github.com/ClickHouse/ClickHouse/pull/45649).
+    struct FormattingBuffer
+    {
+        WriteBuffer & ostr;
+        const FormatSettings & settings;
+        FormatState & state;
+        FormatStateStacked frame;
+    };
+
+    void format(FormattingBuffer out) const
+    {
+        formatImpl(out.ostr, out.settings, out.state, out.frame);
+    }
+
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
     /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
     String formatWithPossiblyHidingSensitiveData(
@@ -351,7 +365,12 @@ public:
     static const char * hilite_none;
 
 protected:
-    virtual void formatImpl(WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
+    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    {
+        formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
+    }
+
+    virtual void formatImpl(FormattingBuffer /*out*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
