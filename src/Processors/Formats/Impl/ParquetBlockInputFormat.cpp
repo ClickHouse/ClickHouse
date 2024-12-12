@@ -685,6 +685,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                 const auto * parquet_column_descriptor
                     = getColumnDescriptorIfBloomFilterIsPresent(metadata->RowGroup(0), index_mapping, column_idx);
 
+                if (!parquet_column_descriptor)
+                {
+                    return std::nullopt;
+                }
+
                 auto nested_column = column;
 
                 if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
