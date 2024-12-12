@@ -538,7 +538,7 @@ private:
                 *dest = '-';
                 offset = -offset;
             }
-            else 
+            else
             {
                 *dest = '+';
             }
