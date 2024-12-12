@@ -16,9 +16,10 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
-    size_t prev_unequal_column = 0;
     MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
-    
+
+    size_t prev_unequal_column = 0;
+
 private:
     Block header;
     SortDescription description;
