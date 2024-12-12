@@ -127,6 +127,7 @@ arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
@@ -135,7 +136,6 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
-arrayROCAUC
 arraySlice
 arraySort
 arraySplit
