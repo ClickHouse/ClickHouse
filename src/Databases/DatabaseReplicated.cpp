@@ -75,7 +75,8 @@ zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
 {
-    return Cluster::Address::toString(getFQDNOrHostName(), global_context->getTCPPort()) + ':' + toString(db_uuid);
+    const auto host = global_context->getInterserverIOAddress().first;
+    return Cluster::Address::toString(host, global_context->getTCPPort()) + ':' + toString(db_uuid);
 }
 
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
