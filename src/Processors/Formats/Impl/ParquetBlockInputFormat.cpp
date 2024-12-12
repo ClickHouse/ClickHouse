@@ -646,7 +646,6 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                 throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "native ParquetReader only supports SeekableReadBuffer");
         }
         std::vector<int> row_groups_indices;
-        std::cerr << fmt::format("read data : {}", getPort().getHeader().dumpStructure());
         new_native_reader = std::make_shared<ParquetReader>(
             getPort().getHeader(),
             *seekable_in,

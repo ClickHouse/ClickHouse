@@ -8,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/Parquet/PageReader.h>
 #include <arrow/util/decimal.h>
@@ -16,6 +17,7 @@
 #include <parquet/column_reader.h>
 #include <parquet/file_reader.h>
 #include <Common/PODArray.h>
+#include <arrow/util/bit_stream_utils.h>
 
 namespace parquet
 {
@@ -197,6 +199,8 @@ public:
     template <typename T, typename S>
     void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read);
 
+    void decodeBoolean(PaddedPODArray<UInt8>& data, PaddedPODArray<UInt8>& src, const OptionalRowSet & row_set, size_t rows_to_read);
+
     void decodeFixedString(ColumnFixedString::Chars & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t n);
 
     template <typename T>
@@ -209,6 +213,8 @@ public:
     void
     decodeFixedValueSpace(PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
 
+    void decodeBooleanSpace(PaddedPODArray<UInt8>& data, PaddedPODArray<UInt8>& src, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
+
     void decodeFixedStringSpace(
         ColumnFixedString::Chars & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read, size_t n);
 
@@ -217,8 +223,8 @@ public:
         PaddedPODArray<T> & data,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        const size_t rows_to_read,
-        const size_t element_size,
+        size_t rows_to_read,
+        size_t element_size,
         ValueConverter value_converter);
 
     void decodeStringSpace(
@@ -269,6 +275,7 @@ private:
 
     ParquetData & page_data;
     PageOffsets & offsets;
+
 };
 
 class DictDecoder
@@ -432,6 +439,29 @@ protected:
     ScanSpec scan_spec;
     std::unique_ptr<PlainDecoder> plain_decoder;
     bool plain = true;
+};
+
+class BooleanColumnReader : public SelectiveColumnReader
+{
+public:
+    BooleanColumnReader(
+        PageReaderCreator page_reader_creator_, ScanSpec scan_spec_);
+    ~BooleanColumnReader() override = default;
+    DataTypePtr getResultType() override { return std::make_shared<DataTypeUInt8>(); }
+    MutableColumnPtr createColumn() override;
+    void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
+    void computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read) override;
+    void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
+    void
+    readSpace(MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
+        override;
+    size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+
+private:
+    void initBitReader();
+
+    PaddedPODArray<UInt8> buffer;
+    std::unique_ptr<arrow::bit_util::BitReader> bit_reader;
 };
 
 template <typename DataType, typename SerializedType>

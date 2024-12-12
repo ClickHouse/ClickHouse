@@ -186,6 +186,13 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::UIn
 }
 
 template <>
+SelectiveColumnReaderPtr createColumnReader<parquet::Type::BOOLEAN, TypeIndex::UInt8, false>(
+    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType &)
+{
+    return std::make_shared<BooleanColumnReader>(std::move(page_reader_creator), scan_spec);
+}
+
+template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::UInt8, true>(
     PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType &)
 {
@@ -534,6 +541,13 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
             else
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, false>(std::move(page_reader_creator), scan_spec, logical_type);
         }
+    }
+    else if (physical_type == parquet::Type::BOOLEAN)
+    {
+        if (dictionary_)
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Boolean type does not support dictionary encoding");
+        else
+            leaf_reader = createColumnReader<parquet::Type::BOOLEAN, TypeIndex::UInt8, false>(std::move(page_reader_creator), scan_spec, logical_type);
     }
     else if (physical_type == parquet::Type::FLOAT)
     {

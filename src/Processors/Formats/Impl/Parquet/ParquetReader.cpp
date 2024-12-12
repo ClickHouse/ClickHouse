@@ -73,10 +73,10 @@ ParquetReader::ParquetReader(
         parquet_columns.emplace(node->name(), node);
     }
     chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
-    if (!io_pool)
-    {
-        io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, format_settings.max_threads);
-    }
+//    if (!io_pool)
+//    {
+    io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, 24*4);
+//    }
 }
 
 Block ParquetReader::read()

@@ -52,7 +52,7 @@ RowGroupChunkReader::RowGroupChunkReader(
     }
     if (prefetch_conditions)
         prefetch_conditions->startPrefetch();
-//    prefetch->startPrefetch();
+    prefetch->startPrefetch();
     selectConditions = std::make_unique<SelectConditions>(reader_columns_mapping, filter_columns, parquet_reader->expression_filters, parquet_reader->header);
 }
 
@@ -119,7 +119,7 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                 }
                 else
                 {
-                    prefetch->startPrefetch();
+//                    prefetch->startPrefetch();
                     auto & reader = reader_columns_mapping.at(name);
                     auto column = reader->createColumn();
                     column->reserve(select_result.valid_count);
