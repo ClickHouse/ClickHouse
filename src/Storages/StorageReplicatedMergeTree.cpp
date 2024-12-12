@@ -8334,6 +8334,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     }
     LOG_INFO(log, "Will try to attach {} partitions", partitions.size());
 
+    if (partitions.empty())
+        return;
+
     const Stopwatch watch;
     ProfileEventsScope profile_events_scope;
     const auto zookeeper = getZooKeeper();
