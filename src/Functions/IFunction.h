@@ -36,14 +36,15 @@ namespace ErrorCodes
 using FieldInterval = std::pair<Field, Field>;
 using OptionalFieldInterval = std::optional<FieldInterval>;
 
-struct ShortCircuiteArgumentExecuteCost
+
+struct FunctionExecuteProfile
 {
-    size_t argument_pos = 0;
-    // less is better
-    double cost = .0;
-    std::vector<ShortCircuiteArgumentExecuteCost> children;
+    size_t input_rows = 0;
+    size_t output_rows = 0;
+    size_t elapsed_ns = 0;
+    // If a argument is function column, its profile is stored here.
+    std::vector<std::pair<size_t, FunctionExecuteProfile>> arguments_profiles;
 };
-using ShortCircuiteArgumentExecuteCosts = std::vector<ShortCircuiteArgumentExecuteCost>;
 
 /// The simplest executable object.
 /// Motivation:
@@ -59,27 +60,16 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
-    virtual ColumnPtr executeOnShortCircuite(
-        const ColumnsWithTypeAndName & arguments,
-        const DataTypePtr & result_type,
-        size_t input_rows_count,
-        bool dry_run,
-        ShortCircuiteArgumentExecuteCosts & /*arg_costs*/) const
-    {
-        return execute(arguments, result_type, input_rows_count, dry_run);
-    }
+    // profile is optional. it's valid only when we need to profile the function execution.
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run, FunctionExecuteProfile * profile = nullptr) const;
 protected:
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
-    virtual ColumnPtr executeOnShortCircuiteImpl(
+    virtual ColumnPtr executeImplWithProfile(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        ShortCircuiteArgumentExecuteCosts &) const
-    {
-        executeImpl(arguments, result_type, input_rows_count)
-    }
+        FunctionExecuteProfile * profile) const;
 
     virtual ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
@@ -131,19 +121,35 @@ protected:
 private:
 
     ColumnPtr defaultImplementationForConstantArguments(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run,
+        FunctionExecuteProfile * profile) const;
 
     ColumnPtr defaultImplementationForNulls(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run,
+        FunctionExecuteProfile * profile) const;
 
     ColumnPtr defaultImplementationForNothing(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     ColumnPtr executeWithoutLowCardinalityColumns(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+        const ColumnsWithTypeAndName & args,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run,
+        FunctionExecuteProfile * profile) const;
 
     ColumnPtr executeWithoutSparseColumns(
-            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run,
+        FunctionExecuteProfile * profile) const;
 };
 
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
@@ -162,12 +168,13 @@ public:
         const DataTypePtr & result_type,
         size_t input_rows_count,
         bool dry_run) const;
-    virtual ColumnPtr executeOnShortCircuite( /// NOLINT
+
+    virtual ColumnPtr execute( /// NOLINT
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
         bool dry_run,
-        ShortCircuiteArgumentExecuteCosts & arg_costs) const;
+        FunctionExecuteProfile * profile) const;
     
 
     /// Get the main function name.
@@ -487,6 +494,11 @@ public:
     virtual String getName() const = 0;
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    virtual ColumnPtr executeImpl(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecuteProfile * profile) const;
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         return executeImpl(arguments, result_type, input_rows_count);
