@@ -773,10 +773,10 @@ void ColumnNullable::protect()
     getNullMapColumn().protect();
 }
 
-ColumnPtr ColumnNullable::compress() const
+ColumnPtr ColumnNullable::compress(bool force_compression) const
 {
-    ColumnPtr nested_compressed = nested_column->compress();
-    ColumnPtr null_map_compressed = null_map->compress();
+    ColumnPtr nested_compressed = nested_column->compress(force_compression);
+    ColumnPtr null_map_compressed = null_map->compress(force_compression);
 
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
 

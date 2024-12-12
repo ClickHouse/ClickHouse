@@ -1,4 +1,5 @@
 #include <optional>
+#include <shared_mutex>
 
 #include <Core/Field.h>
 
@@ -440,7 +441,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         }
 
         // If the original column is DateTime64, check for sub-second precision
-        if (isDateTime64(column_to_cast.column->getDataType()))
+        if (isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
         {
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }

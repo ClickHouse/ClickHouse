@@ -102,5 +102,14 @@ RUN groupadd --system --gid 1000 clickhouse \
     && useradd --system --gid 1000 --uid 1000 -m clickhouse \
     && mkdir -p /.cache/sccache && chmod 777 /.cache/sccache
 
+
+# TODO move nfpm to docker that will do packaging
+ARG TARGETARCH
+ARG NFPM_VERSION=2.20.0
+RUN arch=${TARGETARCH:-amd64} \
+    && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
+    && dpkg -i /tmp/nfpm.deb \
+    && rm /tmp/nfpm.deb
+
 ENV PYTHONPATH="/wd"
 ENV PYTHONUNBUFFERED=1

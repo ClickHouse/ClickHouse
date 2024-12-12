@@ -33,11 +33,11 @@ public:
 
     String getID(char) const override { return "external ddl query"; }
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked stacked) const override
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked stacked) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "EXTERNAL DDL FROM " << (settings.hilite ? hilite_none : "");
-        from->formatImpl(settings, state, stacked);
-        external_ddl->formatImpl(settings, state, stacked);
+        ostr << (settings.hilite ? hilite_keyword : "") << "EXTERNAL DDL FROM " << (settings.hilite ? hilite_none : "");
+        from->formatImpl(ostr, settings, state, stacked);
+        external_ddl->formatImpl(ostr, settings, state, stacked);
     }
 
     QueryKind getQueryKind() const override { return QueryKind::ExternalDDL; }

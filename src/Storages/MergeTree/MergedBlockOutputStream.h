@@ -24,8 +24,8 @@ public:
         CompressionCodecPtr default_codec_,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
+        size_t part_uncompressed_bytes,
         bool reset_columns_ = false,
-        bool save_marks_in_cache = false,
         bool blocks_are_granules_size = false,
         const WriteSettings & write_settings = {});
 
@@ -64,13 +64,15 @@ public:
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
+        ColumnsWithTypeAndName * additional_columns_samples = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
+        ColumnsWithTypeAndName * additional_columns_samples = nullptr);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.

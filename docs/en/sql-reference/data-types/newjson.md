@@ -10,8 +10,8 @@ keywords: [json, data type]
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
 :::note
-This feature is experimental and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
-If you want to use JSON type, set `allow_experimental_json_type = 1`. 
+This feature is beta and is not production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
+If you want to use JSON type, set `enable_json_type = 1`. 
 :::
 
 To declare a column of `JSON` type, use the following syntax:
@@ -73,6 +73,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 Using CAST from `Tuple`:
 
 ```sql
+SET enable_named_columns_in_function_tuple = 1;
 SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
 ```
 
@@ -97,8 +98,9 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 Using CAST from deprecated `Object('json')`:
 
 ```sql
- SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
- ```
+SET allow_experimental_object_type = 1;
+SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json')::JSON AS json;
+```
 
 ```text
 ┌─json───────────────────────────────────────────┐

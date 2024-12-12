@@ -227,8 +227,8 @@ class Shell:
                     proc = subprocess.Popen(
                         command,
                         shell=True,
-                        stderr=subprocess.STDOUT,
                         stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
                         stdin=subprocess.PIPE if stdin_str else None,
                         universal_newlines=True,
                         start_new_session=True,  # Start a new process group for signal handling
@@ -248,11 +248,24 @@ class Shell:
                         proc.stdin.write(stdin_str)
                         proc.stdin.close()
 
-                    # Process output in real-time
-                    if proc.stdout:
-                        for line in proc.stdout:
+                    # Process both stdout and stderr in real-time
+                    def stream_output(stream, output_fp):
+                        for line in iter(stream.readline, ""):
                             sys.stdout.write(line)
-                            log_fp.write(line)
+                            output_fp.write(line)
+
+                    stdout_thread = Thread(
+                        target=stream_output, args=(proc.stdout, log_fp)
+                    )
+                    stderr_thread = Thread(
+                        target=stream_output, args=(proc.stderr, log_fp)
+                    )
+
+                    stdout_thread.start()
+                    stderr_thread.start()
+
+                    stdout_thread.join()
+                    stderr_thread.join()
 
                     proc.wait()  # Wait for the process to finish
 

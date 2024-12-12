@@ -364,7 +364,7 @@ void RefreshTask::refreshTask()
                 if (coordination.root_znode.last_attempt_replica == coordination.replica_name)
                 {
                     LOG_ERROR(log, "Znode {} indicates that this replica is running a refresh, but it isn't. Likely a bug.", coordination.path + "/running");
-#ifdef ABORT_ON_LOGICAL_ERROR
+#ifdef DEBUG_OR_SANITIZER_BUILD
                     abortOnFailedAssertion("Unexpected refresh lock in keeper");
 #else
                     coordination.running_znode_exists = false;

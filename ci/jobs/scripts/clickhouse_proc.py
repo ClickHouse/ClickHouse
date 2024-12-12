@@ -66,6 +66,24 @@ class ClickHouseProc:
         print(f"Started setup_minio.sh asynchronously with PID {process.pid}")
         return True
 
+    def log_cluster_config(self):
+        return Shell.check(
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster /tmp/praktika/etc/clickhouse-server/config.d/system_logs_export.yaml",
+            verbose=True,
+        )
+
+    def log_cluster_setup_replication(self):
+        return Shell.check(
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
+            verbose=True,
+        )
+
+    def log_cluster_stop_replication(self):
+        return Shell.check(
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
+            verbose=True,
+        )
+
     def start(self):
         print("Starting ClickHouse server")
         Shell.check(f"rm {self.pid_file}")

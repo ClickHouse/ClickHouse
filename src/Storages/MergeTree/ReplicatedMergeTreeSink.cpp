@@ -201,8 +201,8 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
         log,
         {settings[Setting::insert_keeper_max_retries],
          settings[Setting::insert_keeper_retry_initial_backoff_ms],
-         settings[Setting::insert_keeper_retry_max_backoff_ms]},
-        context->getProcessListElement());
+         settings[Setting::insert_keeper_retry_max_backoff_ms],
+         context->getProcessListElement()});
     quorum_retries_ctl.retryLoop(
         [&]()
         {
@@ -490,16 +490,9 @@ void ReplicatedMergeTreeSinkImpl<false>::finishDelayedChunk(const ZooKeeperWithF
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && deduplicated) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            auto * mark_cache = storage.getContext()->getMarkCache().get();
 
-            if (!error && mark_cache)
-            {
-                for (const auto & stream : partition.temp_part.streams)
-                {
-                    auto marks = stream.stream->releaseCachedMarks();
-                    addMarksToCache(*part, marks, mark_cache);
-                }
-            }
+            if (!error)
+                partition.temp_part.prewarmCaches();
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), ExecutionStatus(error));
@@ -544,14 +537,7 @@ void ReplicatedMergeTreeSinkImpl<true>::finishDelayedChunk(const ZooKeeperWithFa
 
             if (conflict_block_ids.empty())
             {
-                if (auto * mark_cache = storage.getContext()->getMarkCache().get())
-                {
-                    for (const auto & stream : partition.temp_part.streams)
-                    {
-                        auto marks = stream.stream->releaseCachedMarks();
-                        addMarksToCache(*partition.temp_part.part, marks, mark_cache);
-                    }
-                }
+                partition.temp_part.prewarmCaches();
 
                 auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
                 PartLog::addNewPart(
@@ -739,8 +725,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         log,
         {settings[Setting::insert_keeper_max_retries],
          settings[Setting::insert_keeper_retry_initial_backoff_ms],
-         settings[Setting::insert_keeper_retry_max_backoff_ms]},
-        context->getProcessListElement());
+         settings[Setting::insert_keeper_retry_max_backoff_ms],
+         context->getProcessListElement()});
 
     auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
     {

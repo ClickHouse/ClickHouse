@@ -148,12 +148,12 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
     return wb.str();
 }
 
-void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+        ostr << applyVisitor(FieldVisitorToString(), value);
     else
-        settings.ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+        ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
 }
 
 }

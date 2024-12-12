@@ -36,32 +36,32 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
 
         if (table)
         {
             if (database)
             {
-                database->formatImpl(settings, state, frame);
-                settings.ostr << '.';
+                database->formatImpl(ostr, settings, state, frame);
+                ostr << '.';
             }
 
             chassert(table);
-            table->formatImpl(settings, state, frame);
+            table->formatImpl(ostr, settings, state, frame);
         }
 
         if (partition)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
+            ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(ostr, settings, state, frame);
         }
 
         if (!part_name.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PART " << (settings.hilite ? hilite_none : "")
+            ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PART " << (settings.hilite ? hilite_none : "")
                 << quoteString(part_name);
         }
     }
@@ -84,10 +84,10 @@ struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK ALL TABLES" << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK ALL TABLES" << (settings.hilite ? hilite_none : "");
     }
 };
 

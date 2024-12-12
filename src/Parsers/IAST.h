@@ -193,7 +193,6 @@ public:
     /// Format settings.
     struct FormatSettings
     {
-        WriteBuffer & ostr;
         bool one_line;
         bool hilite;
         IdentifierQuotingRule identifier_quoting_rule;
@@ -205,7 +204,6 @@ public:
         bool enforce_strict_identifier_format;
 
         explicit FormatSettings(
-            WriteBuffer & ostr_,
             bool one_line_,
             bool hilite_ = false,
             IdentifierQuotingRule identifier_quoting_rule_ = IdentifierQuotingRule::WhenNecessary,
@@ -214,8 +212,7 @@ public:
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
             bool enforce_strict_identifier_format_ = false)
-            : ostr(ostr_)
-            , one_line(one_line_)
+            : one_line(one_line_)
             , hilite(hilite_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
@@ -227,21 +224,7 @@ public:
         {
         }
 
-        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
-            : ostr(ostr_)
-            , one_line(other.one_line)
-            , hilite(other.hilite)
-            , identifier_quoting_rule(other.identifier_quoting_rule)
-            , identifier_quoting_style(other.identifier_quoting_style)
-            , show_secrets(other.show_secrets)
-            , nl_or_ws(other.nl_or_ws)
-            , literal_escaping_style(other.literal_escaping_style)
-            , print_pretty_type_names(other.print_pretty_type_names)
-            , enforce_strict_identifier_format(other.enforce_strict_identifier_format)
-        {
-        }
-
-        void writeIdentifier(const String & name, bool ambiguous) const;
+        void writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const;
         void checkIdentifier(const String & name) const;
     };
 
@@ -270,13 +253,13 @@ public:
         const IAST * current_select = nullptr;
     };
 
-    void format(const FormatSettings & settings) const
+    void format(WriteBuffer & ostr, const FormatSettings & settings) const
     {
         FormatState state;
-        formatImpl(settings, state, FormatStateStacked());
+        formatImpl(ostr, settings, state, FormatStateStacked());
     }
 
-    virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
+    virtual void formatImpl(WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }

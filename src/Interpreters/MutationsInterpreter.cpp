@@ -42,6 +42,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -72,7 +73,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
-    extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_STATISTICS;
 }
 
@@ -343,12 +343,6 @@ bool MutationsInterpreter::Source::supportsLightweightDelete() const
     return storage->supportsLightweightDelete();
 }
 
-
-bool MutationsInterpreter::Source::hasLightweightDeleteMask() const
-{
-    return part && part->hasLightweightDelete();
-}
-
 bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
 {
     return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
@@ -402,6 +396,8 @@ MutationsInterpreter::MutationsInterpreter(
             "Cannot execute mutation for {}. Mutation should be applied to every part separately.",
             source.getStorage()->getName());
     }
+
+    prepare(!settings.can_execute);
 }
 
 MutationsInterpreter::MutationsInterpreter(
@@ -414,10 +410,21 @@ MutationsInterpreter::MutationsInterpreter(
     ContextPtr context_,
     Settings settings_)
     : MutationsInterpreter(
-        Source(storage_, std::move(source_part_), std::move(alter_conversions_)),
+        Source(storage_, source_part_, std::move(alter_conversions_)),
         std::move(metadata_snapshot_), std::move(commands_),
         std::move(available_columns_), std::move(context_), std::move(settings_))
 {
+    const auto & part_columns = source_part_->getColumnsDescription();
+    auto persistent_virtuals = storage_.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
+    NameSet available_columns_set(available_columns.begin(), available_columns.end());
+
+    for (const auto & column : persistent_virtuals)
+    {
+        if (part_columns.has(column.name) && !available_columns_set.contains(column.name))
+            available_columns.push_back(column.name);
+    }
+
+    prepare(!settings.can_execute);
 }
 
 MutationsInterpreter::MutationsInterpreter(
@@ -442,8 +449,6 @@ MutationsInterpreter::MutationsInterpreter(
         LOG_TEST(logger, "Will use old analyzer to prepare mutation");
     }
     context = std::move(new_context);
-
-    prepare(!settings.can_execute);
 }
 
 static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const StorageMetadataPtr & metadata_snapshot)
@@ -579,13 +584,6 @@ void MutationsInterpreter::prepare(bool dry_run)
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
-    /// Add _row_exists column if it is physically present in the part
-    if (source.hasLightweightDeleteMask())
-    {
-        all_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
-        available_columns_set.insert(RowExistsColumn::name);
-    }
-
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
 
@@ -599,9 +597,11 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
-            if (!available_columns_set.contains(name) && name != RowExistsColumn::name)
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-                    "Column {} is updated but not requested to read", name);
+            if (name == RowExistsColumn::name)
+            {
+                if (available_columns_set.emplace(name).second)
+                    available_columns.push_back(name);
+            }
 
             updated_columns.insert(name);
         }
@@ -866,10 +866,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
-                && metadata_snapshot->hasOnlyRowsTTL();
-
-            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
+            if (materialize_ttl_recalculate_only)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -1070,10 +1067,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
 
-    /// Add _row_exists column if it is present in the part
-    if (source.hasLightweightDeleteMask() || deleted_mask_updated)
-        all_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
-
     bool has_filters = false;
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
@@ -1106,6 +1099,21 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
                 prepared_stages[i].output_columns.insert(column_name);
             }
+        }
+    }
+
+    auto storage_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+
+    /// Add persistent virtual columns if the whole part is rewritten,
+    /// because we should preserve them in parts after mutation.
+    if (prepared_stages.back().isAffectingAllColumns(storage_columns))
+    {
+        for (const auto & column_name : available_columns)
+        {
+            if (column_name == RowExistsColumn::name && has_filters && !deleted_mask_updated)
+                continue;
+
+            prepared_stages.back().output_columns.insert(column_name);
         }
     }
 
