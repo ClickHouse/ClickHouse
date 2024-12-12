@@ -40,7 +40,7 @@ using OptionalFieldInterval = std::optional<FieldInterval>;
 struct FunctionExecuteProfile
 {
     size_t input_rows = 0;
-    size_t output_rows = 0;
+    size_t valid_output_rows = 0;
     size_t elapsed_ns = 0;
     // If a argument is function column, its profile is stored here.
     std::vector<std::pair<size_t, FunctionExecuteProfile>> arguments_profiles;
