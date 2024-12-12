@@ -5109,30 +5109,27 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     array_join_nodes = std::move(array_join_column_expressions);
 }
 
-void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodes & table_expressions, IdentifierResolveScope & scope)
+void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope)
 {
     Names column_names;
     if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
         return;
 
-    if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() != JoinKind::Paste)
+    if (join_node.getKind() != JoinKind::Paste)
         return;
 
-    bool any_query_node = false;
-    for (const auto & expr : table_expressions)
-    {
-        const auto * query_node = expr->as<const QueryNode>();
-        if (!query_node)
-            continue;
+    auto * left_node = join_node.getLeftTableExpression()->as<QueryNode>();
+    auto * right_node = join_node.getRightTableExpression()->as<QueryNode>();
 
-        any_query_node = true;
+    if (!left_node && !right_node)
+        return;
 
-        for (const auto & name_and_type : query_node->getProjectionColumns())
+    if (left_node)
+        for (const auto & name_and_type : left_node->getProjectionColumns())
             column_names.push_back(name_and_type.name);
-    }
-
-    if (!any_query_node)
-        return;
+    if (right_node)
+        for (const auto & name_and_type : right_node->getProjectionColumns())
+            column_names.push_back(name_and_type.name);
 
     if (column_names.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Names of projection columns cannot be empty");
@@ -5142,7 +5139,7 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & joi
         if (column_names[i] == column_names[i+1])
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Name of columns and aliases should be unique for this query (you can add/change aliases to avoid duplication)"
-                            "While processing '{}'", join_node->formatASTForErrorMessage());
+                            "While processing '{}'", join_node.formatASTForErrorMessage());
 }
 
 /// Resolve join node in scope
@@ -5156,8 +5153,6 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
         resolveQueryJoinTreeNode(expr, scope, expressions_visitor);
         validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
     }
-
-    // checkDuplicateTableNamesOrAlias(cross_join_node, expressions, scope);
 }
 
 /// Resolve join node in scope
@@ -5172,7 +5167,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
 
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
-        checkDuplicateTableNamesOrAlias(join_node, {join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression()}, scope);
+        checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);
 
     if (join_node_typed.isOnJoinExpression())
     {

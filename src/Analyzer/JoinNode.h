@@ -166,19 +166,32 @@ private:
 class CrossJoinNode;
 using CrossJoinNodePtr = std::shared_ptr<CrossJoinNode>;
 
+/** CrossJoin node represents corss/comma join in query tree.
+  * Example: SELECT * FROM t1, t2, t3
+  */
 class CrossJoinNode final : public IQueryTreeNode
 {
 public:
     struct JoinType
     {
+        /// Only Comma or Cross Join allowed.
+        /// This is only needed to support cross_to_inner_join_rewrite.
         bool is_comma = false;
         JoinLocality locality = JoinLocality::Unspecified;
     };
 
     using JoinTypes = std::vector<JoinType>;
 
+    /// Construct a cross join node starting from the first table.
+    /// Other tables are added with appendTable method.
     explicit CrossJoinNode(QueryTreeNodePtr table_expression);
+
+    /// Construct a cross join with a list of table expressions,
+    /// together with join types.
+    /// It's expected that join_types.size() + 1 == table_expressions.size()
     CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_);
+
+    void appendTable(QueryTreeNodePtr table_expression, JoinType join_type);
 
     const QueryTreeNodes & getTableExpressions() const
     {
@@ -193,22 +206,10 @@ public:
     /// The size is getTableExpressions.size() - 1
     const JoinTypes & getJoinTypes() { return join_types; }
 
-    void appendTable(QueryTreeNodePtr table_expression, JoinType join_type);
-
-    /// Convert join node to ASTTableJoin
-    // ASTPtr toASTTableJoin() const;
-
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::CROSS_JOIN;
     }
-
-    /*
-     * Convert CROSS to INNER JOIN - changes JOIN kind and sets a new join expression
-     * (that was moved from WHERE clause).
-     * Expects the current kind to be CROSS (and join expression to be null because of that).
-     */
-    // void crossToInner(const QueryTreeNodePtr & join_expression_);
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 

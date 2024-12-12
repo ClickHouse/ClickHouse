@@ -104,6 +104,9 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<CrossToInnerJoinVisitor>;
     using Base::Base;
 
+    /// The graph for cross join.
+    /// Nodes are table expressions,
+    /// Edges are equality conditions which are suitable for CROSS -> INNER rewriting.
     struct JoinGraph
     {
         struct Edge
@@ -114,8 +117,11 @@ public:
         struct Node
         {
             QueryTreeNodePtr table_node;
+
+            /// The join type is stored for the right table.
+            /// For the left-most table it's default and not-used.
             CrossJoinNode::JoinType join_type{};
-            std::unordered_map<size_t, Edge *> edges{};
+            std::map<size_t, Edge *> edges{};
         };
 
         std::vector<Node> nodes;
@@ -191,10 +197,20 @@ public:
         CrossJoinNode::JoinType join_type{};
     };
 
+    /// Here we return the ordered list of tables with (possibly) equi conditions.
+    /// The graph is split into the connected components, each component can be represented as a chain of INNER joins.
+    /// For now, join selectivity and table sizes are not accounted, and the join tree is left-heavy.
+    /// Every component is BFS-traversed, preferring the node with the smallest number.
+    /// Connected components are ordered by the min node number in the component.
+    /// This allows keeping the tables order as much as possible, assuming the left tables are the havier ones.
     std::vector<TableWithConditions> buildJoinsChain(const JoinGraph & graph)
     {
         std::vector<TableWithConditions> res;
+
+        /// This is the set of candidates to be joined with the current connected component.
+        /// The ordered set is important to prefer the left-most table.
         std::set<size_t> active_set;
+        /// This is the set of tables which are joined and added to the result.
         std::vector<bool> visited(graph.nodes.size(), false);
 
         for (size_t i = 0; i < graph.nodes.size(); ++i)
@@ -213,6 +229,8 @@ public:
                 QueryTreeNodes equi_conditions;
                 for (const auto & [dest, edge] : graph.nodes[node].edges)
                 {
+                    /// The edge which connects to added table means that we can use this condition in INNER join.
+                    /// Othervise, we can increase the active set.
                     if (visited[dest])
                         equi_conditions.insert(equi_conditions.end(), edge->equi_conditions.begin(), edge->equi_conditions.end());
                     else
@@ -229,6 +247,8 @@ public:
         return res;
     }
 
+    /// Build a left-heavy INNER JOIN within the connected component.
+    /// If there are many connected components, add a CORSS JOIN on top.
     QueryTreeNodePtr rebuildJoins(std::vector<TableWithConditions> tables)
     {
         std::shared_ptr<CrossJoinNode> cross;
