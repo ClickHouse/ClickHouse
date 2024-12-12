@@ -1012,6 +1012,10 @@ void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf);
 
+
+void writeFieldBinary(const Field & x, WriteBuffer & buf);
+Field readFieldBinary(ReadBuffer & buf);
+
 String toString(const Field & x);
 }
 

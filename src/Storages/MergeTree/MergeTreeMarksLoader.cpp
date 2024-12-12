@@ -16,6 +16,7 @@ namespace ProfileEvents
 {
     extern const Event WaitMarksLoadMicroseconds;
     extern const Event BackgroundLoadingMarksTasks;
+    extern const Event LoadingMarksTasksCanceled;
     extern const Event LoadedMarksFiles;
     extern const Event LoadedMarksCount;
     extern const Event LoadedMarksMemoryBytes;
@@ -34,6 +35,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int ASYNC_LOAD_CANCELED;
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -84,7 +86,10 @@ void MergeTreeMarksLoader::startAsyncLoad()
 MergeTreeMarksLoader::~MergeTreeMarksLoader()
 {
     if (future.valid())
+    {
+        is_canceled = true;
         future.wait();
+    }
 }
 
 MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
@@ -252,6 +257,12 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
+            if (is_canceled)
+            {
+                ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
+                throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "Background task for loading marks was canceled");
+            }
+
             ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);
             return loadMarksSync();
         },

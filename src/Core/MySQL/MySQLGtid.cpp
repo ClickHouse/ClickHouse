@@ -1,7 +1,10 @@
 #include "MySQLGtid.h"
-#include <boost/algorithm/string.hpp>
+
+#include <Core/UUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB

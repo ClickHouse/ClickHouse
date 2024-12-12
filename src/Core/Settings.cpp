@@ -4951,6 +4951,7 @@ Prefer prefetched threadpool if all parts are on remote filesystem
 Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
+    DECLARE(UInt64, object_storage_remove_recursive_file_limit, DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT, "Max number of files to store in memory during remove. Zero value means unlimited. Used to reduce memory usage.", 0) \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the prefetch buffer to read from the filesystem.
 )", 0) \
@@ -5560,12 +5561,8 @@ Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries u
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
-    DECLARE(Bool, iceberg_engine_ignore_schema_evolution, false, R"(
-Allow to ignore schema evolution in Iceberg table engine and read all data using schema specified by the user on table creation or latest schema parsed from metadata on table creation.
-
-:::note
-Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
-:::
+    DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
+Allow experimental database engine Iceberg
 )", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
@@ -5766,6 +5763,11 @@ If enabled, MongoDB tables will return an error when a MongoDB query cannot be b
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
 
 In `clickhouse-local` it is enabled by default and can be explicitly disabled.
+)", 0) \
+    DECLARE(Bool, optimize_extract_common_expressions, false, R"(
+Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
+- indices in simple filtering expressions
+- cross to inner join optimization
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
@@ -5999,6 +6001,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
+    MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__

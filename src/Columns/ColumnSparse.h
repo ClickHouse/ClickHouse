@@ -147,7 +147,7 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override;
     UInt64 getNumberOfDefaultRows() const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     ColumnCheckpointPtr getCheckpoint() const override;
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
