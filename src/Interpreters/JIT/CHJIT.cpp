@@ -4,6 +4,7 @@
 
 #include <sys/mman.h>
 #include <cmath>
+#include <iostream>
 
 #include <boost/noncopyable.hpp>
 
@@ -30,6 +31,8 @@
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Core/Types.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -51,20 +54,117 @@ using NewInt256 = signed _BitInt(256);
 using NewUInt256 = unsigned _BitInt(256);
 #pragma clang diagnostic pop
 
-static NewInt256 divideInt256(NewInt256 left, NewInt256 right)
+/*
+template <size_t n>
+std::string bitIntToString(signed _BitInt(n) value)
 {
-    return left / right;
+    bool is_negative = value < 0;
+    if (is_negative)
+        value = -value;
+
+    char buffer[n / 4 + 2];
+    char * ptr = buffer + sizeof(buffer) - 1;
+    *ptr = '\0';
+
+    do
+    {
+        --ptr;
+        *ptr = "0123456789"[value % 10];
+        value /= 10;
+    } while (value != 0);
+
+    if (is_negative)
+    {
+        --ptr;
+        *ptr = '-';
+    }
+
+    return std::string(ptr);
 }
+*/
+
+// static std::string toString(NewInt256 value)
+// {
+//     uint64_t * ptr = reinterpret_cast<uint64_t *>(&value);
+//     return std::to_string(ptr[3]) + ":" + std::to_string(ptr[2]) + ":" + std::to_string(ptr[1]) + ":" + std::to_string(ptr[0]);
+// }
+
+/*
+static std::string toString(NewInt128 value)
+{
+    uint64_t * ptr = reinterpret_cast<uint64_t *>(&value);
+    return std::to_string(ptr[1]) + ":" + std::to_string(ptr[0]);
+}
+*/
+
+// static NewInt256 divideInt256(NewInt256 left, NewInt256 right)
+// {
+//     /*
+//     NewInt256 a = 888888888888888L;
+//     NewInt256 b = 111111111111111L;
+//     NewInt256 c = a / b;
+//     NewInt256 d = a * b;
+//     NewInt256 e = a + b;
+//     NewInt256 f = a - b;
+//     std::cout << "divide a->" << toString(a) << " b->" << toString(b) << " c->" << toString(c) << " d->" << toString(d) << " e->"
+//               << toString(e) << " f->" << toString(f) << std::endl;
+//     */
+
+//     // auto res = static_cast<NewInt128>(left) / static_cast<NewInt128>(right);
+//     // std::cout << "divide: left:" << toString(left) << " right:" << toString(right) << " result:" << toString(res) << std::endl;
+//     /*
+//     std::cout << "divide left:" << toString(Field{*reinterpret_cast<const Int256 *>(&left)})
+//               << " right:" << toString(Field{*reinterpret_cast<const Int256 *>(&right)})
+//               << " result:" << toString(Field{*reinterpret_cast<const Int256 *>(&res)}) << std::endl;
+//     */
+//     return left / right;
+// }
+
+/*
+static NewInt256 addInt256(NewInt256 left, NewInt256 right)
+{
+    auto res = left + right;
+    std::cout << "add left:" << toString(Field{*reinterpret_cast<const Int256 *>(&left)})
+              << " right:" << toString(Field{*reinterpret_cast<const Int256 *>(&right)})
+              << " result:" << toString(Field{*reinterpret_cast<const Int256 *>(&res)}) << std::endl;
+    return res;
+}
+*/
+
+/*
+static NewInt256 multiplyInt256(NewInt256 left, NewInt256 right)
+{
+    auto res = left * right;
+    std::cout << "multiply left:" << toString(Field{*reinterpret_cast<const Int256 *>(&left)})
+              << " right:" << toString(Field{*reinterpret_cast<const Int256 *>(&right)})
+              << " result:" << toString(Field{*reinterpret_cast<const Int256 *>(&res)}) << std::endl;
+    return res;
+}
+*/
+
+/*
+static NewInt256 moduloInt256(NewInt256 left, NewInt256 right)
+{
+    return left % right;
+}
+*/
+
 
 static NewInt128 divideInt128(NewInt128 left, NewInt128 right)
 {
     return left / right;
 }
 
+static NewInt128 moduloInt128(NewInt128 left, NewInt128 right)
+{
+    return left % right;
+}
+
 static NewInt128 castDoubleToInt128(double from)
 {
     return static_cast<NewInt128>(from);
 }
+
 
 /** Simple module to object file compiler.
   * Result object cannot be used as machine code directly, it should be passed to linker.
@@ -385,7 +485,7 @@ private:
 
 CHJIT::CHJIT()
     : machine(getTargetMachine())
-    , layout(machine->createDataLayout())
+, layout(machine->createDataLayout())
     , compiler(std::make_unique<JITCompiler>(*machine))
     , symbol_resolver(std::make_unique<JITSymbolResolver>())
 {
@@ -397,8 +497,10 @@ CHJIT::CHJIT()
 
     double (*fmod_ptr)(double, double) = &fmod;
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
-    symbol_resolver->registerSymbol("__divei4", reinterpret_cast<void *>(&divideInt256));
+    // symbol_resolver->registerSymbol("__divei4", reinterpret_cast<void *>(&divideInt256));
+    // symbol_resolver->registerSymbol("__modei4", reinterpret_cast<void *>(&moduloInt256));
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&divideInt128));
+    symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&moduloInt128));
     symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&castDoubleToInt128));
 }
 
