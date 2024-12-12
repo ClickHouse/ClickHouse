@@ -5,6 +5,8 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -92,6 +94,7 @@ void TraceCollector::run()
 {
     setThreadName("TraceCollector");
 
+    MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
 
     try
@@ -157,6 +160,7 @@ void TraceCollector::run()
     }
     catch (...)
     {
+        tryLogCurrentException("TraceCollector");
         tryClosePipe();
         throw;
     }
