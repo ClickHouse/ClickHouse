@@ -107,7 +107,8 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
     return {precision, scale};
 }
 
-bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
+template <typename T>
+bool equals(const T & first, const T & second)
 {
     std::stringstream first_string_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     std::stringstream second_string_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -124,9 +125,23 @@ bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & sec
     return first_string_stream.str() == second_string_stream.str();
 }
 
-bool operator!=(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
+
+bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
 {
-    return !(first == second);
+    return equals(first, second);
+}
+
+bool operator==(const Poco::JSON::Array & first, const Poco::JSON::Array & second)
+{
+    return equals(first, second);
+}
+
+bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
+{
+    static String fields_key = "fields";
+    if (!first.isArray(fields_key) || !second.isArray(fields_key))
+        return false;
+    return *(first.getArray(fields_key)) == *(second.getArray(fields_key));
 }
 }
 
@@ -481,7 +496,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        chassert(*iceberg_table_schemas_by_ids.at(schema_id) == *schema_ptr);
+        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr));
     }
     else
     {
