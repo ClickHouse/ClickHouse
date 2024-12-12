@@ -19,8 +19,8 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 

@@ -122,6 +122,10 @@ Default value: `0`.
 
 Cloud default value: half the memory amount per replica.
 
+:::note
+- You cannot use `max_bytes_before_external_group_by` and `max_bytes_ratio_before_external_group_by` at the same time
+:::
+
 ## max_bytes_ratio_before_external_group_by {#settings-max_bytes_ratio_before_external_group_by}
 
 The ratio of available memory that is allowed for `GROUP BY`, once reached, uses external memory for aggregation.
@@ -131,8 +135,8 @@ For example, if set to `0.6`, `GROUP BY` will allow to use `60%` of available me
 Default value: `0.0`.
 
 :::note
-- You cannot use both `max_bytes_ratio_before_external_group_by` and `max_bytes_before_external_group_by`
-- **The algorithm is experimental and subject to change**
+- You cannot use `max_bytes_ratio_before_external_group_by` and `max_bytes_before_external_group_by` at the same time
+- **The setting is experimental and subject to change**
 :::
 
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
@@ -146,6 +150,10 @@ Default value: 0.
 
 Cloud default value: half the memory amount per replica.
 
+:::note
+- You cannot use `max_bytes_before_external_sort` and `mqx_bytes_ratio_before_external_sort` at the same time
+:::
+
 ## max_bytes_ratio_before_external_sort {#settings-max_bytes_ratio_before_external_sort}
 
 The ratio of available memory that is allowed for `ORDER BY`, once reached, uses external sort.
@@ -155,8 +163,8 @@ For example, if set to `0.6`, `ORDER BY` will allow to use `60%` of available me
 Default value: `0.0`.
 
 :::note
-- You cannot use both `max_bytes_ratio_before_external_sort` and `max_bytes_before_external_sort`
-- **The algorithm is experimental and subject to change**
+- You cannot use `max_bytes_ratio_before_external_sort` and `max_bytes_before_external_sort` at the same time
+- The setting is experimental and subject to change
 :::
 
 ## max_rows_to_sort {#max-rows-to-sort}

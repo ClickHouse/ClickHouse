@@ -1,4 +1,4 @@
-tbl with enable_minmax_index_for_all_numeric_columns and enable_minmax_index_for_all_string_columns enabled
+tbl1 with enable_minmax_index_for_all_numeric_columns and enable_minmax_index_for_all_string_columns enabled
 x_idx	minmax	x	34
 _idx_minmax_n_key	minmax	key	34
 _idx_minmax_n_y	minmax	y	34
