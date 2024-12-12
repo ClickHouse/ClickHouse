@@ -18,9 +18,6 @@ from helpers.test_tools import TSV
 
 from . import nats_pb2
 
-# # FIXME This test is too flaky
-# # https://github.com/ClickHouse/ClickHouse/issues/39185
-
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
@@ -115,6 +112,7 @@ async def nats_produce_messages(cluster_inst, subject, messages=(), bytes=None):
         await nc.publish(subject, message.encode())
     if bytes is not None:
         await nc.publish(subject, bytes)
+    await nc.flush()
     logging.debug("Finished publishing to " + subject)
 
     await nc.close()
