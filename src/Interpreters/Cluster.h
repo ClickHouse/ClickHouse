@@ -48,6 +48,7 @@ struct ClusterConnectionParameters
     Priority priority{1};
     String cluster_name;
     String cluster_secret;
+    bool internal_replication{false};
 };
 
 /// Cluster contains connection pools to each node
@@ -68,7 +69,7 @@ public:
     /// 'clickhouse_port' - port that this server instance listen for queries.
     /// This parameter is needed only to check that some address is local (points to ourself).
     ///
-    /// Used for remote() function.
+    /// Used for remote() function and Replicated database cluster.
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<String>> & names,

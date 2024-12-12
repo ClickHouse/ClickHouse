@@ -531,7 +531,7 @@ Cluster::Cluster(
 
         addresses_with_failover.emplace_back(current);
 
-        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1);
+        addShard(settings, std::move(current), params.treat_local_as_remote, current_shard_num, /* weight= */ 1, /* insert_paths= */ {}, params.internal_replication);
         ++current_shard_num;
     }
 
@@ -580,6 +580,10 @@ void Cluster::addShard(
     ConnectionPoolPtrs all_replicas_pools;
     all_replicas_pools.reserve(addresses.size());
 
+    /// "_all_replicas" is a marker that will be replaced with all replicas
+    /// (for creating connections in the Distributed engine)
+    insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
+
     for (const auto & replica : addresses)
     {
         auto replica_pool = ConnectionPoolFactory::instance().get(
@@ -600,6 +604,14 @@ void Cluster::addShard(
         all_replicas_pools.emplace_back(replica_pool);
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
+
+        if (internal_replication)
+        {
+            auto dir_name = replica.toFullString(/* use_compact_format= */ false);
+            if (!replica.is_local)
+                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
+            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
+        }
     }
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
         all_replicas_pools,

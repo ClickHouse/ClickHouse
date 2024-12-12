@@ -284,7 +284,8 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         cluster_auth_info.cluster_secure_connection,
         Priority{1},
         TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
-        cluster_auth_info.cluster_secret};
+        cluster_auth_info.cluster_secret,
+        /*internal_replication*/true};
 
     return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params);
 }
