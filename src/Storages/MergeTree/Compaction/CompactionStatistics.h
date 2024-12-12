@@ -7,12 +7,12 @@ namespace DB
 
 /// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
 /// This value is chosen to not allow big merges to eat all free space. Thus allowing small merges to proceed.
-static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
+constexpr double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 
 /// To do merge, reserve amount of space equals to sum size of parts times specified coefficient.
 /// Must be strictly less than DISK_USAGE_COEFFICIENT_TO_SELECT,
 /// because between selecting parts to merge and doing merge, amount of free space could have decreased.
-static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
+constexpr double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 class CompactionStatistics
 {
