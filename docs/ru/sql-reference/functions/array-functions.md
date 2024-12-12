@@ -1635,17 +1635,17 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 └──────────────┘
 ```
 
-## arrayRocAUC {#arrayrocauc}
+## arrayROCAUC {#arrayrocauc}
 
 Вычисляет площадь под кривой.
 
 **Синтаксис**
 
 ``` sql
-arrayRocAUC(arr_scores, arr_labels)
+arrayROCAUC(arr_scores, arr_labels)
 ```
 
-Синоним: `arrayAUC`, `arrayROCAUC`.
+Синоним: `arrayAUC`.
 
 **Аргументы**
 
@@ -1663,13 +1663,13 @@ arrayRocAUC(arr_scores, arr_labels)
 Запрос:
 
 ``` sql
-SELECT arrayRocAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Результат:
 
 ``` text
-┌─arrayRocAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+┌─arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                                             0.75 │
 └──────────────────────────────────────────────────┘
 ```

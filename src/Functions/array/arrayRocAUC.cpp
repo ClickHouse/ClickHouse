@@ -58,7 +58,7 @@ namespace ErrorCodes
   * TPR_raw = countIf(score > score_i, label = positive) = count positive labels above certain score
   *
   * Let's look at the example:
-  * arrayRocAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+  * arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
   *
   * 1. We have pairs: (-, 0.1), (-, 0.4), (+, 0.35), (+, 0.8)
   *
@@ -75,11 +75,11 @@ namespace ErrorCodes
   * The "curve" will be present by a line that moves one step either towards right or top on each threshold change.
   */
 
-class FunctionArrayRocAUC : public IFunction
+class FunctionArrayROCAUC : public IFunction
 {
 public:
-    static constexpr auto name = "arrayRocAUC";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayRocAUC>(); }
+    static constexpr auto name = "arrayROCAUC";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayROCAUC>(); }
 
 private:
     static Float64 apply(
@@ -247,12 +247,11 @@ public:
 };
 
 
-REGISTER_FUNCTION(ArrayRocAUC)
+REGISTER_FUNCTION(ArrayROCAUC)
 {
-    factory.registerFunction<FunctionArrayRocAUC>();
-    /// Backward compatibility, also the ROC AUC is the more commonly used AUC
-    factory.registerAlias("arrayAUC", "arrayRocAUC");
-    factory.registerAlias("arrayROCAUC", "arrayRocAUC");
+    factory.registerFunction<FunctionArrayROCAUC>();
+    /// Backward compatibility, also ROC AUC is often shorted to just AUC
+    factory.registerAlias("arrayAUC", "arrayROCAUC");
 }
 
 }

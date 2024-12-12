@@ -135,7 +135,7 @@ arrayReverse
 arrayReverseFill
 arrayReverseSort
 arrayReverseSplit
-arrayRocAUC
+arrayROCAUC
 arraySlice
 arraySort
 arraySplit
