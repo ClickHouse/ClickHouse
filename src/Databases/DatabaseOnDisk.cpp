@@ -760,6 +760,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     }
 
     ReadSettings read_settings = getReadSettings();
+    read_settings.local_fs_method = LocalFSReadMethod::read;
     read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
     auto read_buf = db_disk->readFile(metadata_file_path, read_settings);
     String query;
