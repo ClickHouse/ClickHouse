@@ -164,12 +164,15 @@ public:
     bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
-        settings.arguments_with_disabled_lazy_execution.insert(0);
+        bool is_and_or = name == NameAnd::name || name == NameOr::name;
+        if (!is_and_or)
+            settings.arguments_with_disabled_lazy_execution.insert(0);
         settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
         settings.force_enable_lazy_execution = false;
-        return name == NameAnd::name || name == NameOr::name;
+        return is_and_or;
     }
-    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
+    template <bool with_profile>
+    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, FunctionExecuteProfile * profile) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
@@ -180,6 +183,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const override;
 
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
 

@@ -139,6 +139,7 @@ static bool extractMaskNumeric(
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
+    mask_info.ones_count = ones_count;
     return true;
 }
 
@@ -251,7 +252,7 @@ void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
     std::swap(mask_info.has_ones, mask_info.has_zeros);
 }
 
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info)
+void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info, FunctionExecuteProfile * profile)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
@@ -274,13 +275,13 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
         /// Expanding is done to keep consistency in function calls (all columns the same size) and it's ok
         /// since the values won't be used by `if`
         auto filtered = column_function->filter(mask, -1);
-        auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
+        auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce(profile);
         auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
         mut_column->expand(mask, false);
         column.column = std::move(mut_column);
     }
     else
-        column = column_function->reduce();
+        column = column_function->reduce(profile);
 
     chassert(column.column->size() == original_size);
 }
