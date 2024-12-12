@@ -52,7 +52,8 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
 /// decompress data from in_fd into out_fd
 int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
 {
-    off_t in_pointer = start, out_pointer = 0;
+    off_t in_pointer = start;
+    off_t out_pointer = 0;
     off_t size = 0;
     off_t max_block_size = 1ull<<27;
     off_t decompressed_size = 0;
@@ -395,7 +396,11 @@ uint64_t getInode(const char * self)
     for (std::string line; std::getline(maps, line);)
     {
         std::stringstream ss(line); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        std::string addr, mode, offset, id, path;
+        std::string addr;
+        std::string mode;
+        std::string offset;
+        std::string id;
+        std::string path;
         uint64_t inode = 0;
         if (ss >> addr >> mode >> offset >> id >> inode >> path && path == self)
             return inode;

@@ -145,7 +145,8 @@ void StorageSystemParts::processNextStorage(
         ColumnSize columns_size = part->getTotalColumnsSize();
         ColumnSize secondary_indexes_size = part->getTotalSecondaryIndicesSize();
 
-        size_t src_index = 0, res_index = 0;
+        size_t src_index = 0;
+        size_t res_index = 0;
         if (columns_mask[src_index++])
         {
             WriteBufferFromOwnString out;
