@@ -53,7 +53,23 @@ public:
 
 REGISTER_FUNCTION(CurrentQueryID)
 {
-    factory.registerFunction<FunctionCurrentQueryID>();
+    factory.registerFunction<FunctionCurrentQueryID>(FunctionDocumentation{
+        .description = R"(
+Returns current Query id.
+)",
+        .syntax = {"currentQueryID()"},
+        .examples = {{{
+            "Example",
+            R"(
+SELECT currentQueryID();
+)",
+            R"(
+┌─currentQueryID()─────────────────────┐
+│ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
+└──────────────────────────────────────┘
+)"}}},
+        .categories{"Other"},
+    });
     factory.registerAlias("current_query_id", FunctionCurrentQueryID::name, FunctionFactory::Case::Insensitive);
 }
 
