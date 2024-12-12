@@ -244,9 +244,8 @@ public:
     {
 /// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
-        // TODO(nickitat): bring back FixedHashMap
-        std::shared_ptr<TwoLevelHashMap<UInt8, Mapped>> key8;
-        std::shared_ptr<TwoLevelHashMap<UInt16, Mapped>> key16;
+        std::shared_ptr<FixedHashMap<UInt8, Mapped>> key8;
+        std::shared_ptr<FixedHashMap<UInt16, Mapped>> key16;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>> key32;
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>> key64;
         std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_string;

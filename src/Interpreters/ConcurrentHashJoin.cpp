@@ -72,6 +72,10 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
         DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
 }
 
+template <typename HashTable>
+concept HasGetBucketFromHashMemberFunc = requires {
+    { std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0)) };
+};
 }
 
 namespace DB
@@ -357,7 +361,12 @@ static IColumn::Selector hashToSelector(const HashTable & hash_table, const Bloc
     const size_t num_rows = hashes.size();
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = hash_table.getBucketFromHash(hashes[i]) & (num_shards - 1);
+    {
+        if constexpr (HasGetBucketFromHashMemberFunc<HashTable>)
+            selector[i] = hash_table.getBucketFromHash(hashes[i]) & (num_shards - 1);
+        else
+            selector[i] = hashes[i] & (num_shards - 1);
+    }
     return selector;
 }
 
