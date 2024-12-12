@@ -1268,9 +1268,13 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                 }
             }
 
-            if (query_with_output->is_outfile_truncate)
+            if (!query_with_output->partition_by && query_with_output->is_outfile_truncate)
             {
                 handleTruncateMode(const_cast<ASTQueryWithOutput *>(query_with_output), out_file, query);
+            }
+            if (query_with_output->partition_by)
+            {
+                throwIfTemplateIsNotValid(out_file, query_with_output->partition_by);
             }
         }
     }

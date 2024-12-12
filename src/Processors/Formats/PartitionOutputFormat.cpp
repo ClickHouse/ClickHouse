@@ -224,6 +224,20 @@ void PartitionOutputFormat::flushImpl()
     write_buffers_manager.proxyNext();
 }
 
+void throwIfTemplateIsNotValid(const String & out_file_template, const ASTPtr & partition_by)
+{
+    absl::flat_hash_map<StringRef, size_t> partition_key_name_to_index;
+    Arena arena;
+    size_t i = 0;
+    for (const ASTPtr & expr : partition_by->children)
+    {
+        StringRef column = copyStringInArena(arena, expr->getAliasOrColumnName());
+        partition_key_name_to_index.emplace(column, i++);
+    }
+    PartitionOutputFormat::Key dummy_key(partition_key_name_to_index.size());
+    formatTemplate(out_file_template, dummy_key, partition_key_name_to_index);
+}
+
 std::vector<StringRef> copyStringsInArena(Arena & arena, const StringRefs & strings)
 {
     std::vector<StringRef> res(strings.size());
