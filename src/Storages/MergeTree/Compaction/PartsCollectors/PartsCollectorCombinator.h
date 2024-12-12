@@ -21,13 +21,13 @@ public:
     {
     }
 
-    PartsRanges collectPartsToUse(const MergeTreeTransactionPtr & tx, const PartitionIdsHint * partitions_hint) const override
+    PartsRanges collectPartsToUse(const std::optional<PartitionIdsHint> & partitions_hint) const override
     {
         PartsRanges ranges;
 
         for (const auto & collector : collectors)
         {
-            auto collected_ranges = collector->collectPartsToUse(tx, partitions_hint);
+            auto collected_ranges = collector->collectPartsToUse(partitions_hint);
             insertAtEnd(ranges, std::move(collected_ranges));
         }
 

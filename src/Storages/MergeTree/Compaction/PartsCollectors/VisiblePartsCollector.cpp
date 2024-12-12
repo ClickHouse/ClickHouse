@@ -75,7 +75,7 @@ PartProperties VisiblePartsCollector::buildPartProperties(MergeTreeData::DataPar
     };
 }
 
-MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial(const MergeTreeTransactionPtr & tx) const
+MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial() const
 {
     if (!tx)
     {
@@ -142,7 +142,7 @@ MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial(const Merge
 }
 
 MergeTreeData::DataPartsVector
-VisiblePartsCollector::filterByPartitions(MergeTreeData::DataPartsVector && parts, const PartitionIdsHint * partitions_hint) const
+VisiblePartsCollector::filterByPartitions(MergeTreeData::DataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_hint) const
 {
     if (!partitions_hint)
         return parts;
@@ -157,7 +157,7 @@ VisiblePartsCollector::filterByPartitions(MergeTreeData::DataPartsVector && part
     return parts;
 }
 
-PartsRanges VisiblePartsCollector::filterByTxVisibility(MergeTreeData::DataPartsVector && parts, const MergeTreeTransactionPtr & tx) const
+PartsRanges VisiblePartsCollector::filterByTxVisibility(MergeTreeData::DataPartsVector && parts) const
 {
     using PartsIt = MergeTreeData::DataPartsVector::iterator;
 
@@ -192,8 +192,9 @@ PartsRanges VisiblePartsCollector::filterByTxVisibility(MergeTreeData::DataParts
     return ranges;
 }
 
-VisiblePartsCollector::VisiblePartsCollector(const MergeTreeData & data_)
+VisiblePartsCollector::VisiblePartsCollector(const MergeTreeData & data_, const MergeTreeTransactionPtr & tx_)
     : data(data_)
+    , tx(tx_)
     , current_time(std::time(nullptr))
     , metadata_snapshot(data.getInMemoryMetadataPtr())
     , storage_policy(data.getStoragePolicy())
@@ -201,11 +202,11 @@ VisiblePartsCollector::VisiblePartsCollector(const MergeTreeData & data_)
 {
 }
 
-PartsRanges VisiblePartsCollector::collectPartsToUse(const MergeTreeTransactionPtr & tx, const PartitionIdsHint * partitions_hint) const
+PartsRanges VisiblePartsCollector::collectPartsToUse(const std::optional<PartitionIdsHint> & partitions_hint) const
 {
-    auto parts = collectInitial(tx);
+    auto parts = collectInitial();
     parts = filterByPartitions(std::move(parts), partitions_hint);
-    return filterByTxVisibility(std::move(parts), tx);
+    return filterByTxVisibility(std::move(parts));
 }
 
 }

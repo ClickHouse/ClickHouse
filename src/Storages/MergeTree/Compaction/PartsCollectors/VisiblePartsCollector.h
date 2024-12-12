@@ -11,18 +11,19 @@ class VisiblePartsCollector : public IPartsCollector
 {
     PartProperties buildPartProperties(MergeTreeData::DataPartPtr part) const;
 
-    MergeTreeData::DataPartsVector collectInitial(const MergeTreeTransactionPtr & tx) const;
-    MergeTreeData::DataPartsVector filterByPartitions(MergeTreeData::DataPartsVector && parts, const PartitionIdsHint * partitions_hint) const;
-    PartsRanges filterByTxVisibility(MergeTreeData::DataPartsVector && parts, const MergeTreeTransactionPtr & tx) const;
+    MergeTreeData::DataPartsVector collectInitial() const;
+    MergeTreeData::DataPartsVector filterByPartitions(MergeTreeData::DataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_hint) const;
+    PartsRanges filterByTxVisibility(MergeTreeData::DataPartsVector && parts) const;
 
 public:
-    explicit VisiblePartsCollector(const MergeTreeData & data_);
+    explicit VisiblePartsCollector(const MergeTreeData & data_, const MergeTreeTransactionPtr & tx_);
     ~VisiblePartsCollector() override = default;
 
-    PartsRanges collectPartsToUse(const MergeTreeTransactionPtr & tx, const PartitionIdsHint * partitions_hint) const override;
+    PartsRanges collectPartsToUse(const std::optional<PartitionIdsHint> & partitions_hint) const override;
 
 private:
     const MergeTreeData & data;
+    const MergeTreeTransactionPtr & tx;
 
     const time_t current_time;
     const StorageMetadataPtr metadata_snapshot;
