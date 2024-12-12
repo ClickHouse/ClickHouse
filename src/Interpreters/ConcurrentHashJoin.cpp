@@ -413,7 +413,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     };
 
     /// CHJ supports only one join clause for now
-    chassert(join.getJoinedData()->maps.size() != 1, "Expected to have only one join clause");
+    chassert(join.getJoinedData()->maps.size() == 1, "Expected to have only one join clause");
 
     return std::visit(
         [&](auto & maps)

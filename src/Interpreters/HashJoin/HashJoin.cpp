@@ -1646,7 +1646,10 @@ void HashJoin::tryRerangeRightTableData()
 
 void HashJoin::onBuildPhaseFinish()
 {
-    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+    if (needUsedFlagsForPerRightTableRow(table_join))
+        return;
+
+    const bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
     for (auto & map : data->maps)
     {
         joinDispatch(
