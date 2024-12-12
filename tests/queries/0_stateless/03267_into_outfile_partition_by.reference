@@ -42,6 +42,19 @@ x	3	3
 y	1	4
 y	2	5
 y	3	6
+performing test: simple__tulpe
+file: 1_1
+x	1	1
+file: 1_4
+y	1	4
+file: 2_2
+x	2	2
+file: 2_5
+y	2	5
+file: 3_3
+x	3	3
+file: 3_6
+y	3	6
 performing test: simple__all_keys
 file: 1_1_x
 x	1	1

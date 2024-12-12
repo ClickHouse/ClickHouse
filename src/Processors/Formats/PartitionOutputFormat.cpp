@@ -125,6 +125,17 @@ String formatTemplate(const String & out_file_template, const PartitionOutputFor
     return res;
 }
 
+const ASTs & getChildrensInPartitionBy(const ASTPtr & expr_list) {
+    if (expr_list->children.size() != 1) {
+        return expr_list->children;
+    }
+    const auto * func = expr_list->children.front()->as<ASTFunction>();
+    if (!func || func->name != "tuple") {
+        return expr_list->children;
+    }
+    return func->arguments->children;
+}
+
 PartitionOutputFormat::PartitionOutputFormat(
     const OutputFormatForPath & output_format_for_path_,
     DynamicWriteBufferManager & write_buffers_manager_,
@@ -135,7 +146,7 @@ PartitionOutputFormat::PartitionOutputFormat(
     : IOutputFormat(header_, write_buffers_manager_), header(header_), out_file_template(out_file_template_), output_format_for_path(output_format_for_path_), write_buffers_manager(write_buffers_manager_)
 {
     int i = 0;
-    for (const ASTPtr & expr : partition_by->children)
+    for (const ASTPtr & expr : getChildrensInPartitionBy(partition_by))
     {
         auto column = copyStringInArena(partition_keys_arena, expr->getAliasOrColumnName());
         partition_key_name_to_index.emplace(column, i++);
@@ -229,7 +240,7 @@ void throwIfTemplateIsNotValid(const String & out_file_template, const ASTPtr & 
     absl::flat_hash_map<StringRef, size_t> partition_key_name_to_index;
     Arena arena;
     size_t i = 0;
-    for (const ASTPtr & expr : partition_by->children)
+    for (const ASTPtr & expr : getChildrensInPartitionBy(partition_by))
     {
         StringRef column = copyStringInArena(arena, expr->getAliasOrColumnName());
         partition_key_name_to_index.emplace(column, i++);
