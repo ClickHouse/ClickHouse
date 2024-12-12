@@ -41,6 +41,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
@@ -175,6 +176,9 @@ namespace CurrentMetrics
     extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
+    extern const Metric IcebergCatalogThreads;
+    extern const Metric IcebergCatalogThreadsActive;
+    extern const Metric IcebergCatalogThreadsScheduled;
 }
 
 
@@ -283,6 +287,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
     extern const ServerSettingsUInt64 threadpool_writer_pool_size;
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
+    extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
+    extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
 
 }
 
@@ -414,6 +420,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> iceberg_catalog_threadpool;
+    mutable OnceFlag iceberg_catalog_threadpool_initialized;
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
@@ -2520,7 +2528,7 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     applySettingsChangesWithLock(changes, lock);
 }
 
-void Context::checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source)
+void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
@@ -2560,7 +2568,7 @@ void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings 
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
 }
 
-void Context::checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source)
+void Context::checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source)
 {
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(profile_elements, source);
@@ -2712,7 +2720,7 @@ bool Context::isBackgroundOperationContext() const
 void Context::killCurrentQuery() const
 {
     if (auto elem = getProcessListElement())
-        elem->cancelQuery(true);
+        elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 bool Context::isCurrentQueryKilled() const
@@ -3173,10 +3181,11 @@ UncompressedCachePtr Context::getUncompressedCache() const
 
 void Context::clearUncompressedCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    UncompressedCachePtr cache = getUncompressedCache();
 
-    if (shared->uncompressed_cache)
-        shared->uncompressed_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
@@ -3235,10 +3244,12 @@ MarkCachePtr Context::getMarkCache() const
 
 void Context::clearMarkCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    /// Get local shared pointer to the cache
+    MarkCachePtr cache = getMarkCache();
 
-    if (shared->mark_cache)
-        shared->mark_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -3251,6 +3262,23 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     });
 
     return *shared->load_marks_threadpool;
+}
+
+ThreadPool & Context::getIcebergCatalogThreadpool() const
+{
+    callOnce(shared->iceberg_catalog_threadpool_initialized, [&]
+    {
+        auto pool_size = shared->server_settings[ServerSetting::iceberg_catalog_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::iceberg_catalog_threadpool_queue_size];
+
+        shared->iceberg_catalog_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::IcebergCatalogThreads,
+            CurrentMetrics::IcebergCatalogThreadsActive,
+            CurrentMetrics::IcebergCatalogThreadsScheduled,
+            pool_size, pool_size, queue_size);
+    });
+
+    return *shared->iceberg_catalog_threadpool;
 }
 
 void Context::setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3282,10 +3310,11 @@ PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
 
 void Context::clearPrimaryIndexCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    PrimaryIndexCachePtr cache = getPrimaryIndexCache();
 
-    if (shared->primary_index_cache)
-        shared->primary_index_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
@@ -3317,10 +3346,11 @@ UncompressedCachePtr Context::getIndexUncompressedCache() const
 
 void Context::clearIndexUncompressedCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    UncompressedCachePtr cache = getIndexUncompressedCache();
 
-    if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3352,10 +3382,11 @@ MarkCachePtr Context::getIndexMarkCache() const
 
 void Context::clearIndexMarkCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    MarkCachePtr cache = getIndexMarkCache();
 
-    if (shared->index_mark_cache)
-        shared->index_mark_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
@@ -3387,10 +3418,11 @@ MMappedFileCachePtr Context::getMMappedFileCache() const
 
 void Context::clearMMappedFileCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    MMappedFileCachePtr cache = getMMappedFileCache();
 
-    if (shared->mmap_cache)
-        shared->mmap_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
@@ -3425,10 +3457,11 @@ QueryCachePtr Context::getQueryCache() const
 
 void Context::clearQueryCache(const std::optional<String> & tag) const
 {
-    std::lock_guard lock(shared->mutex);
+    QueryCachePtr cache = getQueryCache();
 
-    if (shared->query_cache)
-        shared->query_cache->clear(tag);
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear(tag);
 }
 
 void Context::clearCaches() const

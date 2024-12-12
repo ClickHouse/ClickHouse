@@ -348,11 +348,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         output_stream << std::endl;
         WriteBufferFromOStream res_buf(output_stream, 4096);
-        IAST::FormatSettings format_settings(res_buf, /* one_line */ false);
+        IAST::FormatSettings format_settings(/* one_line */ false);
         format_settings.hilite = true;
         format_settings.show_secrets = true;
         format_settings.print_pretty_type_names = true;
-        res->format(format_settings);
+        res->format(res_buf, format_settings);
         res_buf.finalize();
         output_stream << std::endl << std::endl;
     }

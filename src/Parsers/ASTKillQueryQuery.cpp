@@ -9,37 +9,37 @@ String ASTKillQueryQuery::getID(char delim) const
     return String("KillQueryQuery") + delim + (where_expression ? where_expression->getID() : "") + delim + String(sync ? "SYNC" : "ASYNC");
 }
 
-void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTKillQueryQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "KILL ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "KILL ";
 
     switch (type)
     {
         case Type::Query:
-            settings.ostr << "QUERY";
+            ostr << "QUERY";
             break;
         case Type::Mutation:
-            settings.ostr << "MUTATION";
+            ostr << "MUTATION";
             break;
         case Type::PartMoveToShard:
-            settings.ostr << "PART_MOVE_TO_SHARD";
+            ostr << "PART_MOVE_TO_SHARD";
             break;
         case Type::Transaction:
-            settings.ostr << "TRANSACTION";
+            ostr << "TRANSACTION";
             break;
     }
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_none : "");
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 
     if (where_expression)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-        where_expression->formatImpl(settings, state, frame);
+        ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        where_expression->formatImpl(ostr, settings, state, frame);
     }
 
-    settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << (test ? "TEST" : (sync ? "SYNC" : "ASYNC")) << (settings.hilite ? hilite_none : "");
+    ostr << " " << (settings.hilite ? hilite_keyword : "") << (test ? "TEST" : (sync ? "SYNC" : "ASYNC")) << (settings.hilite ? hilite_none : "");
 }
 
 }

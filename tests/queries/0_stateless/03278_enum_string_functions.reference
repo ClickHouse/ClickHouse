@@ -1,0 +1,73 @@
+-- { echoOn }
+
+DROP TABLE IF EXISTS test_enum_string_functions;
+CREATE TABLE test_enum_string_functions(e Enum('a'=1, 'b'=2)) ENGINE=TinyLog;
+INSERT INTO test_enum_string_functions VALUES ('a');
+SELECT * from test_enum_string_functions WHERE e LIKE '%abc%';
+SELECT * from test_enum_string_functions WHERE e NOT LIKE '%abc%';
+a
+SELECT * from test_enum_string_functions WHERE e iLike '%a%';
+a
+SELECT position(e, 'a') FROM test_enum_string_functions;
+1
+SELECT match(e, 'a') FROM test_enum_string_functions;
+1
+SELECT locate('a', e) FROM test_enum_string_functions;
+1
+SELECT countSubstrings(e, 'a') FROM test_enum_string_functions;
+1
+SELECT countSubstringsCaseInsensitive(e, 'a') FROM test_enum_string_functions;
+1
+SELECT countSubstringsCaseInsensitiveUTF8(e, 'a') FROM test_enum_string_functions;
+1
+SELECT hasToken(e, 'a') FROM test_enum_string_functions;
+1
+SELECT hasTokenOrNull(e, 'a') FROM test_enum_string_functions;
+1
+DROP TABLE IF EXISTS jsons;
+CREATE TABLE jsons
+(
+    `json` Enum('a', '{"a":1}')
+)
+ENGINE = Memory;
+INSERT INTO jsons VALUES ('{"a":1}');
+INSERT INTO jsons VALUES ('a');
+SELECT simpleJSONHas(json, 'foo') as res FROM jsons order by res;
+0
+0
+SELECT simpleJSONHas(json, 'a') as res FROM jsons order by res;
+0
+1
+SELECT simpleJSONExtractUInt(json, 'a') as res FROM jsons order by res;
+0
+1
+SELECT simpleJSONExtractUInt(json, 'not exsits') as res FROM jsons order by res;
+0
+0
+SELECT simpleJSONExtractInt(json, 'a') as res FROM jsons order by res;
+0
+1
+SELECT simpleJSONExtractInt(json, 'not exsits') as res FROM jsons order by res;
+0
+0
+SELECT simpleJSONExtractFloat(json, 'a') as res FROM jsons order by res;
+0
+1
+SELECT simpleJSONExtractFloat(json, 'not exsits') as res FROM jsons order by res;
+0
+0
+SELECT simpleJSONExtractBool(json, 'a') as res FROM jsons order by res;
+0
+0
+SELECT simpleJSONExtractBool(json, 'not exsits') as res FROM jsons order by res;
+0
+0
+SELECT positionUTF8(json, 'a') as res FROM jsons order by res;
+1
+3
+SELECT positionCaseInsensitiveUTF8(json, 'A') as res FROM jsons order by res;
+1
+3
+SELECT positionCaseInsensitive(json, 'A') as res FROM jsons order by res;
+1
+3
