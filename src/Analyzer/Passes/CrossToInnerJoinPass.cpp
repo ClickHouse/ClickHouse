@@ -248,7 +248,7 @@ public:
     }
 
     /// Build a left-heavy INNER JOIN within the connected component.
-    /// If there are many connected components, add a CORSS JOIN on top.
+    /// If there are many connected components, add a CROSS JOIN on top.
     QueryTreeNodePtr rebuildJoins(std::vector<TableWithConditions> tables)
     {
         std::shared_ptr<CrossJoinNode> cross;

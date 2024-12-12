@@ -166,7 +166,7 @@ private:
 class CrossJoinNode;
 using CrossJoinNodePtr = std::shared_ptr<CrossJoinNode>;
 
-/** CrossJoin node represents corss/comma join in query tree.
+/** CrossJoin node represents cross/comma join in query tree.
   * Example: SELECT * FROM t1, t2, t3
   */
 class CrossJoinNode final : public IQueryTreeNode
