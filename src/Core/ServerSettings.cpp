@@ -214,6 +214,7 @@ namespace DB
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, "Size of background pool for iceberg catalog", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 1000000, "Number of tasks which is possible to push into iceberg catalog pool", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, "0 - All feature tiers allowed (experimental, beta, production). 1 - Only beta and production feature tiers allowed. 2 - Only production feature tier allowed", 0) \
+    DECLARE(UInt64, max_cached_fiber_stacks_per_cpu, 100, "Maximum number of cached fiber stacks per CPU", 0) \
 
 
 // clang-format on

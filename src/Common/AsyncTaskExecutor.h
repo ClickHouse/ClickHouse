@@ -112,7 +112,8 @@ private:
     void createFiber();
     void destroyFiber();
 
-    FiberStack fiber_stack;
+    FixedSizeFiberStackWithCache fiber_stack;
+
     Fiber fiber;
     std::mutex fiber_lock;
     std::exception_ptr exception;

@@ -1,10 +1,13 @@
 #pragma once
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <base/defines.h>
 #include <boost/context/stack_context.hpp>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <base/getPageSize.h>
+#include <boost/core/noncopyable.hpp>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/mman.h>
@@ -17,11 +20,6 @@
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
 #endif
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_ALLOCATE_MEMORY;
-}
 
 /// This is an implementation of allocator for fiber stack.
 /// The reference implementation is protected_fixedsize_stack from boost::context.
@@ -44,46 +42,30 @@ public:
         page_size = getPageSize();
     }
 
-    boost::context::stack_context allocate() const
-    {
-        size_t num_pages = 1 + (stack_size - 1) / page_size;
-        size_t num_bytes = (num_pages + 1) * page_size; /// Add one page at bottom that will be used as guard-page
+    boost::context::stack_context allocate() const;
 
-        void * vp = ::mmap(nullptr, num_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (MAP_FAILED == vp)
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "FiberStack: Cannot mmap {}.", ReadableSize(num_bytes));
-
-        /// TODO: make reports on illegal guard page access more clear.
-        /// Currently we will see segfault and almost random stacktrace.
-        if (-1 == ::mprotect(vp, page_size, PROT_NONE))
-        {
-            ::munmap(vp, num_bytes);
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "FiberStack: cannot protect guard page");
-        }
-
-        /// Do not count guard page in memory usage.
-        auto trace = CurrentMemoryTracker::alloc(num_pages * page_size);
-        trace.onAlloc(vp, num_pages * page_size);
-
-        boost::context::stack_context sctx;
-        sctx.size = num_bytes;
-        sctx.sp = static_cast< char * >(vp) + sctx.size;
-#if defined(BOOST_USE_VALGRIND)
-        sctx.valgrind_stack_id = VALGRIND_STACK_REGISTER(sctx.sp, vp);
-#endif
-        return sctx;
-    }
-
-    void deallocate(boost::context::stack_context & sctx) const
-    {
-#if defined(BOOST_USE_VALGRIND)
-        VALGRIND_STACK_DEREGISTER(sctx.valgrind_stack_id);
-#endif
-        void * vp = static_cast< char * >(sctx.sp) - sctx.size;
-        ::munmap(vp, sctx.size);
-
-        /// Do not count guard page in memory usage.
-        auto trace = CurrentMemoryTracker::free(sctx.size - page_size);
-        trace.onFree(vp, sctx.size - page_size);
-    }
+    void deallocate(boost::context::stack_context & sctx) const;
 };
+
+class FiberStackWithStandardAllocator;
+class FixedSizeFiberStackCache;
+
+/// Fiber stack allocator with cached pages.
+/// It is used to reduce the number of mmap / munmap / mprotect / sysconf syscalls.
+class FixedSizeFiberStackWithCache
+{
+public:
+    explicit FixedSizeFiberStackWithCache(size_t stack_size_ = FiberStack::default_stack_size);
+    FixedSizeFiberStackWithCache(const FixedSizeFiberStackWithCache &);
+    ~FixedSizeFiberStackWithCache();
+
+    boost::context::stack_context allocate();
+    void deallocate(boost::context::stack_context & sctx);
+private:
+    /// Cache for fiber stacks, the stack in the cached is allocated by mmap with guard page.
+    FixedSizeFiberStackCache * cache;
+
+    /// Fallback allocator is used when the cache is full
+    FiberStack * fallback_allocator;
+};
+
