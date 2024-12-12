@@ -24,6 +24,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 
 namespace DB
@@ -254,35 +255,26 @@ public:
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>> keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
 
-        void create(Type which)
+        void create(Type which, size_t reserve = 0)
         {
             switch (which)
             {
-                case Type::EMPTY:            break;
-                case Type::CROSS:            break;
+                case Type::EMPTY:
+                    break;
+                case Type::CROSS:
+                    break;
 
-            #define M(NAME) \
-                case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
-                APPLY_FOR_JOIN_VARIANTS(M)
-            #undef M
+#define M(NAME) \
+    case Type::NAME: \
+        if constexpr (HasConstructorOfNumberOfElements<typename decltype(NAME)::element_type>::value) \
+            NAME = reserve ? std::make_shared<typename decltype(NAME)::element_type>(reserve) \
+                           : std::make_shared<typename decltype(NAME)::element_type>(); \
+        else \
+            NAME = std::make_shared<typename decltype(NAME)::element_type>(); \
+        break;
+                    APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
             }
-        }
-
-        void reserve(Type, size_t)
-        {
-            // TODO(nickitat): implement
-            // switch (which)
-            // {
-            //     case Type::EMPTY:            break;
-            //     case Type::CROSS:            break;
-            //     case Type::key8:             break;
-            //     case Type::key16:            break;
-            //
-            // #define M(NAME) \
-            //     case Type::NAME: NAME->reserve(num); break;
-            //     APPLY_FOR_HASH_JOIN_VARIANTS(M)
-            // #undef M
-            // }
         }
 
         size_t getTotalRowCount(Type which) const
