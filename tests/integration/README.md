@@ -194,7 +194,7 @@ cd docker/test/integration/runner
 docker build -t clickhouse/integration-test-runner .
 ```
 
-If your docker configuration doesn't allow access to public internet with docker build command you may also need to add option --network=host if you rebuild image for a local integration testsing.
+If your Docker configuration restricts access to the internet during builds, you may need to add the --network=host option when rebuilding images for local integration testing."
 
 ### Adding new tests
 

@@ -62,7 +62,7 @@ COPY requirements.txt /
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Hudi supports only spark 3.3.*, not 3.4
-RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \
+RUN curl -fL -O https://archive.apache.org/dist/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz \
     && tar xzvf spark-3.3.2-bin-hadoop3.tgz -C / \
     && rm spark-3.3.2-bin-hadoop3.tgz
 
