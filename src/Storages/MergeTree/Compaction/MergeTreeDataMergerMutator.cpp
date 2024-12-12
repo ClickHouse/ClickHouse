@@ -91,77 +91,10 @@ namespace ErrorCodes
     extern const int ABORTED;
 }
 
-/// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
-/// This value is chosen to not allow big merges to eat all free space. Thus allowing small merges to proceed.
-static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
-
-/// To do merge, reserve amount of space equals to sum size of parts times specified coefficient.
-/// Must be strictly less than DISK_USAGE_COEFFICIENT_TO_SELECT,
-///  because between selecting parts to merge and doing merge, amount of free space could have decreased.
-static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
     : data(data_), log(getLogger(data.getLogName() + " (MergerMutator)"))
 {
-}
-
-
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge() const
-{
-    size_t scheduled_tasks_count = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
-
-    auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
-    return getMaxSourcePartsSizeForMerge(max_tasks_count, scheduled_tasks_count);
-}
-
-
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_count, size_t scheduled_tasks_count) const
-{
-    if (scheduled_tasks_count > max_count)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Invalid argument passed to getMaxSourcePartsSize: scheduled_tasks_count = {} > max_count = {}",
-            scheduled_tasks_count, max_count);
-    }
-
-    size_t free_entries = max_count - scheduled_tasks_count;
-    const auto data_settings = data.getSettings();
-
-    /// Always allow maximum size if one or less pool entries is busy.
-    /// One entry is probably the entry where this function is executed.
-    /// This will protect from bad settings.
-    UInt64 max_size = 0;
-    if (scheduled_tasks_count <= 1 || free_entries >= (*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_lower_max_size_of_merge])
-        max_size = (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
-    else
-        max_size = static_cast<UInt64>(interpolateExponential(
-            (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_min_space_in_pool],
-            (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool],
-            static_cast<double>(free_entries) / (*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_lower_max_size_of_merge]));
-
-    return std::min(max_size, static_cast<UInt64>(data.getStoragePolicy()->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
-}
-
-
-UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
-{
-    const auto data_settings = data.getSettings();
-    size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
-
-    if ((*data_settings)[MergeTreeSetting::max_number_of_mutations_for_replica] > 0 &&
-        occupied >= (*data_settings)[MergeTreeSetting::max_number_of_mutations_for_replica])
-        return 0;
-
-    /// A DataPart can be stored only at a single disk. Get the maximum reservable free space at all disks.
-    UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
-    auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
-
-    /// Allow mutations only if there are enough threads, otherwise, leave free threads for merges.
-    if (occupied <= 1
-        || max_tasks_count - occupied >= (*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_mutation])
-        return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
-
-    return 0;
 }
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
@@ -280,92 +213,6 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
               "(max_total_size_to_merge={}, merge_with_ttl_allowed={})",
               all_partition_ids.size(), res.size(), fmt::join(res, ", "), max_total_size_to_merge, merge_with_ttl_allowed);
     return res;
-}
-
-MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectMergeFrom(
-    const MergeTreeTransactionPtr & txn, const PartitionIdsHint * partitions_hint) const
-{
-
-    Stopwatch get_data_parts_for_merge_timer;
-    auto res = getDataPartsToSelectMergeFrom(txn);
-    if (!partitions_hint)
-        return res;
-
-    std::erase_if(res, [partitions_hint](const auto & part)
-    {
-        return !partitions_hint->contains(part->info.partition_id);
-    });
-
-    ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, get_data_parts_for_merge_timer.elapsedMicroseconds());
-    return res;
-}
-
-MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectMergeFrom(const MergeTreeTransactionPtr & txn) const
-{
-    MergeTreeData::DataPartsVector res;
-    if (!txn)
-    {
-        /// Simply get all active parts
-        return data.getDataPartsVectorForInternalUsage();
-    }
-
-    /// Merge predicate (for simple MergeTree) allows to merge two parts only if both parts are visible for merge transaction.
-    /// So at the first glance we could just get all active parts.
-    /// Active parts include uncommitted parts, but it's ok and merge predicate handles it.
-    /// However, it's possible that some transaction is trying to remove a part in the middle, for example, all_2_2_0.
-    /// If parts all_1_1_0 and all_3_3_0 are active and visible for merge transaction, then we would try to merge them.
-    /// But it's wrong, because all_2_2_0 may become active again if transaction will roll back.
-    /// That's why we must include some outdated parts into `data_part`, more precisely, such parts that removal is not committed.
-    MergeTreeData::DataPartsVector active_parts;
-    MergeTreeData::DataPartsVector outdated_parts;
-
-    {
-        auto lock = data.lockParts();
-        active_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, lock);
-        outdated_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, lock);
-    }
-
-    ActiveDataPartSet active_parts_set{data.format_version};
-    for (const auto & part : active_parts)
-        active_parts_set.add(part->name);
-
-    for (const auto & part : outdated_parts)
-    {
-        /// We don't need rolled back parts.
-        /// NOTE When rolling back a transaction we set creation_csn to RolledBackCSN at first
-        /// and then remove part from working set, so there's no race condition
-        if (part->version.creation_csn == Tx::RolledBackCSN)
-            continue;
-
-        /// We don't need parts that are finally removed.
-        /// NOTE There's a minor race condition: we may get UnknownCSN if a transaction has been just committed concurrently.
-        /// But it's not a problem if we will add such part to `data_parts`.
-        if (part->version.removal_csn != Tx::UnknownCSN)
-            continue;
-
-        active_parts_set.add(part->name);
-    }
-
-    /// Restore "active" parts set from selected active and outdated parts
-    auto remove_pred = [&](const MergeTreeData::DataPartPtr & part) -> bool
-    {
-        return active_parts_set.getContainingPart(part->info) != part->name;
-    };
-
-    std::erase_if(active_parts, remove_pred);
-
-    std::erase_if(outdated_parts, remove_pred);
-
-    MergeTreeData::DataPartsVector data_parts;
-    std::merge(
-        active_parts.begin(),
-        active_parts.end(),
-        outdated_parts.begin(),
-        outdated_parts.end(),
-        std::back_inserter(data_parts),
-        MergeTreeData::LessDataPart());
-
-    return data_parts;
 }
 
 MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPossibleMergeRanges(
@@ -895,27 +742,6 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 
     LOG_TRACE(log, "Merged {} parts: [{}, {}] -> {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
     return new_data_part;
-}
-
-
-size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted)
-{
-    size_t res = 0;
-    time_t current_time = std::time(nullptr);
-    for (const MergeTreeData::DataPartPtr & part : source_parts)
-    {
-        /// Exclude expired parts
-        time_t part_max_ttl = part->ttl_infos.part_max_ttl;
-        if (part_max_ttl && part_max_ttl <= current_time)
-            continue;
-
-        if (account_for_deleted)
-            res += part->getExistingBytesOnDisk();
-        else
-            res += part->getBytesOnDisk();
-    }
-
-    return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
 }

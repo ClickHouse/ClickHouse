@@ -1,37 +1,23 @@
 #pragma once
 
-#include <atomic>
-#include <mutex>
 #include <functional>
 
 #include <Common/ActionBlocker.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/MergeAlgorithm.h>
-#include <Storages/MergeTree/MergeType.h>
+
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MutateTask.h>
-#include <Storages/MergeTree/IMergedBlockOutputStream.h>
-
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 
 namespace DB
 {
-
-class MergeProgressCallback;
 
 enum class SelectPartsDecision : uint8_t
 {
     SELECTED = 0,
     CANNOT_SELECT = 1,
     NOTHING_TO_MERGE = 2,
-};
-
-enum class ExecuteTTLType : uint8_t
-{
-    NONE = 0,
-    NORMAL = 1,
-    RECALCULATE= 2,
 };
 
 /** Can select parts for background processes and do them.
@@ -42,73 +28,9 @@ class MergeTreeDataMergerMutator
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &,
                                                         const MergeTreeData::DataPartPtr &,
-                                                        const MergeTreeTransaction *,
                                                         PreformattedMessage &)>;
 
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
-
-    /** Get maximum total size of parts to do merge, at current moment of time.
-      * It depends on number of free threads in background_pool and amount of free space in disk.
-      */
-    UInt64 getMaxSourcePartsSizeForMerge() const;
-
-    /** For explicitly passed size of pool and number of used tasks.
-      * This method could be used to calculate threshold depending on number of tasks in replication queue.
-      */
-    UInt64 getMaxSourcePartsSizeForMerge(size_t max_count, size_t scheduled_tasks_count) const;
-
-    /** Get maximum total size of parts to do mutation, at current moment of time.
-      * It depends only on amount of free space in disk.
-      */
-    UInt64 getMaxSourcePartSizeForMutation() const;
-
-    struct PartitionInfo
-    {
-        time_t min_age{std::numeric_limits<time_t>::max()};
-        size_t num_parts = 0;
-    };
-    using PartitionsInfo = std::unordered_map<std::string, PartitionInfo>;
-
-    using PartitionIdsHint = std::unordered_set<String>;
-
-    /// The first step of selecting parts to merge: returns a list of all active/visible parts
-    MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(const MergeTreeTransactionPtr & txn) const;
-
-    /// Same as above, but filters partitions according to partitions_hint
-    MergeTreeData::DataPartsVector getDataPartsToSelectMergeFrom(
-        const MergeTreeTransactionPtr & txn,
-        const PartitionIdsHint * partitions_hint) const;
-
-    struct MergeSelectingInfo
-    {
-        time_t current_time;
-        PartitionsInfo partitions_info;
-        IMergeSelector::PartsRanges parts_ranges;
-        size_t parts_selected_precondition = 0;
-    };
-
-    /// The second step of selecting parts to merge: splits parts list into a set of ranges according to can_merge_callback.
-    /// All parts within a range can be merged without violating some invariants.
-    MergeSelectingInfo getPossibleMergeRanges(
-        const MergeTreeData::DataPartsVector & data_parts,
-        const AllowedMergingPredicate & can_merge_callback,
-        const MergeTreeTransactionPtr & txn,
-        PreformattedMessage & out_disable_reason) const;
-
-    /// The third step of selecting parts to merge: takes ranges that we can merge, and selects parts that we want to merge
-    SelectPartsDecision selectPartsToMergeFromRanges(
-        FutureMergedMutatedPartPtr future_part,
-        bool aggressive,
-        size_t max_total_size_to_merge,
-        bool merge_with_ttl_allowed,
-        const StorageMetadataPtr & metadata_snapshot,
-        const IMergeSelector::PartsRanges & parts_ranges,
-        const time_t & current_time,
-        PreformattedMessage & out_disable_reason,
-        bool dry_run = false);
-
-    /// Actually the most fresh partition with biggest modification_time
-    String getBestPartitionToOptimizeEntire(const PartitionsInfo & partitions_info) const;
 
     /// Useful to quickly get a list of partitions that contain parts that we may want to merge
     /// The result is limited by top_number_of_partitions_to_consider_for_merge
@@ -194,16 +116,6 @@ public:
         const MergeTreeTransactionPtr & txn,
         MergeTreeData::Transaction & out_transaction);
 
-
-    /// The approximate amount of disk space needed for merge or mutation. With a surplus.
-    static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted = false);
-
-private:
-    /** Select all parts belonging to the same partition.
-      */
-    MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
-
-public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
@@ -219,10 +131,10 @@ private:
     time_t disk_space_warning_time = 0;
 
     /// Stores the next TTL delete merge due time for each partition (used only by TTLDeleteMergeSelector)
-    ITTLMergeSelector::PartitionIdToTTLs next_delete_ttl_merge_times_by_partition;
+    PartitionIdToTTLs next_delete_ttl_merge_times_by_partition;
 
     /// Stores the next TTL recompress merge due time for each partition (used only by TTLRecompressionMergeSelector)
-    ITTLMergeSelector::PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
+    PartitionIdToTTLs next_recompress_ttl_merge_times_by_partition;
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
