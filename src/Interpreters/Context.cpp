@@ -1139,6 +1139,9 @@ std::shared_ptr<IDisk> Context::getDatabaseDisk() const
             return shared->db_disk;
     }
 
+    // This is called first time early during the initialization.
+    // Even if multiple threads try to get target_db_disk, only the first one will initialize the disks as there is another mutex in `getDiskMap()`
+    // It is not necessary to introduce a mutex here.
     auto target_db_disk = [&]() -> std::shared_ptr<IDisk>
     {
         const auto & config = shared->getConfigRef();
