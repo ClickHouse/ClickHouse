@@ -73,7 +73,8 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         {
             if (errno == EWOULDBLOCK)
                 throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
+            else
+                ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
         }
 
         if (0 != ftruncate(fd, 0))
@@ -99,7 +100,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     }
     catch (...)
     {
-        [[maybe_unused]] int err = close(fd);
+        int err = close(fd);
         chassert(!err || errno == EINTR);
         throw;
     }

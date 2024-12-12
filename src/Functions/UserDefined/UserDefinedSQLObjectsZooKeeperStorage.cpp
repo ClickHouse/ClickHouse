@@ -234,7 +234,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
         {
             if (throw_if_exists)
                 throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
-            if (!replace_if_exists)
+            else if (!replace_if_exists)
                 return false;
 
             code = zookeeper->trySet(path, create_statement);
@@ -276,7 +276,8 @@ bool UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl(
     {
         if (throw_if_not_exists)
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined object '{}' doesn't exist", object_name);
-        return false;
+        else
+            return false;
     }
 
     LOG_DEBUG(log, "Object {} removed", backQuote(object_name));

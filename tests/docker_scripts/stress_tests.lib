@@ -72,10 +72,8 @@ function configure()
 
     if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
         randomize_config_boolean_value use_compression zookeeper_fault_injection
-        randomize_config_boolean_value use_xid_64 zookeeper_fault_injection
     else
         randomize_config_boolean_value use_compression zookeeper
-        randomize_config_boolean_value use_xid_64 zookeeper
     fi
 
     randomize_config_boolean_value enable_block_number_column block_number

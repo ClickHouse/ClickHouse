@@ -18,11 +18,6 @@ namespace Setting
     extern const SettingsSeconds http_receive_timeout;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsSeconds keep_alive_timeout;
-}
-
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
@@ -62,7 +57,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     const auto & settings = context->getSettingsRef();
     const auto & server_settings = context->getServerSettings();
 
-    auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings);
+    auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings.keep_alive_timeout);
     connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
     connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
 

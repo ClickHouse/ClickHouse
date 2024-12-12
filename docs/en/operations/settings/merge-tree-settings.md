@@ -49,7 +49,7 @@ Default value: 8192.
 
 Maximum size of data granules in bytes.
 
-Default value: 10485760 (ca. 10 MiB).
+Default value: 10Mb.
 
 To restrict the granule size only by number of rows, set to 0 (not recommended).
 
@@ -1057,41 +1057,11 @@ Default value: throw
 
 ## deduplicate_merge_projection_mode
 
-Whether to allow create projection for the table with non-classic MergeTree, that is not (Replicated, Shared) MergeTree. Ignore option is purely for compatibility which might result in incorrect answer. Otherwise, if allowed, what is the action when merge projections, either drop or rebuild. So classic MergeTree would ignore this setting.
+Whether to allow create projection for the table with non-classic MergeTree, that is not (Replicated, Shared) MergeTree. If allowed, what is the action when merge projections, either drop or rebuild. So classic MergeTree would ignore this setting.
 It also controls `OPTIMIZE DEDUPLICATE` as well, but has effect on all MergeTree family members. Similar to the option `lightweight_mutation_projection_mode`, it is also part level.
 
 Possible values:
 
-- ignore, throw, drop, rebuild
+- throw, drop, rebuild
 
 Default value: throw
-
-## min_free_disk_bytes_to_perform_insert
-
-The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_throw_insert` then an exception is thrown and the insert is not executed. Note that this setting:
-- takes into account the `keep_free_space_bytes` setting.
-- does not take into account the amount of data that will be written by the `INSERT` operation.
-- is only checked if a positive (non-zero) number of bytes is specified
-
-Possible values:
-
-- Any positive integer.
-
-Default value: 0 bytes.
-
-Note that if both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
-
-## min_free_disk_ratio_to_perform_insert 
-
-The minimum free to total disk space ratio to perform an `INSERT`. Must be a floating point value between 0 and 1. Note that this setting:
-- takes into account the `keep_free_space_bytes` setting.
-- does not take into account the amount of data that will be written by the `INSERT` operation.
-- is only checked if a positive (non-zero) ratio is specified
-
-Possible values:
-
-- Float, 0.0 - 1.0
-
-Default value: 0.0
-
-Note that if both `min_free_disk_ratio_to_perform_insert` and `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.

@@ -25,11 +25,6 @@
 
 namespace DB
 {
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 max_authentication_methods_per_user;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -254,7 +249,7 @@ BlockIO InterpreterCreateUserQuery::execute()
                 *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
-                plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
+                plaintext_password_allowed, getContext()->getServerSettings().max_authentication_methods_per_user);
             return updated_user;
         };
 
@@ -276,7 +271,7 @@ BlockIO InterpreterCreateUserQuery::execute()
                 *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
-                plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
+                plaintext_password_allowed, getContext()->getServerSettings().max_authentication_methods_per_user);
             new_users.emplace_back(std::move(new_user));
         }
 

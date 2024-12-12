@@ -101,6 +101,7 @@ arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
 arrayDotProduct
+arrayElement
 arrayEnumerate
 arrayEnumerateDense
 arrayEnumerateDenseRanked
@@ -140,7 +141,6 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arrayUnion
 arrayUniq
 arrayWithConstant
 asinh
@@ -321,6 +321,7 @@ geohashesInBox
 getMacro
 getOSKernelVersion
 getServerPort
+getSetting
 getSizeOfEnumType
 getTypeSerializationStreams
 globalIn
@@ -519,9 +520,6 @@ parseDateTime64BestEffortOrZero
 parseDateTime64BestEffortUS
 parseDateTime64BestEffortUSOrNull
 parseDateTime64BestEffortUSOrZero
-parseDateTime64InJodaSyntax
-parseDateTime64InJodaSyntaxOrNull
-parseDateTime64InJodaSyntaxOrZero
 parseDateTimeBestEffort
 parseDateTimeBestEffortOrNull
 parseDateTimeBestEffortOrZero

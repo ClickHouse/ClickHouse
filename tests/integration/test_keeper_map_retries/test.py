@@ -1,8 +1,8 @@
-import os
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+
+import os
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 

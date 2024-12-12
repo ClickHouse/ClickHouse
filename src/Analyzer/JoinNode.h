@@ -44,8 +44,7 @@ public:
         QueryTreeNodePtr join_expression_,
         JoinLocality locality_,
         JoinStrictness strictness_,
-        JoinKind kind_,
-        bool is_using_join_expression_);
+        JoinKind kind_);
 
     /// Get left table expression
     const QueryTreeNodePtr & getLeftTableExpression() const
@@ -92,13 +91,13 @@ public:
     /// Returns true if join has USING join expression, false otherwise
     bool isUsingJoinExpression() const
     {
-        return hasJoinExpression() && is_using_join_expression;
+        return hasJoinExpression() && getJoinExpression()->getNodeType() == QueryTreeNodeType::LIST;
     }
 
     /// Returns true if join has ON join expression, false otherwise
     bool isOnJoinExpression() const
     {
-        return hasJoinExpression() && !is_using_join_expression;
+        return hasJoinExpression() && getJoinExpression()->getNodeType() != QueryTreeNodeType::LIST;
     }
 
     /// Get join locality
@@ -155,7 +154,6 @@ private:
     JoinLocality locality = JoinLocality::Unspecified;
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
-    bool is_using_join_expression;
 
     static constexpr size_t left_table_expression_child_index = 0;
     static constexpr size_t right_table_expression_child_index = 1;

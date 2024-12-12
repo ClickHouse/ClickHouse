@@ -105,9 +105,11 @@ public:
             vector(src_data, res_data);
             return res_column;
         }
-
-        /// Since no element is nullable, return a constant one.
-        return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
+        else
+        {
+            /// Since no element is nullable, return a constant one.
+            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
+        }
     }
 
 private:

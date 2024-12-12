@@ -4,7 +4,6 @@
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <Common/SharedMutex.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
@@ -101,7 +100,6 @@ private:
     std::condition_variable wait_cond;
     bool quit TSA_GUARDED_BY(thread_mutex) = false;
 
-    /// Protects all raw data and serializes multiple updates.
     mutable std::mutex data_mutex;
 
     /// Some values are incremental and we have to calculate the difference.
@@ -109,15 +107,7 @@ private:
     bool first_run TSA_GUARDED_BY(data_mutex) = true;
     TimePoint previous_update_time TSA_GUARDED_BY(data_mutex);
 
-    /// Protects saved values.
-    mutable SharedMutex values_mutex;
-    /// Values store the result of the last update prepared for reading.
-#ifdef OS_LINUX
-    AsynchronousMetricValues values TSA_GUARDED_BY(values_mutex);
-#else
-    /// When SharedMutex == std::shared_mutex it may not be annotated with the 'capability'.
-    AsynchronousMetricValues values;
-#endif
+    AsynchronousMetricValues values TSA_GUARDED_BY(data_mutex);
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);

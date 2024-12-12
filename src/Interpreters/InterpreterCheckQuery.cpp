@@ -262,8 +262,10 @@ private:
                 LOG_DEBUG(log, "Checking '{}' database", database_name);
                 return current_database;
             }
-
-            LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
+            else
+            {
+                LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
+            }
         }
         return {};
     }
@@ -343,7 +345,7 @@ public:
         if (result_value == 0)
             return;
 
-        const auto & columns = chunk.getColumns();
+        auto columns = chunk.getColumns();
         if ((columns.size() != 3 && columns.size() != 5) || column_position_to_check >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}, position {}", columns.size(), column_position_to_check);
 

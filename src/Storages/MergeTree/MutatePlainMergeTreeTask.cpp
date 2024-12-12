@@ -39,10 +39,6 @@ void MutatePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
-    storage.writePartLog(
-        PartLogElement::MUTATE_PART_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
-
     stopwatch = std::make_unique<Stopwatch>();
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
@@ -106,8 +102,7 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction, /*rename_in_transaction=*/ true);
-                transaction.renameParts();
+                storage.renameTempPartAndReplace(new_part, transaction);
                 transaction.commit();
 
                 storage.updateMutationEntriesErrors(future_part, true, "");

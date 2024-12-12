@@ -541,7 +541,6 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     {
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         Block block;
 
         while (executor.pull(block))
@@ -693,7 +692,6 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
         Block block;
 

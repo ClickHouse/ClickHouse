@@ -27,7 +27,6 @@ private:
     size_t num_replaced_parameters = 0;
 
     const String & getParamValue(const String & name);
-    void resolveParametrizedAlias(ASTPtr & ast);
     void visitIdentifier(ASTPtr & ast);
     void visitQueryParameter(ASTPtr & ast);
     void visitChildren(ASTPtr & ast);

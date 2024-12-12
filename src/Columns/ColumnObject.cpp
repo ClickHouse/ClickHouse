@@ -30,23 +30,6 @@ const std::shared_ptr<SerializationDynamic> & getDynamicSerialization()
     return dynamic_serialization;
 }
 
-struct ColumnObjectCheckpoint : public ColumnCheckpoint
-{
-    using CheckpointsMap = std::unordered_map<std::string_view, ColumnCheckpointPtr>;
-
-    ColumnObjectCheckpoint(size_t size_, CheckpointsMap typed_paths_, CheckpointsMap dynamic_paths_, ColumnCheckpointPtr shared_data_)
-        : ColumnCheckpoint(size_)
-        , typed_paths(std::move(typed_paths_))
-        , dynamic_paths(std::move(dynamic_paths_))
-        , shared_data(std::move(shared_data_))
-    {
-    }
-
-    CheckpointsMap typed_paths;
-    CheckpointsMap dynamic_paths;
-    ColumnCheckpointPtr shared_data;
-};
-
 }
 
 ColumnObject::ColumnObject(
@@ -715,69 +698,6 @@ void ColumnObject::popBack(size_t n)
     shared_data->popBack(n);
 }
 
-ColumnCheckpointPtr ColumnObject::getCheckpoint() const
-{
-    auto get_checkpoints = [](const auto & columns)
-    {
-        ColumnObjectCheckpoint::CheckpointsMap checkpoints;
-        for (const auto & [name, column] : columns)
-            checkpoints[name] = column->getCheckpoint();
-
-        return checkpoints;
-    };
-
-    return std::make_shared<ColumnObjectCheckpoint>(size(), get_checkpoints(typed_paths), get_checkpoints(dynamic_paths_ptrs), shared_data->getCheckpoint());
-}
-
-void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    auto & object_checkpoint = assert_cast<ColumnObjectCheckpoint &>(checkpoint);
-
-    auto update_checkpoints = [&](const auto & columns_map, auto & checkpoints_map)
-    {
-        for (const auto & [name, column] : columns_map)
-        {
-            auto & nested = checkpoints_map[name];
-            if (!nested)
-                nested = column->getCheckpoint();
-            else
-                column->updateCheckpoint(*nested);
-        }
-    };
-
-    checkpoint.size = size();
-    update_checkpoints(typed_paths, object_checkpoint.typed_paths);
-    update_checkpoints(dynamic_paths, object_checkpoint.dynamic_paths);
-    shared_data->updateCheckpoint(*object_checkpoint.shared_data);
-}
-
-void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
-{
-    const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
-
-    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map)
-    {
-        NameSet names_to_remove;
-
-        /// Rollback subcolumns and remove paths that were not in checkpoint.
-        for (auto & [name, column] : columns_map)
-        {
-            auto it = checkpoints_map.find(name);
-            if (it == checkpoints_map.end())
-                names_to_remove.insert(name);
-            else
-                column->rollback(*it->second);
-        }
-
-        for (const auto & name : names_to_remove)
-            columns_map.erase(name);
-    };
-
-    rollback_columns(typed_paths, object_checkpoint.typed_paths);
-    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths);
-    shared_data->rollback(*object_checkpoint.shared_data);
-}
-
 StringRef ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
     StringRef res(begin, 0);
@@ -1413,31 +1333,6 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         dynamic_paths_ptrs[path]->reserve(total_size);
         dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns);
     }
-}
-
-bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
-{
-    const auto * rhs_object = typeid_cast<const ColumnObject *>(&rhs);
-    if (!rhs_object || typed_paths.size() != rhs_object->typed_paths.size()
-        || global_max_dynamic_paths != rhs_object->global_max_dynamic_paths || max_dynamic_types != rhs_object->max_dynamic_types
-        || dynamic_paths.size() != rhs_object->dynamic_paths.size())
-        return false;
-
-    for (const auto & [path, column] : typed_paths)
-    {
-        auto it = rhs_object->typed_paths.find(path);
-        if (it == rhs_object->typed_paths.end() || !it->second->dynamicStructureEquals(*column))
-            return false;
-    }
-
-    for (const auto & [path, column] : dynamic_paths)
-    {
-        auto it = rhs_object->dynamic_paths.find(path);
-        if (it == rhs_object->dynamic_paths.end() || !it->second->dynamicStructureEquals(*column))
-            return false;
-    }
-
-    return true;
 }
 
 void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)

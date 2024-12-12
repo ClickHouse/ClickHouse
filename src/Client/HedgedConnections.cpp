@@ -405,7 +405,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
         last_received_packet = replica_state.packet_receiver->getPacket();
         return true;
     }
-    if (replica_state.packet_receiver->isTimeoutExpired())
+    else if (replica_state.packet_receiver->isTimeoutExpired())
     {
         const String & description = replica_state.connection->getDescription();
         finishProcessReplica(replica_state, true);

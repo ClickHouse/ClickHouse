@@ -2,7 +2,6 @@
 
 from pathlib import Path
 from typing import Dict, Iterable, List
-
 import yaml
 
 git_root = Path(__file__).absolute().parents[2]

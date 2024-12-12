@@ -369,23 +369,6 @@ void ColumnArray::popBack(size_t n)
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
-ColumnCheckpointPtr ColumnArray::getCheckpoint() const
-{
-    return std::make_shared<ColumnCheckpointWithNested>(size(), getData().getCheckpoint());
-}
-
-void ColumnArray::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    checkpoint.size = size();
-    getData().updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
-}
-
-void ColumnArray::rollback(const ColumnCheckpoint & checkpoint)
-{
-    getOffsets().resize_assume_reserved(checkpoint.size);
-    getData().rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
-}
-
 int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
 {
     const ColumnArray & rhs = assert_cast<const ColumnArray &>(rhs_);

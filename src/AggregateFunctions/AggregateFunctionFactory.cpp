@@ -137,12 +137,13 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
 {
     if (action == NullsAction::RESPECT_NULLS)
     {
-        auto it = respect_nulls.find(name);
-        if (it == respect_nulls.end())
+        if (auto it = respect_nulls.find(name); it == respect_nulls.end())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
-        if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
+        else if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
             return {associated_it->second};
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
     }
 
     if (action == NullsAction::IGNORE_NULLS)
@@ -151,8 +152,9 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
         {
             if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
                 return {associated_it->second};
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
+            else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
         }
         /// We don't throw for IGNORE NULLS of other functions because that's the default in CH
     }
@@ -261,7 +263,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (!hints.empty())
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
                         "Unknown aggregate function {}{}. Maybe you meant: {}", name, extra_info, toString(hints));
-    throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
+    else
+        throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
 std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name, NullsAction action) const

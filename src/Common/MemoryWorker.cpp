@@ -170,9 +170,11 @@ std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsRead
 {
     if (version == CgroupsVersion::V2)
         return std::make_shared<CgroupsV2Reader>(cgroup_path);
-
-    chassert(version == CgroupsVersion::V1);
-    return std::make_shared<CgroupsV1Reader>(cgroup_path);
+    else
+    {
+        chassert(version == CgroupsVersion::V1);
+        return std::make_shared<CgroupsV1Reader>(cgroup_path);
+    }
 }
 #endif
 

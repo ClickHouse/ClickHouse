@@ -156,19 +156,19 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 {
     if (function_name == "in")
         return "globalIn";
-    if (function_name == "notIn")
+    else if (function_name == "notIn")
         return "globalNotIn";
-    if (function_name == "nullIn")
+    else if (function_name == "nullIn")
         return "globalNullIn";
-    if (function_name == "notNullIn")
+    else if (function_name == "notNullIn")
         return "globalNotNullIn";
-    if (function_name == "inIgnoreSet")
+    else if (function_name == "inIgnoreSet")
         return "globalInIgnoreSet";
-    if (function_name == "notInIgnoreSet")
+    else if (function_name == "notInIgnoreSet")
         return "globalNotInIgnoreSet";
-    if (function_name == "nullInIgnoreSet")
+    else if (function_name == "nullInIgnoreSet")
         return "globalNullInIgnoreSet";
-    if (function_name == "notNullInIgnoreSet")
+    else if (function_name == "notNullInIgnoreSet")
         return "globalNotNullInIgnoreSet";
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);

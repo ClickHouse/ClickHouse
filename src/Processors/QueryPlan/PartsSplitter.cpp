@@ -256,7 +256,7 @@ struct PartsRangesIterator
         int compare_result = compareValues(value, other.value);
         if (compare_result == -1)
             return true;
-        if (compare_result == 1)
+        else if (compare_result == 1)
             return false;
 
         if (event == other.event)

@@ -59,7 +59,8 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
     {
         if (session_context->getClientInfo().interface == ClientInfo::Interface::MYSQL)
             return {};
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
+        else
+            throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     }
     if (txn->getState() != MergeTreeTransaction::RUNNING)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
@@ -122,7 +123,8 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr se
     {
         if (session_context->getClientInfo().interface == ClientInfo::Interface::MYSQL)
             return {};
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
+        else
+            throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     }
     if (txn->getState() == MergeTreeTransaction::COMMITTED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction is in COMMITTED state");

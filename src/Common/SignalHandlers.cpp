@@ -275,7 +275,7 @@ void SignalListener::run()
             LOG_INFO(log, "Stop SignalListener thread");
             break;
         }
-        if (sig == SIGHUP)
+        else if (sig == SIGHUP)
         {
             LOG_DEBUG(log, "Received signal to close logs.");
             BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
@@ -291,7 +291,9 @@ void SignalListener::run()
 
             onTerminate(message, thread_num);
         }
-        else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
+        else if (sig == SIGINT ||
+                 sig == SIGQUIT ||
+                 sig == SIGTERM)
         {
             if (daemon)
                 daemon->handleSignal(sig);
@@ -321,8 +323,7 @@ void SignalListener::run()
             /// Example: segfault while symbolizing stack trace.
             try
             {
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); })
-                    .detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
             }
             catch (...)
             {

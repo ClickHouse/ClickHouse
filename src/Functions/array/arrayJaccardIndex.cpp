@@ -100,10 +100,10 @@ public:
                 const ColumnArray & col_const_array = checkAndGetColumn<ColumnArray>(*col_const->getDataColumnPtr());
                 return {&col_const_array, true};
             }
-            if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.column.get()))
+            else if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.column.get()))
                 return {col_non_const_array, false};
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.", col.column->getName(), getName());
+            else
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.", col.column->getName(), getName());
         };
 
         const auto & [left_array, left_is_const] = cast_to_array(arguments[0]);

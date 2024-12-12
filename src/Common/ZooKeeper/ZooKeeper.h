@@ -627,7 +627,7 @@ public:
 
     std::optional<int8_t> getConnectedHostIdx() const;
     String getConnectedHostPort() const;
-    int64_t getConnectionXid() const;
+    int32_t getConnectionXid() const;
 
     String getConnectedHostAvailabilityZone() const;
 

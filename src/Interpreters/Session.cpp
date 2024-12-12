@@ -129,27 +129,29 @@ public:
 
             return {session, true};
         }
-
-        /// Use existing session.
-        const auto & session = it->second;
-
-        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
-
-        if (!isSharedPtrUnique(session))
-            throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
-
-        if (session->close_time_bucket != std::chrono::steady_clock::time_point{})
+        else
         {
-            auto bucket_it = close_time_buckets.find(session->close_time_bucket);
-            auto & bucket_sessions = bucket_it->second;
-            bucket_sessions.erase(key);
-            if (bucket_sessions.empty())
-                close_time_buckets.erase(bucket_it);
+            /// Use existing session.
+            const auto & session = it->second;
 
-            session->close_time_bucket = std::chrono::steady_clock::time_point{};
+            LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+
+            if (!isSharedPtrUnique(session))
+                throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
+
+            if (session->close_time_bucket != std::chrono::steady_clock::time_point{})
+            {
+                auto bucket_it = close_time_buckets.find(session->close_time_bucket);
+                auto & bucket_sessions = bucket_it->second;
+                bucket_sessions.erase(key);
+                if (bucket_sessions.empty())
+                    close_time_buckets.erase(bucket_it);
+
+                session->close_time_bucket = std::chrono::steady_clock::time_point{};
+            }
+
+            return {session, false};
         }
-
-        return {session, false};
     }
 
     void releaseSession(NamedSessionData & session)

@@ -86,11 +86,11 @@ Returns the fully qualified domain name of the ClickHouse server.
 fqdn();
 ```
 
-Aliases: `fullHostName`, `FQDN`.
+Aliases: `fullHostName`, `FQDN`. 
 
 **Returned value**
 
-- String with the fully qualified domain name. [String](../data-types/string.md).
+- String with the fully qualified domain name. [String](../data-types/string.md). 
 
 **Example**
 
@@ -202,36 +202,12 @@ Result:
 
 Returns the type name of the passed argument.
 
-If `NULL` is passed, the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
+If `NULL` is passed, then the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
 
 **Syntax**
 
 ```sql
-toTypeName(value)
-```
-
-**Arguments**
-
-- `value` — A value of arbitrary type.
-
-**Returned value**
-
-- The data type name of the input value. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT toTypeName(123);
-```
-
-Result:
-
-```response
-┌─toTypeName(123)─┐
-│ UInt8           │
-└─────────────────┘
+toTypeName(x)
 ```
 
 ## blockSize {#blockSize}
@@ -269,7 +245,7 @@ Result:
 3. │           5 │
 4. │           5 │
 5. │           5 │
-   └─────────────┘
+   └─────────────┘ 
 ```
 
 ## byteSize
@@ -371,7 +347,7 @@ Result:
 
 Turns a constant into a full column containing a single value.
 Full columns and constants are represented differently in memory.
-Functions usually execute different code for normal and constant arguments, although the result should typically be the same.
+Functions usually execute different code for normal and constant arguments, although the result should typically be the same. 
 This function can be used to debug this behavior.
 
 **Syntax**
@@ -390,8 +366,8 @@ materialize(x)
 
 **Example**
 
-In the example below the `countMatches` function expects a constant second argument.
-This behaviour can be debugged by using the `materialize` function to turn a constant into a full column,
+In the example below the `countMatches` function expects a constant second argument. 
+This behaviour can be debugged by using the `materialize` function to turn a constant into a full column, 
 verifying that the function throws an error for a non-constant argument.
 
 Query:
@@ -410,37 +386,13 @@ Code: 44. DB::Exception: Received from localhost:9000. DB::Exception: Illegal ty
 
 ## ignore
 
-Accepts arbitrary arguments and unconditionally returns `0`.
-The argument is still evaluated internally, making it useful for eg. benchmarking.
+Accepts any arguments, including `NULL` and does nothing. Always returns 0.
+The argument is internally still evaluated. Useful e.g. for benchmarks.
 
 **Syntax**
 
 ```sql
-ignore([arg1[, arg2[, ...]])
-```
-
-**Arguments**
-
-- Accepts arbitrarily many arguments of arbitrary type, including `NULL`.
-
-**Returned value**
-
-- Returns `0`.
-
-**Example**
-
-Query:
-
-```sql
-SELECT ignore(0, 'ClickHouse', NULL);
-```
-
-Result:
-
-```response
-┌─ignore(0, 'ClickHouse', NULL)─┐
-│                             0 │
-└───────────────────────────────┘
+ignore(x)
 ```
 
 ## sleep
@@ -548,26 +500,6 @@ Useful in table engine parameters of `CREATE TABLE` queries where you need to sp
 currentDatabase()
 ```
 
-**Returned value**
-
-- Returns the current database name. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT currentDatabase()
-```
-
-Result:
-
-```response
-┌─currentDatabase()─┐
-│ default           │
-└───────────────────┘
-```
-
 ## currentUser {#currentUser}
 
 Returns the name of the current user. In case of a distributed query, the name of the user who initiated the query is returned.
@@ -597,42 +529,6 @@ Result:
 ┌─currentUser()─┐
 │ default       │
 └───────────────┘
-```
-
-## currentSchemas
-
-Returns a single-element array with the name of the current database schema.
-
-**Syntax**
-
-```sql
-currentSchemas(bool)
-```
-
-Alias: `current_schemas`.
-
-**Arguments**
-
-- `bool`: A boolean value. [Bool](../data-types/boolean.md).
-
-:::note
-The boolean argument is ignored. It only exists for the sake of compatibility with the [implementation](https://www.postgresql.org/docs/7.3/functions-misc.html) of this function in PostgreSQL.
-:::
-
-**Returned values**
-
-- Returns a single-element array with the name of the current database
-
-**Example**
-
-```sql
-SELECT currentSchemas(true);
-```
-
-Result:
-
-```response
-['default']
 ```
 
 ## isConstant
@@ -1877,7 +1773,7 @@ toColumnTypeName(value)
 
 **Example**
 
-Difference between `toTypeName` and `toColumnTypeName`:
+Difference between `toTypeName ' and ' toColumnTypeName`:
 
 ```sql
 SELECT toTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
@@ -1941,7 +1837,7 @@ Returns the default value for the given data type.
 
 Does not include default values for custom columns set by the user.
 
-**Syntax**
+**Syntax** 
 
 ```sql
 defaultValueOfArgumentType(expression)
@@ -2268,7 +2164,7 @@ Result:
 
 ## filesystemCapacity
 
-Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#path) to the data directory to be configured.
+Returns the capacity of the filesystem in bytes. Needs the [path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) to the data directory to be configured.
 
 **Syntax**
 
@@ -2696,7 +2592,7 @@ joinGetOrNull(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
+- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed. 
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
@@ -2893,45 +2789,6 @@ Result:
 
 - [Custom Settings](../../operations/settings/index.md#custom_settings)
 
-## getSettingOrDefault
-
-Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
-
-**Syntax**
-
-```sql
-getSettingOrDefault('custom_setting', default_value);
-```
-
-**Parameter**
-
-- `custom_setting` — The setting name. [String](../data-types/string.md).
-- `default_value` — Value to return if custom_setting is not set. Value may be of any data type or Null.
-
-**Returned value**
-
-- The setting's current value or default_value if setting is not set.
-
-**Example**
-
-```sql
-SELECT getSettingOrDefault('custom_undef1', 'my_value');
-SELECT getSettingOrDefault('custom_undef2', 100);
-SELECT getSettingOrDefault('custom_undef3', NULL);
-```
-
-Result:
-
-```
-my_value
-100
-NULL
-```
-
-**See Also**
-
-- [Custom Settings](../../operations/settings/index.md#custom_settings)
-
 ## isDecimalOverflow
 
 Checks whether the [Decimal](../data-types/decimal.md) value is outside its precision or outside the specified precision.
@@ -3060,7 +2917,7 @@ Result:
 
 **See Also**
 
-- [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port)
+- [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
 ## currentProfiles
 
@@ -3953,15 +3810,13 @@ Retrieves the connection ID of the client that submitted the current query and r
 connectionId()
 ```
 
-Alias: `connection_id`.
-
 **Parameters**
 
 None.
 
 **Returned value**
 
-The current connection ID. [UInt64](../data-types/int-uint.md).
+Returns an integer of type UInt64.
 
 **Implementation details**
 
@@ -3973,6 +3828,40 @@ Query:
 
 ```sql
 SELECT connectionId();
+```
+
+```response
+0
+```
+
+## connection_id
+
+An alias of `connectionId`. Retrieves the connection ID of the client that submitted the current query and returns it as a UInt64 integer.
+
+**Syntax**
+
+```sql
+connection_id()
+```
+
+**Parameters**
+
+None.
+
+**Returned value**
+
+Returns an integer of type UInt64.
+
+**Implementation details**
+
+This function is most useful in debugging scenarios or for internal purposes within the MySQL handler. It was created for compatibility with [MySQL's `CONNECTION_ID` function](https://dev.mysql.com/doc/refman/8.0/en/information-functions.html#function_connection-id) It is not typically used in production queries.
+
+**Example**
+
+Query:
+
+```sql
+SELECT connection_id();
 ```
 
 ```response
@@ -4142,7 +4031,7 @@ displayName()
 
 **Example**
 
-The `display_name` can be set in `config.xml`. Taking for example a server with `display_name` configured to 'production':
+The `display_name` can be set in `config.xml`. Taking for example a server with `display_name` configured to 'production': 
 
 ```xml
 <!-- It is the name that will be shown in the clickhouse-client.
@@ -4391,36 +4280,3 @@ Result:
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## globalVariable
-
-Takes a constant string argument and returns the value of the global variable with that name. This function is intended for compatibility with MySQL and not needed or useful for normal operation of ClickHouse. Only few dummy global variables are defined.
-
-**Syntax**
-
-```sql
-globalVariable(name)
-```
-
-**Arguments**
-
-- `name` — Global variable name. [String](../data-types/string.md).
-
-**Returned value**
-
-- Returns the value of variable `name`.
-
-**Example**
-
-Query:
-
-```sql
-SELECT globalVariable('max_allowed_packet');
-```
-
-Result:
-
-```response
-┌─globalVariable('max_allowed_packet')─┐
-│                             67108864 │
-└──────────────────────────────────────┘
-```

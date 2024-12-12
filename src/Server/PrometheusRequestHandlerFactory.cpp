@@ -101,12 +101,12 @@ namespace
 
         if (type == "expose_metrics")
             return parseExposeMetricsConfig(config, config_prefix);
-        if (type == "remote_write")
+        else if (type == "remote_write")
             return parseRemoteWriteConfig(config, config_prefix);
-        if (type == "remote_read")
+        else if (type == "remote_read")
             return parseRemoteReadConfig(config, config_prefix);
-        throw Exception(
-            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
     }
 
     /// Returns true if the protocol represented by a passed config can be handled.
@@ -122,7 +122,8 @@ namespace
     {
         if (for_keeper)
             return std::make_unique<KeeperPrometheusMetricsWriter>();
-        return std::make_unique<PrometheusMetricsWriter>();
+        else
+            return std::make_unique<PrometheusMetricsWriter>();
     }
 
     /// Base function for making a factory for PrometheusRequestHandler. This function can return nullptr.

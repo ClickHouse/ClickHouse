@@ -308,28 +308,6 @@ void ColumnSparse::popBack(size_t n)
     _size = new_size;
 }
 
-ColumnCheckpointPtr ColumnSparse::getCheckpoint() const
-{
-    return std::make_shared<ColumnCheckpointWithNested>(size(), values->getCheckpoint());
-}
-
-void ColumnSparse::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    checkpoint.size = size();
-    values->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
-}
-
-void ColumnSparse::rollback(const ColumnCheckpoint & checkpoint)
-{
-    _size = checkpoint.size;
-
-    const auto & nested = *assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested;
-    chassert(nested.size > 0);
-
-    values->rollback(nested);
-    getOffsetsData().resize_assume_reserved(nested.size - 1);
-}
-
 ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 {
     if (_size != filt.size())

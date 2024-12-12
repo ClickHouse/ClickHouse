@@ -25,22 +25,24 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 {
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return std::shared_ptr<const DataTypeArray>{type, array_type};
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    else if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
         const auto & nested_type = map_type->getNestedType();
         const auto * nested_array_type = typeid_cast<const DataTypeArray *>(nested_type.get());
         return std::shared_ptr<const DataTypeArray>{nested_type, nested_array_type};
     }
-    return nullptr;
+    else
+        return nullptr;
 }
 
 ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
     if (typeid_cast<const ColumnArray *>(column.get()))
         return column;
-    if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
+    else if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
         return map->getNestedColumnPtr();
-    return nullptr;
+    else
+        return nullptr;
 }
 
 const ColumnArray * getArrayJoinColumnRawPtr(const ColumnPtr & column)

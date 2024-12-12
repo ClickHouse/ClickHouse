@@ -6,8 +6,6 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Common/re2.h>
 
-#include <base/scope_guard.h>
-
 #include "config.h"
 
 
@@ -60,9 +58,9 @@ public:
 
     UInt64 getKeepingFreeSpace() const override { return 0; }
 
-    bool existsFile(const String & path) const override;
-    bool existsDirectory(const String & path) const override;
-    bool existsFileOrDirectory(const String & path) const override;
+    bool exists(const String & path) const override;
+
+    bool isFile(const String & path) const override;
 
     void createFile(const String & path) override;
 
@@ -110,6 +108,8 @@ public:
 
     void setReadOnly(const String & path) override;
 
+    bool isDirectory(const String & path) const override;
+
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
@@ -142,12 +142,6 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
-
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
@@ -161,7 +155,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = {},
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {}
         ) override;
@@ -230,8 +224,6 @@ private:
 
     String getReadResourceName() const;
     String getWriteResourceName() const;
-    String getReadResourceNameNoLock() const;
-    String getWriteResourceNameNoLock() const;
 
     const String object_key_prefix;
     LoggerPtr log;
@@ -250,13 +242,8 @@ private:
     const bool send_metadata;
 
     mutable std::mutex resource_mutex;
-    String read_resource_name_from_config; // specified in disk config.xml read_resource element
-    String write_resource_name_from_config; // specified in disk config.xml write_resource element
-    String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
-    String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
-    String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
-    String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
-    scope_guard resource_changes_subscription;
+    String read_resource_name;
+    String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };

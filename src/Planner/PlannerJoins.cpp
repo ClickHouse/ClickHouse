@@ -55,11 +55,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
-}
-
 namespace ErrorCodes
 {
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
@@ -266,19 +261,21 @@ void buildJoinClause(
                 "JOIN {} ON expression expected non-empty left and right table expressions",
                 join_node.formatASTForErrorMessage());
         }
-        if (left_expression_sides.size() == 1 && right_expression_sides.empty())
+        else if (left_expression_sides.size() == 1 && right_expression_sides.empty())
         {
             auto expression_side = *left_expression_sides.begin();
-            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
+            auto & dag =  expression_side == JoinTableSide::Left ? left_dag : right_dag;
             const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
             join_clause.addCondition(expression_side, node);
+
         }
         else if (left_expression_sides.empty() && right_expression_sides.size() == 1)
         {
             auto expression_side = *right_expression_sides.begin();
-            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
+            auto & dag =  expression_side == JoinTableSide::Left ? left_dag : right_dag;
             const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
             join_clause.addCondition(expression_side, node);
+
         }
         else if (left_expression_sides.size() == 1 && right_expression_sides.size() == 1)
         {
@@ -304,8 +301,7 @@ void buildJoinClause(
                 {
                     if (join_clause.hasASOF())
                     {
-                        throw Exception(
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                             "JOIN {} ASOF JOIN expects exactly one inequality in ON section",
                             join_node.formatASTForErrorMessage());
                     }
@@ -341,11 +337,11 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature "
-                    "by `SET allow_experimental_join_condition = 1`",
+                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature by `SET allow_experimental_join_condition = 1`",
                     join_node.formatASTForErrorMessage());
             }
         }
+
     }
     else
     {
@@ -826,7 +822,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
             StatsCollectingParams params{
                 calculateCacheKey(table_join, right_table_expression),
                 settings[Setting::collect_hash_table_stats_during_joins],
-                query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
+                query_context->getServerSettings().max_entries_for_hash_table_stats,
                 settings[Setting::max_size_to_preallocate_for_joins]};
             return std::make_shared<ConcurrentHashJoin>(
                 query_context, table_join, query_context->getSettingsRef()[Setting::max_threads], right_table_expression_header, params);

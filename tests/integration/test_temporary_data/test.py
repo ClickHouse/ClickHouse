@@ -1,9 +1,8 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
-import time
-
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
 

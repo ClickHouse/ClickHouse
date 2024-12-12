@@ -12,7 +12,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/ServerUUID.h>
 #include <IO/WriteHelpers.h>
 
@@ -54,7 +54,7 @@ void setExtras(bool anonymize, const std::string & server_data_path)
 
     /// Sentry does not support 64-bit integers.
     sentry_set_extra("total_ram", sentry_value_new_string(formatReadableSizeWithBinarySuffix(getMemoryAmountOrZero()).c_str()));
-    sentry_set_extra("cpu_cores", sentry_value_new_int32(getNumberOfCPUCoresToUse()));
+    sentry_set_extra("physical_cpu_cores", sentry_value_new_int32(getNumberOfPhysicalCPUCores()));
 
     if (!server_data_path.empty())
         sentry_set_extra("disk_free_space", sentry_value_new_string(formatReadableSizeWithBinarySuffix(fs::space(server_data_path).free).c_str()));

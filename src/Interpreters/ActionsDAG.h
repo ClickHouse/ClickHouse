@@ -282,13 +282,14 @@ public:
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
-    void addMaterializingOutputActions(bool materialize_sparse);
+    void addMaterializingOutputActions();
 
     /// Apply materialize() function to node. Result node has the same name.
-    const Node & materializeNode(const Node & node, bool materialize_sparse = true);
+    const Node & materializeNode(const Node & node);
 
     enum class MatchColumnsMode : uint8_t
     {
+        /// Require same number of columns in source and result. Match columns by corresponding positions, regardless to names.
         Position,
         /// Find columns in source by their names. Allow excessive columns in source.
         Name,
@@ -485,6 +486,18 @@ class FindOriginalNodeForOutputName
 public:
     explicit FindOriginalNodeForOutputName(const ActionsDAG & actions);
     const ActionsDAG::Node * find(const String & output_name);
+
+private:
+    NameToNodeIndex index;
+};
+
+class FindAliasForInputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindAliasForInputName(const ActionsDAG & actions);
+    const ActionsDAG::Node * find(const String & name);
 
 private:
     NameToNodeIndex index;

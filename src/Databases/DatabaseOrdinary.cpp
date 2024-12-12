@@ -51,17 +51,6 @@ namespace Setting
     extern const SettingsSetOperationMode union_default_mode;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsString storage_policy;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsString default_replica_name;
-    extern const ServerSettingsString default_replica_path;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -97,8 +86,8 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
 
     /// Get replicated engine
     const auto & server_settings = context->getServerSettings();
-    String replica_path = server_settings[ServerSetting::default_replica_path];
-    String replica_name = server_settings[ServerSetting::default_replica_name];
+    String replica_path = server_settings.default_replica_path;
+    String replica_name = server_settings.default_replica_name;
 
     /// Check that replica path doesn't exist
     Macros::MacroExpansionInfo info;
@@ -165,7 +154,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     /// Get table's storage policy
     MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
-    auto policy = getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
+    auto policy = getContext()->getStoragePolicy(default_settings.storage_policy);
     if (auto * query_settings = create_query->storage->settings)
         if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
             policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
@@ -573,7 +562,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         local_context->getSettingsRef()[Setting::max_parser_depth],
         local_context->getSettingsRef()[Setting::max_parser_backtracks]);
 
-    applyMetadataChangesToCreateQuery(ast, metadata, local_context);
+    applyMetadataChangesToCreateQuery(ast, metadata);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     {

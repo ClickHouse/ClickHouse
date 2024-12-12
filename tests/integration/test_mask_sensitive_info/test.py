@@ -1,9 +1,6 @@
-import random
-import re
-import string
-
 import pytest
-
+import random, string
+import re
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 

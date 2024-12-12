@@ -273,9 +273,11 @@ public:
                         getName(),
                         key_column_type->getName());
                 }
-
-                key_columns = {key_column};
-                key_types = {key_column_type};
+                else
+                {
+                    key_columns = {key_column};
+                    key_types = {key_column_type};
+                }
             }
         }
 
@@ -400,10 +402,13 @@ public:
 
             return std::make_shared<DataTypeTuple>(attribute_types, attribute_names);
         }
-
-        if (key_is_nullable)
-            return makeNullable(attribute_types.front());
-        return attribute_types.front();
+        else
+        {
+            if (key_is_nullable)
+                return makeNullable(attribute_types.front());
+            else
+                return attribute_types.front();
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -569,9 +574,11 @@ public:
                          getName(),
                          key_col_with_type.type->getName());
                 }
-
-                key_columns = {std::move(key_column)};
-                key_types = {std::move(key_column_type)};
+                else
+                {
+                    key_columns = {std::move(key_column)};
+                    key_types = {std::move(key_column_type)};
+                }
             }
         }
 

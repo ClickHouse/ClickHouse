@@ -115,7 +115,6 @@ ln -sf $SRC_PATH/test_function.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/top_level_domains $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/regions_hierarchy.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/regions_names_en.txt $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/regions_names_es.txt $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/ext-en.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/ext-ru.txt $DEST_SERVER_PATH/config.d/
