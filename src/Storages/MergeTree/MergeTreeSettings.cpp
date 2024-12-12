@@ -286,8 +286,6 @@ namespace ErrorCodes
     /// NOLINTNEXTLINE
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(MACRO) \
     MACRO(index_granularity)                           \
-    MACRO(enable_minmax_index_for_all_numeric_columns) \
-    MACRO(enable_minmax_index_for_all_string_columns)  \
 
 #define LIST_OF_MERGE_TREE_SETTINGS(M, ALIAS) \
     MERGE_TREE_SETTINGS(M, ALIAS)             \
