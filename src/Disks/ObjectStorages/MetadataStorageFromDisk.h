@@ -9,6 +9,8 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
+#include <shared_mutex>
+
 namespace DB
 {
 

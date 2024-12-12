@@ -287,6 +287,10 @@ public:
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
+    /// Add engine args that were inferred during storage creation to create query to avoid the same
+    /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
+    virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
+
 private:
     StorageID storage_id;
 
@@ -726,15 +730,6 @@ public:
     ///
     /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
-
-    /// If it is possible to quickly determine exact number of bytes for the table on storage:
-    /// - disk (compressed)
-    ///
-    /// Used for:
-    /// - For total_bytes_with_inactive column in system.tables
-    //
-    /// Does not takes underlying Storage (if any) into account
-    virtual std::optional<UInt64> totalBytesWithInactive(const Settings &) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///
