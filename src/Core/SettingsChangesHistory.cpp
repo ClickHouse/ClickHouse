@@ -87,6 +87,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
+
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
+        }
+    },
+    {"24.12",
         {
             /// Release closed. Please use 25.1
             {"allow_experimental_database_iceberg", false, false, "New setting."},
