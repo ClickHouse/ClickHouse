@@ -883,6 +883,12 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
     DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
 Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
 )", 0) \
+    DECLARE(Bool, allow_not_comparable_types_in_order_by, false, R"(
+Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in ORDER BY keys.
+)", 0) \
+    DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
+Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in comparison functions `equal/less/greater/etc`.
+)", 0) \
     DECLARE(Bool, compile_expressions, false, R"(
 Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
 )", 0) \
@@ -6221,6 +6227,8 @@ Settings::~Settings() = default;
 
 Settings & Settings::operator=(const Settings & other)
 {
+    if (&other == this)
+        return *this;
     *impl = *other.impl;
     return *this;
 }
@@ -6336,7 +6344,8 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         res_columns[3]->insert(doc);
 
-        Field min, max;
+        Field min;
+        Field max;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         params.constraints.get(*this, setting_name, min, max, writability);
 

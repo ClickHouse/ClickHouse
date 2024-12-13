@@ -60,7 +60,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-
+            {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
+            {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
         }
     },
     {"24.12",

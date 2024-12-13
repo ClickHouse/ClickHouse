@@ -106,6 +106,7 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
+    extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
 }
 
@@ -4149,18 +4150,18 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
 
 void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type, const IdentifierResolveScope & scope) const
 {
-    if (scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_order_by])
-        return;
-
-    auto check = [](const IDataType & type)
+    auto check = [&](const IDataType & type)
     {
-        if (isDynamic(type) || isVariant(type))
+        if (!scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_order_by] && (isDynamic(type) || isVariant(type)))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. "
                 "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
                 "its a JSON path subcolumn) or casting this column to a specific data type. "
                 "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
+
+        if (!scope.context->getSettingsRef()[Setting::allow_not_comparable_types_in_order_by] && !type.isComparable())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable. Set setting allow_not_comparable_types_in_order_by in order to allow it", type.getName());
     };
 
     check(*sorting_key_type);
