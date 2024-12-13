@@ -2092,9 +2092,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     {
         const auto & table_expression = table_expressions_stack[i];
         auto table_expression_type = table_expression->getNodeType();
-        if (table_expression_type == QueryTreeNodeType::JOIN ||
-            table_expression_type == QueryTreeNodeType::CROSS_JOIN)
+        if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             continue;
+
+        if (table_expression_type == QueryTreeNodeType::CROSS_JOIN)
+            joins_count += table_expression->as<const CrossJoinNode &>().getTableExpressions().size() - 1;
 
         if (table_expression_type == QueryTreeNodeType::JOIN)
         {
@@ -2118,7 +2120,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     QueryTreeNodePtr parent_join_tree = join_tree_node;
     for (const auto & node : table_expressions_stack)
     {
-        if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        if (node->getNodeType() == QueryTreeNodeType::JOIN ||
+            node->getNodeType() == QueryTreeNodeType::CROSS_JOIN ||
+            node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
         {
             parent_join_tree = node;
             break;
