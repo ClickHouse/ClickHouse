@@ -1161,6 +1161,7 @@ argMin
 argmax
 argmin
 arrayAUC
+arrayAUCPr
 arrayAll
 arrayAvg
 arrayCompact
@@ -1200,8 +1201,6 @@ arrayPartialShuffle
 arrayPartialSort
 arrayPopBack
 arrayPopFront
-arrayPRAUC
-arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront
