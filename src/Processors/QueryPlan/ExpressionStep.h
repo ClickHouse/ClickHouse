@@ -13,7 +13,7 @@ class ExpressionStep : public ITransformingStep
 {
 public:
 
-    explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_);
+    explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_, bool enable_adaptive_short_circuit_ = false);
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -27,11 +27,12 @@ public:
 
     void serialize(Serialization & ctx) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    bool enableAdaptiveShortCircuit() const { return enable_adaptive_short_circuit; }
 
 private:
     void updateOutputHeader() override;
-
     ActionsDAG actions_dag;
+    bool enable_adaptive_short_circuit;
 };
 
 }

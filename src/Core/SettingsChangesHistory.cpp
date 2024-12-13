@@ -633,7 +633,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-
+            {"enable_adaptive_short_circuit", true, true,  "New setting. It will reorder the arguments of specific short circuit functions adaptively."},
         }
     },
     {"24.12",

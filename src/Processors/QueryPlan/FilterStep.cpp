@@ -129,7 +129,8 @@ FilterStep::FilterStep(
     const Header & input_header_,
     ActionsDAG actions_dag_,
     String filter_column_name_,
-    bool remove_filter_column_)
+    bool remove_filter_column_,
+    bool enable_adaptive_short_circuit_)
     : ITransformingStep(
         input_header_,
         FilterTransform::transformHeader(
@@ -141,6 +142,7 @@ FilterStep::FilterStep(
     , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
+    , enable_adaptive_short_circuit(enable_adaptive_short_circuit_)
 {
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
@@ -160,7 +162,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
     for (auto & and_atom : and_atoms)
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
+        auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings(), false, enable_adaptive_short_circuit);
         pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
         {
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
@@ -168,7 +170,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         });
     }
 
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
+    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings(), false, enable_adaptive_short_circuit);
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
@@ -182,7 +184,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_header->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
+        auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings(), false, enable_adaptive_short_circuit);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -260,6 +262,8 @@ void FilterStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (remove_filter_column)
         flags |= 1;
+    if (enable_adaptive_short_circuit)
+        flags |= 2;
     writeIntBinary(flags, ctx.out);
 
     writeStringBinary(filter_column_name, ctx.out);
@@ -276,13 +280,14 @@ std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
     readIntBinary(flags, ctx.in);
 
     bool remove_filter_column = bool(flags & 1);
+    bool enable_adaptive_short_circuit_ = bool(flags & 2);
 
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
 
-    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column, enable_adaptive_short_circuit_);
 }
 
 void registerFilterStep(QueryPlanStepRegistry & registry)

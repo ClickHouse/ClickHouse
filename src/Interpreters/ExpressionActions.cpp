@@ -53,10 +53,10 @@ ExpressionActions::ExpressionActions(
     ActionsDAG actions_dag_,
     const ExpressionActionsSettings & settings_,
     bool project_inputs_,
-    bool enable_adaptive_short_circuiting_)
+    bool enable_adaptive_short_circuit_)
     : actions_dag(std::move(actions_dag_))
     , project_inputs(project_inputs_)
-    , enable_adaptive_short_circuiting(enable_adaptive_short_circuiting_)
+    , enable_adaptive_short_circuit(enable_adaptive_short_circuit_)
     , settings(settings_)
 {
     /// It's important to determine lazy executed nodes before compiling expressions.
@@ -96,7 +96,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 
     copy->project_inputs = project_inputs;
     copy->settings = settings;
-    copy->enable_adaptive_short_circuiting = enable_adaptive_short_circuiting;
+    copy->enable_adaptive_short_circuit = enable_adaptive_short_circuit;
 
     return copy;
 }
@@ -677,7 +677,7 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
                 if (action.node->is_function_compiled)
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-                if (enable_adaptive_short_circuiting && action.is_short_circuit_node)
+                if (enable_adaptive_short_circuit && action.is_short_circuit_node)
                 {
                     FunctionExecuteProfile profile;
                     res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run, &profile);
@@ -889,9 +889,21 @@ void ExpressionActions::assertDeterministic() const
     getActionsDAG().assertDeterministic();
 }
 
+void ExpressionActions::updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile)
+{
+    action.elapsed_ns += profile.elapsed_ns;
+    action.input_rows += profile.input_rows;
+    action.valid_output_rows += profile.valid_output_rows;
+    for (const auto & arg_profile : profile.arguments_profiles)
+    {
+        auto & arg_action = actions[action.arguments[arg_profile.first].actions_pos];
+        updateActionsProfile(arg_action, arg_profile.second);
+    }
+}
+
 void ExpressionActions::tryReorderShortCircuitArguments(size_t current_bach_rows)
 {
-    if (!enable_adaptive_short_circuiting)
+    if (!enable_adaptive_short_circuit)
         return;
     current_profile_rows += current_bach_rows;
     if (current_profile_rows < reorder_short_circuit_arguments_every_rows)

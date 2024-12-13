@@ -104,7 +104,7 @@ private:
     Block sample_block;
 
     bool project_inputs = false;
-    bool enable_adaptive_short_circuiting = false;
+    bool enable_adaptive_short_circuit = false;
 
     ExpressionActionsSettings settings;
 
@@ -116,7 +116,7 @@ public:
         ActionsDAG actions_dag_,
         const ExpressionActionsSettings & settings_ = {},
         bool project_inputs_ = false,
-        bool enable_adaptive_short_circuiting_ = false);
+        bool enable_adaptive_short_circuit_ = false);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
 

@@ -32,18 +32,19 @@ static ITransformingStep::Traits getTraits(const ActionsDAG & actions)
     };
 }
 
-ExpressionStep::ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_)
+ExpressionStep::ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_, bool enable_adaptive_short_circuit_)
     : ITransformingStep(
         input_header_,
         ExpressionTransform::transformHeader(input_header_, actions_dag_),
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
+    , enable_adaptive_short_circuit(enable_adaptive_short_circuit_)
 {
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings(), false, true);
+    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings(), false, enable_adaptive_short_circuit);
 
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -85,16 +86,23 @@ void ExpressionStep::updateOutputHeader()
 
 void ExpressionStep::serialize(Serialization & ctx) const
 {
+    UInt8 flags = 0;
+    if (enable_adaptive_short_circuit)
+        flags |= 1;
+    writeIntBinary(flags, ctx.out);
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
 std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ctx)
 {
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+    bool enable_adaptive_short_circuit_ = bool(flags & 1);
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 
-    return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag));
+    return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag), enable_adaptive_short_circuit_);
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry)

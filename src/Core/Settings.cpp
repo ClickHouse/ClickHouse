@@ -5643,6 +5643,10 @@ For testing purposes. Replaces all external table functions to Null to not initi
     DECLARE(Bool, restore_replace_external_dictionary_source_to_null, false, R"(
 Replace external dictionary sources to Null on restore. Useful for testing purposes
 )", 0) \
+    DECLARE(Bool, enable_adaptive_short_circuit, true, R"(
+Enable adatpive short circuite execution. It will reorder the arguments of specific short circuit functions based on execution cost. e.g. `and` and `or`.
+It helps to minimize the total cost of the function execution.
+    )", 0) \
         /* Parallel replicas */ \
     DECLARE(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
 Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
