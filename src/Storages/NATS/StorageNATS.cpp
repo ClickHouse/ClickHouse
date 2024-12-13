@@ -642,7 +642,7 @@ void StorageNATS::streamingToViewsFunc()
             streaming_task->scheduleAfter(RESCHEDULE_MS);
         else
             streaming_task->schedule();
-    } 
+    }
 }
 
 
