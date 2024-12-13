@@ -199,7 +199,8 @@ PartsRanges VisiblePartsCollector::filterByTxVisibility(
 
     PartsRanges ranges;
     for (auto part_it = parts.begin(); part_it != parts.end(); ++part_it)
-        ranges.push_back(build_next_range(part_it));
+        if (auto next_range = build_next_range(part_it); !next_range.empty())
+            ranges.push_back(std::move(next_range));
 
     return ranges;
 }
