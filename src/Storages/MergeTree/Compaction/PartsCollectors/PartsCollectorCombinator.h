@@ -31,7 +31,7 @@ public:
 
         for (const auto & collector : collectors)
         {
-            auto collected_ranges = collector->collectPartsToUse(partitions_hint, metadata_snapshot, storage_policy, current_time, partitions_hint);
+            auto collected_ranges = collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, partitions_hint);
             insertAtEnd(ranges, std::move(collected_ranges));
         }
 
