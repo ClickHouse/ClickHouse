@@ -209,10 +209,11 @@ def get_creation_expression(
     allow_dynamic_metadata_for_data_lakes=False,
     use_iceberg_partition_pruning=False,
     run_on_cluster=False,
+    where_expression = "",
     **kwargs,
 ):
     is_first_setting = True
-    for name, value in [("allow_dynamic_metadata_for_data_lakes", allow_dynamic_metadata_for_data_lakes), ("use_iceberg_partition_pruning", use_iceberg_partition_pruning)]:
+    for name, value in [("allow_dynamic_metadata_for_data_lakes", allow_dynamic_metadata_for_data_lakes and not table_function), ("use_iceberg_partition_pruning", use_iceberg_partition_pruning)]:
         if is_first_setting:
             settings += f" SETTINGS {name} = {'1' if value else '0'}"
             is_first_setting = False
@@ -227,16 +228,17 @@ def get_creation_expression(
 
         if run_on_cluster:
             assert table_function
-            return f"icebergS3Cluster('cluster_simple', s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+            return f"icebergS3Cluster('cluster_simple', s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')" + where_expression
         else:
             if table_function:
-                return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')" + where_expression
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
+                    + where_expression
                     + settings
                 )
 
@@ -245,18 +247,21 @@ def get_creation_expression(
             assert table_function
             return f"""
                 icebergAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
-            """
+            """ + where_expression
+
         else:
             if table_function:
                 return f"""
                     icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
-                """
+                """ + where_expression
+
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
+                    + where_expression
                     + settings
                 )
 
@@ -265,18 +270,19 @@ def get_creation_expression(
             assert table_function
             return f"""
                 icebergHDFSCluster('cluster_simple', hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
-            """
+            """ + where_expression
         else:
             if table_function:
                 return f"""
                     icebergHDFS(hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
-                """
+                """ + where_expression
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
                     ENGINE=IcebergHDFS(hdfs, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')"""
+                    + where_expression
                     + settings
                 )
 
@@ -286,13 +292,14 @@ def get_creation_expression(
         if table_function:
             return f"""
                 icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
-            """
+            """ + where_expression
         else:
             return (
                 f"""
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
                 ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
+                + where_expression
                 + settings
             )
 
@@ -1953,33 +1960,51 @@ def test_partition_pruning(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-            DROP TABLE IF EXISTS {TABLE_NAME};
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int, 
-                b float
+            CREATE TABLE {TABLE_NAME} (
+                id INT,
+                date DATE,
+                date2 DATE,
+                ts TIMESTAMP,
+                ts2 TIMESTAMP
             )
-            USING iceberg 
-            OPTIONS ('format-version'='{format_version}')
+            USING iceberg
+            PARTITIONED BY (day(date), year(date2), hour(ts), month(ts2))
+            OPTIONS('format-version'='2')
         """
     )
 
-    instance.query(
+    def get_query(where_expression, use_iceberg_partition_pruning):
         get_creation_expression(
             storage_type,
             TABLE_NAME,
             started_cluster,
-            table_function=True,
-            allow_dynamic_metadata_for_data_lakes=False,
-
+            table_function=True, 
+            use_iceberg_partition_pruning=use_iceberg_partition_pruning,
+            where_expression=where_expression,           
         )
+
+
+
+    table_function = get_creation_expression(
+            storage_type,
+            TABLE_NAME,
+            started_cluster,
+            table_function=True,
     )
 
-    check_schema_and_data(
+    table_function = get_creation_expression(
+            storage_type,
+            TABLE_NAME,
+            started_cluster,
+            table_function=True,
+            use_iceberg_partition_pruning=True,
+    )
+
+    instance.query(
+        table_function
+    )
+
+    get_data(
         instance,
         TABLE_NAME,
         [
