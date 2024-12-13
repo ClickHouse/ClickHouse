@@ -73,12 +73,6 @@ DOCKERS = [
     #     depends_on=[],
     # ),
     # Docker.Config(
-    #     name="clickhouse/integration-test",
-    #     path="./ci/docker/test/integration/base",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
     #     name="clickhouse/fuzzer",
     #     path="./ci/docker/test/fuzzer",
     #     platforms=Docker.Platforms.arm_amd,
@@ -138,23 +132,78 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/stateless-test"],
     ),
+    Docker.Config(
+        name="clickhouse/integration-test",
+        path="./ci/docker/integration-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    # TODO: move images into ./ci
+    Docker.Config(
+        name="clickhouse/integration-tests-runner",
+        path="./docker/test/integration/runner",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/integration-helper",
+        path="./docker/test/integration/runner",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
     # Docker.Config(
-    #     name="clickhouse/stress-test",
-    #     path="./ci/docker/test/stress",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/stateful-test"],
+    #     name="clickhouse/kerberized-hadoop",
+    #     path="./docker/test/integration/kerberized_hadoop",
+    #     platforms=[Docker.Platforms.AMD],
+    #     depends_on=[],
     # ),
     # Docker.Config(
-    #     name="clickhouse/unit-test",
-    #     path="./ci/docker/test/unit",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
+    #     name="clickhouse/kerberos-kdc",
+    #     path="./docker/test/integration/kerberos_kdc",
+    #     platforms=[Docker.Platforms.AMD],
+    #     depends_on=[],
     # ),
     # Docker.Config(
-    #     name="clickhouse/integration-tests-runner",
-    #     path="./ci/docker/test/integration/runner",
+    #     name="clickhouse/mysql-golang-client",
+    #     path="./docker/test/integration/mysql_golang_client",
     #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/mysql-java-client",
+    #     path="./docker/test/integration/mysql_java_client",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/mysql-js-client",
+    #     path="./docker/test/integration/mysql_js_client",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/mysql-php-client",
+    #     path="./docker/test/integration/mysql_php_client",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/nginx-dav",
+    #     path="./docker/test/integration/nginx_dav",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/postgresql-java-client",
+    #     path="./docker/test/integration/postgresql_java_client",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/python-bottle",
+    #     path="./docker/test/integration/resolver",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
     # ),
     Docker.Config(
         name="clickhouse/style-test",
@@ -175,48 +224,6 @@ DOCKERS = [
 #     "name": "clickhouse/s3-proxy",
 #     "dependent": []
 # },
-# "docker/test/integration/resolver": {
-#     "name": "clickhouse/python-bottle",
-#     "dependent": []
-# },
-# "docker/test/integration/helper_container": {
-#     "name": "clickhouse/integration-helper",
-#     "dependent": []
-# },
-# "docker/test/integration/mysql_golang_client": {
-#     "name": "clickhouse/mysql-golang-client",
-#     "dependent": []
-# },
-# "docker/test/integration/dotnet_client": {
-#     "name": "clickhouse/dotnet-client",
-#     "dependent": []
-# },
-# "docker/test/integration/mysql_java_client": {
-#     "name": "clickhouse/mysql-java-client",
-#     "dependent": []
-# },
-# "docker/test/integration/mysql_js_client": {
-#     "name": "clickhouse/mysql-js-client",
-#     "dependent": []
-# },
-# "docker/test/integration/mysql_php_client": {
-#     "name": "clickhouse/mysql-php-client",
-#     "dependent": []
-# },
-# "docker/test/integration/postgresql_java_client": {
-#     "name": "clickhouse/postgresql-java-client",
-#     "dependent": []
-# },
-# "docker/test/integration/kerberos_kdc": {
-#     "only_amd64": true,
-#     "name": "clickhouse/kerberos-kdc",
-#     "dependent": []
-# },
-# "docker/test/integration/kerberized_hadoop": {
-#     "only_amd64": true,
-#     "name": "clickhouse/kerberized-hadoop",
-#     "dependent": []
-# },
 # "docker/test/sqlancer": {
 #     "name": "clickhouse/sqlancer-test",
 #     "dependent": []
@@ -229,10 +236,6 @@ DOCKERS = [
 #     "name": "clickhouse/install-rpm-test",
 #     "dependent": []
 # },
-# "docker/test/integration/nginx_dav": {
-#     "name": "clickhouse/nginx-dav",
-#     "dependent": []
-# }
 
 
 class BuildTypes:
@@ -253,6 +256,7 @@ class JobNames:
     BUILD = "Build"
     STATELESS = "Stateless tests"
     STATEFUL = "Stateful tests"
+    INTEGRATION = "Integration tests"
     STRESS = "Stress tests"
     UPGRADE = "Upgrade tests"
     PERFORMANCE = "Performance comparison"
@@ -599,14 +603,31 @@ class Jobs:
     )
 
     # TODO: refactor job to be aligned with praktika style (remove wrappers, run in docker)
+    integration_test_jobs = Job.Config(
+        name=JobNames.INTEGRATION,
+        runs_on=["from PARAM"],
+        command="python3 ./tests/ci/integration_test_check.py {PARAMETER}",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/ci/integration_test_check.py",
+                "./tests/ci/integration_tests_runner.py",
+                "./tests/integration/",
+            ],
+        ),
+        timeout=3600 * 2,
+    ).parametrize(
+        parameter=[f"{BuildTypes.AMD_ASAN},{i+1}/5" for i in range(5)],
+        runs_on=[[RunnerLabels.FUNC_TESTER_AMD] for _ in range(5)],
+        requires=[[ArtifactNames.DEB_AMD_ASAN] for _ in range(5)],
+    )
+
+    # TODO: refactor job to be aligned with praktika style (remove wrappers, run in docker)
     stress_test_jobs = Job.Config(
         name=JobNames.STRESS,
         runs_on=[RunnerLabels.BUILDER_ARM],
         command="python3 ./tests/ci/stress_check.py {PARAMETER}",
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/functional_stateful_tests.py",
-            ],
+            include_paths=["./tests/ci/stress_check.py", "./tests/docker_scripts/"]
         ),
     ).parametrize(
         parameter=[
@@ -626,7 +647,11 @@ class Jobs:
         runs_on=["from param"],
         command="python3 ./tests/ci/upgrade_check.py {PARAMETER}",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./tests/ci/upgrade_check.py", "./tests/docker_scripts/"]
+            include_paths=[
+                "./tests/ci/upgrade_check.py",
+                "./tests/ci/stress_check.py",
+                "./tests/docker_scripts/",
+            ]
         ),
     ).parametrize(
         parameter=[
