@@ -1,7 +1,6 @@
 #pragma once
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/IColumn.h>
 
@@ -24,9 +23,10 @@ struct PrimaryIndexWeightFunction
 
     size_t operator()(const PrimaryIndex & index) const
     {
-        size_t res = 0;
+        size_t res = PRIMARY_INDEX_CACHE_OVERHEAD;
+        res += index.capacity() * sizeof(PrimaryIndex::value_type);
         for (const auto & column : index)
-            res += column->byteSize();
+            res += column->allocatedBytes();
         return res;
     }
 };
@@ -49,12 +49,7 @@ public:
     }
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & part_path)
-    {
-        SipHash hash;
-        hash.update(part_path.data(), part_path.size() + 1);
-        return hash.get128();
-    }
+    static UInt128 hash(const String & part_path);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)

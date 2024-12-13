@@ -22,7 +22,7 @@ ASTPtr ASTTableOverride::clone() const
     return res;
 }
 
-void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     String nl_or_nothing = settings.one_line ? "" : "\n";
     String nl_or_ws = settings.one_line ? " " : "\n";
@@ -31,14 +31,14 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState &
 
     if (is_standalone)
     {
-        settings.ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
-        ASTIdentifier(table_name).formatImpl(settings, state, frame);
+        ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
+        ASTIdentifier(table_name).formatImpl(ostr, settings, state, frame);
     }
     auto override_frame = frame;
     if (is_standalone)
     {
         ++override_frame.indent;
-        settings.ostr << nl_or_ws << '(' << nl_or_nothing;
+        ostr << nl_or_ws << '(' << nl_or_nothing;
     }
     String indent_str = settings.one_line ? "" : String(4 * override_frame.indent, ' ');
     size_t override_elems = 0;
@@ -46,9 +46,9 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState &
     {
         FormatStateStacked columns_frame = override_frame;
         columns_frame.expression_list_always_start_on_new_line = true;
-        settings.ostr << indent_str << hl_keyword << "COLUMNS" << hl_none << nl_or_ws << indent_str << "(";
-        columns->formatImpl(settings, state, columns_frame);
-        settings.ostr << nl_or_nothing << indent_str << ")";
+        ostr << indent_str << hl_keyword << "COLUMNS" << hl_none << nl_or_ws << indent_str << "(";
+        columns->formatImpl(ostr, settings, state, columns_frame);
+        ostr << nl_or_nothing << indent_str << ")";
         ++override_elems;
     }
     if (storage)
@@ -57,10 +57,10 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState &
         {
             if (elem)
             {
-                settings.ostr << (override_elems++ ? nl_or_ws : "")
+                ostr << (override_elems++ ? nl_or_ws : "")
                               << indent_str
                               << hl_keyword << elem_name << hl_none << ' ';
-                elem->formatImpl(settings, state, override_frame);
+                elem->formatImpl(ostr, settings, state, override_frame);
             }
         };
         format_storage_elem(storage->partition_by, "PARTITION BY");
@@ -71,7 +71,7 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings, FormatState &
     }
 
     if (is_standalone)
-        settings.ostr << nl_or_nothing << ')';
+        ostr << nl_or_nothing << ')';
 }
 
 ASTPtr ASTTableOverrideList::clone() const
@@ -121,19 +121,19 @@ bool ASTTableOverrideList::hasOverride(const String & name) const
     return positions.contains(name);
 }
 
-void ASTTableOverrideList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableOverrideList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (frame.expression_list_prepend_whitespace)
-        settings.ostr << ' ';
+        ostr << ' ';
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
-            settings.ostr << (settings.one_line ? ", " : ",\n");
+            ostr << (settings.one_line ? ", " : ",\n");
         }
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(ostr, settings, state, frame);
     }
 }
 

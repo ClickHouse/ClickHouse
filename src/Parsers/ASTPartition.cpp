@@ -61,20 +61,20 @@ ASTPtr ASTPartition::clone() const
     return res;
 }
 
-void ASTPartition::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (value)
     {
-        value->formatImpl(settings, state, frame);
+        value->formatImpl(ostr, settings, state, frame);
     }
     else if (all)
     {
-        settings.ostr << "ALL";
+        ostr << "ALL";
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
-        id->formatImpl(settings, state, frame);
+        ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
+        id->formatImpl(ostr, settings, state, frame);
     }
 }
 }
