@@ -5,19 +5,19 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <IO/WriteBufferFromOStream.h>
-#include "Parsers/GoogleSQL/ParserGoogleSQLQuery.h"
+#include <Parsers/ZetaSQL/ParserZetaSQLQuery.h>
 
 
 int main(int, char **)
 {
     using namespace DB;
 
-    std::string input = "FROM orders";
-    GoogleSQL::ParserGoogleSQLQuery parser;
+    std::string input = "FROM orders |> WHERE order_price > 10";
+    ZetaSQL::ParserZetaSQLQuery parser;
 
     try
     {
-        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
+        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 1000000, 10000000, 10000000);
         WriteBufferFromFileDescriptor out(STDOUT_FILENO);
         formatAST(*ast, out);
         out.finalize();

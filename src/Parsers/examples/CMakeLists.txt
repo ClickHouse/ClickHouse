@@ -9,5 +9,5 @@ target_link_libraries(select_parser PRIVATE dbms)
 clickhouse_add_executable(create_parser create_parser.cpp ${SRCS} "../../Server/ServerType.cpp")
 target_link_libraries(create_parser PRIVATE dbms)
 
-clickhouse_add_executable(create_googlesql_parser create_googlesql_parser.cpp ${SRCS} "../../Server/ServerType.cpp")
-target_link_libraries(create_googlesql_parser PRIVATE dbms)
+clickhouse_add_executable(create_zetasql_parser create_zetasql_parser.cpp ${SRCS} "../../Server/ServerType.cpp")
+target_link_libraries(create_zetasql_parser PRIVATE dbms)
