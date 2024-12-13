@@ -142,6 +142,8 @@ struct Settings
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
+    /// Equivalent to Settings().write(out, <any format>) but faster.
+    static void writeEmpty(WriteBuffer & out);
 
     void addToProgramOptions(boost::program_options::options_description & options);
     void addToProgramOptions(std::string_view setting_name, boost::program_options::options_description & options);

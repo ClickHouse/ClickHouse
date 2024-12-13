@@ -16,10 +16,10 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatValidUntil(const IAST & valid_until, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
-        valid_until.format(settings);
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " VALID UNTIL " << (settings.hilite ? IAST::hilite_none : "");
+        valid_until.format(ostr, settings);
     }
 }
 
@@ -49,16 +49,16 @@ std::optional<String> ASTAuthenticationData::getSalt() const
     return {};
 }
 
-void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (type && *type == AuthenticationType::NO_PASSWORD)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " no_password"
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " no_password"
                       << (settings.hilite ? IAST::hilite_none : "");
 
         if (valid_until)
         {
-            formatValidUntil(*valid_until, settings);
+            formatValidUntil(*valid_until, ostr, settings);
         }
 
         return;
@@ -177,52 +177,52 @@ void ASTAuthenticationData::formatImpl(const FormatSettings & settings, FormatSt
 
     if (!auth_type_name.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << auth_type_name << (settings.hilite ? IAST::hilite_none : "");
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << auth_type_name << (settings.hilite ? IAST::hilite_none : "");
     }
 
     if (!prefix.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << (settings.hilite ? IAST::hilite_none : "");
+        ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << (settings.hilite ? IAST::hilite_none : "");
     }
 
     if (password)
     {
-        settings.ostr << " ";
-        children[0]->format(settings);
+        ostr << " ";
+        children[0]->format(ostr, settings);
     }
 
     if (salt)
     {
-        settings.ostr << " SALT ";
-        children[1]->format(settings);
+        ostr << " SALT ";
+        children[1]->format(ostr, settings);
     }
 
     if (parameter)
     {
-        settings.ostr << " ";
-        children[0]->format(settings);
+        ostr << " ";
+        children[0]->format(ostr, settings);
     }
     else if (parameters)
     {
-        settings.ostr << " ";
+        ostr << " ";
         bool need_comma = false;
         for (const auto & child : children)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            child->format(settings);
+                ostr << ", ";
+            child->format(ostr, settings);
         }
     }
 
     if (scheme)
     {
-        settings.ostr << " SCHEME ";
-        children[1]->format(settings);
+        ostr << " SCHEME ";
+        children[1]->format(ostr, settings);
     }
 
     if (valid_until)
     {
-        formatValidUntil(*valid_until, settings);
+        formatValidUntil(*valid_until, ostr, settings);
     }
 
 }
