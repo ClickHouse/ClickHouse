@@ -892,11 +892,11 @@ try
             query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
     };
 
-
     if (chunk.getNumRows() == 0)
     {
         finish_entries();
         log_and_add_finish_to_query_log(0, 0);
+        pipeline.cancel();
         return;
     }
 
