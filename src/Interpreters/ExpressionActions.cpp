@@ -348,6 +348,28 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
+static bool isNonExceptNode(const ActionsDAG::Node * node)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && !node->function_base->isNonExcept())
+        return false;
+    for (const auto * child : node->children)
+    {
+        if (!isNonExceptNode(child))
+            return false;
+    }
+    return true;
+}
+
+static bool areAllChildrenNonExceptNode(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isNonExceptNode(child))
+            return false;
+    }
+    return true;
+}
+
 void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
@@ -424,8 +446,6 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             ExpressionActions::Argument argument;
             argument.pos = arg.position;
             argument.needed_later = arg_info.used_in_result || arg.num_created_parents != arg_info.parents.size();
-            if (!node_in_actions_pos.contains(arg.node))
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid node");
             argument.actions_pos = node_in_actions_pos[arg.node];
 
             if (!argument.needed_later)
@@ -449,7 +469,15 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
                     node->function_base->isShortCircuit(short_circuit_settings, node->children.size()) &&
                     !node->children.empty();
         node_in_actions_pos[node] = actions.size();
-        actions.emplace_back(node, arguments, free_position, lazy_executed_nodes.contains(node), is_short_circuit_node);
+        bool could_reorder_arguments = is_short_circuit_node && short_circuit_settings.could_reorder_arguments
+            && areAllChildrenNonExceptNode(node);
+        actions.emplace_back(
+            node,
+            arguments,
+            free_position,
+            lazy_executed_nodes.contains(node),
+            is_short_circuit_node,
+            could_reorder_arguments);
 
         for (const auto & parent : cur_info.parents)
         {
@@ -613,7 +641,7 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
         {
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty. {}\n{}, {}", action.node->result_name, res_column.column->getName(), res_column.name);
 
             res_column.type = action.node->result_type;
             res_column.name = action.node->result_name;
@@ -641,13 +669,15 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
             }
 
             if (action.is_lazy_executed)
+            {
                 res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
+            }
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
                 if (action.node->is_function_compiled)
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-                if (action.is_short_circuit_node)
+                if (enable_adaptive_short_circuiting && action.is_short_circuit_node)
                 {
                     FunctionExecuteProfile profile;
                     res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run, &profile);
@@ -723,7 +753,6 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
                 if (!arg.needed_later)
                     columns[arg.pos] = {};
             }
-
             columns[action.result_position].name = action.node->result_name;
 
             break;
@@ -756,6 +785,7 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
 
 void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
 {
+    size_t block_rows = block.rows();
     ExecutionContext execution_context
     {
         .inputs = block.data,
@@ -797,6 +827,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
             throw;
         }
     }
+    tryReorderShortCircuitArguments(block_rows);
 
     if (project_inputs)
     {
@@ -858,22 +889,50 @@ void ExpressionActions::assertDeterministic() const
     getActionsDAG().assertDeterministic();
 }
 
-void ExpressionActions::updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile)
+void ExpressionActions::tryReorderShortCircuitArguments(size_t current_bach_rows)
 {
-    action.elapsed_ns += profile.elapsed_ns;
-    action.input_rows += profile.input_rows;
-    action.valid_output_rows += profile.valid_output_rows;
-    for (const auto & [arg_pos, arg_profile] : profile.arguments_profiles)
-    {
-        const auto & arg = action.arguments[arg_pos];
-        auto & arg_action = actions[arg.actions_pos];
-        updateActionsProfile(arg_action, arg_profile);
-    }
-}
+    if (!enable_adaptive_short_circuiting)
+        return;
+    current_profile_rows += current_bach_rows;
+    if (current_profile_rows < reorder_short_circuit_arguments_every_rows)
+        return;
 
-void ExpressionActions::dumpLazyNodeProfile() const
-{
-    
+    for (auto & action : actions)
+    {
+        if (!action.could_reorder_arguments)
+            continue;
+        std::vector<std::pair<size_t, double>> rank_values;
+        for (size_t i = 0; i < action.arguments.size(); ++i)
+        {
+            const auto & arg = action.arguments[i];
+            const auto & arg_action = actions[arg.actions_pos];
+            double rank_value = arg_action.input_rows ?
+                (arg_action.elapsed_ns * 1.0 / arg_action.input_rows/(1.000001 - arg_action.valid_output_rows/arg_action.input_rows))
+                : 0.0;
+            rank_values.push_back(std::make_pair(i, rank_value));
+        }
+        ::sort(rank_values.begin(), rank_values.end(), [](const auto & a, const auto & b) { return a.second < b.second; });
+        std::vector<std::pair<size_t, Argument>> reordered_args;
+        LOG_TRACE(getLogger("ExpressionActions"), "try to reorder node's arguments: {}", action.node->result_name);
+        for (size_t i = 0; i < action.arguments.size(); ++i)
+        {
+            const auto & rank_value = rank_values[i];
+
+            // position is not changed.
+            if (rank_value.first == i)
+                continue;
+            LOG_TRACE(getLogger("ExceptionActions"), "Move arg {} to {}", i, rank_value.first);
+            reordered_args.emplace_back(std::make_pair(i, action.arguments[rank_value.first]));
+        }
+
+        // This will reorder the execution of arguments. We don't need to topological sort the actions again
+        for (const auto & [pos, arg] : reordered_args)
+        {
+            action.arguments[pos] = std::move(arg);
+        }
+    }
+
+    current_profile_rows = 0;
 }
 
 NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)

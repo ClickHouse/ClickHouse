@@ -229,6 +229,7 @@ public:
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }
     bool isVariadic() const override { return true; }
+    bool isNonExcept() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }

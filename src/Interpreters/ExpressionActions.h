@@ -44,6 +44,7 @@ public:
         /// True if there is another action which will use this column.
         /// Otherwise column will be removed.
         bool needed_later = false;
+        // Position in ExpressionActions::actions
         size_t actions_pos = 0;
     };
 
@@ -59,13 +60,24 @@ public:
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         bool is_lazy_executed;
         bool is_short_circuit_node;
-        Action(const Node * node_, const Arguments & arguments_, size_t result_position_, bool is_lazy_executed_, bool is_short_circuit_node_)
+        bool could_reorder_arguments;
+        Action(const Node * node_,
+            const Arguments & arguments_,
+            size_t result_position_,
+            bool is_lazy_executed_,
+            bool is_short_circuit_node_,
+            bool could_reorder_arguments_)
             : node(node_),
             arguments(arguments_),
             result_position(result_position_),
             is_lazy_executed(is_lazy_executed_),
-            is_short_circuit_node(is_short_circuit_node_)
+            is_short_circuit_node(is_short_circuit_node_),
+            could_reorder_arguments(could_reorder_arguments_)
         {}
+
+        /// Followings are used for reordering arguments of short-circuit nodes
+        /// Rank value is caculated as elapsed_ns/input_rows/(1-valid_output_rows/input_rows)
+        /// Smaller rank value is better
         size_t elapsed_ns = 0;
         size_t input_rows = 0;
         size_t valid_output_rows = 0;
@@ -95,6 +107,9 @@ private:
     bool enable_adaptive_short_circuiting = false;
 
     ExpressionActionsSettings settings;
+
+    size_t reorder_short_circuit_arguments_every_rows = 10000;
+    size_t current_profile_rows = 0;
 
 public:
     explicit ExpressionActions(
@@ -155,7 +170,7 @@ private:
     void executeAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input);
 
     void updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
-    void dumpLazyNodeProfile() const;
+    void tryReorderShortCircuitArguments(size_t current_bach_rows);
 };
 
 
