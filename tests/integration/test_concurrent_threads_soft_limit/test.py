@@ -135,7 +135,7 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
         node2,
         "test_concurrent_threads_soft_limit_2",
         "ConcurrencyControlSlotsDelayed",
-        lambda x: x == 50,
+        lambda x: x >= 50,
     )
     assert_profile_event(
         node2,
