@@ -2904,10 +2904,11 @@ message TableEngineParam {
 }
 
 message TTLEntry {
+    required Expr time_expr = 1;
     oneof ttlentry_oneof {
-        bool delete = 1;
-        CodecList codecs = 2;
-        Storage storage = 3;
+        bool delete = 2;
+        CodecList codecs = 3;
+        Storage storage = 4;
     }
 }
 
@@ -2923,11 +2924,10 @@ message TTLGroupBy {
 }
 
 message TTLExpr {
-    required Expr time_expr = 1;
-    required TTLEntry ttl_expr = 2;
-    repeated TTLEntry other_ttl = 3;
-    optional WhereStatement where = 4;
-    optional TTLGroupBy group_by = 5;
+    required TTLEntry ttl_expr = 1;
+    repeated TTLEntry other_ttl = 2;
+    optional WhereStatement where = 3;
+    optional TTLGroupBy group_by = 4;
 }
 
 message TableEngine {

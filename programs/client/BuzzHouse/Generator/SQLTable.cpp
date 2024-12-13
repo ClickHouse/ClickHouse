@@ -197,7 +197,7 @@ int StatementGenerator::generateNextTTL(
         const uint32_t nopt = rg.nextSmallNumber();
         TTLEntry * entry = i == 0 ? ttl_expr->mutable_ttl_expr() : ttl_expr->add_other_ttl();
 
-        generateTTLExpression(rg, t, ientries, ttl_expr->mutable_time_expr());
+        generateTTLExpression(rg, t, ientries, entry->mutable_time_expr());
         if (nopt < 5)
         {
             generateNextCodecs(rg, entry->mutable_codecs());

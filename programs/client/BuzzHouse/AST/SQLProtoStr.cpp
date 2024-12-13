@@ -2524,6 +2524,8 @@ CONV_FN(TTLGroupBy, ttl_groupby)
 
 CONV_FN(TTLEntry, entry)
 {
+    ExprToString(ret, entry.time_expr());
+    ret += " ";
     using TTLEntryType = TTLEntry::TtlentryOneofCase;
     switch (entry.ttlentry_oneof_case())
     {
@@ -2543,8 +2545,6 @@ CONV_FN(TTLEntry, entry)
 CONV_FN(TTLExpr, ttl_expr)
 {
     ret += "TTL ";
-    ExprToString(ret, ttl_expr.time_expr());
-    ret += " ";
     TTLEntryToString(ret, ttl_expr.ttl_expr());
     for (int i = 0; i < ttl_expr.other_ttl_size(); i++)
     {
