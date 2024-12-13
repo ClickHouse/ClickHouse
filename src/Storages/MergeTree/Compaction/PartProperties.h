@@ -12,6 +12,7 @@ struct PartProperties
     const MergeTreePartInfo part_info;
     const std::string part_compression_codec;
     const bool shall_participate_in_merges = true;
+    const bool all_ttl_calculated_if_any = false;
 
     /// Size of data part in bytes.
     const size_t size = 0;

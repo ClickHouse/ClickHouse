@@ -75,6 +75,7 @@ PartProperties buildPartProperties(
         .part_info = part->info,
         .part_compression_codec = astToString(part->default_codec->getFullCodecDesc()),
         .shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true,
+        .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
         .size = part->getExistingBytesOnDisk(),
         .age = current_time - part->modification_time,
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
