@@ -543,7 +543,8 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
         std::lock_guard lock{mutex};
 
         /// Log all changes in zookeeper nodes in the "stage" folder to make debugging easier.
-        Strings added_zk_nodes, removed_zk_nodes;
+        Strings added_zk_nodes;
+        Strings removed_zk_nodes;
         std::set_difference(new_zk_nodes.begin(), new_zk_nodes.end(), zk_nodes.begin(), zk_nodes.end(), back_inserter(added_zk_nodes));
         std::set_difference(zk_nodes.begin(), zk_nodes.end(), new_zk_nodes.begin(), new_zk_nodes.end(), back_inserter(removed_zk_nodes));
         if (!added_zk_nodes.empty())
