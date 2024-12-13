@@ -273,9 +273,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         }
     }
 
-    if (access_control.isUserSelfAlterAllowed() && current_user)
-        res.grant(AccessType::ALTER_USER, current_user->getName());
-
     return res;
 }
 
