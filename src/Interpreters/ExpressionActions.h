@@ -76,11 +76,11 @@ public:
         {}
 
         /// Followings are used for reordering arguments of short-circuit nodes
-        /// Rank value is caculated as elapsed_ns/input_rows/(1-valid_output_rows/input_rows)
+        /// Rank value is caculated as elapsed_ns/input_rows/(1-short_circuit_selected_rows/input_rows)
         /// Smaller rank value is better
         size_t elapsed_ns = 0;
         size_t input_rows = 0;
-        size_t valid_output_rows = 0;
+        size_t short_circuit_selected_rows = 0;
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;

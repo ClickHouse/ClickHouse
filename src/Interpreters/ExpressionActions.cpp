@@ -893,7 +893,7 @@ void ExpressionActions::updateActionsProfile(ExpressionActions::Action & action,
 {
     action.elapsed_ns += profile.elapsed_ns;
     action.input_rows += profile.input_rows;
-    action.valid_output_rows += profile.valid_output_rows;
+    action.short_circuit_selected_rows += profile.short_circuit_selected_rows;
     for (const auto & arg_profile : profile.arguments_profiles)
     {
         auto & arg_action = actions[action.arguments[arg_profile.first].actions_pos];
@@ -919,7 +919,7 @@ void ExpressionActions::tryReorderShortCircuitArguments(size_t current_bach_rows
             const auto & arg = action.arguments[i];
             const auto & arg_action = actions[arg.actions_pos];
             double rank_value = arg_action.input_rows ?
-                (arg_action.elapsed_ns * 1.0 / arg_action.input_rows/(1.000001 - arg_action.valid_output_rows/arg_action.input_rows))
+                (arg_action.elapsed_ns * 1.0 / arg_action.input_rows/(1.000001 - arg_action.short_circuit_selected_rows/arg_action.input_rows))
                 : 0.0;
             rank_values.push_back(std::make_pair(i, rank_value));
         }

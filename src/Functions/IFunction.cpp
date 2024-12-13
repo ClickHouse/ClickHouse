@@ -331,7 +331,7 @@ ColumnPtr IExecutableFunction::executeImplWithProfile(const ColumnsWithTypeAndNa
         Stopwatch watch;
         auto res = executeImpl(arguments, result_type, input_rows_count);
         profile->input_rows = arguments.empty() ? 0 : arguments.front().column->size();
-        profile->valid_output_rows = res ? res->size() : 0;
+        profile->short_circuit_selected_rows = res ? res->size() : 0;
         profile->elapsed_ns = watch.elapsed();
         return res;
     }
@@ -567,7 +567,7 @@ ColumnPtr IFunction::executeImpl(
         Stopwatch watch;
         auto res = executeImpl(arguments, result_type, input_rows_count);
         profile->input_rows = arguments.empty() ? 0 : arguments.front().column->size();
-        profile->valid_output_rows = res ? res->size() : 0;
+        profile->short_circuit_selected_rows = res ? res->size() : 0;
         profile->elapsed_ns = watch.elapsed();
         return res;
     }

@@ -640,7 +640,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
         if constexpr (with_profile)
         {
             auto & arg_profile = profile->arguments_profiles.back().second;
-            arg_profile.valid_output_rows = mask_info.ones_count;
+            arg_profile.short_circuit_selected_rows = mask_info.ones_count;
         }
     }
     /// For OR function we need to inverse mask to get the resulting column.
@@ -657,7 +657,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
     {
         profile->elapsed_ns = watch.elapsed();
         profile->input_rows = rows;
-        profile->valid_output_rows = res->size();
+        profile->short_circuit_selected_rows = res->size();
     }
 
     if (!nulls)
@@ -706,7 +706,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     {
         profile->elapsed_ns = watch.elapsed();
         profile->input_rows = input_rows_count;
-        profile->valid_output_rows = res->size();
+        profile->short_circuit_selected_rows = res->size();
     }
     return res;
 }
