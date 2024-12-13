@@ -671,56 +671,15 @@ bool extractRequiredNonTableColumnsFromStorage(
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const QueryProcessingStage::Enum processed_stage,
-    SelectQueryInfo & modified_query_info,
-    ContextPtr context,
     Names & extracted_column_names)
 {
-    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
-    {
-        bool has_table_virtual_column = false;
-        for (const auto & column_name : columns_names)
-        {
-            if (column_name == "_table" && storage->isVirtualColumn(column_name, storage_snapshot->metadata))
-            {
-                has_table_virtual_column = true;
-                break;
-            }
-        }
-
-        if (!has_table_virtual_column)
-            return false;
-
-        const auto & table_name = storage->getStorageID().table_name;
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
-        if (storage_snapshot->storage.supportsSubcolumns())
-            get_column_options.withSubcolumns();
-
-        std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
-
-        if (!storage_snapshot->tryGetColumn(get_column_options, "_table"))
-        {
-            auto table_name_node = std::make_shared<ConstantNode>(table_name);
-            auto table_name_alias = std::make_shared<ConstantNode>("__table1._table");
-
-            auto function_node = std::make_shared<FunctionNode>("__actionName");
-            function_node->getArguments().getNodes().push_back(std::move(table_name_node));
-            function_node->getArguments().getNodes().push_back(std::move(table_name_alias));
-            function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", context));
-
-            column_name_to_node.emplace("_table", function_node);
-        }
-
-        if (!column_name_to_node.empty())
-            replaceColumns(modified_query_info.query_tree,
-                modified_query_info.table_expression,
-                column_name_to_node);
-        return false;
-    }
-
     if (processed_stage != QueryProcessingStage::FetchColumns)
         return false;
 
     if (std::dynamic_pointer_cast<StorageMerge>(storage))
+        return false;
+
+    if (std::dynamic_pointer_cast<StorageDistributed>(storage))
         return false;
 
     bool has_table_virtual_column = false;
@@ -990,8 +949,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 Names extracted_column_names;
                 const auto has_table_virtual_column
-                    = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, from_stage,
-                                                                table_expression_query_info, query_context, extracted_column_names);
+                    = extractRequiredNonTableColumnsFromStorage(columns_names, storage, storage_snapshot, from_stage, extracted_column_names);
 
                 /// It is just a safety check needed until we have a proper sending plan to replicas.
                 /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()

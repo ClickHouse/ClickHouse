@@ -228,7 +228,7 @@ public:
         // StorageMerge handles _table virtual column by itself.
         VirtualColumnsDescription tmp_all_virtuals = virtuals_;
         if (!virtuals_.tryGet("_table"))
-            tmp_all_virtuals.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+            tmp_all_virtuals.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
 
         virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
         all_virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(tmp_all_virtuals)));
