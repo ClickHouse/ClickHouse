@@ -136,6 +136,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
+            {"least_greatest_legacy_null_behavior", false, false, "New setting"},
+            {"enable_adaptive_memory_spill_scheduler", false, false, "Added New setting. Enable spill memory data into external storage adaptively."},
             /// Release closed. Please use 25.1
         });
         addSettingsChanges(settings_changes_history, "24.11",
