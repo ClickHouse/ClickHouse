@@ -1,34 +1,35 @@
 import socket
 import threading
 
-
+# simple one-connection proxy with PROXY v1 protocol
+# https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt
 class Proxy1:
     def __init__(self, proxy_string=""):
-        self.proxy_string = proxy_string
+        self._proxy_string = proxy_string
 
-    def run(self):
-        self.server, addr = self.sock.accept()
-        self.sock.close()
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.bind(("", 0))
-        self.client.connect(self.address)
-        self.client.send("PROXY ".encode("utf-8"))
-        if self.proxy_string == "":
-            self.client.send(
+    def _run(self):
+        self._server, addr = self._sock.accept()
+        self._sock.close()
+        self._client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._client.bind(("", 0))
+        self._client.connect(self._address)
+        self._client.send("PROXY ".encode("utf-8"))
+        if self._proxy_string == "":
+            self._client.send(
                 (
                     "TCP4 "
                     + addr[0]
                     + " "
-                    + self.address[0]
+                    + self._address[0]
                     + " "
                     + str(addr[1])
                     + " "
-                    + str(self.address[1])
+                    + str(self._address[1])
                 ).encode("utf-8")
             )
         else:
-            self.client.send(self.proxy_string.encode("utf-8"))
-        self.client.send("\r\n".encode("utf-8"))
+            self._client.send(self._proxy_string.encode("utf-8"))
+        self._client.send("\r\n".encode("utf-8"))
 
         def forward(source: socket.socket, destination: socket.socket):
             while True:
@@ -43,10 +44,10 @@ class Proxy1:
                     break
 
         client_to_server_thread = threading.Thread(
-            target=forward, args=(self.client, self.server)
+            target=forward, args=(self._client, self._server)
         )
         server_to_client_thread = threading.Thread(
-            target=forward, args=(self.server, self.client)
+            target=forward, args=(self._server, self._client)
         )
 
         client_to_server_thread.start()
@@ -54,27 +55,27 @@ class Proxy1:
         client_to_server_thread.join()
         server_to_client_thread.join()
 
-        self.client.close()
-        self.server.close()
+        self._client.close()
+        self._server.close()
 
     def start(self, address):
-        self.address = address
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.bind(("", 0))
-        self.sock.listen(1)
-        self.runner = threading.Thread(target=self.run)
-        self.runner.start()
-        return self.sock.getsockname()[1]
+        self._address = address
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.bind(("", 0))
+        self._sock.listen(1)
+        self._runner = threading.Thread(target=self._run)
+        self._runner.start()
+        return self._sock.getsockname()[1]
 
     def wait(self):
-        if self.runner:
-            self.runner.join()
+        if self._runner:
+            self._runner.join()
 
     def stop(self):
-        if self.sock:
-            self.sock.close()
-        if self.client:
-            self.client.close()
-        if self.server:
-            self.server.close()
+        if self._sock:
+            self._sock.close()
+        if self._client:
+            self._client.close()
+        if self._server:
+            self._server.close()
         self.wait()

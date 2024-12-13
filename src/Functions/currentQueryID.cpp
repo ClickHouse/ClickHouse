@@ -12,8 +12,6 @@ namespace
 
 class FunctionCurrentQueryID : public IFunction
 {
-    const String db_name;
-
 public:
     static constexpr auto name = "currentQueryID";
     static FunctionPtr create(ContextPtr context)
@@ -21,18 +19,11 @@ public:
         return std::make_shared<FunctionCurrentQueryID>(context->getCurrentQueryId());
     }
 
-    explicit FunctionCurrentQueryID(const String & db_name_) : db_name{db_name_}
-    {
-    }
+    explicit FunctionCurrentQueryID(const String & query_id_) : query_id{query_id_} {}
 
-    String getName() const override
-    {
-        return name;
-    }
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -45,8 +36,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, db_name);
+        return DataTypeString().createColumnConst(input_rows_count, query_id);
     }
+
+private:
+    const String query_id;
 };
 
 }
