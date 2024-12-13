@@ -12,5 +12,6 @@ public:
 private:
     void processFromStage(std::shared_ptr<ASTSelectQuery>  select_query,  ASTZetaSQLQuery::PipelineStage & stage);
     void processWhereStage(std::shared_ptr<ASTSelectQuery>  select_query,  ASTZetaSQLQuery::PipelineStage & stage);
+    void processAggregateStage(std::shared_ptr<ASTSelectQuery>  select_query,  ASTZetaSQLQuery::PipelineStage & stage);
 };
 }

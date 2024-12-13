@@ -1,6 +1,7 @@
 #include "Parsers/ZetaSQL/ZetaSQLTranslator.h"
 #include <memory>
 #include "Parsers/ASTFunction.h"
+#include "Parsers/ASTIdentifier.h"
 #include "Parsers/ASTSelectWithUnionQuery.h"
 #include "Parsers/IAST_fwd.h"
 #include "Parsers/ZetaSQL/ASTZetaSQLQuery.h"
@@ -32,9 +33,10 @@ namespace DB::ZetaSQL
                     processWhereStage(select_ast, stage);
                     break;
                 case ASTZetaSQLQuery::StageKeyword::SELECT:
-                    throw Exception::createDeprecated("TODO", 1);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
                 case ASTZetaSQLQuery::StageKeyword::AGGREGATE:
-                    throw Exception::createDeprecated("TODO", 1);
+                    processAggregateStage(select_ast, stage);
+                    break;
             }
         }
 
@@ -68,5 +70,29 @@ namespace DB::ZetaSQL
         } else {
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(stage.expression));
         }
+    }
+
+    void Translator::processAggregateStage(std::shared_ptr<ASTSelectQuery>  select_query,  ASTZetaSQLQuery::PipelineStage & stage)
+    {
+        // change top select query to include the the columns from the aggregation
+        auto * aggregate_expr = stage.expression->as<ASTSelectQuery>();
+
+        auto select_columns = std::make_shared<ASTExpressionList>();
+        for(const auto & expr : aggregate_expr->select()->children)
+        {
+            select_columns->children.push_back(expr);
+        }
+
+
+        if(aggregate_expr->groupBy())
+        {
+            select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, aggregate_expr->groupBy());
+            for(const auto & child : aggregate_expr->groupBy()->children)
+            {
+                select_columns->children.push_back(std::make_shared<ASTIdentifier>(child->getColumnName()));
+            }
+        }
+
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_columns));
     }
 }

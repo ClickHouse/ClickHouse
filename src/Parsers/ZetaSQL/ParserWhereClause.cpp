@@ -12,9 +12,6 @@ namespace DB::ZetaSQL
         ParserExpression expression_parser;
         ASTPtr where_expression;
 
-        if(!ParserKeyword(Keyword::WHERE).ignore(pos, expected))
-            return false;
-
         ASTPtr where_expr;
         if(!expression_parser.parse(pos, where_expr, expected))
             return false;
