@@ -1,5 +1,5 @@
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -91,7 +91,8 @@ StorageObjectStorage::StorageObjectStorage(
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
-    ASTPtr partition_by_)
+    ASTPtr partition_by_,
+    bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
@@ -102,10 +103,13 @@ StorageObjectStorage::StorageObjectStorage(
 {
     try
     {
-        if (configuration->hasExternalDynamicMetadata())
-            configuration->updateAndGetCurrentSchema(object_storage, context);
-        else
-            configuration->update(object_storage, context);
+        if (!lazy_init)
+        {
+            if (configuration->hasExternalDynamicMetadata())
+                configuration->updateAndGetCurrentSchema(object_storage, context);
+            else
+                configuration->update(object_storage, context);
+        }
     }
     catch (...)
     {
