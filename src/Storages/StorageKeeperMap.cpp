@@ -1022,9 +1022,9 @@ void StorageKeeperMap::restoreDataImpl(
     if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
     {
         temp_data_file.emplace(temporary_disk);
-        auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
-        copyData(*in, *out);
-        out.reset();
+        auto out = WriteBufferFromFile(temp_data_file->getAbsolutePath());
+        copyData(*in, out);
+        out.finalize();
         in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
     }
     std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
