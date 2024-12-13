@@ -53,7 +53,8 @@ std::pair<std::string, std::string> parseCatalogCredential(const std::string & c
     /// Parse a string of format "<client_id>:<client_secret>"
     /// into separare strings client_id and client_secret.
 
-    std::string client_id, client_secret;
+    std::string client_id;
+    std::string client_secret;
     if (!catalog_credential.empty())
     {
         auto pos = catalog_credential.find(':');
