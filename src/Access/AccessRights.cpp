@@ -1469,7 +1469,7 @@ bool AccessRights::containsImpl(const AccessRights & other) const
     auto helper = [&](const std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node) -> bool
     {
         if (!root_node)
-            return !other.root;
+            return !other_root_node;
         if (!other_root_node)
             return true;
         return root_node->contains(*other_root_node);
