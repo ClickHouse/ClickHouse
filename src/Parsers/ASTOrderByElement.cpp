@@ -70,7 +70,7 @@ void ASTStorageOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ign
 
 void ASTStorageOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    children.front()->formatImpl(ostr, settings, state, frame);
+    children.front()->format(ostr, settings, state, frame);
 
     if (direction == -1)
         ostr << (settings.hilite ? hilite_keyword : "") << " DESC" << (settings.hilite ? hilite_none : "");
