@@ -878,6 +878,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
