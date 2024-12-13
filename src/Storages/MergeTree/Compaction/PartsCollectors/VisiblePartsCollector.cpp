@@ -19,7 +19,9 @@ namespace ProfileEvents
 namespace DB
 {
 
-static std::string astToString(ASTPtr ast_ptr)
+namespace {
+
+std::string astToString(ASTPtr ast_ptr)
 {
     if (!ast_ptr)
         return "";
@@ -27,7 +29,7 @@ static std::string astToString(ASTPtr ast_ptr)
     return queryToString(ast_ptr);
 }
 
-static std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeData::DataPartPtr part)
+std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeData::DataPartPtr part)
 {
     if (!metadata_snapshot->hasAnyTTL())
         return std::nullopt;
@@ -40,7 +42,7 @@ static std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(Storage
     };
 }
 
-static std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeData::DataPartPtr part, time_t current_time)
+std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeData::DataPartPtr part, time_t current_time)
 {
     if (!metadata_snapshot->hasAnyRecompressionTTL())
         return std::nullopt;
@@ -61,7 +63,12 @@ static std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(S
     };
 }
 
-PartProperties VisiblePartsCollector::buildPartProperties(MergeTreeData::DataPartPtr part) const
+PartProperties buildPartProperties(
+    MergeTreeData::DataPartPtr && part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    const time_t & current_time,
+    bool has_volumes_with_disabled_merges)
 {
     return PartProperties
     {
@@ -73,6 +80,8 @@ PartProperties VisiblePartsCollector::buildPartProperties(MergeTreeData::DataPar
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
     };
+}
+
 }
 
 MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial() const
@@ -151,15 +160,18 @@ VisiblePartsCollector::filterByPartitions(MergeTreeData::DataPartsVector && part
 
     std::erase_if(parts, [partitions_hint](const auto & part) { return !partitions_hint->contains(part->info.partition_id); });
 
-    ProfileEvents::increment(
-        ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, partitions_filter_timer.elapsedMicroseconds());
-
+    ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, partitions_filter_timer.elapsedMicroseconds());
     return parts;
 }
 
-PartsRanges VisiblePartsCollector::filterByTxVisibility(MergeTreeData::DataPartsVector && parts) const
+PartsRanges VisiblePartsCollector::filterByTxVisibility(
+    MergeTreeData::DataPartsVector && parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    const time_t & current_time) const
 {
     using PartsIt = MergeTreeData::DataPartsVector::iterator;
+    const bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
 
     auto build_next_range = [&](PartsIt & parts_it)
     {
@@ -179,7 +191,7 @@ PartsRanges VisiblePartsCollector::filterByTxVisibility(MergeTreeData::DataParts
                 return range;
 
             /// Otherwise include part to possible ranges
-            range.push_back(buildPartProperties(std::move(part)));
+            range.push_back(buildPartProperties(std::move(part), metadata_snapshot, storage_policy, current_time, has_volumes_with_disabled_merges));
         }
 
         return range;
@@ -195,18 +207,18 @@ PartsRanges VisiblePartsCollector::filterByTxVisibility(MergeTreeData::DataParts
 VisiblePartsCollector::VisiblePartsCollector(const MergeTreeData & data_, const MergeTreeTransactionPtr & tx_)
     : data(data_)
     , tx(tx_)
-    , current_time(std::time(nullptr))
-    , metadata_snapshot(data.getInMemoryMetadataPtr())
-    , storage_policy(data.getStoragePolicy())
-    , has_volumes_with_disabled_merges(storage_policy->hasAnyVolumeWithDisabledMerges())
 {
 }
 
-PartsRanges VisiblePartsCollector::collectPartsToUse(const std::optional<PartitionIdsHint> & partitions_hint) const
+PartsRanges VisiblePartsCollector::collectPartsToUse(
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    const time_t & current_time,
+    const std::optional<PartitionIdsHint> & partitions_hint) const
 {
     auto parts = collectInitial();
     parts = filterByPartitions(std::move(parts), partitions_hint);
-    return filterByTxVisibility(std::move(parts));
+    return filterByTxVisibility(std::move(parts), metadata_snapshot, storage_policy, current_time);
 }
 
 }

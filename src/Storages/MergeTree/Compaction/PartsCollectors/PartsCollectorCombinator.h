@@ -21,13 +21,17 @@ public:
     {
     }
 
-    PartsRanges collectPartsToUse(const std::optional<PartitionIdsHint> & partitions_hint) const override
+    PartsRanges collectPartsToUse(
+        const StorageMetadataPtr & metadata_snapshot,
+        const StoragePolicyPtr & storage_policy,
+        const time_t & current_time,
+        const std::optional<PartitionIdsHint> & partitions_hint) const override
     {
         PartsRanges ranges;
 
         for (const auto & collector : collectors)
         {
-            auto collected_ranges = collector->collectPartsToUse(partitions_hint);
+            auto collected_ranges = collector->collectPartsToUse(partitions_hint, metadata_snapshot, storage_policy, current_time, partitions_hint);
             insertAtEnd(ranges, std::move(collected_ranges));
         }
 
