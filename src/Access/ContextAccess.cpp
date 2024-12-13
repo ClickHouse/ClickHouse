@@ -87,7 +87,7 @@ namespace
 }
 
 
-AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control, UserPtr current_user)
+AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
 {
     AccessFlags max_flags;
 
@@ -411,7 +411,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 void ContextAccess::calculateAccessRights() const
 {
     access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
-    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control, user));
+    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
 
     if (trace_log)
     {
