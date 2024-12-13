@@ -117,55 +117,67 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
     try
     {
-        size_t reserve_size = 0;
-        if (auto hint = getSizeHint(stats_collecting_params, slots))
-            reserve_size = hint->median_size;
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
-
         for (size_t i = 0; i < slots; ++i)
         {
-            auto inner_hash_join = std::make_shared<InternalHashJoin>();
-            inner_hash_join->data = std::make_unique<HashJoin>(
-                table_join_, right_sample_block, any_take_last_row_, /*reserve_size*/ 0, fmt::format("concurrent{}", i));
-            inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
-            hash_joins[i] = std::move(inner_hash_join);
+            pool->scheduleOrThrow(
+                [&, idx = i, thread_group = CurrentThread::getGroup()]()
+                {
+                    SCOPE_EXIT_SAFE({
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    });
+
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    setThreadName("ConcurrentJoin");
+
+                    auto inner_hash_join = std::make_shared<InternalHashJoin>();
+                    inner_hash_join->data = std::make_unique<HashJoin>(
+                        table_join_, right_sample_block, any_take_last_row_, /*reserve_size*/ 0, fmt::format("concurrent{}", idx));
+                    inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
+                    hash_joins[idx] = std::move(inner_hash_join);
+                });
         }
+        pool->wait();
 
-        if (reserve_size >= 1'000'000)
+        if (auto hint = getSizeHint(stats_collecting_params, slots))
         {
-            for (size_t i = 0; i < slots; ++i)
+            const size_t reserve_size = hint->median_size;
+            ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
+
+            auto f = [&](auto & map, size_t idx)
             {
-                auto & join = hash_joins[0]->data;
-
-                auto f = [&](auto & map, size_t idx)
+                if constexpr (HasGetBucketFromHashMemberFunc<decltype(map)>)
                 {
-                    if constexpr (HasGetBucketFromHashMemberFunc<decltype(map)>)
-                    {
-                        for (size_t j = idx; j < 256; j += slots)
-                            map.impls[idx].reserve(reserve_size / 256);
-                    }
-                };
+                    for (size_t j = idx; j < 256; j += slots)
+                        map.impls[j].reserve(reserve_size / 256);
+                }
+            };
 
-                auto calculate_selector = [&](auto & maps, size_t idx)
+            auto & join = hash_joins[0]->data;
+
+            auto calculate_selector = [&](auto & maps, size_t idx)
+            {
+                switch (join->getJoinedData()->type)
                 {
-                    switch (join->getJoinedData()->type)
-                    {
-                        case HashJoin::Type::EMPTY:
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::EMPTY");
-                        case HashJoin::Type::CROSS:
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::CROSS");
+                    case HashJoin::Type::EMPTY:
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::EMPTY");
+                    case HashJoin::Type::CROSS:
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::CROSS");
 
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         return f(*maps.TYPE, idx);
 
-                            APPLY_FOR_JOIN_VARIANTS(M)
+                        APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
-                    }
+                }
 
-                    UNREACHABLE();
-                };
+                UNREACHABLE();
+            };
 
+            for (size_t i = 0; i < slots; ++i)
+            {
                 pool->scheduleOrThrow(
                     [&, idx = i, thread_group = CurrentThread::getGroup()]()
                     {
