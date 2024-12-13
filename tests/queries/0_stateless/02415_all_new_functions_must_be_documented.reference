@@ -91,6 +91,7 @@ and
 appendTrailingCharIfAbsent
 array
 arrayAUC
+arrayAUCPr
 arrayAll
 arrayAvg
 arrayCompact
@@ -124,7 +125,6 @@ arrayMax
 arrayMin
 arrayPopBack
 arrayPopFront
-arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront
