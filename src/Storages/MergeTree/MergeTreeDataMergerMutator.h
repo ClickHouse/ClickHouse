@@ -1,44 +1,41 @@
 #pragma once
 
-#include <functional>
-
-#include <Common/ActionBlocker.h>
+#include <tl/expected.hpp>
 
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MutateTask.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
 
 namespace DB
 {
 
-enum class SelectPartsDecision : uint8_t
+enum class SelectPartsFailureDecision : uint8_t
 {
-    SELECTED = 0,
-    CANNOT_SELECT = 1,
-    NOTHING_TO_MERGE = 2,
+    CANNOT_SELECT = 0,
+    NOTHING_TO_MERGE = 1,
 };
+
+using AllowedMergingPredicate = std::function<bool(const PartProperties *, const PartProperties *, PreformattedMessage &)>;
 
 /** Can select parts for background processes and do them.
  * Currently helps with merges, mutations and moves
  */
 class MergeTreeDataMergerMutator
 {
-public:
-    using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &,
-                                                        const MergeTreeData::DataPartPtr &,
-                                                        PreformattedMessage &)>;
+    void updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, time_t next_due_time);
 
+public:
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
-    /// Useful to quickly get a list of partitions that contain parts that we may want to merge
-    /// The result is limited by top_number_of_partitions_to_consider_for_merge
+    /// Useful to quickly get a list of partitions that contain parts that we may want to merge.
     PartitionIdsHint getPartitionsThatMayBeMerged(
-        size_t max_total_size_to_merge,
-        const AllowedMergingPredicate & can_merge_callback,
-        bool merge_with_ttl_allowed,
-        const MergeTreeTransactionPtr & txn) const;
+        const PartsCollectorPtr & parts_collector,
+        const AllowedMergingPredicate & can_merge,
+        const MergeSelectorApplier & selector) const;
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *
@@ -47,30 +44,26 @@ public:
       *  - Parts between which another part can still appear can not be merged. Refer to METR-7001.
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
-    SelectPartsDecision selectPartsToMerge(
-        FutureMergedMutatedPartPtr future_part,
-        bool aggressive,
-        size_t max_total_size_to_merge,
+    tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> selectPartsToMerge(
+        const PartsCollectorPtr & parts_collector,
         const AllowedMergingPredicate & can_merge,
-        bool merge_with_ttl_allowed,
-        const MergeTreeTransactionPtr & txn,
-        PreformattedMessage & out_disable_reason,
-        const PartitionIdsHint * partitions_hint = nullptr);
+        const MergeSelectorApplier & selector,
+        const std::optional<PartitionIdsHint> & partitions_hint,
+        PreformattedMessage & out_disable_reason);
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself",
       * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       */
-    SelectPartsDecision selectAllPartsToMergeWithinPartition(
-        FutureMergedMutatedPartPtr future_part,
+    tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> selectAllPartsToMergeWithinPartition(
+        const StorageMetadataPtr & metadata_snapshot,
+        const PartsCollectorPtr & parts_collector,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn,
-        PreformattedMessage & out_disable_reason,
-        bool optimize_skip_merged_partitions = false);
+        bool optimize_skip_merged_partitions,
+        PreformattedMessage & out_disable_reason);
 
     /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space
