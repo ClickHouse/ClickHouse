@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
+#include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -62,21 +63,25 @@ void TraceCollector::tryClosePipe()
 
 TraceCollector::~TraceCollector()
 {
-    try
+    // Pipes could be already closed due to exception in TraceCollector::run.
+    if (TraceSender::pipe.fds_rw[1] >= 0)
     {
-        /** Sends TraceCollector stop message
-        *
-        * Each sequence of data for TraceCollector thread starts with a boolean flag.
-        * If this flag is true, TraceCollector must stop reading trace_pipe and exit.
-        * This function sends flag with a true value to stop TraceCollector gracefully.
-        */
-        WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
-        writeChar(true, out);
-        out.finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("TraceCollector");
+        try
+        {
+            /** Sends TraceCollector stop message
+            *
+            * Each sequence of data for TraceCollector thread starts with a boolean flag.
+            * If this flag is true, TraceCollector must stop reading trace_pipe and exit.
+            * This function sends flag with a true value to stop TraceCollector gracefully.
+            */
+            WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
+            writeChar(true, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("TraceCollector");
+        }
     }
 
     tryClosePipe();
