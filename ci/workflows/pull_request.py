@@ -14,6 +14,7 @@ workflow = Workflow.Config(
         *Jobs.build_jobs,
         *Jobs.stateless_tests_jobs,
         *Jobs.stateful_tests_jobs,
+        *Jobs.integration_test_jobs,
         *Jobs.stress_test_jobs,
         *Jobs.upgrade_test_jobs,
         *Jobs.performance_comparison_head_jobs,
