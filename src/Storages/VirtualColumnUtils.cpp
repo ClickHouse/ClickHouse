@@ -150,7 +150,8 @@ static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAnd
     re2::StringPiece input_piece(path);
 
     std::unordered_map<std::string, std::string> key_values;
-    std::string key, value;
+    std::string key;
+    std::string value;
     std::unordered_map<std::string, std::string> used_keys;
     while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
     {

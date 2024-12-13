@@ -99,13 +99,7 @@ struct StorageID
     /// Calculates hash using only the database and table name of a StorageID.
     struct DatabaseAndTableNameHash
     {
-        size_t operator()(const StorageID & storage_id) const
-        {
-            SipHash hash_state;
-            hash_state.update(storage_id.database_name.data(), storage_id.database_name.size());
-            hash_state.update(storage_id.table_name.data(), storage_id.table_name.size());
-            return hash_state.get64();
-        }
+        size_t operator()(const StorageID & storage_id) const;
     };
 
     /// Checks if the database and table name of two StorageIDs are equal.

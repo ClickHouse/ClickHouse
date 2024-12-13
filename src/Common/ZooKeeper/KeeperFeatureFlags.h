@@ -2,6 +2,13 @@
 
 #include <Coordination/KeeperConstants.h>
 
+namespace Poco
+{
+class Logger;
+}
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
+
 namespace DB
 {
 
