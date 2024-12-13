@@ -238,7 +238,7 @@ add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
-add_object_library(clickhouse_storages_mergetree_merge_selectors Storages/MergeTree/MergeSelectors)
+add_object_library(clickhouse_storages_mergetree_compaction Storages/MergeTree/Compaction)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
@@ -446,6 +446,8 @@ dbms_target_link_libraries (
     PUBLIC
         boost::circular_buffer
         boost::heap)
+
+dbms_target_link_libraries (PUBLIC ch_contrib::expected)
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
