@@ -624,7 +624,9 @@ bool RestCatalog::getTableMetadataImpl(
                 static constexpr auto secret_access_key_str = "s3.secret-access-key";
                 static constexpr auto session_token_str = "s3.session-token";
 
-                std::string access_key_id, secret_access_key, session_token;
+                std::string access_key_id;
+                std::string secret_access_key;
+                std::string session_token;
                 if (config_object->has(access_key_id_str))
                     access_key_id = config_object->get(access_key_id_str).extract<String>();
                 if (config_object->has(secret_access_key_str))
