@@ -655,6 +655,8 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
 
         StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        /// At the moment we cannot do ALTER MODIFY/RESET SETTING if there are no settings changes (exception will be thrown),
+        /// so we do not need to check if old_metadata.settings_changes == nullptr.
         const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
