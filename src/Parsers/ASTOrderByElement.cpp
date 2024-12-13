@@ -62,4 +62,18 @@ void ASTOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & se
     }
 }
 
+void ASTStorageOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    hash_state.update(direction);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+void ASTStorageOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    children.front()->formatImpl(ostr, settings, state, frame);
+
+    if (direction == -1)
+        ostr << (settings.hilite ? hilite_keyword : "") << " DESC" << (settings.hilite ? hilite_none : "");
+}
+
 }

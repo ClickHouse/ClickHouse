@@ -432,6 +432,19 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Element of storage ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
+  */
+class ParserStorageOrderByElement : public IParserBase
+{
+public:
+    explicit ParserStorageOrderByElement(bool allow_order_) : allow_order(allow_order_) {}
+
+protected:
+    bool allow_order;
+
+    const char * getName() const override { return "element of storage ORDER BY expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified
   *  and optionally, NULLS LAST|FIRST
