@@ -44,6 +44,10 @@ class MergeSelectorApplier
         time_t current_time) const;
 
 public:
+    const size_t max_total_size_to_merge = 0;
+    const bool merge_with_ttl_allowed = false;
+    const bool aggressive = false;
+
     std::optional<MergeSelectorChoice> chooseMergeFrom(
         const PartsRanges & ranges,
         const StorageMetadataPtr & metadata_snapshot,
@@ -52,13 +56,8 @@ public:
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
         time_t current_time,
-        LoggerPtr & log,
+        const LoggerPtr & log,
         PreformattedMessage & out_disable_reason) const;
-
-private:
-    size_t max_total_size_to_merge = 0;
-    bool merge_with_ttl_allowed = false;
-    bool aggressive = false;
 };
 
 }

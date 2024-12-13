@@ -137,7 +137,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
         time_t current_time,
-        LoggerPtr & log,
+        const LoggerPtr & log,
         PreformattedMessage & out_disable_reason) const
 {
     Stopwatch select_parts_from_ranges_timer;
