@@ -2096,7 +2096,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             continue;
 
         if (table_expression_type == QueryTreeNodeType::CROSS_JOIN)
+        {
             joins_count += table_expression->as<const CrossJoinNode &>().getTableExpressions().size() - 1;
+            continue;
+        }
 
         if (table_expression_type == QueryTreeNodeType::JOIN)
         {
