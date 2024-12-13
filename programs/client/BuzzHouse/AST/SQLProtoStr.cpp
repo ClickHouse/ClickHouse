@@ -2615,65 +2615,6 @@ CONV_FN(TableEngine, te)
     }
 }
 
-CONV_FN(TTLSet, ttl_set)
-{
-    ColumnPathToString(ret, false, ttl_set.col());
-    ret += " = ";
-    ExprToString(ret, ttl_set.expr());
-}
-
-CONV_FN(TTLGroupBy, ttl_groupby)
-{
-    ret += "GROUP BY ";
-    ExprListToString(ret, ttl_groupby.expr_list());
-    ret += " SET ";
-    TTLSetToString(ret, ttl_groupby.ttl_set());
-    for (int i = 0; i < ttl_groupby.other_ttl_set_size(); i++)
-    {
-        ret += ", ";
-        TTLSetToString(ret, ttl_groupby.other_ttl_set(i));
-    }
-}
-
-CONV_FN(TTLEntry, entry)
-{
-    using TTLEntryType = TTLEntry::TtlentryOneofCase;
-    switch (entry.ttlentry_oneof_case())
-    {
-        case TTLEntryType::kCodec:
-            CodecParamToString(ret, entry.codec());
-            break;
-        case TTLEntryType::kStorage:
-            StorageToString(ret, entry.storage());
-            break;
-        default:
-            ret += "DELETE";
-    }
-}
-
-CONV_FN(TTLExpr, ttl_expr)
-{
-    ret += "TTL ";
-    ExprToString(ret, ttl_expr.time_expr());
-    ret += " ";
-    TTLEntryToString(ret, ttl_expr.ttl_expr());
-    for (int i = 0; i < ttl_expr.other_ttl_size(); i++)
-    {
-        ret += ", ";
-        TTLEntryToString(ret, ttl_expr.other_ttl(i));
-    }
-    if (ttl_expr.has_where())
-    {
-        ret += " WHERE ";
-        WhereStatementToString(ret, ttl_expr.where());
-    }
-    if (ttl_expr.has_group_by())
-    {
-        ret += " ";
-        TTLGroupByToString(ret, ttl_expr.group_by());
-    }
-}
-
 CONV_FN(CreateTableAs, create_table)
 {
     if (create_table.clone())

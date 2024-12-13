@@ -2947,33 +2947,6 @@ message CreateTableAs {
     required ExprSchemaTable est = 2;
 }
 
-message TTLEntry {
-    oneof ttlentry_oneof {
-        bool delete = 1;
-        CodecParam codec = 2;
-        Storage storage = 3;
-    }
-}
-
-message TTLSet {
-    required ColumnPath col = 1;
-    required Expr expr = 2;
-}
-
-message TTLGroupBy {
-    required ExprList expr_list = 1;
-    required TTLSet ttl_set = 2;
-    repeated TTLSet other_ttl_set = 3;
-}
-
-message TTLExpr {
-    required Expr time_expr = 1;
-    required TTLEntry ttl_expr = 2;
-    repeated TTLEntry other_ttl = 3;
-    optional WhereStatement where = 4;
-    optional TTLGroupBy group_by = 5;
-}
-
 message CreateTable {
     optional bool replace = 1;
     optional bool is_temp = 2;
