@@ -6,8 +6,8 @@ S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
 MAIN_BRANCH = "master"
 
 S3_ARTIFACT_PATH = f"{S3_BUCKET_NAME}/artifacts"
-CI_CONFIG_RUNS_ON = ["ci_services"]
-DOCKER_BUILD_RUNS_ON = ["ci_services_ebs"]
+CI_CONFIG_RUNS_ON = ["style-checker-aarch64"]
+DOCKER_BUILD_RUNS_ON = ["style-checker-aarch64"]
 CACHE_S3_PATH = f"{S3_BUCKET_NAME}/ci_ch_cache"
 HTML_S3_PATH = f"{S3_BUCKET_NAME}/reports"
 S3_BUCKET_TO_HTTP_ENDPOINT = {S3_BUCKET_NAME: S3_BUCKET_HTTP_ENDPOINT}

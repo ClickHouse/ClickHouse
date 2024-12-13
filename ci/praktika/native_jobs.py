@@ -38,7 +38,7 @@ _docker_build_job = Job.Config(
         python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
         python_requirements_txt="",
     ),
-    timeout=4 * 3600,
+    timeout=int(5.5 * 3600),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_JOB_NAME}'",
 )
 
