@@ -62,6 +62,14 @@ CONV_FN(Window, win)
     ret += std::to_string(win.window());
 }
 
+CONV_FN(Storage, store)
+{
+    ret += Storage_DataStorage_Name(store.storage());
+    ret += " '";
+    ret += store.storage_name();
+    ret += "'";
+}
+
 CONV_FN(ExprColAlias, eca)
 {
     ExprToString(ret, eca.expr());
@@ -2309,6 +2317,11 @@ CONV_FN(ColumnDef, cdf)
         ColumnStatisticsToString(ret, cdf.stats());
         ret += ")";
     }
+    if (cdf.has_ttl_expr())
+    {
+        ret += " TTL ";
+        ExprToString(ret, cdf.ttl_expr());
+    }
     if (cdf.is_pkey())
     {
         ret += " PRIMARY KEY";
@@ -2532,6 +2545,65 @@ CONV_FN(TableEngine, te)
     }
 }
 
+CONV_FN(TTLSet, ttl_set)
+{
+    ColumnPathToString(ret, false, ttl_set.col());
+    ret += " = ";
+    ExprToString(ret, ttl_set.expr());
+}
+
+CONV_FN(TTLGroupBy, ttl_groupby)
+{
+    ret += "GROUP BY ";
+    ExprListToString(ret, ttl_groupby.expr_list());
+    ret += " SET ";
+    TTLSetToString(ret, ttl_groupby.ttl_set());
+    for (int i = 0; i < ttl_groupby.other_ttl_set_size(); i++)
+    {
+        ret += ", ";
+        TTLSetToString(ret, ttl_groupby.other_ttl_set(i));
+    }
+}
+
+CONV_FN(TTLEntry, entry)
+{
+    using TTLEntryType = TTLEntry::TtlentryOneofCase;
+    switch (entry.ttlentry_oneof_case())
+    {
+        case TTLEntryType::kCodec:
+            CodecParamToString(ret, entry.codec());
+            break;
+        case TTLEntryType::kStorage:
+            StorageToString(ret, entry.storage());
+            break;
+        default:
+            ret += "DELETE";
+    }
+}
+
+CONV_FN(TTLExpr, ttl_expr)
+{
+    ret += "TTL ";
+    ExprToString(ret, ttl_expr.time_expr());
+    ret += " ";
+    TTLEntryToString(ret, ttl_expr.ttl_expr());
+    for (int i = 0; i < ttl_expr.other_ttl_size(); i++)
+    {
+        ret += ", ";
+        TTLEntryToString(ret, ttl_expr.other_ttl(i));
+    }
+    if (ttl_expr.has_where())
+    {
+        ret += " WHERE ";
+        WhereStatementToString(ret, ttl_expr.where());
+    }
+    if (ttl_expr.has_group_by())
+    {
+        ret += " ";
+        TTLGroupByToString(ret, ttl_expr.group_by());
+    }
+}
+
 CONV_FN(CreateTableAs, create_table)
 {
     if (create_table.clone())
@@ -2568,6 +2640,11 @@ CONV_FN(CreateTable, create_table)
         CreateTableAsToString(ret, create_table.table_as());
     }
     TableEngineToString(ret, create_table.engine());
+    if (create_table.has_ttl_expr())
+    {
+        ret += " ";
+        TTLExprToString(ret, create_table.ttl_expr());
+    }
     if (create_table.has_table_def() && create_table.has_as_select_stmt())
     {
         ret += " AS (";
@@ -3332,23 +3409,28 @@ CONV_FN(AlterTableItem, alter)
             ret += std::to_string(alter.unfreeze_partition().fname());
             ret += "'";
             break;
-        case AlterType::kMovePartition: {
-            const MovePartition & mp = alter.move_partition();
-
+        case AlterType::kMovePartition:
             ret += "MOVE ";
-            PartitionExprToString(ret, mp.partition());
+            PartitionExprToString(ret, alter.move_partition().partition());
             ret += " TO ";
-            ret += MovePartition_MovePartitionStorage_Name(mp.storage());
-            ret += " '";
-            ret += mp.dname();
-            ret += "'";
-        }
-        break;
+            StorageToString(ret, alter.move_partition().storage());
+            break;
         case AlterType::kClearIndexPartition:
             ret += "CLEAR INDEX ";
             IndexToString(ret, alter.clear_index_partition().idx());
             ret += " IN ";
             PartitionExprToString(ret, alter.clear_index_partition().partition());
+            break;
+        case AlterType::kComment:
+            ret += "MODIFY COMMENT ";
+            ret += alter.comment();
+            break;
+        case AlterType::kModifyTtl:
+            ret += "MODIFY ";
+            TTLExprToString(ret, alter.modify_ttl());
+            break;
+        case AlterType::kRemoveTtl:
+            ret += "REMOVE TTL";
             break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
@@ -3357,10 +3439,6 @@ CONV_FN(AlterTableItem, alter)
         case AlterType::kRefresh:
             ret += "MODIFY ";
             RefreshableViewToString(ret, alter.refresh());
-            break;
-        case AlterType::kComment:
-            ret += "MODIFY COMMENT ";
-            ret += alter.comment();
             break;
         default:
             ret += "DELETE WHERE TRUE";

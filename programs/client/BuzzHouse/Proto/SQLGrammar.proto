@@ -1557,6 +1557,15 @@ message Function {
     required string function = 1;
 }
 
+message Storage {
+    enum DataStorage {
+        DISK = 1;
+        VOLUME = 2;
+    }
+    required DataStorage storage = 1;
+    required string storage_name = 2;
+}
+
 enum SpecialVal {
     VAL_NULL = 1;
     VAL_TRUE = 2;
@@ -2775,8 +2784,9 @@ message ColumnDef {
     optional string comment = 5;
     repeated CodecParam codecs = 6;
     optional ColumnStatistics stats = 7;
-    optional bool is_pkey = 8;
-    optional SettingValues settings = 9;
+    optional Expr ttl_expr = 8;
+    optional bool is_pkey = 9;
+    optional SettingValues settings = 10;
 }
 
 enum IndexType {
@@ -2904,6 +2914,33 @@ message CreateTableAs {
     required ExprSchemaTable est = 2;
 }
 
+message TTLEntry {
+    oneof ttlentry_oneof {
+        bool delete = 1;
+        CodecParam codec = 2;
+        Storage storage = 3;
+    }
+}
+
+message TTLSet {
+    required ColumnPath col = 1;
+    required Expr expr = 2;
+}
+
+message TTLGroupBy {
+    required ExprList expr_list = 1;
+    required TTLSet ttl_set = 2;
+    repeated TTLSet other_ttl_set = 3;
+}
+
+message TTLExpr {
+    required Expr time_expr = 1;
+    required TTLEntry ttl_expr = 2;
+    repeated TTLEntry other_ttl = 3;
+    optional WhereStatement where = 4;
+    optional TTLGroupBy group_by = 5;
+}
+
 message CreateTable {
     optional bool replace = 1;
     optional bool is_temp = 2;
@@ -2914,8 +2951,9 @@ message CreateTable {
         CreateTableAs table_as = 6;
     }
     required TableEngine engine = 7;
-    optional Select as_select_stmt = 8;
-    optional string comment = 9;
+    optional TTLExpr ttl_expr = 8;
+    optional Select as_select_stmt = 9;
+    optional string comment = 10;
 }
 
 enum SQLObject {
@@ -3252,13 +3290,8 @@ message ClearIndexInPartition {
 }
 
 message MovePartition {
-    enum MovePartitionStorage {
-        DISK = 1;
-        VOLUME = 2;
-    }
     required PartitionExpr partition = 1;
-    required MovePartitionStorage storage = 2;
-    required string dname = 3;
+    required Storage storage = 3;
 }
 
 message AlterTableItem {
@@ -3309,9 +3342,11 @@ message AlterTableItem {
         ClearIndexInPartition clear_index_partition = 43;
         MovePartition move_partition = 44;
         string comment = 45;
+        TTLExpr modify_ttl  = 46;
+        bool remove_ttl = 47;
         //for views
-        Select modify_query = 46;
-        RefreshableView refresh = 47;
+        Select modify_query = 48;
+        RefreshableView refresh = 49;
     }
 }
 

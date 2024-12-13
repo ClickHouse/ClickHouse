@@ -91,6 +91,160 @@ int StatementGenerator::generateNextStatistics(RandomGenerator & rg, ColumnStati
     return 0;
 }
 
+int StatementGenerator::generateNextCodec(RandomGenerator & rg, CodecParam * cp)
+{
+    CompressionCodec cc = static_cast<CompressionCodec>((rg.nextRandomUInt32() % static_cast<uint32_t>(CompressionCodec_MAX)) + 1);
+
+    cp->set_codec(cc);
+    switch (cc)
+    {
+        case COMP_LZ4HC:
+        case COMP_ZSTD_QAT:
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 12);
+                cp->add_params(next_dist(rg.generator));
+            }
+            break;
+        case COMP_ZSTD:
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 22);
+                cp->add_params(next_dist(rg.generator));
+            }
+            break;
+        case COMP_Delta:
+        case COMP_DoubleDelta:
+        case COMP_Gorilla:
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(0, 3);
+                cp->add_params(UINT32_C(1) << next_dist(rg.generator));
+            }
+            break;
+        case COMP_FPC:
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
+                cp->add_params(next_dist1(rg.generator));
+                cp->add_params(rg.nextBool() ? 4 : 9);
+            }
+            break;
+        default:
+            break;
+    }
+    return 0;
+}
+
+int StatementGenerator::generateTTLExpression(RandomGenerator & rg, const SQLTable & t, Expr * ttl_expr)
+{
+    const uint32_t nopt = rg.nextSmallNumber();
+
+    for (const auto & [_, c] : t.cols)
+    {
+        if (dynamic_cast<const DateTimeType *>(c.tp))
+        {
+            filtered_columns.push_back(std::ref<const SQLColumn>(c));
+        }
+    }
+    if (nopt < 10)
+    {
+        IntervalExpr * ie = nullptr;
+
+        if (nopt < 8 && !filtered_columns.empty())
+        {
+            BinaryExpr * bexpr = ttl_expr->mutable_comp_expr()->mutable_binary_expr();
+            ExprColumn * ecol = bexpr->mutable_lhs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+            const SQLColumn & col = rg.pickRandomlyFromVector(filtered_columns).get();
+
+            //check for nested cols
+            ecol->mutable_col()->set_column("c" + std::to_string(col.cname));
+            bexpr->set_op(rg.nextBool() ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
+            ie = bexpr->mutable_rhs()->mutable_comp_expr()->mutable_interval();
+        }
+        else
+        {
+            ie = ttl_expr->mutable_comp_expr()->mutable_interval();
+        }
+        IntLiteral * il = ie->mutable_expr()->mutable_lit_val()->mutable_int_lit();
+        std::uniform_int_distribution<int64_t> next_dist(-100, 100);
+
+        ie->set_interval(
+            static_cast<IntervalExpr_Interval>((rg.nextRandomUInt32() % static_cast<uint32_t>(IntervalExpr_Interval_MINUTE)) + 1));
+        il->set_int_lit(next_dist(rg.generator));
+        filtered_columns.clear();
+    }
+    else
+    {
+        filtered_columns.clear();
+        addTableRelation(rg, true, "", t);
+        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+        generateExpression(rg, ttl_expr);
+        this->levels.clear();
+    }
+    return 0;
+}
+
+int StatementGenerator::generateNextTTL(
+    RandomGenerator & rg, const SQLTable & t, const TableEngine * te, std::vector<InsertEntry> & ientries, TTLExpr * ttl_expr)
+{
+    TTLEntry * entry = ttl_expr->mutable_ttl_expr();
+    const uint32_t nopt = rg.nextSmallNumber();
+
+    generateTTLExpression(rg, t, ttl_expr->mutable_time_expr());
+    if (nopt < 5)
+    {
+        generateNextCodec(rg, entry->mutable_codec());
+    }
+    else if (!fc.disks.empty() && nopt < 9)
+    {
+        generateStorage(rg, entry->mutable_storage());
+    }
+    else
+    {
+        entry->set_delete_(true);
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        addTableRelation(rg, true, "", t);
+        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+        generateWherePredicate(rg, ttl_expr->mutable_where()->mutable_expr()->mutable_expr());
+        this->levels.clear();
+    }
+    if (te && !entries.empty()
+        && ((te->has_order() && te->order().exprs_size()) || (te->has_primary_key() && te->primary_key().exprs_size()))
+        && rg.nextSmallNumber() < 4)
+    {
+        TTLGroupBy * gb = ttl_expr->mutable_group_by();
+        ExprList * el = gb->mutable_expr_list();
+        const TableKey & tk = te->has_primary_key() && te->primary_key().exprs_size() ? te->primary_key() : te->order();
+        std::uniform_int_distribution<uint32_t> table_key_dist(1, tk.exprs_size());
+        const uint32_t ttl_group_size = table_key_dist(rg.generator);
+        const size_t nset = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(t.realNumberOfColumns()), UINT32_C(3))) + 1;
+
+        for (uint32_t i = 0; i < ttl_group_size; i++)
+        {
+            Expr * expr = i == 0 ? el->mutable_expr() : el->add_extra_exprs();
+
+            expr->CopyFrom(tk.exprs(i));
+        }
+
+        addTableRelation(rg, true, "", t);
+        this->levels[this->current_level].global_aggregate = true;
+        std::shuffle(ientries.begin(), ientries.end(), rg.generator);
+
+        for (size_t i = 0; i < nset; i++)
+        {
+            TTLSet * tset = i == 0 ? gb->mutable_ttl_set() : gb->add_other_ttl_set();
+
+            insertEntryRefCP(ientries[i], tset->mutable_col());
+            generateExpression(rg, tset->mutable_expr());
+        }
+        this->levels.clear();
+    }
+    return 0;
+}
+
 int StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnList * clist)
 {
     const NestedType * ntp = nullptr;
@@ -731,53 +885,16 @@ int StatementGenerator::addTableColumn(
 
             for (uint32_t i = 0; i < ncodecs; i++)
             {
-                CodecParam * cp = cd->add_codecs();
-                CompressionCodec cc
-                    = static_cast<CompressionCodec>((rg.nextRandomUInt32() % static_cast<uint32_t>(CompressionCodec_MAX)) + 1);
-
-                cp->set_codec(cc);
-                switch (cc)
-                {
-                    case COMP_LZ4HC:
-                    case COMP_ZSTD_QAT:
-                        if (rg.nextBool())
-                        {
-                            std::uniform_int_distribution<uint32_t> next_dist(1, 12);
-                            cp->add_params(next_dist(rg.generator));
-                        }
-                        break;
-                    case COMP_ZSTD:
-                        if (rg.nextBool())
-                        {
-                            std::uniform_int_distribution<uint32_t> next_dist(1, 22);
-                            cp->add_params(next_dist(rg.generator));
-                        }
-                        break;
-                    case COMP_Delta:
-                    case COMP_DoubleDelta:
-                    case COMP_Gorilla:
-                        if (rg.nextBool())
-                        {
-                            std::uniform_int_distribution<uint32_t> next_dist(0, 3);
-                            cp->add_params(UINT32_C(1) << next_dist(rg.generator));
-                        }
-                        break;
-                    case COMP_FPC:
-                        if (rg.nextBool())
-                        {
-                            std::uniform_int_distribution<uint32_t> next_dist1(1, 28);
-                            cp->add_params(next_dist1(rg.generator));
-                            cp->add_params(rg.nextBool() ? 4 : 9);
-                        }
-                        break;
-                    default:
-                        break;
-                }
+                generateNextCodec(rg, cd->add_codecs());
             }
         }
         if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !csettings.empty() && rg.nextMediumNumber() < 16)
         {
             generateSettingValues(rg, csettings, cd->mutable_settings());
+        }
+        if (!t.hasDatabasePeer() && rg.nextMediumNumber() < 16)
+        {
+            generateTTLExpression(rg, t, cd->mutable_ttl_expr());
         }
         cd->set_is_pkey(is_pk);
     }
@@ -1290,6 +1407,10 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
     if (next.hasDatabasePeer())
     {
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
+    }
+    else if (next.isMergeTreeFamily())
+    {
+        generateNextTTL(rg, next, te, entries, ct->mutable_ttl_expr());
     }
     entries.clear();
     assert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());

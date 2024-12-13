@@ -101,6 +101,7 @@ private:
 
     std::vector<uint32_t> ids;
     std::vector<InsertEntry> entries;
+    std::vector<std::reference_wrapper<const SQLColumn>> filtered_columns;
     std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
     std::vector<std::reference_wrapper<const SQLView>> filtered_views;
     std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
@@ -216,6 +217,11 @@ private:
     void strAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, const SQLType * tp);
     void strAppendAnyValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
 
+    int generateStorage(RandomGenerator & rg, Storage * store);
+    int generateNextCodec(RandomGenerator & rg, CodecParam * cp);
+    int generateTTLExpression(RandomGenerator & rg, const SQLTable & t, Expr * ttl_expr);
+    int generateNextTTL(
+        RandomGenerator & rg, const SQLTable & t, const TableEngine * te, std::vector<InsertEntry> & ientries, TTLExpr * ttl_expr);
     int generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
     int pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnList * clist);
     int addTableColumn(

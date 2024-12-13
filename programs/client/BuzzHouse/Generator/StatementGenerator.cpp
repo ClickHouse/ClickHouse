@@ -9,6 +9,13 @@
 namespace BuzzHouse
 {
 
+int StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store)
+{
+    store->set_storage(static_cast<Storage_DataStorage>((rg.nextRandomUInt32() % static_cast<uint32_t>(Storage::DataStorage_MAX)) + 1));
+    store->set_storage_name(rg.pickRandomlyFromVector(fc.disks));
+    return 0;
+}
+
 int StatementGenerator::generateSettingValues(
     RandomGenerator & rg,
     const std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> & settings,
@@ -847,14 +854,16 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 freeze_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily()),
                 unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty()),
                 clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty()),
-                move_partition = 5 * static_cast<uint32_t>(table_has_partitions && !fc.disks.empty()), comment_table = 2,
+                move_partition = 5 * static_cast<uint32_t>(table_has_partitions && !fc.disks.empty()),
+                modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer()),
+                remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer()), comment_table = 2,
                 prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column + rename_column
                 + clear_column + modify_column + comment_column + delete_mask + add_stats + mod_stats + drop_stats + clear_stats + mat_stats
                 + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
                 + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
                 + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
                 + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition + unfreeze_partition
-                + clear_index_partition + move_partition + comment_table;
+                + clear_index_partition + move_partition + modify_ttl + remove_ttl + comment_table;
             AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
@@ -1598,9 +1607,34 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
 
                 fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
                 pexpr->set_partition_id(buf);
-                mp->set_storage(static_cast<MovePartition_MovePartitionStorage>(
-                    (rg.nextRandomUInt32() % static_cast<uint32_t>(MovePartition::MovePartitionStorage_MAX)) + 1));
-                mp->set_dname(rg.pickRandomlyFromVector(fc.disks));
+                generateStorage(rg, mp->mutable_storage());
+            }
+            else if (
+                modify_ttl
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + 1))
+            {
+                std::vector<InsertEntry> ientries;
+                generateNextTTL(rg, t, nullptr, ientries, ati->mutable_modify_ttl());
+            }
+            else if (
+                remove_ttl
+                && nopt
+                    < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + clear_column
+                       + modify_column + comment_column + delete_mask + heavy_update + add_stats + mod_stats + drop_stats + clear_stats
+                       + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
+                       + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
+                       + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
+                       + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl + 1))
+            {
+                ati->set_remove_ttl(true);
             }
             else if (
                 comment_table
@@ -1611,7 +1645,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                        + column_remove_setting + table_modify_setting + table_remove_setting + add_projection + remove_projection
                        + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
-                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + comment_table + 1))
+                       + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + remove_ttl
+                       + comment_table + 1))
             {
                 buf.resize(0);
                 rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
