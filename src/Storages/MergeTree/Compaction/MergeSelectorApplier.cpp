@@ -107,6 +107,9 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseRegularMerge(
     if (parts.size() == 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge selector returned only one part to merge");
 
+    if (!parts.empty())
+        return MergeSelectorChoice{std::move(parts), MergeType::Regular};
+
     return std::nullopt;
 }
 
