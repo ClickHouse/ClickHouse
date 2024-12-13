@@ -611,26 +611,34 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY SETTING alter is allowed for {}", getName());
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY/RESET SETTING alter is allowed for {}", getName());
     }
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     commands.apply(new_metadata, local_context);
 
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     if (!new_metadata.hasSettingsChanges())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No settings changes");
 
     const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-    const auto & old_changes = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    const SettingsChanges * old_changes = nullptr;
+    if (old_metadata.hasSettingsChanges())
+        old_changes = &old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
     const auto mode = getTableMetadata().getMode();
     for (const auto & changed_setting : new_changes)
     {
-        auto it = std::find_if(
-            old_changes.begin(), old_changes.end(),
-            [&](const SettingChange & change) { return change.name == changed_setting.name; });
+        bool setting_changed = true;
+        if (old_changes)
+        {
+            auto it = std::find_if(
+                old_changes->begin(), old_changes->end(),
+                [&](const SettingChange & change) { return change.name == changed_setting.name; });
 
-        const bool setting_changed = it != old_changes.end() && it->value != changed_setting.value;
+            setting_changed = it != old_changes->end() && it->value != changed_setting.value;
+        }
 
         if (setting_changed)
         {
@@ -654,24 +662,29 @@ void StorageObjectStorageQueue::alter(
     {
         auto table_id = getStorageID();
 
-        StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-        const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         commands.apply(new_metadata, local_context);
         auto new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
-        ObjectStorageQueueSettings default_settings;
-        for (const auto & setting : old_settings)
-        {
-            auto it = std::find_if(
-                new_settings.begin(), new_settings.end(),
-                [&](const SettingChange & change) { return change.name == setting.name; });
+        StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        const SettingsChanges * old_settings = nullptr;
+        if (old_metadata.hasSettingsChanges())
+            old_settings = &old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
-            if (it == new_settings.end())
+        if (old_settings)
+        {
+            ObjectStorageQueueSettings default_settings;
+            for (const auto & setting : *old_settings)
             {
-                /// Setting was reset.
-                new_settings.push_back(SettingChange(setting.name, default_settings.get(setting.name)));
+                auto it = std::find_if(
+                    new_settings.begin(), new_settings.end(),
+                    [&](const SettingChange & change) { return change.name == setting.name; });
+
+                if (it == new_settings.end())
+                {
+                    /// Setting was reset.
+                    new_settings.push_back(SettingChange(setting.name, default_settings.get(setting.name)));
+                }
             }
         }
 
@@ -681,11 +694,15 @@ void StorageObjectStorageQueue::alter(
         const auto mode = getTableMetadata().getMode();
         for (const auto & setting : new_settings)
         {
-            auto it = std::find_if(
-                old_settings.begin(), old_settings.end(),
-                [&](const SettingChange & change) { return change.name == setting.name; });
+            bool setting_changed = true;
+            if (old_settings)
+            {
+                auto it = std::find_if(
+                    old_settings->begin(), old_settings->end(),
+                    [&](const SettingChange & change) { return change.name == setting.name; });
 
-            const bool setting_changed = it == old_settings.end() || it->value != setting.value;
+                setting_changed = it == old_settings->end() || it->value != setting.value;
+            }
             if (!setting_changed)
                 continue;
 

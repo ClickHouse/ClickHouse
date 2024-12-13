@@ -2573,8 +2573,29 @@ def test_upgrade_3(started_cluster):
     node.restart_with_latest_version()
     assert table_name in node.query("SHOW TABLES")
 
-    assert "Cannot alter settings, because table engine doesn't support settings changes" in node.query_and_get_error(
+    node.query(
         f"""
-        ALTER TABLE {table_name} MODIFY SETTING processing_threads_num=5
+        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=111
     """
+    )
+    assert 111 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
+        )
+    )
+
+    node.query(
+        f"""
+        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=222, polling_max_timeout_ms=333
+    """
+    )
+    assert 222 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
+        )
+    )
+    assert 333 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
+        )
     )
