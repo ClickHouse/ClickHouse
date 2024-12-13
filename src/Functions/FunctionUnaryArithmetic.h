@@ -339,7 +339,7 @@ public:
         /// Special case when the function is negate, argument is tuple.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
         {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
         }
 
         ColumnPtr result_column;
@@ -489,7 +489,9 @@ public:
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
+            {
                 return false;
+            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -511,7 +513,9 @@ public:
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
+            {
                 return false;
+            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -519,16 +523,8 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>>)
-                    {
-                        /// We don't need to cast the argument to the result type if it's abs/bitcount function.
-                        result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
-                    }
-                    else
-                    {
-                        auto * v = nativeCast(b, arguments[0], result_type);
-                        result = Op<T0>::compile(b, v, is_signed_v<T1>);
-                    }
+                    auto * v = nativeCast(b, arguments[0], result_type);
+                    result = Op<T0>::compile(b, v, is_signed_v<T1>);
 
                     return true;
                 }

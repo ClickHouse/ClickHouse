@@ -240,23 +240,6 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     return permuteImpl(*this, perm, limit);
 }
 
-ColumnCheckpointPtr ColumnString::getCheckpoint() const
-{
-    auto nested = std::make_shared<ColumnCheckpoint>(chars.size());
-    return std::make_shared<ColumnCheckpointWithNested>(size(), std::move(nested));
-}
-
-void ColumnString::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    checkpoint.size = size();
-    assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested->size = chars.size();
-}
-
-void ColumnString::rollback(const ColumnCheckpoint & checkpoint)
-{
-    offsets.resize_assume_reserved(checkpoint.size);
-    chars.resize_assume_reserved(assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested->size);
-}
 
 void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
@@ -627,7 +610,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnString::compress(bool force_compression) const
+ColumnPtr ColumnString::compress() const
 {
     const size_t source_chars_size = chars.size();
     const size_t source_offsets_elements = offsets.size();
@@ -637,13 +620,13 @@ ColumnPtr ColumnString::compress(bool force_compression) const
     if (source_chars_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, force_compression);
+    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
 
     /// Return original column if not compressible.
     if (!chars_compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, /*force_compression=*/true);
+    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
 
     const size_t chars_compressed_size = chars_compressed->size();
     const size_t offsets_compressed_size = offsets_compressed->size();

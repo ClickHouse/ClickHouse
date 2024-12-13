@@ -10,19 +10,9 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
-#if USE_EMBEDDED_COMPILER
-#    include <DataTypes/Native.h>
-#    include <llvm/IR/IRBuilder.h>
-#endif
-
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
-
 namespace
 {
 
@@ -35,7 +25,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIsNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+        return std::make_shared<FunctionIsNull>(context->getSettingsRef().allow_experimental_analyzer);
     }
 
     explicit FunctionIsNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
@@ -106,26 +96,13 @@ public:
             /// Merely return the embedded null map.
             return nullable->getNullMapColumnPtr();
         }
-
-        /// Since no element is nullable, return a zero-constant column representing
-        /// a zero-filled null map.
-        return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
-    }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
-
-    llvm::Value *
-    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
-    {
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        if (arguments[0].type->isNullable())
-            return b.CreateExtractValue(arguments[0].value, {1});
         else
-            return b.getInt8(0);
+        {
+            /// Since no element is nullable, return a zero-constant column representing
+            /// a zero-filled null map.
+            return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
+        }
     }
-#endif
-
 
 private:
     bool use_analyzer;

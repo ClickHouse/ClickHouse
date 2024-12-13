@@ -34,7 +34,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
     bool isExtendedStorageDefinition() const;
 
@@ -67,7 +67,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
     bool empty() const
     {
@@ -100,7 +100,6 @@ public:
     bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
-    bool is_clone_as{false};    /// CREATE TABLE ... CLONE AS ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     bool has_uuid{false}; // CREATE TABLE x UUID '...'
 
@@ -133,8 +132,6 @@ public:
     bool attach_short_syntax{false};
 
     std::optional<String> attach_from_path = std::nullopt;
-
-    std::optional<bool> attach_as_replicated = std::nullopt;
 
     bool replace_table{false};
     bool create_or_replace{false};
@@ -179,7 +176,7 @@ public:
     bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ViewTarget::To); }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {

@@ -1,7 +1,4 @@
--- Tags: zookeeper, no-shared-merge-tree
--- no-shared-merge-tree: shared merge tree doesn't loose data parts
-
-SET max_rows_to_read = 0; -- system.text_log can be really big
+-- Tags: zookeeper
 
 create table rmt1 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '1') order by n partition by toYYYYMMDD(d);
 create table rmt2 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '2') order by n partition by toYYYYMMDD(d);

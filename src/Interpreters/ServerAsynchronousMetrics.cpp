@@ -54,14 +54,10 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
     unsigned update_period_seconds,
-    bool update_heavy_metrics_,
     unsigned heavy_metrics_update_period_seconds,
-    const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
-    bool update_jemalloc_epoch_,
-    bool update_rss_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
-    , update_heavy_metrics(update_heavy_metrics_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
@@ -81,12 +77,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     {
         new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
-    }
-
-    if (auto primary_index_cache = getContext()->getPrimaryIndexCache())
-    {
-        new_values["PrimaryIndexCacheBytes"] = { primary_index_cache->sizeInBytes(), "Total size of primary index cache in bytes" };
-        new_values["PrimaryIndexCacheFiles"] = { primary_index_cache->count(), "Total number of index files cached in the primary index cache" };
     }
 
     if (auto page_cache = getContext()->getPageCache())
@@ -420,8 +410,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 #endif
 
-    if (update_heavy_metrics)
-        updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
+    updateHeavyMetricsIfNeeded(current_time, update_time, force_update, first_run, new_values);
 }
 
 void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
@@ -468,10 +457,10 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
 void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     const auto time_since_previous_update = current_time - heavy_metric_previous_update_time;
-    const bool need_update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
+    const bool update_heavy_metrics = (time_since_previous_update >= heavy_metric_update_period) || force_update || first_run;
 
     Stopwatch watch;
-    if (need_update_heavy_metrics)
+    if (update_heavy_metrics)
     {
         heavy_metric_previous_update_time = update_time;
         if (first_run)

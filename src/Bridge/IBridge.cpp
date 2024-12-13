@@ -18,9 +18,8 @@
 #include <base/range.h>
 #include <base/scope_guard.h>
 
-#include <iostream>
-#include <sys/resource.h>
 #include <sys/time.h>
+#include <sys/resource.h>
 
 #include "config.h"
 

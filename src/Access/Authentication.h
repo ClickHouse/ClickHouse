@@ -24,7 +24,7 @@ struct Authentication
     /// returned by the authentication server
     static bool areCredentialsValid(
         const Credentials & credentials,
-        const AuthenticationData & authentication_method,
+        const AuthenticationData & auth_data,
         const ExternalAuthenticators & external_authenticators,
         SettingsChanges & settings);
 

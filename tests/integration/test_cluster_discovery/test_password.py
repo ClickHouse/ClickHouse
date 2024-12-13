@@ -1,8 +1,8 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
-
 from .common import check_on_cluster
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

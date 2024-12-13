@@ -1,28 +1,17 @@
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
+#include <Functions/PerformanceAdaptors.h>
 #include <Common/assert_cast.h>
-
-#if USE_EMBEDDED_COMPILER
-#    include <DataTypes/Native.h>
-#    include <llvm/IR/IRBuilder.h>
-#endif
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
-
 namespace
 {
 
@@ -33,10 +22,7 @@ class FunctionIsNotNull : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
-    }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionIsNotNull>(context->getSettingsRef().allow_experimental_analyzer); }
 
     explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
@@ -110,27 +96,12 @@ public:
             vector(src_data, res_data);
             return res_column;
         }
-
-        /// Since no element is nullable, return a constant one.
-        return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
-    }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
-
-    llvm::Value *
-    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
-    {
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        if (arguments[0].type->isNullable())
-        {
-            auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
-            return b.CreateNot(is_null);
-        }
         else
-            return b.getInt8(1);
+        {
+            /// Since no element is nullable, return a constant one.
+            return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
+        }
     }
-#endif
 
 private:
     MULTITARGET_FUNCTION_AVX2_SSE42(

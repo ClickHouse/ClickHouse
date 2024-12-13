@@ -541,7 +541,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            return false;
+            else
+                return false;
         }
 
         if (!primary_key && s_primary_key.ignore(pos, expected))
@@ -551,7 +552,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            return false;
+            else
+                return false;
         }
 
         if (!order_by && s_order_by.ignore(pos, expected))
@@ -561,7 +563,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            return false;
+            else
+                return false;
         }
 
         if (!sample_by && s_sample_by.ignore(pos, expected))
@@ -571,7 +574,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            return false;
+            else
+                return false;
         }
 
         if (!ttl_table && s_ttl.ignore(pos, expected))
@@ -581,7 +585,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_like = true;
                 continue;
             }
-            return false;
+            else
+                return false;
         }
 
         /// Do not allow SETTINGS clause without ENGINE,
@@ -641,9 +646,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserCompoundIdentifier table_name_p(/*table_name_with_optional_uuid*/ true, /*allow_query_parameter*/ true);
     ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_on(Keyword::ON);
-    ParserKeyword s_as(Keyword::AS);
-    ParserKeyword s_not(Keyword::NOT);
-    ParserKeyword s_replicated(Keyword::REPLICATED);
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_comma(TokenType::Comma);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -673,7 +675,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool if_not_exists = false;
     bool is_temporary = false;
     bool is_create_empty = false;
-    bool is_clone_as = false;
 
     if (s_create.ignore(pos, expected))
     {
@@ -701,23 +702,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!table_name_p.parse(pos, table, expected))
         return false;
 
-    std::optional<bool> attach_as_replicated = std::nullopt;
-    if (attach)
+    if (attach && s_from.ignore(pos, expected))
     {
-        if (s_from.ignore(pos, expected))
-        {
-            ParserStringLiteral from_path_p;
-            if (!from_path_p.parse(pos, from_path, expected))
-                return false;
-        } else if (s_as.ignore(pos, expected))
-        {
-            if (s_not.ignore(pos, expected))
-                attach_as_replicated = false;
-            if (!s_replicated.ignore(pos, expected))
-                return false;
-            if (!attach_as_replicated.has_value())
-                attach_as_replicated = true;
-        }
+        ParserStringLiteral from_path_p;
+        if (!from_path_p.parse(pos, from_path, expected))
+            return false;
     }
 
     if (s_on.ignore(pos, expected))
@@ -743,8 +732,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
-
-        query->attach_as_replicated = attach_as_replicated;
 
         if (query->database)
             query->children.push_back(query->database);
@@ -772,16 +759,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return true;
     };
 
-    auto need_parse_as_select = [&is_create_empty, &is_clone_as, &pos, &expected]()
+    auto need_parse_as_select = [&is_create_empty, &pos, &expected]()
     {
         if (ParserKeyword{Keyword::EMPTY_AS}.ignore(pos, expected))
         {
             is_create_empty = true;
-            return true;
-        }
-        if (ParserKeyword{Keyword::CLONE_AS}.ignore(pos, expected))
-        {
-            is_clone_as = true;
             return true;
         }
 
@@ -859,7 +841,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = query;
 
     query->attach = attach;
-    query->attach_as_replicated = attach_as_replicated;
     query->replace_table = replace;
     query->create_or_replace = or_replace;
     query->if_not_exists = if_not_exists;
@@ -912,7 +893,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->set(query->select, select);
     query->set(query->targets, targets);
     query->is_create_empty = is_create_empty;
-    query->is_clone_as = is_clone_as;
 
     if (from_path)
         query->attach_from_path = from_path->as<ASTLiteral &>().value.safeGet<String>();
@@ -1292,35 +1272,40 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
         {
             if (expression_p.parse(pos, partition_by, expected))
                 continue;
-            return false;
+            else
+                return false;
         }
 
         if (!primary_key && s_primary_key.ignore(pos, expected))
         {
             if (expression_p.parse(pos, primary_key, expected))
                 continue;
-            return false;
+            else
+                return false;
         }
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, order_by, expected))
                 continue;
-            return false;
+            else
+                return false;
         }
 
         if (!sample_by && s_sample_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, sample_by, expected))
                 continue;
-            return false;
+            else
+                return false;
         }
 
         if (!ttl_table && s_ttl.ignore(pos, expected))
         {
             if (parser_ttl_list.parse(pos, ttl_table, expected))
                 continue;
-            return false;
+            else
+                return false;
         }
 
         break;

@@ -15,11 +15,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool compile_sort_description;
-    extern const SettingsUInt64 min_count_to_compile_sort_description;
-}
 
 namespace ErrorCodes
 {
@@ -43,7 +38,7 @@ std::pair<Field, DataTypePtr> extractWithFillValue(const QueryTreeNodePtr & node
     return result;
 }
 
-std::pair<Field, std::optional<IntervalKind>> extractWithFillValueWithIntervalKind(const QueryTreeNodePtr & node)
+std::pair<Field, std::optional<IntervalKind>> extractWithFillStepValue(const QueryTreeNodePtr & node)
 {
     const auto & constant_node = node->as<ConstantNode &>();
 
@@ -77,7 +72,7 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
 
     if (sort_node.hasFillStep())
     {
-        auto extract_result = extractWithFillValueWithIntervalKind(sort_node.getFillStep());
+        auto extract_result = extractWithFillStepValue(sort_node.getFillStep());
         fill_column_description.fill_step = std::move(extract_result.first);
         fill_column_description.step_kind = std::move(extract_result.second);
     }
@@ -87,35 +82,15 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
         fill_column_description.fill_step = Field(direction_value);
     }
 
-    if (sort_node.getFillStaleness())
-    {
-        auto extract_result = extractWithFillValueWithIntervalKind(sort_node.getFillStaleness());
-        fill_column_description.fill_staleness = std::move(extract_result.first);
-        fill_column_description.staleness_kind = std::move(extract_result.second);
-    }
-
-    ///////////////////////////////////
-
     if (applyVisitor(FieldVisitorAccurateEquals(), fill_column_description.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
             "WITH FILL STEP value cannot be zero");
-
-    if (sort_node.hasFillStaleness())
-    {
-        if (sort_node.hasFillFrom())
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS cannot be used together with WITH FILL FROM");
-    }
 
     if (sort_node.getSortDirection() == SortDirection::ASCENDING)
     {
         if (applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_step, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STEP value cannot be negative for sorting in ascending direction");
-
-        if (applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_staleness, Field{0}))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS value cannot be negative for sorting in ascending direction");
 
         if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_to, fill_column_description.fill_from))
@@ -129,10 +104,6 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
         if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, fill_column_description.fill_step))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STEP value cannot be positive for sorting in descending direction");
-
-        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, fill_column_description.fill_staleness))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS value cannot be positive for sorting in descending direction");
 
         if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
             applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_from, fill_column_description.fill_to))
@@ -179,8 +150,8 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
     }
 
     const auto & settings = planner_context.getQueryContext()->getSettingsRef();
-    sort_column_description.compile_sort_description = settings[Setting::compile_sort_description];
-    sort_column_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+    sort_column_description.compile_sort_description = settings.compile_sort_description;
+    sort_column_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
 
     return sort_column_description;
 }

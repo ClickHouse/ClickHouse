@@ -36,9 +36,6 @@ namespace DB
         if (collected_prefix && collected_suffix && collected_finalize)
             return;
 
-        if (out.isCanceled())
-            return;
-
         auto formatter = internal_formatter_creator(out);
         formatter->setRowsReadBefore(rows_collected);
         formatter->setException(exception_message);

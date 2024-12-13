@@ -61,20 +61,11 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
         out.finalize();
         return new_uuid;
     }
-    catch (ErrnoException &)
-    {
-        throw;
-    }
     catch (...)
     {
         throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "Caught Exception {} while writing the Server UUID file {}",
                         getCurrentExceptionMessage(false), server_uuid_file.string());
     }
-}
-
-void ServerUUID::set(UUID & uuid)
-{
-    server_uuid = uuid;
 }
 
 void ServerUUID::setRandomForUnitTests()
