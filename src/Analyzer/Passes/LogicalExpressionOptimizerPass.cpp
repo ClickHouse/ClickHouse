@@ -640,7 +640,7 @@ private:
 
         /// Step 1: identify constants, and store comparing pairs in hash
         QueryTreeNodes constants;
-        QueryTreeNodePtrWithHashMap<QueryTreeNodes> less_pairs;
+        std::unordered_map<QueryTreeNodePtr, QueryTreeNodes> greater_pairs;
 
         for (const auto & argument : function_node.getArguments())
         {
@@ -660,10 +660,43 @@ private:
             if (const auto * rhs_literal = rhs->as<ConstantNode>())
                 constants.push_back(rhs);
 
-            less_pairs[lhs].push_back(rhs);
+            greater_pairs[rhs].push_back(lhs);
         }
 
+        for (const auto & con : constants)
+            std::cout<<con->dumpTree()<<std::endl;
+
+        for (const auto & p : greater_pairs)
+            for (const auto & v : p.second)
+                std::cout<<v->dumpTree()<<" < "<<p.first->dumpTree()<<std::endl;
+
+        std::cout<<std::endl;
+
+        auto & args = function_node.getArguments().getNodes();
+
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
+        std::function<void(QueryTreeNodePtr)> findPairs = [&](QueryTreeNodePtr cur)
+        {
+            if (auto it = greater_pairs.find(cur); it != greater_pairs.end())
+            {
+                for (const auto & v : it->second)
+                {
+                    std::cout<<v->dumpTree()<<" < "<<cur->dumpTree()<<std::endl;
+                    auto arg = args[0]->clone();
+                    arg->as<FunctionNode>()->getArguments().getNodes().clear();
+                    arg->as<FunctionNode>()->getArguments().getNodes().push_back(v->clone());
+                    arg->as<FunctionNode>()->getArguments().getNodes().push_back(cur->clone());
+                    auto less_function_resolver = FunctionFactory::instance().get("less", getContext());
+                    arg->as<FunctionNode>()->resolveAsFunction(less_function_resolver);
+                    findPairs(v);
+                }
+            }
+        };
+
+        for (const auto & constant : constants)
+        {
+            findPairs(constant);
+        }
 
         /// Step 3: remove some loose comparing pairs
 
