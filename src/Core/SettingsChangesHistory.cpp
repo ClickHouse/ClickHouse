@@ -58,18 +58,27 @@ String ClickHouseVersion::toString() const
 /// Note: please check if the key already exists to prevent duplicate entries.
 static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> settings_changes_history_initializer =
 {
+    {"25.1",
+        {
+
+        }
+    },
     {"24.12",
         {
+            /// Release closed. Please use 25.1
+            {"allow_experimental_database_iceberg", false, false, "New setting."},
             {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_bytes_ratio_before_external_group_by", 0., 0., "New setting."},
+            {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"object_storage_remove_recursive_file_limit", 0, 1000, "Added new setting to limit number of files stored in memory while removing from object storage. Zero value means unlimited."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
+            /// Release closed. Please use 25.1
         }
     },
     {"24.11",
@@ -98,7 +107,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"read_in_order_use_virtual_row", false, false, "Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched."},
             {"s3_skip_empty_files", false, true, "We hope it will provide better UX"},
             {"filesystem_cache_boundary_alignment", 0, 0, "New setting"},
-            {"push_external_roles_in_interserver_queries", false, false, "New setting."},
+            {"push_external_roles_in_interserver_queries", false, true, "New setting."},
             {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
             {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
             {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},
@@ -617,12 +626,20 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 
 static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> merge_tree_settings_changes_history_initializer =
 {
+    {"25.1",
+        {
+
+        }
+    },
     {"24.12",
         {
+            /// Release closed. Please use 25.1
             {"enforce_index_structure_match_on_partition_manipulation", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."},
             {"use_primary_key_cache", false, false, "New setting"},
             {"prewarm_primary_key_cache", false, false, "New setting"},
             {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},
+            {"allow_experimental_reverse_key", false, false, "New setting"},
+            /// Release closed. Please use 25.1
         }
     },
     {"24.11",
