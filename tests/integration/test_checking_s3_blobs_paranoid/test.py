@@ -50,6 +50,7 @@ def cluster():
                 "configs/no_s3_retries.xml",
             ],
             with_minio=True,
+            stay_alive=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
