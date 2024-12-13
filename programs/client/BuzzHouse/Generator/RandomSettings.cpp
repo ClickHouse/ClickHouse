@@ -355,7 +355,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"join_use_nulls", trueOrFalse},
     {"keeper_map_strict_mode", trueOrFalse},
     {"legacy_column_name_of_tuple_literal", trueOrFalse},
-    {"lightweight_deletes_sync", zeroOneTwo},
+    //{"lightweight_deletes_sync", zeroOneTwo}, FINAL queries don't cover these
     {"load_marks_asynchronously", trueOrFalse},
     {"local_filesystem_read_method",
      [](RandomGenerator & rg, std::string & ret)

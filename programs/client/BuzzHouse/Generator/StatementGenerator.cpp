@@ -194,6 +194,10 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
             entries.push_back(InsertEntry(true, ColumnSpecial::NONE, i, std::nullopt, nullptr, std::nullopt));
         }
         generateEngineDetails(rg, next, true, te);
+        if (next.isMergeTreeFamily() && rg.nextMediumNumber() < 16)
+        {
+            generateNextTTL(rg, std::nullopt, te, entries, te->mutable_ttl_expr());
+        }
         this->entries.clear();
 
         if (collectionHas<SQLTable>(attached_tables) && rg.nextSmallNumber() < 5)

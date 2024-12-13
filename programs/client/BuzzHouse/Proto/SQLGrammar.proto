@@ -2776,13 +2776,18 @@ message CodecParam {
     repeated uint32 params = 2;
 }
 
+message CodecList {
+    required CodecParam codec = 1;
+    repeated CodecParam other_codecs = 2;
+}
+
 message ColumnDef {
     required Column col = 1;
     required TypeName type = 2;
     optional bool nullable = 3;
     optional DefaultModifier defaultv = 4;
     optional string comment = 5;
-    repeated CodecParam codecs = 6;
+    optional CodecList codecs = 6;
     optional ColumnStatistics stats = 7;
     optional Expr ttl_expr = 8;
     optional bool is_pkey = 9;
@@ -2898,6 +2903,33 @@ message TableEngineParam {
     }
 }
 
+message TTLEntry {
+    oneof ttlentry_oneof {
+        bool delete = 1;
+        CodecList codecs = 2;
+        Storage storage = 3;
+    }
+}
+
+message TTLSet {
+    required ColumnPath col = 1;
+    required Expr expr = 2;
+}
+
+message TTLGroupBy {
+    required ExprList expr_list = 1;
+    required TTLSet ttl_set = 2;
+    repeated TTLSet other_ttl_set = 3;
+}
+
+message TTLExpr {
+    required Expr time_expr = 1;
+    required TTLEntry ttl_expr = 2;
+    repeated TTLEntry other_ttl = 3;
+    optional WhereStatement where = 4;
+    optional TTLGroupBy group_by = 5;
+}
+
 message TableEngine {
     optional TableEngineOption toption = 1;
     required TableEngineValues engine = 2;
@@ -2906,7 +2938,8 @@ message TableEngine {
     optional TableKey partition_by = 5;
     optional TableKey primary_key = 6;
     optional TableKey sample_by = 7;
-    optional SettingValues settings = 8;
+    optional TTLExpr ttl_expr = 8;
+    optional SettingValues settings = 9;
 }
 
 message CreateTableAs {

@@ -2278,6 +2278,18 @@ CONV_FN(DefaultModifier, def_mod)
     }
 }
 
+CONV_FN(CodecList, cl)
+{
+    ret += "CODEC(";
+    CodecParamToString(ret, cl.codec());
+    for (int i = 0; i < cl.other_codecs_size(); i++)
+    {
+        ret += ", ";
+        CodecParamToString(ret, cl.other_codecs(i));
+    }
+    ret += ")";
+}
+
 CONV_FN(ColumnDef, cdf)
 {
     ColumnToString(ret, true, cdf.col());
@@ -2298,18 +2310,10 @@ CONV_FN(ColumnDef, cdf)
         ret += " COMMENT ";
         ret += cdf.comment();
     }
-    if (cdf.codecs_size())
+    if (cdf.has_codecs())
     {
-        ret += " CODEC(";
-        for (int i = 0; i < cdf.codecs_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            CodecParamToString(ret, cdf.codecs(i));
-        }
-        ret += ")";
+        ret += " ";
+        CodecListToString(ret, cdf.codecs());
     }
     if (cdf.has_stats())
     {
@@ -2498,6 +2502,67 @@ CONV_FN(TableEngineParam, tep)
     }
 }
 
+CONV_FN(TTLSet, ttl_set)
+{
+    ColumnPathToString(ret, false, ttl_set.col());
+    ret += " = ";
+    ExprToString(ret, ttl_set.expr());
+}
+
+CONV_FN(TTLGroupBy, ttl_groupby)
+{
+    ret += "GROUP BY ";
+    ExprListToString(ret, ttl_groupby.expr_list());
+    ret += " SET ";
+    TTLSetToString(ret, ttl_groupby.ttl_set());
+    for (int i = 0; i < ttl_groupby.other_ttl_set_size(); i++)
+    {
+        ret += ", ";
+        TTLSetToString(ret, ttl_groupby.other_ttl_set(i));
+    }
+}
+
+CONV_FN(TTLEntry, entry)
+{
+    using TTLEntryType = TTLEntry::TtlentryOneofCase;
+    switch (entry.ttlentry_oneof_case())
+    {
+        case TTLEntryType::kCodecs:
+            ret += "RECOMPRESS ";
+            CodecListToString(ret, entry.codecs());
+            break;
+        case TTLEntryType::kStorage:
+            ret += "TO ";
+            StorageToString(ret, entry.storage());
+            break;
+        default:
+            ret += "DELETE";
+    }
+}
+
+CONV_FN(TTLExpr, ttl_expr)
+{
+    ret += "TTL ";
+    ExprToString(ret, ttl_expr.time_expr());
+    ret += " ";
+    TTLEntryToString(ret, ttl_expr.ttl_expr());
+    for (int i = 0; i < ttl_expr.other_ttl_size(); i++)
+    {
+        ret += ", ";
+        TTLEntryToString(ret, ttl_expr.other_ttl(i));
+    }
+    if (ttl_expr.has_where())
+    {
+        ret += " WHERE ";
+        WhereStatementToString(ret, ttl_expr.where());
+    }
+    if (ttl_expr.has_group_by())
+    {
+        ret += " ";
+        TTLGroupByToString(ret, ttl_expr.group_by());
+    }
+}
+
 CONV_FN(TableEngine, te)
 {
     const TableEngineValues tengine = te.engine();
@@ -2537,6 +2602,11 @@ CONV_FN(TableEngine, te)
     {
         ret += " SAMPLE BY ";
         TableKeyToString(ret, te.sample_by());
+    }
+    if (te.has_ttl_expr())
+    {
+        ret += " ";
+        TTLExprToString(ret, te.ttl_expr());
     }
     if (te.has_settings())
     {

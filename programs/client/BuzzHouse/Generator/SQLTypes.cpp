@@ -232,7 +232,7 @@ const SQLType * StatementGenerator::randomDateTimeType(RandomGenerator & rg, con
     {
         dt->set_type(use64 ? DateTimes::DateTime64 : DateTimes::DateTime);
     }
-    if ((has_precision = (!(allowed_types & set_any_datetime_precision) || rg.nextSmallNumber() < 5)))
+    if (use64 && (has_precision = (!(allowed_types & set_any_datetime_precision) || rg.nextSmallNumber() < 5)))
     {
         precision = std::optional<uint32_t>(!(allowed_types & set_any_datetime_precision) ? 6 : (rg.nextSmallNumber() - 1));
         if (dt)
