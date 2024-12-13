@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/NestedUtils.h>
+#include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
 
 
