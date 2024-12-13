@@ -247,7 +247,15 @@ CachePriorityGuard::Lock FileCache::lockCache() const
 
 CachePriorityGuard::Lock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout) const
 {
-    return acquire_timeout.has_value() ? cache_guard.tryLockFor(acquire_timeout.value()) : cache_guard.tryLock();
+    if (acquire_timeout.has_value())
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
+        return cache_guard.tryLockFor(acquire_timeout.value());
+    }
+    else
+    {
+        return cache_guard.tryLock();
+    }
 }
 
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
