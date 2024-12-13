@@ -255,7 +255,7 @@ struct CommonExpressionExtractionResult
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
-std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(QueryTreeNodes disjuncts, const ContextPtr & context)
+std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
 {
     std::vector<QueryTreeNodePtrWithHashSet> disjunct_sets;
     disjunct_sets.reserve(disjuncts.size());
@@ -325,7 +325,7 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDis
     for (size_t i = 0; i < disjuncts.size(); ++i)
     {
         if (should_keep[i])
-            new_disjuncts.emplace_back(std::move(disjuncts[i]));
+            new_disjuncts.emplace_back(disjuncts[i]);
     }
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
@@ -452,6 +452,12 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
     chassert(new_or_arguments.size() >= 2);
+
+    if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, context))
+    {
+        auto new_disjunction_node = optimized_disjunction->new_node ? optimized_disjunction->new_node : optimized_disjunction->common_expressions[0];
+        return CommonExpressionExtractionResult{ .new_node = std::move(new_disjunction_node), .common_expressions = std::move(common_exprs) };
+    }
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
     new_or_node->getArguments().getNodes() = std::move(new_or_arguments);
