@@ -39,23 +39,23 @@ void ASTObjectTypeArgument::formatImpl(WriteBuffer & ostr, const FormatSettings 
 {
     if (path_with_type)
     {
-        path_with_type->formatImpl(ostr, settings, state, frame);
+        path_with_type->format(ostr, settings, state, frame);
     }
     else if (parameter)
     {
-        parameter->formatImpl(ostr, settings, state, frame);
+        parameter->format(ostr, settings, state, frame);
     }
     else if (skip_path)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
         ostr << indent_str << "SKIP" << ' ';
-        skip_path->formatImpl(ostr, settings, state, frame);
+        skip_path->format(ostr, settings, state, frame);
     }
     else if (skip_path_regexp)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
         ostr << indent_str << "SKIP REGEXP" << ' ';
-        skip_path_regexp->formatImpl(ostr, settings, state, frame);
+        skip_path_regexp->format(ostr, settings, state, frame);
     }
 }
 

@@ -110,12 +110,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     {
         if (database)
         {
-            database->formatImpl(ostr, settings, state, frame);
+            database->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(ostr, settings, state, frame);
+        table->format(ostr, settings, state, frame);
         return ostr;
     };
 
@@ -227,7 +227,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (query_settings)
             {
                 ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
-                query_settings->formatImpl(ostr, settings, state, frame);
+                query_settings->format(ostr, settings, state, frame);
             }
 
             break;
