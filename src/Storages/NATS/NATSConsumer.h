@@ -23,7 +23,6 @@ class NATSConsumer
 public:
     NATSConsumer(
         NATSConnectionPtr connection_,
-        StorageNATS & storage_,
         std::vector<String> & subjects_,
         const String & subscribe_queue_name,
         LoggerPtr log_,
@@ -57,7 +56,6 @@ private:
     static void onMsg(natsConnection * nc, natsSubscription * sub, natsMsg * msg, void * consumer);
 
     NATSConnectionPtr connection;
-    StorageNATS & storage;
     std::vector<NATSSubscriptionPtr> subscriptions;
     std::vector<String> subjects;
     LoggerPtr log;

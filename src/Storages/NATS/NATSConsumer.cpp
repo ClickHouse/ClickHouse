@@ -18,14 +18,12 @@ namespace ErrorCodes
 
 NATSConsumer::NATSConsumer(
     NATSConnectionPtr connection_,
-    StorageNATS & storage_,
     std::vector<String> & subjects_,
     const String & subscribe_queue_name,
     LoggerPtr log_,
     uint32_t queue_size_,
     const std::atomic<bool> & stopped_)
     : connection(std::move(connection_))
-    , storage(storage_)
     , subjects(subjects_)
     , log(log_)
     , stopped(stopped_)
@@ -90,8 +88,6 @@ void NATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, vo
         };
         if (!nats_consumer->received.push(std::move(data)))
             throw Exception(ErrorCodes::INVALID_STATE, "Could not push to received queue");
-
-        nats_consumer->storage.startStreaming();
     }
 
     natsMsg_Destroy(msg);

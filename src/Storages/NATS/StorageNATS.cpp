@@ -284,7 +284,10 @@ bool StorageNATS::subscribeConsumers()
 
     const bool are_consumers_initialized = num_initialized == num_created_consumers;
     if (are_consumers_initialized)
+    {
         consumers_ready.store(true);
+        streaming_task->activateAndSchedule();
+    }
     return are_consumers_initialized;
 }
 
@@ -509,7 +512,7 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 NATSConsumerPtr StorageNATS::createConsumer()
 {
     return std::make_shared<NATSConsumer>(
-        consumers_connection, *this, subjects,
+        consumers_connection, subjects,
         (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName(),
         log, queue_size, shutdown_called);
 }
@@ -586,7 +589,7 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 
 void StorageNATS::streamingToViewsFunc()
 {
-    bool do_reschedule = true;
+    bool do_reschedule_with_delay = false;
     try
     {
         auto table_id = getStorageID();
@@ -611,7 +614,7 @@ void StorageNATS::streamingToViewsFunc()
                 if (streamToViews())
                 {
                     /// Reschedule with backoff.
-                    do_reschedule = false;
+                    do_reschedule_with_delay = true;
                     break;
                 }
 
@@ -620,6 +623,7 @@ void StorageNATS::streamingToViewsFunc()
                 if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                 {
                     LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded");
+                    do_reschedule_with_delay = false;
                     break;
                 }
             }
@@ -632,8 +636,13 @@ void StorageNATS::streamingToViewsFunc()
 
     mv_attached.store(false);
 
-    if (!shutdown_called && do_reschedule)
-        streaming_task->scheduleAfter(RESCHEDULE_MS);
+    if (!shutdown_called)
+    {
+        if (do_reschedule_with_delay)
+            streaming_task->scheduleAfter(RESCHEDULE_MS);
+        else
+            streaming_task->schedule();
+    } 
 }
 
 
@@ -691,23 +700,17 @@ bool StorageNATS::streamToViews()
         executor.execute();
     }
 
-    size_t queue_empty = 0;
-
     if (!consumers_connection || !consumers_connection->isConnected())
     {
-        if (shutdown_called)
-            return true;
-
         LOG_TRACE(log, "Reschedule streaming. Unable to restore connection");
         return true;
     }
-    else
+
+    size_t queue_empty = 0;
+    for (auto & source : sources)
     {
-        for (auto & source : sources)
-        {
-            if (source->queueEmpty())
-                ++queue_empty;
-        }
+        if (source->queueEmpty())
+            ++queue_empty;
     }
 
     if (queue_empty == num_created_consumers)
@@ -716,7 +719,8 @@ bool StorageNATS::streamToViews()
         return true;
     }
 
-    /// Do not reschedule, do not stop event loop.
+    LOG_TRACE(log, "Reschedule streaming. Queues are not empty");
+
     return false;
 }
 

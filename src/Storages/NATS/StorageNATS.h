@@ -71,8 +71,6 @@ public:
     void incrementReader();
     void decrementReader();
 
-    void startStreaming() { if (!mv_attached) { streaming_task->activateAndSchedule(); } }
-
 private:
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
