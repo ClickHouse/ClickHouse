@@ -722,7 +722,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     if (current_user_access_rights->contains(required_access_rights))
         return;
 
-    context->checkAccess(required_access);
+    context->checkAccess(required_access_rights.getElements());
 }
 
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
