@@ -1,6 +1,8 @@
 import os
 import time
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 # Tests that sizes of in-memory caches (mark / uncompressed / index mark / index uncompressed / mmapped file / query cache) can be changed
@@ -94,54 +96,61 @@ CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 
 
 def test_query_cache_size_is_runtime_configurable(start_cluster):
-    # the initial config specifies the maximum query cache size as 2, run 3 queries, expect 2 cache entries
     node.query("SYSTEM DROP QUERY CACHE")
+
+    # The initial config allows at most two query cache entries but we don't mind
     node.query("SELECT 1 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-    node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-    node.query("SELECT 3 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
 
     time.sleep(2)
-    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
-    res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
-    )
-    assert res == "2\n"
+    # At this point, the query cache contains one entry and it is stale
 
-    # switch to a config with a maximum query cache size of 1
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "1\n"
+
+    # switch to a config with a maximum query cache size of _0_
     node.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "smaller_query_cache.xml"),
+        os.path.join(CONFIG_DIR, "empty_query_cache.xml"),
         "/etc/clickhouse-server/config.d/default.xml",
     )
 
     node.query("SYSTEM RELOAD CONFIG")
 
-    # check that eviction worked as expected
-    time.sleep(2)
-    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
     res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
-    )
-    assert (
-        res == "2\n"
-    )  # "Why not 1?", you think. Reason is that QC uses the TTLCachePolicy that evicts lazily only upon insert.
-    # Not a real issue, can be changed later, at least there's a test now.
-
-    # Also, you may also wonder "why query_cache_ttl = 1"? Reason is that TTLCachePolicy only removes *stale* entries. With the default TTL
-    # (60 sec), no entries would be removed at all. Again: not a real issue, can be changed later and there's at least a test now.
-
-    # check that the new query cache maximum size is respected when more queries run
-    node.query("SELECT 4 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-    node.query("SELECT 5 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-
-    time.sleep(2)
-    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
-    res = node.query(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
+        "SELECT count(*) FROM system.query_cache",
     )
     assert res == "1\n"
+    # "Why not 0?", I hear you say. Reason is that QC uses the TTLCachePolicy that evicts lazily only upon insert.
+    # Not a real issue, can be changed later, at least there's a test now.
 
-    # restore the original config
+    # The next SELECT will find a single stale entry which is one entry too much according to the new config.
+    # This triggers the eviction of all stale entries, in this case the 'SELECT 1' result.
+    # Then, it tries to insert the 'SELECT 2' result but it also cannot be added according to the config.
+    node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "0\n"
+
+    # The new maximum cache size is respected when more queries run
+    node.query("SELECT 3 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "0\n"
+
+    # Restore the original config
     node.copy_file_to_container(
         os.path.join(CONFIG_DIR, "default.xml"),
         "/etc/clickhouse-server/config.d/default.xml",
     )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    # It is possible to insert entries again
+    node.query("SELECT 4 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "1\n"

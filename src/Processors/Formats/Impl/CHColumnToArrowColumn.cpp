@@ -2,6 +2,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
+#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -185,7 +186,7 @@ namespace DB
             }
             else
             {
-                auto value = static_cast<Int64>(column[value_i].get<DecimalField<DateTime64>>().getValue());
+                auto value = static_cast<Int64>(column[value_i].safeGet<DecimalField<DateTime64>>().getValue());
                 if (need_rescale)
                 {
                     if (common::mulOverflow(value, rescale_multiplier, value))

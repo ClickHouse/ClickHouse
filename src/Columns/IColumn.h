@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Common/COW.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
-#include <base/StringRef.h>
 #include <Core/TypeId.h>
+#include <base/StringRef.h>
+#include <Common/COW.h>
+#include <Common/Exception.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/typeid_cast.h>
 
 #include "config.h"
-
 
 class SipHash;
 class Collator;
@@ -49,6 +48,40 @@ struct EqualRange
 };
 
 using EqualRanges = std::vector<EqualRange>;
+
+/// A checkpoint that contains size of column and all its subcolumns.
+/// It can be used to rollback column to the previous state, for example
+/// after failed parsing when column may be in inconsistent state.
+struct ColumnCheckpoint
+{
+    size_t size;
+
+    explicit ColumnCheckpoint(size_t size_) : size(size_) {}
+    virtual ~ColumnCheckpoint() = default;
+};
+
+using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
+using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
+
+struct ColumnCheckpointWithNested : public ColumnCheckpoint
+{
+    ColumnCheckpointWithNested(size_t size_, ColumnCheckpointPtr nested_)
+        : ColumnCheckpoint(size_), nested(std::move(nested_))
+    {
+    }
+
+    ColumnCheckpointPtr nested;
+};
+
+struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
+{
+    ColumnCheckpointWithMultipleNested(size_t size_, ColumnCheckpoints nested_)
+        : ColumnCheckpoint(size_), nested(std::move(nested_))
+    {
+    }
+
+    ColumnCheckpoints nested;
+};
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -123,7 +156,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
     }
 
-    /// If column stores native numeric type, it returns n-th element casted to Float64
+    /// If column stores native numeric type, it returns n-th element cast to Float64
     /// Is used in regression methods to cast each features into uniform type
     [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
     {
@@ -135,7 +168,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
     }
 
-    /** If column is numeric, return value of n-th element, casted to UInt64.
+    /** If column is numeric, return value of n-th element, cast to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
@@ -152,7 +185,7 @@ public:
     [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
     [[nodiscard]] virtual bool isNullAt(size_t /*n*/) const { return false; }
 
-    /** If column is numeric, return value of n-th element, casted to bool.
+    /** If column is numeric, return value of n-th element, cast to bool.
       * For NULL values of Nullable column returns false.
       * Otherwise throw an exception.
       */
@@ -180,18 +213,42 @@ public:
 
     /// Appends n-th element from other column with the same type.
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertFrom(const IColumn & src, size_t n);
+#else
+    void insertFrom(const IColumn & src, size_t n)
+    {
+        assertTypeEquality(src);
+        doInsertFrom(src, n);
+    }
+#endif
 
     /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+#else
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length)
+    {
+        assertTypeEquality(src);
+        doInsertRangeFrom(src, start, length);
+    }
+#endif
 
     /// Appends one element from other column with the same type multiple times.
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     virtual void insertManyFrom(const IColumn & src, size_t position, size_t length)
     {
         for (size_t i = 0; i < length; ++i)
             insertFrom(src, position);
     }
+#else
+    void insertManyFrom(const IColumn & src, size_t position, size_t length)
+    {
+        assertTypeEquality(src);
+        doInsertManyFrom(src, position, length);
+    }
+#endif
 
     /// Appends one field multiple times. Can be optimized in inherited classes.
     virtual void insertMany(const Field & field, size_t length)
@@ -277,10 +334,10 @@ public:
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
-    /// Update hash function value. Hash is calculated for each element.
+    /// Get hash function value. Hash is calculated for each element.
     /// It's a fast weak hash function. Mainly need to scatter data between threads.
     /// WeakHash32 must have the same size as column.
-    virtual void updateWeakHash32(WeakHash32 & hash) const = 0;
+    virtual WeakHash32 getWeakHash32() const = 0;
 
     /// Update state of hash with all column.
     virtual void updateHashFast(SipHash & hash) const = 0;
@@ -322,7 +379,15 @@ public:
       *
       * For non Nullable and non floating point types, nan_direction_hint is ignored.
       */
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
+#else
+    [[nodiscard]] int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+    {
+        assertTypeEquality(rhs);
+        return doCompareAt(n, m, rhs, nan_direction_hint);
+    }
+#endif
 
 #if USE_EMBEDDED_COMPILER
 
@@ -444,6 +509,18 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// Returns the number of elements allocated in reserve.
+    virtual size_t capacity() const { return size(); }
+
+    /// Reserve memory before squashing all specified source columns into this column.
+    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
+    {
+        size_t new_size = size();
+        for (const auto & source_column : source_columns)
+            new_size += source_column->size();
+        reserve(new_size);
+    }
+
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
     virtual void shrinkToFit() {}
@@ -465,6 +542,17 @@ public:
     /// Make memory region readonly with mprotect if it is large enough.
     /// The operation is slow and performed only for debug builds.
     virtual void protect() {}
+
+    /// Returns checkpoint of current state of column.
+    virtual ColumnCheckpointPtr getCheckpoint() const { return std::make_shared<ColumnCheckpoint>(size()); }
+
+    /// Updates the checkpoint with current state. It is used to avoid extra allocations in 'getCheckpoint'.
+    virtual void updateCheckpoint(ColumnCheckpoint & checkpoint) const { checkpoint.size = size(); }
+
+    /// Rollbacks column to the checkpoint.
+    /// Unlike 'popBack' this method should work correctly even if column has invalid state.
+    /// Sizes of columns in checkpoint must be less or equal than current size.
+    virtual void rollback(const ColumnCheckpoint & checkpoint) { popBack(size() - checkpoint.size); }
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
@@ -513,7 +601,8 @@ public:
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    [[nodiscard]] virtual Ptr compress() const
+    /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
+    [[nodiscard]] virtual Ptr compress([[maybe_unused]] bool force_compression) const
     {
         /// No compression by default.
         return getPtr();
@@ -547,6 +636,9 @@ public:
 
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicStructure() const { return false; }
+
+    /// For columns with dynamic subcolumns checks if columns have equal dynamic structure.
+    [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
     virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
@@ -610,6 +702,8 @@ public:
 
     [[nodiscard]] virtual bool isSparse() const { return false; }
 
+    [[nodiscard]] virtual bool isConst() const { return false; }
+
     [[nodiscard]] virtual bool isCollationSupported() const { return false; }
 
     virtual ~IColumn() = default;
@@ -633,6 +727,29 @@ protected:
         Equals equals,
         Sort full_sort,
         PartialSort partial_sort) const;
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    virtual void doInsertFrom(const IColumn & src, size_t n);
+
+    virtual void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+
+    virtual void doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src, position);
+    }
+
+    virtual int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
+
+private:
+    void assertTypeEquality(const IColumn & rhs) const
+    {
+        /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
+        /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
+        /// For the rest of column types we can compare the types directly.
+        chassert((isConst() || isSparse()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+    }
+#endif
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -699,6 +816,15 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 template <typename Derived, typename Parent = IColumn>
 class IColumnHelper : public Parent
 {
+private:
+    using Self = IColumnHelper<Derived, Parent>;
+
+    friend Derived;
+    friend class COWHelper<Self, Derived>;
+
+    IColumnHelper() = default;
+    IColumnHelper(const IColumnHelper &) = default;
+
     /// Devirtualize insertFrom.
     MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override;
 

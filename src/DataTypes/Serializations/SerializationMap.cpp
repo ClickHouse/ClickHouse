@@ -6,6 +6,7 @@
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/JSONUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
@@ -40,7 +41,7 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & map = field.get<const Map &>();
+    const auto & map = field.safeGet<const Map &>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
@@ -55,15 +56,15 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large map size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.max_binary_array_size);
+            settings.binary.max_binary_string_size);
     field = Map();
-    Map & map = field.get<Map &>();
+    Map & map = field.safeGet<Map &>();
     map.reserve(size);
     for (size_t i = 0; i < size; ++i)
     {
@@ -89,6 +90,7 @@ template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
     const IColumn & column,
     size_t row_num,
+    const FormatSettings & settings,
     WriteBuffer & ostr,
     KeyWriter && key_writer,
     ValueWriter && value_writer) const
@@ -103,15 +105,31 @@ void SerializationMap::serializeTextImpl(
     size_t next_offset = offsets[row_num];
 
     writeChar('{', ostr);
-    for (size_t i = offset; i < next_offset; ++i)
+    if (offset != next_offset)
     {
-        if (i != offset)
-            writeChar(',', ostr);
-
-        key_writer(ostr, key, nested_tuple.getColumn(0), i);
-        writeChar(':', ostr);
-        value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        key_writer(ostr, key, nested_tuple.getColumn(0), offset);
+        if (settings.composed_data_type_output_format_mode == "spark")
+            writeString(std::string_view(" -> "), ostr);
+        else
+            writeChar(':', ostr);
+        value_writer(ostr, value, nested_tuple.getColumn(1), offset);
     }
+    if (settings.composed_data_type_output_format_mode == "spark")
+        for (size_t i = offset + 1; i < next_offset; ++i)
+        {
+            writeString(std::string_view(", "), ostr);
+            key_writer(ostr, key, nested_tuple.getColumn(0), i);
+            writeString(std::string_view(" -> "), ostr);
+            value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        }
+    else
+        for (size_t i = offset + 1; i < next_offset; ++i)
+        {
+            writeChar(',', ostr);
+            key_writer(ostr, key, nested_tuple.getColumn(0), i);
+            writeChar(':', ostr);
+            value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        }
     writeChar('}', ostr);
 }
 
@@ -220,10 +238,13 @@ void SerializationMap::serializeText(const IColumn & column, size_t row_num, Wri
 {
     auto writer = [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
     {
-        subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);
+        if (settings.composed_data_type_output_format_mode == "spark")
+            subcolumn_serialization->serializeText(subcolumn, pos, buf, settings);
+        else
+            subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, writer, writer);
+    serializeTextImpl(column, row_num, settings, ostr, writer, writer);
 }
 
 void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
@@ -265,7 +286,7 @@ bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, c
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeTextImpl(column, row_num, ostr,
+    serializeTextImpl(column, row_num, settings, ostr,
         [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
             /// We need to double-quote all keys (including integers) to produce valid JSON.
@@ -316,28 +337,51 @@ void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t ro
 }
 
 
-void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+template <typename ReturnType>
+ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, istr,
-        [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+    auto deserialize_nested = [&settings](IColumn & subcolumn, ReadBuffer & buf, const SerializationPtr & subcolumn_serialization) -> ReturnType
+    {
+        if constexpr (std::is_same_v<ReturnType, void>)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
                 SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
             else
                 subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
-        });
+        }
+        else
+        {
+            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
+                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+            return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
+        }
+    };
+
+    if (settings.json.empty_as_default)
+        return deserializeTextImpl<ReturnType>(column, istr,
+            [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
+            {
+                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(subcolumn, buf,
+                    [&deserialize_nested, &subcolumn_serialization](IColumn & subcolumn_, ReadBuffer & buf_) -> ReturnType
+                    {
+                        return deserialize_nested(subcolumn_, buf_, subcolumn_serialization);
+                    });
+            });
+    return deserializeTextImpl<ReturnType>(
+        column,
+        istr,
+        [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
+        { return deserialize_nested(subcolumn, buf, subcolumn_serialization); });
+}
+
+void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextJSONImpl<void>(column, istr, settings);
 }
 
 bool SerializationMap::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
-    {
-        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
-        return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
-    };
-
-    return deserializeTextImpl<bool>(column, istr, reader);
+    return deserializeTextJSONImpl<bool>(column, istr, settings);
 }
 
 void SerializationMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

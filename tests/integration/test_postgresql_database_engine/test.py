@@ -1,10 +1,10 @@
-import pytest
 import psycopg2
+import pytest
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 from helpers.postgres_utility import get_postgres_conn
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(

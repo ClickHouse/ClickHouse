@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-s3-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
 
 # set -x
 
@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-for STORAGE_POLICY in 's3_cache' 'local_cache'; do
+for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 
     $CLICKHOUSE_CLIENT --echo --query "DROP TABLE IF EXISTS test_02241"
@@ -16,7 +16,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM DROP FILESYSTEM CACHE"
 
-    $CLICKHOUSE_CLIENT --echo -n --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
+    $CLICKHOUSE_CLIENT --echo --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
         SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
@@ -37,7 +37,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)"
 
-    $CLICKHOUSE_CLIENT --echo -n --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
+    $CLICKHOUSE_CLIENT --echo --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
         SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
@@ -70,7 +70,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)"
 
-    $CLICKHOUSE_CLIENT --echo -n --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
+    $CLICKHOUSE_CLIENT --echo --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
         SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
@@ -109,7 +109,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM FLUSH LOGS"
 
-    $CLICKHOUSE_CLIENT -n --query "SELECT
+    $CLICKHOUSE_CLIENT --query "SELECT
         query, ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read
     FROM
         system.query_log

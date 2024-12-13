@@ -1,17 +1,20 @@
 #pragma once
 
-#include <Common/Allocator.h>
-#include <Common/BitHelpers.h>
-#include <Common/memcpySmall.h>
-#include <Common/PODArray_fwd.h>
+#include "config.h"
+
 #include <base/getPageSize.h>
 #include <boost/noncopyable.hpp>
+#include <Common/Allocator.h>
+#include <Common/BitHelpers.h>
+#include <Common/GWPAsan.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/memcpySmall.h>
+
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <cstddef>
-#include <cassert>
-#include <algorithm>
-#include <memory>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
@@ -618,12 +621,12 @@ public:
         {
             return;
         }
-        else if (!this->isInitialized() && rhs.isInitialized())
+        if (!this->isInitialized() && rhs.isInitialized())
         {
             do_move(rhs, *this);
             return;
         }
-        else if (this->isInitialized() && !rhs.isInitialized())
+        if (this->isInitialized() && !rhs.isInitialized())
         {
             do_move(*this, rhs);
             return;

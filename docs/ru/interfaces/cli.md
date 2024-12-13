@@ -141,6 +141,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 -   `--secure` — если указано, будет использован безопасный канал.
 -   `--history_file` - путь к файлу с историей команд.
 -   `--param_<name>` — значение параметра для [запроса с параметрами](#cli-queries-with-parameters).
+-   `--jwt` – авторизация с использованием JSON Web Token. Доступно только в ClickHouse Cloud.
 
 Вместо параметров `--host`, `--port`, `--user` и `--password` клиент ClickHouse также поддерживает строки подключения (смотри следующий раздел).
 

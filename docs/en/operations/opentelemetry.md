@@ -2,14 +2,10 @@
 slug: /en/operations/opentelemetry
 sidebar_position: 62
 sidebar_label: Tracing ClickHouse with OpenTelemetry
-title: "[experimental] Tracing ClickHouse with OpenTelemetry"
+title: "Tracing ClickHouse with OpenTelemetry"
 ---
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.
-
-:::note    
-This is an experimental feature that will change in backwards-incompatible ways in future releases.
-:::
 
 ## Supplying Trace Context to ClickHouse
 
@@ -34,6 +30,10 @@ To be useful, the tracing information has to be exported to a monitoring system 
 The table must be enabled in the server configuration, see the `opentelemetry_span_log` element in the default config file `config.xml`. It is enabled by default.
 
 The tags or attributes are saved as two parallel arrays, containing the keys and values. Use [ARRAY JOIN](../sql-reference/statements/select/array-join.md) to work with them.
+
+## Log-query-settings
+
+Setting [log_query_settings](settings/settings.md) allows log changes to query settings during query execution. When enabled, any modifications made to query settings will be recorded in the OpenTelemetry span log. This feature is particularly useful in production environments for tracking configuration changes that may affect query performance.
 
 ## Integration with monitoring systems
 

@@ -133,9 +133,8 @@ private:
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_)
-    : ISource(processor_->getHeader())
-    , processor(std::move(processor_))
+MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
+    : ISource(processor_->getHeader()), processor(std::move(processor_)), log_name(log_name_)
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -150,7 +149,7 @@ std::string MergeTreeSource::getName() const
     return processor->getName();
 }
 
-void MergeTreeSource::onCancel()
+void MergeTreeSource::onCancel() noexcept
 {
     processor->cancel();
 }
@@ -207,7 +206,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 
             try
             {
-                OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
+                OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
                 holder->setResult(processor->read());
             }
             catch (...)
@@ -222,7 +221,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     }
 #endif
 
-    OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
+    OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
     return processReadResult(processor->read());
 }
 

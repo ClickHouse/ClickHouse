@@ -278,10 +278,8 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
                 ++buf->position();
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected NULL value of not Nullable type {}", type->getName());
             }
-            else
-            {
-                --buf->position();
-            }
+
+            --buf->position();
         }
     }
 }
@@ -332,7 +330,7 @@ void TabSeparatedFormatReader::skipRow()
 
         if (istr.position() > istr.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        else if (pos == istr.buffer().end())
+        if (pos == istr.buffer().end())
             continue;
 
         if (!is_raw && *istr.position() == '\\')
@@ -350,7 +348,7 @@ void TabSeparatedFormatReader::skipRow()
                 ++istr.position();
             return;
         }
-        else if (*istr.position() == '\r')
+        if (*istr.position() == '\r')
         {
             ++istr.position();
             if (!istr.eof() && *istr.position() == '\n')
@@ -441,9 +439,10 @@ void registerTSVSchemaReader(FormatFactory & factory)
                         settings, is_raw ? FormatSettings::EscapingRule::Raw : FormatSettings::EscapingRule::Escaped);
                     if (!with_names)
                         result += fmt::format(
-                            ", column_names_for_schema_inference={}, try_detect_header={}",
+                            ", column_names_for_schema_inference={}, try_detect_header={}, skip_first_lines={}",
                             settings.column_names_for_schema_inference,
-                            settings.tsv.try_detect_header);
+                            settings.tsv.try_detect_header,
+                            settings.tsv.skip_first_lines);
                     return result;
                 });
             }
@@ -474,7 +473,7 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 
         if (pos > in.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        else if (pos == in.buffer().end())
+        if (pos == in.buffer().end())
             continue;
 
         if (!is_raw && *pos == '\\')

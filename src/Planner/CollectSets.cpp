@@ -12,12 +12,17 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Planner/Planner.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool transform_null_in;
+}
 
 namespace ErrorCodes
 {
@@ -69,16 +74,13 @@ public:
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set = getSetElementsForConstantValue(
-                in_first_argument->getResultType(),
-                constant_node->getValue(),
-                constant_node->getResultType(),
-                settings.transform_null_in);
+                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(), settings[Setting::transform_null_in]);
             DataTypes set_element_types = {in_first_argument->getResultType()};
             const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
             if (left_tuple_type && left_tuple_type->getElements().size() != 1)
                 set_element_types = left_tuple_type->getElements();
 
-            set_element_types = Set::getElementTypes(std::move(set_element_types), settings.transform_null_in);
+            set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
             auto set_key = in_second_argument->getTreeHash();
 
             if (sets.findTuple(set_key, set_element_types))

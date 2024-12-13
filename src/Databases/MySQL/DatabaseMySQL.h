@@ -9,7 +9,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -26,7 +25,7 @@ namespace DB
 {
 
 class Context;
-
+struct MySQLSettings;
 enum class MySQLDataTypesSupport : uint8_t;
 
 /** Real-time access to table list and table structure from remote MySQL

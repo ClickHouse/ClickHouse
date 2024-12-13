@@ -1,3 +1,6 @@
+-- Tags: no-random-merge-tree-settings, no-random-settings
+-- Because we compare part sizes, and they could be affected by index granularity and index compression settings.
+
 CREATE TABLE part_log_bytes_uncompressed (
     key UInt8,
     value UInt8
@@ -17,7 +20,8 @@ ALTER TABLE part_log_bytes_uncompressed DROP PART 'all_4_4_0' SETTINGS mutations
 
 SYSTEM FLUSH LOGS;
 
-SELECT event_type, table, part_name, bytes_uncompressed > 0, size_in_bytes < bytes_uncompressed FROM system.part_log
+SELECT event_type, table, part_name, bytes_uncompressed > 0, (bytes_uncompressed > 0 ? (size_in_bytes < bytes_uncompressed ? '1' : toString((size_in_bytes, bytes_uncompressed))) : '0')
+FROM system.part_log
 WHERE event_date >= yesterday() AND database = currentDatabase() AND table = 'part_log_bytes_uncompressed'
     AND (event_type != 'RemovePart' OR part_name = 'all_4_4_0') -- ignore removal of other parts
 ORDER BY part_name, event_type;

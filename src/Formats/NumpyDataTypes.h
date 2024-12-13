@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 namespace ErrorCodes
 {

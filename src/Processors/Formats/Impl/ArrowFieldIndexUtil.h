@@ -15,6 +15,7 @@
 #include <arrow/type_fwd.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Common/Exception.h>
+#include <parquet/metadata.h>
 
 
 namespace arrow
@@ -65,11 +66,22 @@ public:
         return result;
     }
 
+    // For a parquet schema {x: {i: int, j: int}}, this should be populated as follows
+    // clickhouse_index = 0, parquet_indexes = {0, 1}
+    struct ClickHouseIndexToParquetIndex
+    {
+        std::size_t clickhouse_index;
+        std::vector<int> parquet_indexes;
+    };
+
     /// Only collect the required fields' indices. Eg. when just read a field of a struct,
     /// don't need to collect the whole indices in this struct.
-    std::vector<int> findRequiredIndices(const Block & header, const arrow::Schema & schema)
+    std::vector<ClickHouseIndexToParquetIndex> findRequiredIndices(
+        const Block & header,
+        const arrow::Schema & schema,
+        const parquet::FileMetaData & file)
     {
-        std::vector<int> required_indices;
+        std::vector<ClickHouseIndexToParquetIndex> required_indices;
         std::unordered_set<int> added_indices;
         /// Flat all named fields' index information into a map.
         auto fields_indices = calculateFieldIndices(schema);
@@ -79,7 +91,7 @@ public:
             std::string col_name = named_col.name;
             if (ignore_case)
                 boost::to_lower(col_name);
-            findRequiredIndices(col_name, named_col.type, fields_indices, added_indices, required_indices);
+            findRequiredIndices(col_name, i, named_col.type, fields_indices, added_indices, required_indices, file);
         }
         return required_indices;
     }
@@ -169,10 +181,12 @@ private:
 
     void findRequiredIndices(
         const String & name,
+        std::size_t header_index,
         DataTypePtr data_type,
         const std::unordered_map<std::string, std::pair<int, int>> & field_indices,
         std::unordered_set<int> & added_indices,
-        std::vector<int> & required_indices)
+        std::vector<ClickHouseIndexToParquetIndex> & required_indices,
+        const parquet::FileMetaData & file)
     {
         auto nested_type = removeNullable(data_type);
         if (const DB::DataTypeTuple * type_tuple = typeid_cast<const DB::DataTypeTuple *>(nested_type.get()))
@@ -187,20 +201,20 @@ private:
                     if (ignore_case)
                         boost::to_lower(field_name);
                     const auto & field_type = field_types[i];
-                    findRequiredIndices(Nested::concatenateName(name, field_name), field_type, field_indices, added_indices, required_indices);
+                    findRequiredIndices(Nested::concatenateName(name, field_name), header_index, field_type, field_indices, added_indices, required_indices, file);
                 }
                 return;
             }
         }
         else if (const auto * type_array = typeid_cast<const DB::DataTypeArray *>(nested_type.get()))
         {
-            findRequiredIndices(name, type_array->getNestedType(), field_indices, added_indices, required_indices);
+            findRequiredIndices(name, header_index, type_array->getNestedType(), field_indices, added_indices, required_indices, file);
             return;
         }
         else if (const auto * type_map = typeid_cast<const DB::DataTypeMap *>(nested_type.get()))
         {
-            findRequiredIndices(name, type_map->getKeyType(), field_indices, added_indices, required_indices);
-            findRequiredIndices(name, type_map->getValueType(), field_indices, added_indices, required_indices);
+            findRequiredIndices(name, header_index, type_map->getKeyType(), field_indices, added_indices, required_indices, file);
+            findRequiredIndices(name, header_index, type_map->getValueType(), field_indices, added_indices, required_indices, file);
             return;
         }
         auto it = field_indices.find(name);
@@ -211,14 +225,18 @@ private:
         }
         else
         {
+            ClickHouseIndexToParquetIndex index_mapping;
+            index_mapping.clickhouse_index = header_index;
             for (int j = 0; j < it->second.second; ++j)
             {
                 auto index = it->second.first + j;
                 if (added_indices.insert(index).second)
                 {
-                    required_indices.emplace_back(index);
+                    index_mapping.parquet_indexes.emplace_back(index);
                 }
             }
+
+            required_indices.emplace_back(index_mapping);
         }
     }
 };

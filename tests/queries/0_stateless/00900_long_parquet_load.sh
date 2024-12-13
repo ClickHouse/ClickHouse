@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-debug
+# Tags: long, no-fasttest, no-debug, no-asan, no-msan, no-tsan
 
 #
 # Load all possible .parquet files found in submodules.
@@ -57,14 +57,14 @@ for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_A
     # COLUMNS=`$CUR_DIR/00900_parquet_create_table_columns.py $JSON` 2>&1 || continue
     COLUMNS=$(cat "$COLUMNS_FILE") || continue
 
-    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS parquet_load"
-    $CLICKHOUSE_CLIENT --multiquery <<EOF
-CREATE TABLE parquet_load ($COLUMNS) ENGINE = Memory;
-EOF
+    ${CLICKHOUSE_CLIENT} -n --query="
+        DROP TABLE IF EXISTS parquet_load;
+        CREATE TABLE parquet_load ($COLUMNS) ENGINE = Memory;"
 
     # Some files contain unsupported data structures, exception is ok.
     ${CLICKHOUSE_CLIENT} --query="INSERT INTO parquet_load FORMAT Parquet" < "$DATA_DIR"/"$NAME" 2>&1 | sed 's/Exception/Ex---tion/'
 
-    ${CLICKHOUSE_CLIENT} --query="SELECT * FROM parquet_load ORDER BY tuple(*) LIMIT 100"
-    ${CLICKHOUSE_CLIENT} --query="DROP TABLE parquet_load"
+    ${CLICKHOUSE_CLIENT} -n --query="
+        SELECT * FROM parquet_load ORDER BY tuple(*) LIMIT 100;
+        DROP TABLE parquet_load;"
 done

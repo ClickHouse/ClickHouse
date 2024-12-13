@@ -1,9 +1,10 @@
 ---
 slug: /en/sql-reference/window-functions/
-sidebar_position: 62
 sidebar_label: Window Functions
-title: Window Functions
+sidebar_position: 1
 ---
+
+# Window Functions 
 
 Windows functions let you perform calculations across a set of rows that are related to the current row.
 Some of the calculations that you can do are similar to those that can be done with an aggregate function, but a window function doesn't cause rows to be grouped into a single output - the individual rows are still returned.
@@ -12,8 +13,8 @@ Some of the calculations that you can do are similar to those that can be done w
 
 ClickHouse supports the standard grammar for defining windows and window functions. The table below indicates whether a feature is currently supported.
 
-| Feature                                                                            | Supported?                                                                                                                                                                       |
-|------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Feature                                                                  | Supported?                                                                                                                                                                       |
+|--------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ad hoc window specification (`count(*) over (partition by id order by time desc)`) | ✅                                                                                                                                                                                  |
 | expressions involving window functions, e.g. `(count(*) over ()) / 2)`             | ✅                                                                                                                                                                                   |
 | `WINDOW` clause (`select ... from table window w as (partition by id)`)            | ✅                                                                                                                                                                                   |
@@ -22,7 +23,8 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `INTERVAL` syntax for `DateTime` `RANGE OFFSET` frame                              | ❌ (specify the number of seconds instead (`RANGE` works with any numeric type).)                                                                                                                                 |
 | `GROUPS` frame                                                                     | ❌                                                                                                                                                                               |
 | Calculating aggregate functions over a frame (`sum(value) over (order by time)`)   | ✅ (All aggregate functions are supported)                                                                                                                                                       |
-| `rank()`, `dense_rank()`, `row_number()`                                           | ✅                                                                                                                                                                                   |
+| `rank()`, `dense_rank()`, `row_number()`                                           | ✅ <br/>Alias: `denseRank()`                                                                                                                                                                                   |
+| `percent_rank()` | ✅  Efficiently computes the relative standing of a value within a partition in a dataset. This function effectively replaces the more verbose and computationally intensive manual SQL calculation expressed as `ifNull((rank() OVER(PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER(PARTITION BY x) - 1, 0), 0)` <br/>Alias: `percentRank()`| 
 | `lag/lead(value, offset)`                                                          | ❌ <br/> You can use one of the following workarounds:<br/> 1) `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead` <br/> 2) `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following`                                                                 |
 | ntile(buckets) | ✅ <br/> Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
 
@@ -36,7 +38,7 @@ Finds non-negative derivative for given `metric_column` by `timestamp_column`.
 `INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
 The computed value is the following for each row:
 - `0` for 1st row,
-- ${metric_i - metric_{i-1} \over timestamp_i - timestamp_{i-1}}  * interval$ for $i_th$ row.
+- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}}  * \text{interval}$ for $i_{th}$ row.
 
 ## Syntax
 
@@ -45,7 +47,7 @@ aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
-WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]])
 ```
 
 - `PARTITION BY` - defines how to break a resultset into groups.
@@ -74,14 +76,14 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 
 These functions can be used only as a window function.
 
-- `row_number()` - Number the current row within its partition starting from 1.
-- `first_value(x)` - Return the first non-NULL value evaluated within its ordered frame.
-- `last_value(x)` -	Return the last non-NULL value evaluated within its ordered frame.
-- `nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
-- `rank()` - Rank the current row within its partition with gaps.
-- `dense_rank()` - Rank the current row within its partition without gaps.
-- `lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
-- `leadInFrame(x)` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
+- [`row_number()`](./row_number.md) - Number the current row within its partition starting from 1.
+- [`first_value(x)`](./first_value.md) - Return the first value evaluated within its ordered frame.
+- [`last_value(x)`](./last_value.md) -	Return the last value evaluated within its ordered frame.
+- [`nth_value(x, offset)`](./nth_value.md) - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+- [`rank()`](./rank.md) - Rank the current row within its partition with gaps.
+- [`dense_rank()`](./dense_rank.md) - Rank the current row within its partition without gaps.
+- [`lagInFrame(x)`](./lagInFrame.md) - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+- [`leadInFrame(x)`](./leadInFrame.md) - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 ## Examples
 
@@ -108,8 +110,10 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql
-SELECT player, salary, 
-       row_number() OVER (ORDER BY salary) AS row
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row
 FROM salaries;
 ```
 
@@ -124,10 +128,12 @@ FROM salaries;
 ```
 
 ```sql
-SELECT player, salary, 
-       row_number() OVER (ORDER BY salary) AS row,
-       rank() OVER (ORDER BY salary) AS rank,
-       dense_rank() OVER (ORDER BY salary) AS denseRank
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row,
+    rank() OVER (ORDER BY salary ASC) AS rank,
+    dense_rank() OVER (ORDER BY salary ASC) AS denseRank
 FROM salaries;
 ```
 
@@ -146,9 +152,12 @@ FROM salaries;
 Compare each player's salary to the average for their team.
 
 ```sql
-SELECT player, salary, team,
-       avg(salary) OVER (PARTITION BY team) AS teamAvg,
-       salary - teamAvg AS diff
+SELECT
+    player,
+    salary,
+    team,
+    avg(salary) OVER (PARTITION BY team) AS teamAvg,
+    salary - teamAvg AS diff
 FROM salaries;
 ```
 
@@ -165,14 +174,17 @@ FROM salaries;
 Compare each player's salary to the maximum for their team.
 
 ```sql
-SELECT player, salary, team,
-       max(salary) OVER (PARTITION BY team) AS teamAvg,
-       salary - teamAvg AS diff
+SELECT
+    player,
+    salary,
+    team,
+    max(salary) OVER (PARTITION BY team) AS teamMax,
+    salary - teamMax AS diff
 FROM salaries;
 ```
 
 ```text
-┌─player──────────┬─salary─┬─team──────────────────────┬─teamAvg─┬───diff─┐
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamMax─┬───diff─┐
 │ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  190000 │      0 │
 │ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  190000 │ -40000 │
 │ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
@@ -238,7 +250,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -255,23 +267,27 @@ ORDER BY
 ```
 
 ```sql
--- short form - no bound expression, no order by
+-- short form - no bound expression, no order by,
+-- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
 SELECT
     part_key,
     value,
     order,
-    groupArray(value) OVER (PARTITION BY part_key) AS frame_values
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key
+         ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
-┌─part_key─┬─value─┬─order─┬─frame_values─┐
-│        1 │     1 │     1 │ [1,2,3,4,5]  │
-│        1 │     2 │     2 │ [1,2,3,4,5]  │
-│        1 │     3 │     3 │ [1,2,3,4,5]  │
-│        1 │     4 │     4 │ [1,2,3,4,5]  │
-│        1 │     5 │     5 │ [1,2,3,4,5]  │
-└──────────┴───────┴───────┴──────────────┘
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
 ```
 
 ```sql
@@ -283,7 +299,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -301,22 +317,27 @@ ORDER BY
 
 ```sql
 -- short form (frame is bounded by the beginning of a partition and the current row)
+-- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 SELECT
     part_key,
     value,
     order,
-    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
-┌─part_key─┬─value─┬─order─┬─frame_values─┐
-│        1 │     1 │     1 │ [1]          │
-│        1 │     2 │     2 │ [1,2]        │
-│        1 │     3 │     3 │ [1,2,3]      │
-│        1 │     4 │     4 │ [1,2,3,4]    │
-│        1 │     5 │     5 │ [1,2,3,4,5]  │
-└──────────┴───────┴───────┴──────────────┘
+
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]                │ [1]          │
+│        1 │     2 │     2 │ [1,2]              │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]            │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]          │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
 ```
 
 ```sql
@@ -330,6 +351,7 @@ FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┐
 │        1 │     1 │     1 │ [5,4,3,2,1]  │
 │        1 │     2 │     2 │ [5,4,3,2]    │
@@ -348,7 +370,7 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN 1 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
     ) AS frame_values
 FROM wf_frame
 ORDER BY
@@ -365,7 +387,7 @@ ORDER BY
 ```
 
 ```sql
--- sliding frame - Rows BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
+-- sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
 SELECT
     part_key,
     value,
@@ -373,12 +395,13 @@ SELECT
     groupArray(value) OVER (
         PARTITION BY part_key 
         ORDER BY order ASC
-        Rows BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING
+        ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING
     ) AS frame_values
 FROM wf_frame
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┐
 │        1 │     1 │     1 │ [1,2,3,4,5]  │
 │        1 │     2 │     2 │ [1,2,3,4,5]  │
@@ -405,11 +428,12 @@ WINDOW
     w2 AS (
         PARTITION BY part_key 
         ORDER BY order DESC 
-        Rows BETWEEN 1 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
     )
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─part_key─┬─value─┬─order─┬─frame_values─┬─rn_1─┬─rn_2─┬─rn_3─┬─rn_4─┐
 │        1 │     1 │     1 │ [5,4,3,2,1]  │    5 │    5 │    5 │    2 │
 │        1 │     2 │     2 │ [5,4,3,2]    │    4 │    4 │    4 │    2 │
@@ -431,10 +455,11 @@ SELECT
 FROM wf_frame
 WINDOW
     w1 AS (PARTITION BY part_key ORDER BY order ASC),
-    w2 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 1 PRECEDING AND CURRENT ROW)
+    w2 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
     value ASC;
+
 ┌─frame_values_1─┬─first_value_1─┬─last_value_1─┬─frame_values_2─┬─first_value_2─┬─last_value_2─┐
 │ [1]            │             1 │            1 │ [1]            │             1 │            1 │
 │ [1,2]          │             1 │            2 │ [1,2]          │             1 │            2 │
@@ -450,10 +475,11 @@ SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(value, 2) OVER w1 AS second_value
 FROM wf_frame
-WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 3 PRECEDING AND CURRENT ROW)
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
-    value ASC
+    value ASC;
+
 ┌─frame_values_1─┬─second_value─┐
 │ [1]            │            0 │
 │ [1,2]          │            2 │
@@ -469,10 +495,11 @@ SELECT
     groupArray(value) OVER w1 AS frame_values_1,
     nth_value(toNullable(value), 2) OVER w1 AS second_value
 FROM wf_frame
-WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC Rows BETWEEN 3 PRECEDING AND CURRENT ROW)
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
 ORDER BY
     part_key ASC,
-    value ASC
+    value ASC;
+
 ┌─frame_values_1─┬─second_value─┐
 │ [1]            │         ᴺᵁᴸᴸ │
 │ [1,2]          │            2 │
@@ -612,7 +639,7 @@ SELECT
     avg(value) OVER (
         PARTITION BY metric 
         ORDER BY ts ASC 
-        Rows BETWEEN 2 PRECEDING AND CURRENT ROW
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
     ) AS moving_avg_temp
 FROM sensors
 ORDER BY

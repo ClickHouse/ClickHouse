@@ -40,6 +40,7 @@ struct CalendarTimeInterval
 
     /// Add this interval to the timestamp. First months, then seconds.
     /// Gets weird near month boundaries: October 31 + 1 month = December 1.
+    /// The returned timestamp is always 28-31 days greater than t.
     std::chrono::sys_seconds advance(std::chrono::system_clock::time_point t) const;
 
     /// Rounds the timestamp down to the nearest timestamp "aligned" with this interval.

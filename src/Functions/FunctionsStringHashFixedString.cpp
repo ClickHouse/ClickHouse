@@ -14,10 +14,11 @@
 #endif
 
 #if USE_SSL
+#    include <openssl/evp.h>
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
+#    include <openssl/ripemd.h>
 #    include <openssl/sha.h>
-#    include <openssl/evp.h>
 #endif
 
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file
@@ -175,6 +176,23 @@ struct SHA512Impl256
         EVP_MD_CTX_destroy(md_ctx);
     }
 };
+
+struct RIPEMD160Impl
+{
+    static constexpr auto name = "RIPEMD160";
+    enum
+    {
+        length = RIPEMD160_DIGEST_LENGTH
+    };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        RIPEMD160_CTX ctx;
+        RIPEMD160_Init(&ctx);
+        RIPEMD160_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+        RIPEMD160_Final(out_char_data, &ctx);
+    }
+};
 #endif
 
 #if USE_BLAKE3
@@ -224,7 +242,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
         {
@@ -233,11 +251,10 @@ public:
             const typename ColumnString::Chars & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             auto & chars_to = col_to->getChars();
-            const auto size = offsets.size();
-            chars_to.resize(size * Impl::length);
+            chars_to.resize(input_rows_count * Impl::length);
 
             ColumnString::Offset current_offset = 0;
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 Impl::apply(
                     reinterpret_cast<const char *>(&data[current_offset]),
@@ -249,42 +266,35 @@ public:
 
             return col_to;
         }
-        else if (const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
+        if (const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
             const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
-            const auto size = col_from_fix->size();
             auto & chars_to = col_to->getChars();
             const auto length = col_from_fix->getN();
-            chars_to.resize(size * Impl::length);
-            for (size_t i = 0; i < size; ++i)
+            chars_to.resize(input_rows_count * Impl::length);
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 Impl::apply(
                     reinterpret_cast<const char *>(&data[i * length]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
             return col_to;
         }
-        else if (const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
+        if (const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
             const typename ColumnIPv6::Container & data = col_from_ip->getData();
-            const auto size = col_from_ip->size();
             auto & chars_to = col_to->getChars();
             const auto length = sizeof(IPv6::UnderlyingType);
-            chars_to.resize(size * Impl::length);
-            for (size_t i = 0; i < size; ++i)
+            chars_to.resize(input_rows_count * Impl::length);
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Impl::apply(
-                    reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+                Impl::apply(reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
             return col_to;
         }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(),
-                getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -300,7 +310,22 @@ REGISTER_FUNCTION(HashFixedStrings)
     using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
     using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
     using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
+    using FunctionRIPEMD160 = FunctionStringHashFixedString<RIPEMD160Impl>;
 
+    factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
+        .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
+        .syntax = "SELECT RIPEMD160(s);",
+        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
+        .returned_value
+        = "The RIPEMD160 hash of the given input string returned as a [FixedString(20)](../../sql-reference/data-types/fixedstring.md).",
+        .examples
+        = {{"",
+            "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
+            R"(
+┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
+│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
+└───────────────────────────────────────────────────────────────┘
+         )"}}});
     factory.registerFunction<FunctionMD4>(FunctionDocumentation{
         .description = R"(Calculates the MD4 hash of the given string.)",
         .syntax = "SELECT MD4(s);",
@@ -419,17 +444,15 @@ REGISTER_FUNCTION(HashFixedStrings)
 
 #    if USE_BLAKE3
     using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
-    factory.registerFunction<FunctionBLAKE3>(
-        FunctionDocumentation{
-            .description = R"(
+    factory.registerFunction<FunctionBLAKE3>(FunctionDocumentation{
+        .description = R"(
     Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
     This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
     The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
-            .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-            .categories{"Hash"}},
-        FunctionFactory::CaseSensitive);
+        .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
+        .categories{"Hash"}});
 #    endif
 }
 #endif

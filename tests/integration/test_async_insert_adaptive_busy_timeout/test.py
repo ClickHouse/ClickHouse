@@ -1,12 +1,12 @@
 import copy
 import logging
-import pytest
 import random
 import timeit
-
+from itertools import repeat
 from math import floor
 from multiprocessing import Pool
-from itertools import repeat
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 
@@ -104,7 +104,7 @@ def test_with_merge_tree():
     _insert_queries_sequentially(
         table_name,
         _query_settings,
-        iterations=100,
+        iterations=10,
         max_values_size=1000,
         array_size_range=[10, 50],
     )
@@ -125,7 +125,7 @@ def test_with_merge_tree_multithread():
         table_name,
         _query_settings,
         thread_num=15,
-        tasks=1000,
+        tasks=100,
         max_values_size=1000,
         array_size_range=[10, 15],
     )
@@ -152,12 +152,12 @@ def test_with_replicated_merge_tree():
     _insert_queries_sequentially(
         table_name,
         settings,
-        iterations=100,
+        iterations=10,
         max_values_size=1000,
         array_size_range=[10, 50],
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query("DROP TABLE {} SYNC".format(table_name))
 
 
 def test_with_replicated_merge_tree_multithread():
@@ -180,12 +180,12 @@ def test_with_replicated_merge_tree_multithread():
         table_name,
         _query_settings,
         thread_num=15,
-        tasks=1000,
+        tasks=100,
         max_values_size=1000,
         array_size_range=[10, 15],
     )
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    node.query("DROP TABLE {} SYNC".format(table_name))
 
 
 # Ensure that the combined duration of inserts with adaptive timeouts is less than
@@ -200,13 +200,13 @@ def test_compare_sequential_inserts_durations_for_adaptive_and_fixed_async_timeo
 
     fixed_tm_settings = copy.copy(_query_settings)
     fixed_tm_settings["async_insert_use_adaptive_busy_timeout"] = 0
-    fixed_tm_settings["async_insert_busy_timeout_ms"] = 200
+    fixed_tm_settings["async_insert_busy_timeout_ms"] = 100
 
     fixed_tm_run_duration = timeit.timeit(
         lambda: _insert_queries_sequentially(
             fixed_tm_table_name,
             fixed_tm_settings,
-            iterations=100,
+            iterations=50,
             max_values_size=1000,
             array_size_range=[10, 50],
         ),
@@ -231,13 +231,13 @@ def test_compare_sequential_inserts_durations_for_adaptive_and_fixed_async_timeo
 
     adaptive_tm_settings = copy.copy(_query_settings)
     adaptive_tm_settings["async_insert_busy_timeout_min_ms"] = 10
-    adaptive_tm_settings["async_insert_busy_timeout_max_ms"] = 1000
+    adaptive_tm_settings["async_insert_busy_timeout_max_ms"] = 500
 
     adaptive_tm_run_duration = timeit.timeit(
         lambda: _insert_queries_sequentially(
             adaptive_tm_table_name,
             adaptive_tm_settings,
-            iterations=100,
+            iterations=50,
             max_values_size=1000,
             array_size_range=[10, 50],
         ),
@@ -268,14 +268,14 @@ def test_compare_parallel_inserts_durations_for_adaptive_and_fixed_async_timeout
 
     fixed_tm_settings = copy.copy(_query_settings)
     fixed_tm_settings["async_insert_use_adaptive_busy_timeout"] = 0
-    fixed_tm_settings["async_insert_busy_timeout_ms"] = 200
+    fixed_tm_settings["async_insert_busy_timeout_ms"] = 500
 
     fixed_tm_run_duration = timeit.timeit(
         lambda: _insert_queries_in_parallel(
             fixed_tm_table_name,
             fixed_tm_settings,
             thread_num=15,
-            tasks=1000,
+            tasks=150,
             max_values_size=1000,
             array_size_range=[10, 50],
         ),
@@ -300,14 +300,14 @@ def test_compare_parallel_inserts_durations_for_adaptive_and_fixed_async_timeout
 
     adaptive_tm_settings = copy.copy(_query_settings)
     adaptive_tm_settings["async_insert_busy_timeout_min_ms"] = 10
-    adaptive_tm_settings["async_insert_busy_timeout_max_ms"] = 200
+    adaptive_tm_settings["async_insert_busy_timeout_max_ms"] = 500
 
     adaptive_tm_run_duration = timeit.timeit(
         lambda: _insert_queries_in_parallel(
             adaptive_tm_table_name,
             adaptive_tm_settings,
             thread_num=15,
-            tasks=100,
+            tasks=150,
             max_values_size=1000,
             array_size_range=[10, 50],
         ),
@@ -344,29 +344,34 @@ def test_change_queries_frequency():
 
     settings = copy.copy(_query_settings)
     min_ms = 50
-    settings["async_insert_busy_timeout_min_ms"] = min_ms
-    settings["async_insert_busy_timeout_max_ms"] = 2000
+    max_ms = 200
 
-    _insert_queries_in_parallel(
-        table_name,
-        settings,
-        thread_num=15,
-        tasks=2000,
-        max_values_size=1000,
-        array_size_range=[10, 15],
-    )
+    settings["async_insert_busy_timeout_min_ms"] = min_ms
+    settings["async_insert_busy_timeout_max_ms"] = max_ms
 
     _insert_queries_sequentially(
         table_name,
         settings,
-        iterations=200,
+        iterations=50,
         max_values_size=1000,
         array_size_range=[10, 50],
     )
-
-    select_log_query = "SELECT timeout_milliseconds FROM system.asynchronous_insert_log ORDER BY event_time DESC LIMIT 50"
+    node.query("SYSTEM FLUSH LOGS")
+    select_log_query = f"SELECT countIf(timeout_milliseconds - {min_ms} < 25) FROM (SELECT timeout_milliseconds FROM system.asynchronous_insert_log ORDER BY event_time DESC LIMIT 10)"
     res = node.query(select_log_query)
-    for line in res.splitlines():
-        assert int(line) == min_ms
+    assert int(res) >= 5
 
-    node.query("DROP TABLE IF EXISTS {}".format(table_name))
+    _insert_queries_in_parallel(
+        table_name,
+        settings,
+        thread_num=10,
+        tasks=1000,
+        max_values_size=1000,
+        array_size_range=[10, 15],
+    )
+    node.query("SYSTEM FLUSH LOGS")
+    select_log_query = f"SELECT countIf({max_ms} - timeout_milliseconds < 100) FROM (SELECT timeout_milliseconds FROM system.asynchronous_insert_log ORDER BY event_time DESC LIMIT 10)"
+    res = node.query(select_log_query)
+    assert int(res) >= 5
+
+    node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))

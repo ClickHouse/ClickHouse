@@ -3,7 +3,6 @@
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 
 namespace DB
 {
@@ -26,6 +25,7 @@ class FormatWithNamesAndTypesReader;
 ///    will be compared types from header.
 /// It's important that firstly this class reads/skips names and only
 /// then reads/skips types. So you can this invariant.
+template <typename FormatReaderImpl>
 class RowInputFormatWithNamesAndTypes : public RowInputFormatWithDiagnosticInfo
 {
 protected:
@@ -41,14 +41,14 @@ protected:
         bool with_names_,
         bool with_types_,
         const FormatSettings & format_settings_,
-        std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_,
-        bool try_detect_header_ = false,
-        bool allow_variable_number_of_columns_ = false);
+        std::unique_ptr<FormatReaderImpl> format_reader_,
+        bool try_detect_header_ = false);
 
     void resetParser() override;
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
     void setReadBuffer(ReadBuffer & in_) override;
     void readPrefix() override;
+    bool supportsCustomSerializations() const override { return true; }
 
     const FormatSettings format_settings;
     DataTypes data_types;
@@ -67,8 +67,8 @@ private:
 protected:
     bool with_names;
     bool with_types;
-    bool allow_variable_number_of_columns;
-    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
+
+    std::unique_ptr<FormatReaderImpl> format_reader;
     Block::NameMap column_indexes_by_names;
 
 private:

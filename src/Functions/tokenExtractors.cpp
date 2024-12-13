@@ -73,7 +73,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto column_offsets = ColumnArray::ColumnOffsets::create();
 
@@ -90,9 +90,9 @@ public:
             auto input_column = arguments[0].column;
 
             if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-                executeImpl(extractor, *column_string, *result_column_string, *column_offsets);
+                executeImpl(extractor, *column_string, *result_column_string, *column_offsets, input_rows_count);
             else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-                executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets);
+                executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
 
             return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
         }
@@ -105,9 +105,9 @@ public:
             auto input_column = arguments[0].column;
 
             if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-                executeImpl(extractor, *column_string, *result_column_string, *column_offsets);
+                executeImpl(extractor, *column_string, *result_column_string, *column_offsets, input_rows_count);
             else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-                executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets);
+                executeImpl(extractor, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
 
             return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
         }
@@ -120,15 +120,15 @@ private:
         const ExtractorType & extractor,
         StringColumnType & input_data_column,
         ResultStringColumnType & result_data_column,
-        ColumnArray::ColumnOffsets & offsets_column) const
+        ColumnArray::ColumnOffsets & offsets_column,
+        size_t input_rows_count) const
     {
         size_t current_tokens_size = 0;
         auto & offsets_data = offsets_column.getData();
 
-        size_t column_size = input_data_column.size();
-        offsets_data.resize(column_size);
+        offsets_data.resize(input_rows_count);
 
-        for (size_t i = 0; i < column_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto data = input_data_column.getDataAt(i);
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+#include <string>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include "CommonPathPrefixKeyGenerator.h"
@@ -15,7 +17,7 @@ template <typename BaseObjectStorage>
 class PlainRewritableObjectStorage : public BaseObjectStorage
 {
 public:
-    template <class... Args>
+    template <typename... Args>
     explicit PlainRewritableObjectStorage(MetadataStorageMetrics && metadata_storage_metrics_, Args &&... args)
         : BaseObjectStorage(std::forward<Args>(args)...)
         , metadata_storage_metrics(std::move(metadata_storage_metrics_))
@@ -33,9 +35,10 @@ public:
 
     bool isPlain() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
-    ObjectStorageKey generateObjectKeyPrefixForDirectoryPath(const std::string & path) const override;
+    ObjectStorageKey
+    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { key_generator = gen; }
 
@@ -46,20 +49,22 @@ private:
 
 
 template <typename BaseObjectStorage>
-ObjectStorageKey PlainRewritableObjectStorage<BaseObjectStorage>::generateObjectKeyForPath(const std::string & path) const
+ObjectStorageKey PlainRewritableObjectStorage<BaseObjectStorage>::generateObjectKeyForPath(
+    const std::string & path, const std::optional<std::string> & key_prefix) const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
-    return key_generator->generate(path, /* is_directory */ false);
+    return key_generator->generate(path, /* is_directory */ false, key_prefix);
 }
 
 template <typename BaseObjectStorage>
-ObjectStorageKey PlainRewritableObjectStorage<BaseObjectStorage>::generateObjectKeyPrefixForDirectoryPath(const std::string & path) const
+ObjectStorageKey PlainRewritableObjectStorage<BaseObjectStorage>::generateObjectKeyPrefixForDirectoryPath(
+    const std::string & path, const std::optional<std::string> & key_prefix) const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
-    return key_generator->generate(path, /* is_directory */ true);
+    return key_generator->generate(path, /* is_directory */ true, key_prefix);
 }
 }

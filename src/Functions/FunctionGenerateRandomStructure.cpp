@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
+#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
 
@@ -15,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_suspicious_low_cardinality_types;
+}
 
 namespace ErrorCodes
 {
@@ -354,6 +359,11 @@ namespace
     }
 }
 
+    FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
+    {
+        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
+    }
+
 DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.size() > 2)
@@ -405,9 +415,10 @@ ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndN
     auto col_res = ColumnString::create();
     auto & string_column = assert_cast<ColumnString &>(*col_res);
     auto & chars = string_column.getChars();
-    WriteBufferFromVector buf(chars);
-    writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
-    buf.finalize();
+    {
+        auto buf = WriteBufferFromVector<ColumnString::Chars>(chars);
+        writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
+    }
     chars.push_back(0);
     string_column.getOffsets().push_back(chars.size());
     return ColumnConst::create(std::move(col_res), input_rows_count);
@@ -418,7 +429,7 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
     pcg64 rng(seed);
     size_t number_of_columns = generateNumberOfColumns(rng);
     WriteBufferFromOwnString buf;
-    writeRandomStructure(rng, number_of_columns, buf, context->getSettingsRef().allow_suspicious_low_cardinality_types);
+    writeRandomStructure(rng, number_of_columns, buf, context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types]);
     return buf.str();
 }
 
@@ -439,8 +450,7 @@ The function returns a value of type String.
                 {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
             },
             .categories{"Random"}
-        },
-        FunctionFactory::CaseSensitive);
+        });
 }
 
 }

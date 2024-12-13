@@ -79,8 +79,7 @@ public:
 
             return return_type;
         }
-        else
-            return arguments[2].type;
+        return arguments[2].type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

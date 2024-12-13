@@ -53,12 +53,16 @@ DROP TABLE src;
 CREATE TABLE src (p UInt64, k String, d UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY k;
 INSERT INTO src VALUES (1, '0', 1);
 INSERT INTO src VALUES (1, '1', 1);
+INSERT INTO src VALUES (2, '2', 1);
+INSERT INTO src VALUES (3, '3', 1);
 
 SYSTEM STOP MERGES dst;
-INSERT INTO dst VALUES (1, '1', 2);
+INSERT INTO dst VALUES (1, '1', 2), (1, '2', 0);
 ALTER TABLE dst ATTACH PARTITION 1 FROM src;
 SELECT count(), sum(d) FROM dst;
 
+ALTER TABLE dst ATTACH PARTITION ALL FROM src;
+SELECT count(), sum(d) FROM dst;
 
 SELECT 'OPTIMIZE';
 SELECT count(), sum(d), uniqExact(_part) FROM dst;

@@ -257,7 +257,7 @@ template <typename T> struct AggregateFunctionUniqTraits
 {
     static UInt64 hash(T x)
     {
-        if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
+        if constexpr (is_floating_point<T>)
         {
             return bit_cast<UInt64>(x);
         }
@@ -458,6 +458,8 @@ public:
     }
 
     bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
+
+    constexpr static bool parallelizeMergeWithKey() { return true; }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {

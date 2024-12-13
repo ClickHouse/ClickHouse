@@ -165,7 +165,7 @@ private:
             });
         }
 
-        validateFunctionArgumentTypes(*this, arguments,
+        validateFunctionArguments(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
@@ -174,6 +174,11 @@ private:
             optional_args
         );
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -241,10 +246,9 @@ private:
             {
                 return doEncryptImpl<CipherMode::RFC5116_AEAD_AES_GCM>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
-            else
-            {
-                return doEncryptImpl<CipherMode::OpenSSLCompatibility>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
-            }
+
+            return doEncryptImpl<CipherMode::OpenSSLCompatibility>(
+                evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
         }
 
         return nullptr;
@@ -438,7 +442,7 @@ private:
             });
         }
 
-        validateFunctionArgumentTypes(*this, arguments,
+        validateFunctionArguments(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},
@@ -450,6 +454,11 @@ private:
         if constexpr (use_null_when_decrypt_fail)
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -517,10 +526,9 @@ private:
             {
                 return doDecryptImpl<CipherMode::RFC5116_AEAD_AES_GCM, use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
-            else
-            {
-                return doDecryptImpl<CipherMode::OpenSSLCompatibility, use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
-            }
+
+            return doDecryptImpl<CipherMode::OpenSSLCompatibility, use_null_when_decrypt_fail>(
+                evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
         }
 
         return nullptr;

@@ -9,7 +9,8 @@ ORDER BY id;
 SET async_insert = 1;
 SET async_insert_deduplicate = 1;
 SET wait_for_async_insert = 0;
-SET async_insert_busy_timeout_min_ms = 100000;
+-- Disable adaptive timeout to prevent immediate push of the first message (if the queue last push was old)
+SET async_insert_use_adaptive_busy_timeout=0;
 SET async_insert_busy_timeout_max_ms = 1000000;
 
 SET insert_deduplication_token = '1';
@@ -30,7 +31,7 @@ INSERT INTO t_async_insert_skip_settings VALUES (2);
 
 SYSTEM FLUSH LOGS;
 
-SELECT length(entries.bytes) FROM system.asynchronous_inserts
+SELECT 'pending to flush', length(entries.bytes) FROM system.asynchronous_inserts
 WHERE database = currentDatabase() AND table = 't_async_insert_skip_settings'
 ORDER BY first_update;
 
@@ -40,7 +41,7 @@ SELECT * FROM t_async_insert_skip_settings ORDER BY id;
 
 SYSTEM FLUSH LOGS;
 
-SELECT uniqExact(flush_query_id) FROM system.asynchronous_insert_log
+SELECT 'flush queries', uniqExact(flush_query_id) FROM system.asynchronous_insert_log
 WHERE database = currentDatabase() AND table = 't_async_insert_skip_settings';
 
 DROP TABLE t_async_insert_skip_settings SYNC;

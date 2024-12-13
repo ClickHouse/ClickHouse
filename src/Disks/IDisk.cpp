@@ -43,6 +43,18 @@ void IDisk::copyFile( /// NOLINT
     out->finalize();
 }
 
+std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
+{
+    if (existsFile(path))
+        return readFile(path, settings, read_hint, file_size);
+    else
+        return {};
+}
+
 DiskTransactionPtr IDisk::createTransaction()
 {
     return std::make_shared<FakeDiskTransaction>(*this);
@@ -96,7 +108,7 @@ void asyncCopy(
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    if (from_disk.isFile(from_path))
+    if (from_disk.existsFile(from_path))
     {
         runner(
             [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
@@ -149,7 +161,7 @@ void IDisk::copyDirectoryContent(
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    if (!to_disk->exists(to_dir))
+    if (!to_disk->existsDirectory(to_dir))
         to_disk->createDirectories(to_dir);
 
     copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir= */ false, read_settings, write_settings, cancellation_hook);
@@ -186,7 +198,7 @@ void IDisk::checkAccess()
     DB::UUID server_uuid = DB::ServerUUID::get();
     if (server_uuid == DB::UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_access_check_{}", DB::toString(server_uuid));
+    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
 
     checkAccessImpl(path);
 }
@@ -196,6 +208,7 @@ void IDisk::checkAccessImpl(const String & path)
 try
 {
     const std::string_view payload("test", 4);
+    const auto read_settings = getReadSettings();
 
     /// write
     {
@@ -215,7 +228,7 @@ try
 
     /// read
     {
-        auto file = readFile(path);
+        auto file = readFile(path, read_settings);
         String buf(payload.size(), '0');
         file->readStrict(buf.data(), buf.size());
         if (buf != payload)
@@ -227,7 +240,7 @@ try
 
     /// read with offset
     {
-        auto file = readFile(path);
+        auto file = readFile(path, read_settings);
         auto offset = 2;
         String buf(payload.size() - offset, '0');
         file->seek(offset, 0);

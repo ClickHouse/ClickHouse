@@ -31,7 +31,7 @@ IMAGE_NAME = "clickhouse/sqllogic-test"
 
 def get_run_command(
     builds_path: Path,
-    repo_tests_path: Path,
+    repo_path: Path,
     result_path: Path,
     server_log_path: Path,
     image: DockerImage,
@@ -39,11 +39,11 @@ def get_run_command(
     return (
         f"docker run "
         f"--volume={builds_path}:/package_folder "
-        f"--volume={repo_tests_path}:/clickhouse-tests "
+        f"--volume={repo_path}:/repo "
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
         "--security-opt seccomp=unconfined "  # required to issue io_uring sys-calls
-        f"--cap-add=SYS_PTRACE {image}"
+        f"--cap-add=SYS_PTRACE {image} /repo/tests/docker_scripts/sqllogic_runner.sh"
     )
 
 
@@ -94,8 +94,6 @@ def main():
 
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
-    repo_tests_path = repo_path / "tests"
-
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
@@ -111,7 +109,7 @@ def main():
 
     run_command = get_run_command(  # run script inside docker
         packages_path,
-        repo_tests_path,
+        repo_path,
         result_path,
         server_log_path,
         docker_image,

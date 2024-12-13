@@ -1,5 +1,5 @@
--- Tags: long, no-parallel, no-s3-storage
--- no-s3-storage: Avoid flakiness due to cache / buffer usage
+-- Tags: long, no-object-storage
+-- no-object-storage: Avoid flakiness due to cache / buffer usage
 SET insert_keeper_fault_injection_probability=0; -- to succeed this test can require too many retries due to 100 partitions, so disable fault injections
 
 -- regression for MEMORY_LIMIT_EXCEEDED error because of deferred final part flush

@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET compile_aggregate_expressions = 1;
 SET min_count_to_compile_aggregate_expression = 0;
 

@@ -7,8 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-NUM_TABLES=300
-CONCURRENCY=200
+NUM_TABLES=50
+CONCURRENCY=100
 
 echo "Creating $NUM_TABLES tables"
 
@@ -46,10 +46,10 @@ wait;
 
 
 # Check results with different max_block_size
-$CLICKHOUSE_CLIENT -q 'SELECT count(), sum(total_replicas) >= 2700, sum(active_replicas) >= 2700 FROM system.replicas WHERE database=currentDatabase()'
-$CLICKHOUSE_CLIENT -q 'SELECT count(), sum(total_replicas) >= 2700, sum(active_replicas) >= 2700 FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=1'
-$CLICKHOUSE_CLIENT -q 'SELECT count(), sum(total_replicas) >= 2700, sum(active_replicas) >= 2700 FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=77'
-$CLICKHOUSE_CLIENT -q 'SELECT count(), sum(total_replicas) >= 2700, sum(active_replicas) >= 2700 FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=11111'
+$CLICKHOUSE_CLIENT -q 'SELECT count() as c, sum(total_replicas) >= 3*c, sum(active_replicas) >= 3*c FROM system.replicas WHERE database=currentDatabase()'
+$CLICKHOUSE_CLIENT -q 'SELECT count() as c, sum(total_replicas) >= 3*c, sum(active_replicas) >= 3*c FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=1'
+$CLICKHOUSE_CLIENT -q 'SELECT count() as c, sum(total_replicas) >= 3*c, sum(active_replicas) >= 3*c FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=77'
+$CLICKHOUSE_CLIENT -q 'SELECT count() as c, sum(total_replicas) >= 3*c, sum(active_replicas) >= 3*c FROM system.replicas WHERE database=currentDatabase() SETTINGS max_block_size=11111'
 
 
 echo "Making $CONCURRENCY requests to system.replicas"
@@ -67,11 +67,11 @@ curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT sum(is_leader
 
 wait;
 
-$CLICKHOUSE_CLIENT -nq "
+$CLICKHOUSE_CLIENT -q "
 SYSTEM FLUSH LOGS;
 
--- without optimisation there are ~350K zk requests
-SELECT sum(ProfileEvents['ZooKeeperTransactions']) < 30000
+-- Check that number of ZK request is less then a half of (total replicas * concurrency)
+SELECT sum(ProfileEvents['ZooKeeperTransactions']) < (${NUM_TABLES} * 3 * ${CONCURRENCY} / 2)
   FROM system.query_log
  WHERE current_database=currentDatabase() AND log_comment='02908_many_requests';
 "

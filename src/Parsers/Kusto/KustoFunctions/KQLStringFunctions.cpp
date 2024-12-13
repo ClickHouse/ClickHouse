@@ -328,7 +328,9 @@ bool HasAnyIndex::convertImpl(String & out, IParser::Pos & pos)
 
 bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
 {
-    int start_index = 0, length = -1, occurrence = 1;
+    int start_index = 0;
+    int length = -1;
+    int occurrence = 1;
 
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -675,9 +677,8 @@ bool SubString::convertImpl(String & out, IParser::Pos & pos)
 
         if (starting_index.empty())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "number of arguments do not match in function: {}", fn_name);
-        else
-            out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + ", " + "((" + starting_index + "% toInt64(length("
-                + source + "))  + toInt64(length(" + source + "))) % toInt64(length(" + source + ")))  + 1, " + length + ") )";
+        out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + ", " + "((" + starting_index + "% toInt64(length(" + source
+            + "))  + toInt64(length(" + source + "))) % toInt64(length(" + source + ")))  + 1, " + length + ") )";
     }
     else
         out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + "," + "((" + starting_index + "% toInt64(length(" + source

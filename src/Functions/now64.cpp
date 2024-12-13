@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -14,6 +15,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_nonconst_timezone_arguments;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -118,7 +124,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<Now64OverloadResolver>(context); }
     explicit Now64OverloadResolver(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
+        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -169,7 +175,7 @@ private:
 
 REGISTER_FUNCTION(Now64)
 {
-    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<Now64OverloadResolver>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

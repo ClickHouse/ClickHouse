@@ -24,7 +24,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 - `session_token` - Session token to use with the given keys. Optional when passing keys.
 - `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-- `compression_method` — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression method by file extension.
+- `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
 
 Arguments can also be passed using [named collections](/docs/en/operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 
@@ -58,17 +58,26 @@ Count the total amount of rows in all files in the cluster `cluster_simple`:
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
-For production use cases it is recommended to use [named collections](/docs/en/operations/named-collections.md). Here is the example:
+For production use cases, it is recommended to use [named collections](/docs/en/operations/named-collections.md). Here is the example:
 ``` sql
 
 CREATE NAMED COLLECTION creds AS
-        access_key_id = 'minio'
+        access_key_id = 'minio',
         secret_access_key = 'minio123';
 SELECT count(*) FROM s3Cluster(
     'cluster_simple', creds, url='https://s3-object-url.csv',
     format='CSV', structure='name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
 )
 ```
+
+## Accessing private and public buckets
+
+Users can use the same approaches as document for the s3 function [here](/docs/en/sql-reference/table-functions/s3#accessing-public-buckets).
+
+## Optimizing performance
+
+For details on optimizing the performance of the s3 function see [our detailed guide](/docs/en/integrations/s3/performance).
+
 
 **See Also**
 

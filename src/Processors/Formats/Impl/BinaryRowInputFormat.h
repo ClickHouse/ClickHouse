@@ -10,9 +10,11 @@ namespace DB
 
 class ReadBuffer;
 
+template <bool>
+class BinaryFormatReader;
+
 /** A stream for inputting data in a binary line-by-line format.
   */
-
 template <bool with_defaults = false>
 class BinaryFormatReader final : public FormatWithNamesAndTypesReader
 {
@@ -39,7 +41,7 @@ private:
 };
 
 template <bool with_defaults = false>
-class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes
+class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes<BinaryFormatReader<with_defaults>>
 {
 public:
     BinaryRowInputFormat(ReadBuffer & in_, const Block & header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);

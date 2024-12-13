@@ -19,6 +19,6 @@ using FunctionPosition = FunctionsStringSearch<PositionImpl<NamePosition, Positi
 
 REGISTER_FUNCTION(Position)
 {
-    factory.registerFunction<FunctionPosition>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionPosition>({}, FunctionFactory::Case::Insensitive);
 }
 }

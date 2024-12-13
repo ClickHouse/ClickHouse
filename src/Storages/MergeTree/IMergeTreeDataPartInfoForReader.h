@@ -47,7 +47,7 @@ public:
 
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
 
-    virtual String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const = 0;
+    virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;
 
     virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;
 

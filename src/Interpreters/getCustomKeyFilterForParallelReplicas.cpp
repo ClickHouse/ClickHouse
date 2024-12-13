@@ -1,5 +1,7 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 
+#include <Core/Settings.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -13,6 +15,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace ErrorCodes
 {
@@ -29,7 +37,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     const ContextPtr & context)
 {
     chassert(replicas_count > 1);
-    if (filter.filter_type == ParallelReplicasCustomKeyFilterType::DEFAULT)
+    chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING || filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
+    if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
         // first we do modulo with replica count
         auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, std::make_shared<ASTLiteral>(replicas_count));
@@ -40,7 +49,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         return equals_function;
     }
 
-    chassert(filter.filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
+    chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
 
     KeyDescription custom_key_description
         = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
@@ -166,8 +175,13 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
     ParserExpression parser;
     const auto & settings = context.getSettingsRef();
     return parseQuery(
-        parser, custom_key.data(), custom_key.data() + custom_key.size(),
-        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        parser,
+        custom_key.data(),
+        custom_key.data() + custom_key.size(),
+        "parallel replicas custom key",
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
 }
 
 }

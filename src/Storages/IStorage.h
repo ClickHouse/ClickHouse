@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <optional>
 
@@ -103,7 +104,7 @@ public:
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;
 
-    /// The main name of the table type (for example, StorageMergeTree).
+    /// The main name of the table type (e.g. Memory, MergeTree, CollapsingMergeTree).
     virtual std::string getName() const = 0;
 
     /// The name of the table.
@@ -120,6 +121,9 @@ public:
     /// Returns true if the storage is dictionary
     virtual bool isDictionary() const { return false; }
 
+    /// Returns true if the metadata of a table can be changed normally by other processes
+    virtual bool hasExternalDynamicMetadata() const { return false; }
+
     /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
 
@@ -135,7 +139,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAGPtr &, ContextPtr) const;
+    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -165,6 +169,8 @@ public:
 
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
+    /// Returns true if storage supports optimizations of functions by reading subcolumns.
+    virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -267,12 +273,23 @@ public:
     /// because those are internally translated into 'ALTER UDPATE' mutations.
     virtual bool supportsDelete() const { return false; }
 
+    /// Returns true if storage can store columns in sparse serialization.
+    virtual bool supportsSparseSerialization() const { return false; }
+
     /// Return true if the trivial count query could be optimized without reading the data at all
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
+    /// 'storage_snapshot' may be nullptr.
     virtual bool supportsTrivialCountOptimization(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*query_context*/) const
     {
         return false;
     }
+
+    /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
+    virtual SerializationInfoByName getSerializationHints() const { return {}; }
+
+    /// Add engine args that were inferred during storage creation to create query to avoid the same
+    /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
+    virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
 
 private:
     StorageID storage_id;
@@ -493,6 +510,12 @@ public:
       */
     virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
+    /// Updates metadata that can be changed by other processes
+    virtual void updateExternalDynamicMetadata(ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
+    }
+
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */
@@ -682,7 +705,7 @@ public:
     virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr &, ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

@@ -252,7 +252,7 @@ sidebar_label: "\u53D8\u66F4\u65E5\u5FD7"
 -   抑制MSan下的一些测试失败。 [#8780](https://github.com/ClickHouse/ClickHouse/pull/8780) ([Alexander Kuzmenkov](https://github.com/akuzm))
 -   加速 “exception while insert” 测试 此测试通常在具有复盖率的调试版本中超时。 [#8711](https://github.com/ClickHouse/ClickHouse/pull/8711) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   更新 `libcxx` 和 `libcxxabi` 为了主人 在准备 [#9304](https://github.com/ClickHouse/ClickHouse/issues/9304) [#9308](https://github.com/ClickHouse/ClickHouse/pull/9308) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
--   修复flacky测试 `00910_zookeeper_test_alter_compression_codecs`. [#9525](https://github.com/ClickHouse/ClickHouse/pull/9525) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
+-   修复flaky测试 `00910_zookeeper_test_alter_compression_codecs`. [#9525](https://github.com/ClickHouse/ClickHouse/pull/9525) ([阿列克谢-米洛维多夫](https://github.com/alexey-milovidov))
 -   清理重复的链接器标志。 确保链接器不会查找意想不到的符号。 [#9433](https://github.com/ClickHouse/ClickHouse/pull/9433) ([阿莫斯鸟](https://github.com/amosbird))
 -   添加 `clickhouse-odbc` 驱动程序进入测试图像。 这允许通过自己的ODBC驱动程序测试ClickHouse与ClickHouse的交互。 [#9348](https://github.com/ClickHouse/ClickHouse/pull/9348) ([filimonov](https://github.com/filimonov))
 -   修复单元测试中的几个错误。 [#9047](https://github.com/ClickHouse/ClickHouse/pull/9047) ([阿利沙平](https://github.com/alesapin))
@@ -356,7 +356,7 @@ sidebar_label: "\u53D8\u66F4\u65E5\u5FD7"
 
 #### 新功能 {#new-feature-1}
 
--   添加 `deduplicate_blocks_in_dependent_materialized_views` 用于控制具有实例化视图的表中幂等插入的行为的选项。 这个新功能是由Altinity的特殊要求添加到错误修正版本中的。
+-   添加 `deduplicate_blocks_in_dependent_materialized_views` 用于控制具有实例化视图的表中幂等插入的行为的选项。
     [#9070](https://github.com/ClickHouse/ClickHouse/pull/9070) [(urykhy)](https://github.com/urykhy)
 
 ### ClickHouse版本v20.1.2.4,2020-01-22 {#clickhouse-release-v20-1-2-4-2020-01-22}

@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 
@@ -47,9 +48,17 @@ Chunk ODBCSource::generate()
         for (int idx = 0; idx < result.columns(); ++idx)
         {
             const auto & sample = description.sample_block.getByPosition(idx);
-
             if (!result.is_null(idx))
-                insertValue(*columns[idx], removeNullable(sample.type), description.types[idx].first, result, idx);
+            {
+                if (columns[idx]->isNullable())
+                {
+                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
+                    insertValue(column_nullable.getNestedColumn(), removeNullable(sample.type), description.types[idx].first, result, idx);
+                    column_nullable.getNullMapData().emplace_back(0);
+                }
+                else
+                     insertValue(*columns[idx], removeNullable(sample.type), description.types[idx].first, result, idx);
+            }
             else
                 insertDefaultValue(*columns[idx], *sample.column);
         }

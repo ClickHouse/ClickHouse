@@ -1,0 +1,1 @@
+['digraph','{','  rankdir="LR";','  { node [shape = rect]','        n1 [label="Remote"];','  }','}','digraph','{','  rankdir="LR";','  { node [shape = rect]','        n1 [label="Remote"];','  }','}']

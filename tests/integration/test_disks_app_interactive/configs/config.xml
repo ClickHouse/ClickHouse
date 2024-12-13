@@ -1,0 +1,3 @@
+<clickhouse>
+    <path>/var/lib/clickhouse/</path>
+</clickhouse>

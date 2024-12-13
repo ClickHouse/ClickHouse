@@ -1,4 +1,4 @@
-add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>")
 
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
@@ -7,6 +7,8 @@ endif ()
 # TODO: Remove this. We like to compile with C++23 (set by top-level CMakeLists) but Clang crashes with our libcxx
 # when instantiated from JSON.cpp. Try again when libcxx(abi) and Clang are upgraded to 16.
 set (CMAKE_CXX_STANDARD 20)
+
+configure_file(GitHash.cpp.in GitHash.generated.cpp)
 
 set (SRCS
     argsToConfig.cpp
@@ -32,6 +34,8 @@ set (SRCS
     StringRef.cpp
     safeExit.cpp
     throwError.cpp
+    Numa.cpp
+    GitHash.generated.cpp
 )
 
 add_library (common ${SRCS})
@@ -44,6 +48,10 @@ endif ()
 
 if (TARGET ch_contrib::crc32_s390x)
     target_link_libraries(common PUBLIC ch_contrib::crc32_s390x)
+endif()
+
+if (TARGET ch_contrib::numactl)
+    target_link_libraries(common PUBLIC ch_contrib::numactl)
 endif()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")

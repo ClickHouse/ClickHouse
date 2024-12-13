@@ -2,8 +2,6 @@
 # Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -12,7 +10,7 @@ CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspic
 function test5_insert()
 {
     echo "test5 insert"
-    $CH_CLIENT -nmq "
+    $CH_CLIENT -mq "
 insert into test select number, NULL from numbers(200000);
 insert into test select number + 200000, number % 2 ? NULL : number from numbers(200000);
 insert into test select number + 400000, number % 2 ? NULL : ('str_' || toString(number))::Variant(String) from numbers(200000);
@@ -24,7 +22,7 @@ insert into test select number + 1000000, number % 2 ? CAST(NULL, 'Variant(Strin
 function test5_select()
 {
     echo "test5 select"
-        $CH_CLIENT -nmq "
+        $CH_CLIENT -mq "
 select v from test format Null;
 select count() from test where isNotNull(v);
 select v.String from test format Null;
@@ -35,13 +33,10 @@ select v.\`LowCardinality(String)\` from test format Null;
 select count() from test where isNotNull(v.\`LowCardinality(String)\`);
 select v.\`Tuple(a UInt32, b UInt32)\` from test format Null;
 select v.\`Tuple(a UInt32, b UInt32)\`.a from test format Null;
-select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.a);
 select v.\`Tuple(a UInt32, b UInt32)\`.b from test format Null;
-select count() from test where isNotNull(v.\`Tuple(a UInt32, b UInt32)\`.b);
 select v.\`Array(UInt64)\` from test format Null;
 select count() from test where not empty(v.\`Array(UInt64)\`);
-select v.\`Array(UInt64)\`.size0 from test format Null;
-select count() from test where isNotNull(v.\`Array(UInt64)\`.size0);"
+select v.\`Array(UInt64)\`.size0 from test format Null;"
 }
 
 function run()

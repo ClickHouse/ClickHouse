@@ -1,13 +1,15 @@
 #include "Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h"
 
-#include "Functions/UserDefined/UserDefinedSQLFunctionFactory.h"
-#include "Functions/UserDefined/UserDefinedSQLObjectType.h"
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
 
 #include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+
+#include <Core/Settings.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -30,6 +32,12 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -52,7 +60,7 @@ namespace
 }
 
 UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
-    : global_context(global_context_)
+    : UserDefinedSQLObjectsStorageBase(global_context_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
     , log{getLogger("UserDefinedSQLObjectsLoaderFromDisk")}
 {
@@ -91,8 +99,8 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
                     object_create_query.data() + object_create_query.size(),
                     "",
                     0,
-                    global_context->getSettingsRef().max_parser_depth,
-                    global_context->getSettingsRef().max_parser_backtracks);
+                    global_context->getSettingsRef()[Setting::max_parser_depth],
+                    global_context->getSettingsRef()[Setting::max_parser_backtracks]);
                 return ast;
             }
         }
@@ -196,7 +204,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     {
         if (throw_if_exists)
             throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
-        else if (!replace_if_exists)
+        if (!replace_if_exists)
             return false;
     }
 
@@ -212,7 +220,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
         WriteBufferFromFile out(temp_file_path, create_statement.size());
         writeString(create_statement, out);
         out.next();
-        if (settings.fsync_metadata)
+        if (settings[Setting::fsync_metadata])
             out.sync();
         out.close();
 
@@ -247,8 +255,7 @@ bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
     {
         if (throw_if_not_exists)
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined function '{}' doesn't exist", object_name);
-        else
-            return false;
+        return false;
     }
 
     LOG_TRACE(log, "Object {} removed", backQuote(object_name));

@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 #    include <string>
+#    include <base/isSharedPtrUnique.h>
 #    include <Databases/DatabaseFactory.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
@@ -29,6 +30,7 @@
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
+#    include <Core/Settings.h>
 #    include <filesystem>
 #    include <Common/filesystemHelpers.h>
 #    include <Parsers/ASTIdentifier.h>
@@ -37,6 +39,17 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace MySQLSetting
+{
+    extern const MySQLSettingsMySQLDataTypesSupport mysql_datatypes_support_level;
+}
 
 namespace ErrorCodes
 {
@@ -179,8 +192,8 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         storage,
         table_storage_define,
         true,
-        static_cast<unsigned>(settings.max_parser_depth),
-        static_cast<unsigned>(settings.max_parser_backtracks),
+        static_cast<unsigned>(settings[Setting::max_parser_depth]),
+        static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
         throw_on_error);
     return create_table_query;
 }
@@ -321,7 +334,7 @@ DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, C
             database_name_in_mysql,
             tables_name,
             settings,
-            mysql_settings->mysql_datatypes_support_level);
+            (*mysql_settings)[MySQLSetting::mysql_datatypes_support_level]);
 }
 
 void DatabaseMySQL::shutdown()
@@ -354,7 +367,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     {
         for (auto iterator = outdated_tables.begin(); iterator != outdated_tables.end();)
         {
-            if (!iterator->unique())
+            if (!isSharedPtrUnique(*iterator))
                 ++iterator;
             else
             {
@@ -544,7 +557,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
 
             if (engine_name == "MySQL")
             {
-                size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
+                size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
                 configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
             }
             else
@@ -582,7 +595,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn);
+    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true});
 }
 }
 

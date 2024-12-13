@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/uniqexact
-sidebar_position: 191
+sidebar_position: 207
 ---
 
 # uniqExact

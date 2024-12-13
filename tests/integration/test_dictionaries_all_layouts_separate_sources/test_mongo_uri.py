@@ -1,12 +1,13 @@
-import os
 import math
+import os
+
 import pytest
 
-from .common import *
-
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
 from helpers.external_sources import SourceMongoURI
+
+from .common import *
 
 test_name = "mongo_uri"
 
@@ -26,9 +27,9 @@ def source(secure_connection, cluster):
     return SourceMongoURI(
         "MongoDB",
         "localhost",
-        cluster.mongo_port,
-        cluster.mongo_host,
-        "27017",
+        cluster.mongo_secure_port if secure_connection else cluster.mongo_port,
+        "mongo_secure" if secure_connection else "mongo1",
+        27017,
         "root",
         "clickhouse",
         secure=secure_connection,
@@ -45,12 +46,9 @@ def simple_tester(source):
 
 @pytest.fixture(scope="module")
 def main_config(secure_connection):
-    main_config = []
     if secure_connection:
-        main_config.append(os.path.join("configs", "disable_ssl_verification.xml"))
-    else:
-        main_config.append(os.path.join("configs", "ssl_verification.xml"))
-    return main_config
+        return [os.path.join("configs", "disable_ssl_verification.xml")]
+    return [os.path.join("configs", "ssl_verification.xml")]
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +60,6 @@ def started_cluster(secure_connection, cluster, main_config, simple_tester):
         main_configs=main_config,
         dictionaries=dictionaries,
         with_mongo=True,
-        with_mongo_secure=secure_connection,
     )
     try:
         cluster.start()

@@ -6,10 +6,11 @@
 #include <mysqlxx/PoolWithFailover.h>
 #include <mysqlxx/Query.h>
 #include <Core/ExternalResultDescription.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
+
+struct Settings;
 
 struct StreamSettings
 {

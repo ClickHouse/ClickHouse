@@ -170,11 +170,27 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_
     }
 }
 
-void ExecutorTasks::fill(Queue & queue)
+void ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 {
     std::lock_guard lock(mutex);
 
     size_t next_thread = 0;
+#if defined(OS_LINUX)
+    while (!async_queue.empty())
+    {
+        int fd = async_queue.front()->processor->schedule();
+        async_task_queue.addTask(next_thread, async_queue.front(), fd);
+        async_queue.pop();
+
+        ++next_thread;
+
+        /// It is important to keep queues empty for threads that are not started yet.
+        /// Otherwise that thread can be selected by `tryWakeUpAnyOtherThreadWithTasks()`, leading to deadlock.
+        if (next_thread >= use_threads)
+            next_thread = 0;
+    }
+#endif
+
     while (!queue.empty())
     {
         task_queue.push(queue.front(), next_thread);
@@ -204,6 +220,8 @@ void ExecutorTasks::processAsyncTasks()
         while (auto task = async_task_queue.wait(lock))
         {
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
+            node->processor->onAsyncJobReady();
+
             executor_contexts[task.thread_num]->pushAsyncTask(node);
             ++num_waiting_async_tasks;
 

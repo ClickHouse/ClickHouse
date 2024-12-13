@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree()
@@ -21,7 +21,7 @@ INSERT INTO test SELECT number, randomString(100) FROM numbers(1000000);
 "
 
 QUERY_ID=$RANDOM
-$CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -nm -q "
+$CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
 SYSTEM DROP FILESYSTEM CACHE;
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
@@ -48,14 +48,14 @@ WHERE query_id = '$QUERY_ID' "
 
 # File segments cannot be less that 20Mi,
 # except for last file segment in a file or if file size is less.
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query)
 WHERE file_segment_size < file_size
 AND end_offset + 1 != file_size
 AND file_segment_size < 20 * 1024 * 1024;
 "
 
-all=$($CLICKHOUSE_CLIENT -nm -q "
+all=$($CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query)
 WHERE file_segment_size < file_size AND end_offset + 1 != file_size;
 ")
@@ -67,7 +67,7 @@ else
   echo "FAIL"
 fi
 
-count=$($CLICKHOUSE_CLIENT -nm -q "
+count=$($CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query)
 WHERE file_segment_size < file_size
 AND end_offset + 1 != file_size
@@ -86,21 +86,21 @@ FROM (SELECT * FROM ($query)) AS cache_log
 INNER JOIN system.filesystem_cache AS cache
 ON cache_log.cache_path = cache.cache_path "
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query2)
 WHERE file_segment_range_begin - file_segment_range_end + 1 < file_size
 AND file_segment_range_end + 1 != file_size
 AND downloaded_size < 20 * 1024 * 1024;
 "
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query2)
 WHERE file_segment_range_begin - file_segment_range_end + 1 < file_size
 AND file_segment_range_end + 1 != file_size
 AND formatReadableSize(downloaded_size) not in ('20.00 MiB', '40.00 MiB');
 "
 
-all=$($CLICKHOUSE_CLIENT -nm -q "
+all=$($CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query2)
 WHERE file_segment_size < file_size AND file_segment_range_end + 1 != file_size;
 ")
@@ -111,7 +111,7 @@ else
   echo "FAIL"
 fi
 
-count2=$($CLICKHOUSE_CLIENT -nm -q "
+count2=$($CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query2)
 WHERE file_segment_range_begin - file_segment_range_end + 1 < file_size
 AND file_segment_range_end + 1 != file_size

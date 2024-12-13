@@ -1,7 +1,6 @@
 import os
 import time
 
-
 ALL_HTTP_METHODS = {"POST", "PUT", "GET", "HEAD", "CONNECT"}
 
 
@@ -30,7 +29,7 @@ def check_proxy_logs(
                         False
                     ), f"{http_method} method not found in logs of {proxy_instance} for bucket {bucket}"
 
-            time.sleep(1)
+        time.sleep(1)
 
 
 def wait_resolver(cluster):
@@ -124,3 +123,13 @@ def simple_storage_test(cluster, node, proxies, policy):
 
     # not checking for POST because it is in a different format
     check_proxy_logs(cluster, proxies, "http", policy, ["PUT", "GET"])
+
+
+def simple_test_assert_no_proxy(cluster, proxies, protocol, bucket):
+    minio_endpoint = build_s3_endpoint(protocol, bucket)
+    node = cluster.instances[bucket]
+    perform_simple_queries(node, minio_endpoint)
+
+    # No HTTP method should be found in proxy logs if no proxy is active
+    empty_method_list = []
+    check_proxy_logs(cluster, proxies, protocol, bucket, empty_method_list)

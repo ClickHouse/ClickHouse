@@ -100,18 +100,22 @@ namespace fs = std::filesystem;
 static auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
+
     WriteBufferFromFileDescriptor wb_stdout(STDOUT_FILENO);
-    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
     copyData(sh->out, wb_stdout);
+    wb_stdout.finalize();
+
+    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
     copyData(sh->err, wb_stderr);
+    wb_stderr.finalize();
 
     if (throw_on_error)
     {
         sh->wait();
         return 0;
     }
-    else
-        return sh->tryWait();
+
+    return sh->tryWait();
 }
 
 static bool ask(std::string question)
@@ -1125,6 +1129,7 @@ namespace
 
             WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
             copyData(sh->err, std_err);
+            std_err.finalize();
 
             sh->tryWait();
         }

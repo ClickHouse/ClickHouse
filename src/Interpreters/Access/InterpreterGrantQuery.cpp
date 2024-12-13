@@ -118,7 +118,7 @@ namespace
     /// Checks if the current user has enough access rights granted with grant option to grant or revoke specified access rights.
     void checkGrantOption(
         const AccessControl & access_control,
-        const ContextAccess & current_user_access,
+        const ContextAccessWrapper & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
         const AccessRightsElements & elements_to_grant,
@@ -200,7 +200,7 @@ namespace
     /// Checks if the current user has enough roles granted with admin option to grant or revoke specified roles.
     void checkAdminOption(
         const AccessControl & access_control,
-        const ContextAccess & current_user_access,
+        const ContextAccessWrapper & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
         const std::vector<UUID> & roles_to_grant,
@@ -277,7 +277,7 @@ namespace
     /// This function is less accurate than checkAdminOption() because it cannot use any information about
     /// granted roles the grantees currently have (due to those grantees are located on multiple nodes,
     /// we just don't have the full information about them).
-    void checkAdminOptionForExecutingOnCluster(const ContextAccess & current_user_access,
+    void checkAdminOptionForExecutingOnCluster(const ContextAccessWrapper & current_user_access,
                                                const std::vector<UUID> roles_to_grant,
                                                const RolesOrUsersSet & roles_to_revoke)
     {
@@ -376,7 +376,7 @@ namespace
     /// Calculates all available rights to grant with current user intersection.
     void calculateCurrentGrantRightsWithIntersection(
         AccessRights & rights,
-        std::shared_ptr<const ContextAccess> current_user_access,
+        std::shared_ptr<const ContextAccessWrapper> current_user_access,
         const AccessRightsElements & elements_to_grant)
     {
         AccessRightsElements current_user_grantable_elements;
@@ -400,7 +400,8 @@ namespace
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
-        AccessRightsElements elements_to_grant, elements_to_revoke;
+        AccessRightsElements elements_to_grant;
+        AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
 
         std::vector<UUID> roles_to_grant;
@@ -418,7 +419,7 @@ BlockIO InterpreterGrantQuery::execute()
     auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(getContext()->getUserName());
-    query.access_rights_elements.eraseNonGrantable();
+    query.access_rights_elements.eraseNotGrantable();
 
     if (!query.access_rights_elements.sameOptions())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
@@ -431,7 +432,8 @@ BlockIO InterpreterGrantQuery::execute()
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
     /// Collect access rights and roles we're going to grant or revoke.
-    AccessRightsElements elements_to_grant, elements_to_revoke;
+    AccessRightsElements elements_to_grant;
+    AccessRightsElements elements_to_revoke;
     collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
 
     std::vector<UUID> roles_to_grant;
@@ -474,7 +476,7 @@ BlockIO InterpreterGrantQuery::execute()
         calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
 
     /// Update roles and users listed in `grantees`.
-    auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+    auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
     {
         auto clone = entity->clone();
         if (query.current_grants)

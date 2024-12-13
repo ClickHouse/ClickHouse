@@ -595,6 +595,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 Get the element with the index `n` from the array `arr`. `n` must be any integer type.
 Indexes in an array begin from one.
+
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index 0 (in this case there will be an error `Array indices are 1-based`).
@@ -614,6 +615,27 @@ SELECT has([1, 2, NULL], NULL)
 ┌─has([1, 2, NULL], NULL)─┐
 │                       1 │
 └─────────────────────────┘
+```
+
+## arrayElementOrNull(arr, n)
+
+Get the element with the index `n`from the array `arr`. `n` must be any integer type.
+Indexes in an array begin from one.
+
+Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
+
+If the index falls outside of the bounds of an array, it returns `NULL` instead of a default value.
+
+### Examples
+
+``` sql
+SELECT arrayElementOrNull([1, 2, 3], 2), arrayElementOrNull([1, 2, 3], 4)
+```
+
+``` text
+ ┌─arrayElementOrNull([1, 2, 3], 2)─┬─arrayElementOrNull([1, 2, 3], 4)─┐
+ │                                2 │                             ᴺᵁᴸᴸ │
+ └──────────────────────────────────┴──────────────────────────────────┘
 ```
 
 ## hasAll {#hasall}
@@ -748,7 +770,8 @@ i
 
 ## indexOf(arr, x)
 
-Returns the index of the first ‘x’ element (starting from 1) if it is in the array, or 0 if it is not.
+Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
+If the array does not contain the searched-for value, the function returns 0.
 
 Example:
 
@@ -763,6 +786,26 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 ```
 
 Elements set to `NULL` are handled as normal values.
+
+## indexOfAssumeSorted(arr, x)
+
+Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
+If the array does not contain the searched-for value, the function returns 0.
+Assumes that the array is sorted in ascending order (i.e., the function uses binary search).
+If the array is not sorted, results are undefined.
+If the internal array is of type Nullable, function ‘indexOf‘ will be called.
+
+Example:
+
+``` sql
+SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
+```
+
+``` text
+┌─indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)─┐
+│                                             5 │
+└───────────────────────────────────────────────┘
+```
 
 ## arrayCount(\[func,\] arr1, ...)
 
@@ -1261,7 +1304,7 @@ SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
 └─────────┘
 ```
 
-For each element of the source array, the lambda function returns the sorting key, that is, \[1 –\> -1, 2 –\> -2, 3 –\> -3\]. Since the `arraySort` function sorts the keys in ascending order, the result is \[3, 2, 1\]. Thus, the `(x) –> -x` lambda function sets the [descending order](#reverse-sort) in a sorting.
+For each element of the source array, the lambda function returns the sorting key, that is, \[1 –\> -1, 2 –\> -2, 3 –\> -3\]. Since the `arraySort` function sorts the keys in ascending order, the result is \[3, 2, 1\]. Thus, the `(x) –> -x` lambda function sets the [descending order](#arrayreversesort) in a sorting.
 
 The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
@@ -1307,10 +1350,15 @@ To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.
 
 Same as `arraySort` with additional `limit` argument allowing partial sorting. Returns an array of the same size as the original array where elements in range `[1..limit]` are sorted in ascending order. Remaining elements `(limit..N]` shall contain elements in unspecified order.
 
-## arrayReverseSort(\[func,\] arr, ...) {#reverse-sort}
+## arrayReverseSort
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
+**Syntax**
+
+```sql
+arrayReverseSort([func,] arr, ...)
+```
 Example of integer values sorting:
 
 ``` sql
@@ -1712,6 +1760,24 @@ Result:
 [[1,1,2,3],[1,2,3,4]]
 ```
 
+## arrayUnion(arr)
+
+Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays.
+
+Example:
+```sql
+SELECT
+    arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
+    arrayUnion(['hi'], [], ['hello', 'hi']) as str_example,
+    arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
+```
+
+```text
+┌─num_example─┬─str_example────┬─null_example─┐
+│ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
+└─────────────┴────────────────┴──────────────┘
+```
+
 ## arrayIntersect(arr)
 
 Takes multiple arrays, returns an array with elements that are present in all source arrays.
@@ -1907,9 +1973,15 @@ FROM numbers(1,10);
 
 - [arrayReduce](#arrayreduce)
 
-## arrayReverse(arr)
+## arrayReverse
 
 Returns an array of the same size as the original array containing the elements in reverse order.
+
+**Syntax**
+
+```sql
+arrayReverse(arr)
+```
 
 Example:
 
@@ -2024,6 +2096,7 @@ Query:
 SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
+
 Result:
 
 ``` text
@@ -2032,6 +2105,43 @@ Result:
 └──────────────────────────────────────┘
 ```
 
+## arrayZipUnaligned
+
+Combines multiple arrays into a single array, allowing for unaligned arrays. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
+
+**Syntax**
+
+``` sql
+arrayZipUnaligned(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- Array with elements from the source arrays grouped into [tuples](../data-types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed. [Array](../data-types/array.md). If the arrays have different sizes, the shorter arrays will be padded with `null` values.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
+```
+
+Result:
+
+``` text
+┌─arrayZipUnaligned(['a'], [1, 2, 3])─┐
+│ [('a',1),(NULL,2),(NULL,3)]         │
+└─────────────────────────────────────┘
+```
+
+
 ## arrayAUC
 
 Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>).
@@ -2039,13 +2149,14 @@ Calculate AUC (Area Under the Curve, which is a concept in machine learning, see
 **Syntax**
 
 ``` sql
-arrayAUC(arr_scores, arr_labels)
+arrayAUC(arr_scores, arr_labels[, scale])
 ```
 
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `scale` - Optional. Wether to return the normalized area. Default value: true. [Bool]
 
 **Returned value**
 
@@ -2065,6 +2176,41 @@ Result:
 ┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                                          0.75 │
 └───────────────────────────────────────────────┘
+```
+
+## arrayPrAUC
+
+Calculate AUC (Area Under the Curve) for the Precision Recall curve.
+
+**Syntax**
+
+``` sql
+arrayPrAUC(arr_scores, arr_labels)
+```
+
+**Arguments**
+
+- `arr_scores` — scores prediction model gives.
+- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+
+**Returned value**
+
+Returns PR-AUC value with type Float64.
+
+**Example**
+
+Query:
+
+``` sql
+select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+```
+
+Result:
+
+``` text
+┌─arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                              0.8333333333333333 │
+└─────────────────────────────────────────────────┘
 ```
 
 ## arrayMap(func, arr1, ...)
