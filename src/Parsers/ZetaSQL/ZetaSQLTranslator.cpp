@@ -1,5 +1,6 @@
 #include "Parsers/ZetaSQL/ZetaSQLTranslator.h"
 #include <memory>
+#include "Parsers/ASTFunction.h"
 #include "Parsers/ASTSelectWithUnionQuery.h"
 #include "Parsers/IAST_fwd.h"
 #include "Parsers/ZetaSQL/ASTZetaSQLQuery.h"
@@ -53,6 +54,19 @@ namespace DB::ZetaSQL
 
     void Translator::processWhereStage(std::shared_ptr<ASTSelectQuery>  select_query, ASTZetaSQLQuery::PipelineStage & stage)
     {
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(stage.expression));
+        if(select_query->where()){
+            auto and_function = std::make_shared<ASTFunction>();
+            and_function->name = "and";
+
+            auto args = std::make_shared<ASTExpressionList>();
+            args->children = {select_query->where(), stage.expression};
+
+            and_function->arguments = args;
+            and_function->children.push_back(args);
+
+            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(and_function));
+        } else {
+            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(stage.expression));
+        }
     }
 }

@@ -1,6 +1,5 @@
 #include "Parsers/ZetaSQL/ASTZetaSQLQuery.h"
 #include <memory>
-#include <Parsers/GoogleSQL/ASTPipelineQuery.h>
 #include "Parsers/IAST_fwd.h"
 namespace DB::ZetaSQL
 {

@@ -12,7 +12,7 @@ int main(int, char **)
 {
     using namespace DB;
 
-    std::string input = "FROM orders |> WHERE order_price > 10";
+    std::string input = "FROM orders |> WHERE order_price > 10 |> WHERE order_id < 10";
     ZetaSQL::ParserZetaSQLQuery parser;
 
     try
