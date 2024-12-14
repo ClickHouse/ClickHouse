@@ -497,15 +497,20 @@ private:
 
         size_t mysqlFractionalSecond(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
-            if (scale == 0)
-                scale = 6;
+            // if more than 6 digits are passed in, we truncate to 6 == buffer size
+            while (scale > 6)
+            {
+                --scale;
+                fractional_second /= 10;
+            }
 
-            for (Int64 i = scale, value = fractional_second; i > 0; --i)
+            // mysql format option %f always produces six digits. scale only defines which of them get filled
+            for (UInt32 i = scale, value = fractional_second; i > 0 && value > 0; --i)
             {
                 dest[i - 1] += value % 10;
                 value /= 10;
             }
-            return scale;
+            return 6;
         }
 
         /// Same as mysqlFractionalSecond but prints a single zero if the value has no fractional seconds
@@ -1229,7 +1234,8 @@ public:
                             Instruction<T> instruction;
                             instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
                             instructions.push_back(std::move(instruction));
-                            out_template += String(scale == 0 ? 6 : scale, '0');
+                            // always produce a 6-digit output on %f
+                            out_template += String(6, '0');
                         }
                         break;
                     }
