@@ -1886,7 +1886,7 @@ def test_required_privileges_with_partial_revokes():
     instance.query("REVOKE SELECT ON system.zookeeper* FROM u1")
     instance.query("REVOKE SELECT ON foo.* FROM u1")
 
-    instance.query(f"BACKUP ALL FROM system.users TO {backup_name}")
+    instance.query(f"BACKUP TABLE system.users TO {backup_name}")
     instance.query("DROP USER u1")
 
     instance.query("CREATE USER u2")
