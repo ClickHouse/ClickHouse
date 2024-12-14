@@ -348,13 +348,13 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
-static bool isNonExceptNode(const ActionsDAG::Node * node)
+static bool isNoExceptNode(const ActionsDAG::Node * node)
 {
-    if (node->type == ActionsDAG::ActionType::FUNCTION && !node->function_base->isNonExcept())
+    if (node->type == ActionsDAG::ActionType::FUNCTION && !node->function_base->isNoExcept())
         return false;
     for (const auto * child : node->children)
     {
-        if (!isNonExceptNode(child))
+        if (!isNoExceptNode(child))
             return false;
     }
     return true;
@@ -364,7 +364,7 @@ static bool areAllChildrenNonExceptNode(const ActionsDAG::Node * node)
 {
     for (const auto * child : node->children)
     {
-        if (!isNonExceptNode(child))
+        if (!isNoExceptNode(child))
             return false;
     }
     return true;

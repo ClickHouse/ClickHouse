@@ -76,7 +76,7 @@ public:
 
     bool isStateful() const override { return function->isStateful(); }
 
-    bool isNonExcept() const override { return function->isNonExcept(); }
+    bool isNoExcept() const override { return function->isNoExcept(); }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 

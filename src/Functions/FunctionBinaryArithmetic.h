@@ -1500,7 +1500,7 @@ public:
                 && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
     }
 
-    bool isNonExcept() const override
+    bool isNoExcept() const override
     {
         const bool has_except =  IsOperation<Op>::int_div ||
             IsOperation<Op>::modulo ||

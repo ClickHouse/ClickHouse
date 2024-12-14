@@ -210,7 +210,7 @@ public:
 
     virtual bool isStateful() const { return false; }
 
-    virtual bool isNonExcept() const { return false; }
+    virtual bool isNoExcept() const { return false; }
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
@@ -563,7 +563,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
-    virtual bool isNonExcept() const { return false; }
+    virtual bool isNoExcept() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }

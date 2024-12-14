@@ -175,7 +175,7 @@ public:
     template <bool with_profile>
     ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, FunctionExecuteProfile * profile) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isNonExcept() const override { return true; }
+    bool isNoExcept() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
