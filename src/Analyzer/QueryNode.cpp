@@ -50,9 +50,23 @@ QueryNode::QueryNode(ContextMutablePtr context_)
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {
-    if (projection_columns_value.size() != getProjection().getNodes().size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected projection columns size to match projection nodes size");
+    if (!projection_aliases_to_override.empty())
+    {
+        if (projection_aliases_to_override.size() != projection_columns_value.size())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Number of aliases does not match number of projection columns. "
+                "Expected {}, got {}",
+                projection_columns_value.size(),
+                projection_aliases_to_override.size());
+        }
 
+        // Apply the aliases
+        for (size_t i = 0; i < projection_columns_value.size(); ++i)
+        {
+            projection_columns_value[i].name = projection_aliases_to_override[i];
+        }
+    }
     projection_columns = std::move(projection_columns_value);
 }
 

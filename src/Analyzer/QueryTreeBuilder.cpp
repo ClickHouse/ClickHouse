@@ -135,7 +135,7 @@ QueryTreeBuilder::QueryTreeBuilder(ASTPtr query_, ContextPtr context_)
     if (query->as<ASTSelectWithUnionQuery>() ||
         query->as<ASTSelectIntersectExceptQuery>() ||
         query->as<ASTSelectQuery>())
-        query_tree_node = buildSelectOrUnionExpression(query, false /*is_subquery*/, {} /*cte_name*/, nullptr, context_);
+        query_tree_node = buildSelectOrUnionExpression(query, false /*is_subquery*/, {} /*cte_name*/, nullptr /*aliases*/, context_);
     else if (query->as<ASTExpressionList>())
         query_tree_node = buildExpressionList(query, context_);
     else
@@ -335,19 +335,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     // Apply the override aliases to the projection nodes
     if (aliases)
     {
-        auto & projection_nodes = current_query_tree->getProjection().getNodes();
+        // Collect the aliases into a vector of strings
+        Names collected_aliases;
         auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
+        collected_aliases.reserve(override_aliases_children.size());
 
-        if (projection_nodes.size() != override_aliases_children.size())
+        for (const auto & child : override_aliases_children)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of aliases does not match number of expressions in SELECT list");
+            const auto & alias_ast = child->as<ASTIdentifier &>();
+            collected_aliases.push_back(alias_ast.name());
         }
 
-        for (size_t i = 0; i < projection_nodes.size(); ++i)
-        {
-            const auto & alias_ast = override_aliases_children[i]->as<ASTIdentifier &>();
-            projection_nodes[i]->setAlias(alias_ast.name());
-        }
+        current_query_tree->setProjectionAliasesToOverride(std::move(collected_aliases));
     }
 
     auto prewhere_expression = select_query_typed.prewhere();
