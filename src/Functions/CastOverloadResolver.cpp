@@ -28,8 +28,8 @@ FunctionBasePtr createFunctionBaseCast(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type);
-
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 /** CastInternal does not preserve nullability of the data type,
   * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
@@ -80,7 +80,11 @@ public:
             context, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
     }
 
-    static FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
+    static FunctionBasePtr createInternalCast(
+        ColumnWithTypeAndName from,
+        DataTypePtr to,
+        CastType cast_type,
+        std::optional<CastDiagnostic> diagnostic)
     {
         if (cast_type == CastType::accurateOrNull && !isVariant(to))
             to = makeNullable(to);
@@ -89,13 +93,23 @@ public:
         arguments.emplace_back(std::move(from));
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
-        return createFunctionBaseCast(nullptr, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
+        /// We consistently use Saturate for internal toDateTime conversion to ensure monotonic so that index analysis is correct.
+        /// Reference: https://github.com/ClickHouse/ClickHouse/issues/73307
+        return createFunctionBaseCast(
+            nullptr, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        return createFunctionBaseCast(context, getNameImpl(cast_type, internal), arguments, return_type, diagnostic, cast_type);
+        return createFunctionBaseCast(
+            context,
+            getNameImpl(cast_type, internal),
+            arguments,
+            return_type,
+            diagnostic,
+            cast_type,
+            FormatSettings::DateTimeOverflowBehavior::Ignore);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
