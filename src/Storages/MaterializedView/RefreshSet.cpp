@@ -198,6 +198,26 @@ bool RefreshSet::refreshesStopped() const
     return refreshes_stopped.load();
 }
 
+void RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadline)
+{
+    std::vector<RefreshTaskPtr> remaining_tasks;
+    {
+        std::unique_lock lock(mutex);
+        for (const auto & [_, list] : tasks)
+            for (const auto & task : list)
+                /// Don't wait with locked mutex.
+                if (!task->tryJoinBackgroundTask(std::chrono::steady_clock::now()))
+                    remaining_tasks.push_back(task);
+    }
+    std::erase_if(remaining_tasks, [&](const auto & t)
+        {
+            return t->tryJoinBackgroundTask(deadline);
+        });
+
+    if (!remaining_tasks.empty())
+        LOG_ERROR(getLogger("RefreshSet"), "{} view refreshes failed to stop, e.g. {}", remaining_tasks.size(), remaining_tasks[0]->getInfo().view_id.getNameForLogs());
+}
+
 RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::optional<StorageID> inner_table_id_, RefreshTaskList::iterator iter_, RefreshTaskList::iterator inner_table_iter_, std::vector<StorageID> dependencies_)
     : parent_set(parent_set_), id(std::move(id_)), inner_table_id(std::move(inner_table_id_)), dependencies(std::move(dependencies_))
     , iter(iter_), inner_table_iter(inner_table_iter_), metric_increment(CurrentMetrics::Increment(CurrentMetrics::RefreshableViews)) {}
