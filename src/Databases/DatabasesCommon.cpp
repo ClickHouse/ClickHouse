@@ -293,7 +293,7 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     if (!query.isView())
         query.select = nullptr;
 
-    query.format = nullptr;
+    query.format_ast = nullptr;
     query.out_file = nullptr;
 }
 
