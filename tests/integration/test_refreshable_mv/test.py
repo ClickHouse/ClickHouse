@@ -219,6 +219,7 @@ def test_refreshable_mv_in_system_db(started_cluster):
 
     node1.query("drop table system.a")
 
+
 def test_refresh_vs_shutdown_smoke(started_cluster):
     for node in nodes:
         node.query(
@@ -253,11 +254,13 @@ def test_refresh_vs_shutdown_smoke(started_cluster):
                 break
             time.sleep(1)
 
-    assert not node1.contains_in_log('view refreshes failed to stop', from_host=True)
-    assert not node1.contains_in_log('Closed connections. But', from_host=True)
-    assert not node1.contains_in_log('Will shutdown forcefully.', from_host=True)
-    assert not node1.contains_in_log('##########', from_host=True)
-    assert node1.contains_in_log('===test_refresh_vs_shutdown_smoke start===', from_host=True)
+    assert not node1.contains_in_log("view refreshes failed to stop", from_host=True)
+    assert not node1.contains_in_log("Closed connections. But", from_host=True)
+    assert not node1.contains_in_log("Will shutdown forcefully.", from_host=True)
+    assert not node1.contains_in_log("##########", from_host=True)
+    assert node1.contains_in_log(
+        "===test_refresh_vs_shutdown_smoke start===", from_host=True
+    )
 
     node1.start_clickhouse()
     node1.query("drop database re sync")
