@@ -108,7 +108,7 @@ private:
 
     ExpressionActionsSettings settings;
 
-    size_t reorder_short_circuit_arguments_every_rows = 10000;
+    static const size_t reorder_short_circuit_arguments_every_rows = 100000;
     size_t current_profile_rows = 0;
 
 public:

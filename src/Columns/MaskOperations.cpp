@@ -5,6 +5,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Functions/IFunction.h>
 #include <algorithm>
 
 namespace DB
@@ -256,7 +257,14 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
+    {
+        if (profile)
+        {
+            profile->elapsed_ns = 0;
+            profile->input_rows = column.column->size();
+        }
         return;
+    }
 
     size_t original_size = column.column->size();
 
