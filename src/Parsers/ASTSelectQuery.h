@@ -161,7 +161,6 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Select; }
     bool hasQueryParameters() const;
 
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
