@@ -19,7 +19,6 @@ public:
 
     ASTPtr clone() const override;
 
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
