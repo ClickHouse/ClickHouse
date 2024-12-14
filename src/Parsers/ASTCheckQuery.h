@@ -45,18 +45,18 @@ protected:
         {
             if (database)
             {
-                database->formatImpl(ostr, settings, state, frame);
+                database->format(ostr, settings, state, frame);
                 ostr << '.';
             }
 
             chassert(table);
-            table->formatImpl(ostr, settings, state, frame);
+            table->format(ostr, settings, state, frame);
         }
 
         if (partition)
         {
             ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(ostr, settings, state, frame);
+            partition->format(ostr, settings, state, frame);
         }
 
         if (!part_name.empty())
