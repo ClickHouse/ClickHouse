@@ -23,6 +23,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -292,7 +293,7 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     if (!query.isView())
         query.select = nullptr;
 
-    query.format = nullptr;
+    query.format_ast = nullptr;
     query.out_file = nullptr;
 }
 

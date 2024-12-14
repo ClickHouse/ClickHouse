@@ -179,7 +179,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
 
-    if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
+    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
     auto object_columns = getConcreteObjectColumns(

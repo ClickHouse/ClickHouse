@@ -3,6 +3,8 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 
+class SipHash;
+
 namespace DB
 {
 

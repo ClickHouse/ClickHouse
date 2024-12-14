@@ -34,8 +34,6 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     bool isExtendedStorageDefinition() const;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
@@ -48,6 +46,9 @@ public:
         f(reinterpret_cast<void **>(&ttl_table));
         f(reinterpret_cast<void **>(&settings));
     }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -67,8 +68,6 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     bool empty() const
     {
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
@@ -84,6 +83,9 @@ public:
         f(reinterpret_cast<void **>(&projections));
         f(reinterpret_cast<void **>(&primary_key_from_columns));
     }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 

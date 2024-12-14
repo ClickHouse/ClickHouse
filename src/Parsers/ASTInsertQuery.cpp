@@ -1,4 +1,6 @@
 #include <iomanip>
+
+#include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -54,11 +56,11 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     if (table_function)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
-        table_function->formatImpl(ostr, settings, state, frame);
+        table_function->format(ostr, settings, state, frame);
         if (partition_by)
         {
             ostr << " PARTITION BY ";
-            partition_by->formatImpl(ostr, settings, state, frame);
+            partition_by->format(ostr, settings, state, frame);
         }
     }
     else if (table_id)
@@ -70,18 +72,18 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     {
         if (database)
         {
-            database->formatImpl(ostr, settings, state, frame);
+            database->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(ostr, settings, state, frame);
+        table->format(ostr, settings, state, frame);
     }
 
     if (columns)
     {
         ostr << " (";
-        columns->formatImpl(ostr, settings, state, frame);
+        columns->format(ostr, settings, state, frame);
         ostr << ")";
     }
 
@@ -103,7 +105,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     if (settings_ast)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
-        settings_ast->formatImpl(ostr, settings, state, frame);
+        settings_ast->format(ostr, settings, state, frame);
     }
 
     /// Compatibility for INSERT without SETTINGS to format in oneline, i.e.:
@@ -121,7 +123,7 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     if (select)
     {
         ostr << delim;
-        select->formatImpl(ostr, settings, state, frame);
+        select->format(ostr, settings, state, frame);
     }
 
     if (!select)

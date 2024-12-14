@@ -149,13 +149,17 @@ namespace
         default_roles.format(ostr, settings);
     }
 
-
     void formatSettings(const ASTSettingsProfileElements & settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
         ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         settings.format(ostr, format);
     }
 
+    void formatAlterSettings(const ASTAlterSettingsProfileElements & alter_settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
+    {
+        ostr << " ";
+        alter_settings.format(ostr, format);
+    }
 
     void formatGrantees(const ASTRolesOrUsersSet & grantees, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
@@ -197,6 +201,9 @@ ASTPtr ASTCreateUserQuery::clone() const
 
     if (settings)
         res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+
+    if (alter_settings)
+        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
 
     for (const auto & authentication_method : authentication_methods)
     {
@@ -278,7 +285,9 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     if (default_roles)
         formatDefaultRoles(*default_roles, ostr, format);
 
-    if (settings && (!settings->empty() || alter))
+    if (alter_settings)
+        formatAlterSettings(*alter_settings, ostr, format);
+    else if (settings)
         formatSettings(*settings, ostr, format);
 
     if (grantees)

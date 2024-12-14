@@ -127,4 +127,6 @@ static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 1000000000;
 static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 0;
 #endif
 
+static constexpr auto DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT = 1000uz;
+
 }
