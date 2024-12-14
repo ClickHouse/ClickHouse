@@ -344,7 +344,7 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
                         columns[i] = arg->reduceImpl<with_profile>(&arg_profile);
                     }
                     else
-                        columns[i] = arg->reduce();
+                        columns[i] = arg->reduceImpl<false>(nullptr);
                 }
             }
         }
@@ -362,7 +362,7 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
                         columns[i] = arg->reduceImpl<with_profile>(&arg_profile);
                     }
                     else
-                        col = arg->reduce();
+                        col = arg->reduceImpl<false>(nullptr);
                 }
                 i += 1;
             }
