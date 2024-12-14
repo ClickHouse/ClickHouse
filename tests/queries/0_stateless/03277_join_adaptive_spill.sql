@@ -1,4 +1,4 @@
-
+-- Tags: no-asan, no-tsan
 create table adaptive_spill_03277_1 (`k` String, `x` String ) Engine=Memory;
 create table adaptive_spill_03277_2 (`k` String, `x` String ) Engine=Memory;
 create table adaptive_spill_03277_3 (`k` String, `x` String ) Engine=Memory;
