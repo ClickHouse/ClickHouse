@@ -17,3 +17,9 @@ services:
             - /misc/rabbitmq/server-cert.pem:/etc/rabbitmq/server-cert.pem
             - /misc/rabbitmq/server-key.pem:/etc/rabbitmq/server-key.pem
             - /misc/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins
+        # https://www.rabbitmq.com/docs/monitoring#health-checks
+        healthcheck:
+            test: rabbitmq-diagnostics -q ping
+            interval: 10s
+            retries: 10
+            timeout: 2s

@@ -10,6 +10,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/quoteString.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
@@ -1264,7 +1265,8 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
     const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
 
-    NamesAndTypesList added, deleted;
+    NamesAndTypesList added;
+    NamesAndTypesList deleted;
     sample_block_columns.getDifference(required_columns, added, deleted);
     if (!deleted.empty() || added.size() != 1)
     {
@@ -1563,7 +1565,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     auto request_read_in_order = [order_info_](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit);
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, {});
     };
 
     bool ok = true;

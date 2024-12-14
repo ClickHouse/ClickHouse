@@ -129,9 +129,11 @@ ClusterDiscovery::ClusterDiscovery(
         if (!config.has(cluster_config_prefix))
             continue;
 
-        String zk_root = config.getString(cluster_config_prefix + ".path");
-        if (zk_root.empty())
+        String zk_name_and_root = config.getString(cluster_config_prefix + ".path");
+        if (zk_name_and_root.empty())
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "ZooKeeper path for cluster '{}' is empty", key);
+        String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
+        String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
         const auto & password = config.getString(cluster_config_prefix + ".password", "");
         const auto & cluster_secret = config.getString(cluster_config_prefix + ".secret", "");
@@ -142,6 +144,7 @@ ClusterDiscovery::ClusterDiscovery(
             key,
             ClusterInfo(
                 /* name_= */ key,
+                /* zk_name_= */ zk_name,
                 /* zk_root_= */ zk_root,
                 /* host_name= */ config.getString(cluster_config_prefix + ".my_hostname", getFQDNOrHostName()),
                 /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
@@ -288,7 +291,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 {
     LOG_DEBUG(log, "Updating cluster '{}'", cluster_info.name);
 
-    auto zk = context->getZooKeeper();
+    auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
 
     int start_version;
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false);
@@ -381,9 +384,9 @@ void ClusterDiscovery::initialUpdate()
             throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failpoint cluster_discovery_faults is triggered");
     });
 
-    auto zk = context->getZooKeeper();
     for (auto & [_, info] : clusters_info)
     {
+        auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
         registerInZk(zk, info);
         if (!updateCluster(info))
         {

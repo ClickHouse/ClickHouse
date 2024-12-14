@@ -22,6 +22,7 @@ public:
         bool always_read_till_end_ = false,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
+        bool apply_virtual_row_conversions = true,
         bool have_all_inputs_ = true);
 
     String getName() const override { return "MergingSortedTransform"; }

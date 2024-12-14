@@ -5,10 +5,18 @@
 #include <Parsers/ASTFunction.h>
 #include <base/unaligned.h>
 #include <Common/Exception.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/SipHash.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Compression/CompressionCodecMultiple.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric Compressing;
+    extern const Metric Decompressing;
+}
 
 namespace DB
 {
@@ -80,6 +88,8 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 {
     assert(source != nullptr && dest != nullptr);
 
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::Compressing);
+
     dest[0] = getMethodByte();
     UInt8 header_size = getHeaderSize();
     /// Write data from header_size
@@ -92,6 +102,8 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
     assert(source != nullptr && dest != nullptr);
+
+    CurrentMetrics::Increment metric_increment(CurrentMetrics::Decompressing);
 
     UInt8 header_size = getHeaderSize();
     if (source_size < header_size)

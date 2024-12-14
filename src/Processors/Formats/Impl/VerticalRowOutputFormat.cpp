@@ -4,7 +4,10 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/PrettyFormatHelpers.h>
 #include <Common/UTF8Helpers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -14,6 +17,8 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), format_settings(format_settings_)
 {
+    color = format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal);
+
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
 
@@ -31,6 +36,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     }
 
     names_and_paddings.resize(columns);
+    is_number.resize(columns);
     for (size_t i = 0; i < columns; ++i)
     {
         WriteBufferFromString buf(names_and_paddings[i]);
@@ -42,6 +48,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     {
         size_t new_size = max_name_width - name_widths[i] + names_and_paddings[i].size();
         names_and_paddings[i].resize(new_size, ' ');
+        is_number[i] = isNumber(removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type)));
     }
 }
 
@@ -61,7 +68,26 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 
 void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
 {
-    serialization.serializeText(column, row_num, out, format_settings);
+    if (color && format_settings.pretty.highlight_digit_groups && is_number[field_number])
+    {
+        String serialized_value;
+        {
+            WriteBufferFromString buf(serialized_value);
+            serialization.serializeText(column, row_num, buf, format_settings);
+        }
+
+        /// Highlight groups of thousands.
+        serialized_value = highlightDigitGroups(serialized_value);
+        out.write(serialized_value.data(), serialized_value.size());
+    }
+    else
+    {
+        serialization.serializeText(column, row_num, out, format_settings);
+    }
+
+    /// Write a tip.
+    if (is_number[field_number])
+        writeReadableNumberTip(out, column, row_num, format_settings, color);
 }
 
 

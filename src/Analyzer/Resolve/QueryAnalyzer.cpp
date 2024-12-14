@@ -1,3 +1,4 @@
+#include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/grouping.h>
@@ -51,7 +53,6 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
@@ -677,6 +678,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                         "tuple"});
                 }
             }
+
+            logProcessorProfile(context, io.pipeline.getProcessors());
         }
 
         scalars_cache.emplace(node_with_hash, scalar_block);
@@ -1590,7 +1593,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             if (need_to_qualify)
                 need_to_qualify = IdentifierResolver::tryBindIdentifierToTableExpressions(identifier_lookup, table_expression_node, scope);
 
-            if (IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, scope))
+            if (IdentifierResolver::tryBindIdentifierToAliases(identifier_lookup, scope) || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(identifier_lookup, scope))
                 need_to_qualify = true;
 
             if (need_to_qualify)
@@ -3023,9 +3026,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         argument_column.name = arguments_projection_names[function_argument_index];
 
         /** If function argument is lambda, save lambda argument index and initialize argument type as DataTypeFunction
-          * where function argument types are initialized with empty array of lambda arguments size.
+          * where function argument types are initialized with empty arrays of lambda arguments size.
           */
-        if (const auto * lambda_node = function_argument->as<const LambdaNode>())
+        const auto * lambda_node = function_argument->as<const LambdaNode>();
+        if (lambda_node)
         {
             size_t lambda_arguments_size = lambda_node->getArguments().getNodes().size();
             argument_column.type = std::make_shared<DataTypeFunction>(DataTypes(lambda_arguments_size, nullptr), nullptr);
@@ -3466,11 +3470,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             auto set = std::make_shared<Set>(size_limits_for_set, 0, settings[Setting::transform_null_in]);
 
-            set->setHeader(result_block.cloneEmpty().getColumnsWithTypeAndName());
-            set->insertFromBlock(result_block.getColumnsWithTypeAndName());
-            set->finishInsert();
-
-            auto future_set = std::make_shared<FutureSetFromStorage>(std::move(set));
+            auto hash = function_arguments[1]->getTreeHash();
+            auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(result_block), settings[Setting::transform_null_in], size_limits_for_set);
 
             /// Create constant set column for constant folding
 
@@ -3497,15 +3498,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         else
             function_base = function->build(argument_columns);
 
-        /// Do not constant fold get scalar functions
-        // bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
-        //     function_name == "shardCount" || function_name == "hostName" || function_name == "tcpPort";
-
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
           * Result: SELECT 2;
           */
-        if (function_base->isSuitableForConstantFolding()) // && !disable_constant_folding)
+        if (function_base->isSuitableForConstantFolding())
         {
             auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);
@@ -3514,7 +3511,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (all_arguments_constants)
             {
-                size_t num_rows = function_arguments.empty() ? 0 : argument_columns.front().column->size();
+                size_t num_rows = 0;
+                if (!argument_columns.empty())
+                    num_rows = argument_columns.front().column->size();
                 column = executable_function->execute(argument_columns, result_type, num_rows, true);
             }
             else
@@ -4975,24 +4974,22 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "ARRAY JOIN requires at least single expression");
 
+    /// Register expression aliases in the scope
+    for (const auto & elem : array_join_nodes)
+    {
+        for (auto & child : elem->getChildren())
+        {
+            if (child)
+                expressions_visitor.visit(child);
+        }
+    }
+
     std::vector<QueryTreeNodePtr> array_join_column_expressions;
     array_join_column_expressions.reserve(array_join_nodes_size);
 
     for (auto & array_join_expression : array_join_nodes)
     {
         auto array_join_expression_alias = array_join_expression->getAlias();
-
-        for (const auto & elem : array_join_nodes)
-        {
-            if (elem->hasAlias())
-                scope.aliases.array_join_aliases.insert(elem->getAlias());
-
-            for (auto & child : elem->getChildren())
-            {
-                if (child)
-                    expressions_visitor.visit(child);
-            }
-        }
 
         std::string identifier_full_name;
 
@@ -5366,6 +5363,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     };
 
     add_table_expression_alias_into_scope(join_tree_node);
+    scope.registered_table_expression_nodes.insert(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 

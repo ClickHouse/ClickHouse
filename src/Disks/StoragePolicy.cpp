@@ -4,10 +4,12 @@
 #include "createVolume.h"
 
 #include <Interpreters/Context.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
 #include <set>

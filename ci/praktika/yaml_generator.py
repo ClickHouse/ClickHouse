@@ -1,12 +1,12 @@
 import dataclasses
 from typing import List
 
-from praktika import Artifact, Job, Workflow
-from praktika.mangle import _get_workflows
-from praktika.parser import WorkflowConfigParser
-from praktika.runtime import RunConfig
-from praktika.settings import Settings
-from praktika.utils import ContextManager, Shell, Utils
+from . import Artifact, Job, Workflow
+from .mangle import _get_workflows
+from .parser import WorkflowConfigParser
+from .runtime import RunConfig
+from .settings import Settings
+from .utils import Shell, Utils
 
 
 class YamlGenerator:
@@ -80,6 +80,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+            ref: ${{{{ github.head_ref }}}}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
@@ -102,7 +104,11 @@ jobs:
         run: |
           . /tmp/praktika_setup_env.sh
           set -o pipefail
-          {PYTHON} -m praktika run --job '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee {RUN_LOG}
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+          else
+            python3 -m praktika run '''{JOB_NAME}''' --workflow "{WORKFLOW_NAME}" --ci |& tee /tmp/praktika/praktika_run.log
+          fi
 {UPLOADS_GITHUB}\
 """
 
@@ -184,12 +190,10 @@ jobs:
                     False
                 ), f"Workflow event not yet supported [{workflow_config.event}]"
 
-            with ContextManager.cd():
-                with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
-                    f.write(yaml_workflow_str)
+            with open(self._get_workflow_file_name(workflow_config.name), "w") as f:
+                f.write(yaml_workflow_str)
 
-        with ContextManager.cd():
-            Shell.check("git add ./.github/workflows/*.yaml")
+        Shell.check("git add ./.github/workflows/*.yaml")
 
 
 class PullRequestPushYamlGen:

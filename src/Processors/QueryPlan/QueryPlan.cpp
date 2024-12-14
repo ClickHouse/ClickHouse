@@ -207,6 +207,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());
+    map.add("Node Id", step.getUniqID());
 
     if (options.description)
     {
