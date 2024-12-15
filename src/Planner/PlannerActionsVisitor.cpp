@@ -60,8 +60,8 @@ namespace
  */
 String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node)
 {
-    const auto & [name, type, field_type] = constant_node.getFieldAttributes();
-    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, field_type, constant_node.getResultType());
+    const auto & [name, type] = constant_node.getValueNameAndType();
+    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
@@ -336,7 +336,8 @@ public:
 
     static String calculateConstantActionNodeName(const ConstantNode & constant_node)
     {
-        return std::get<String>(constant_node.getFieldAttributes());
+        const auto & [name, type] = constant_node.getValueNameAndType();
+        return name + "_" + constant_node.getResultType()->getName();
     }
 
     String calculateWindowNodeActionName(const QueryTreeNodePtr & function_nodew_node_, const QueryTreeNodePtr & window_node_)

@@ -92,10 +92,9 @@ public:
         return constant_value.getType();
     }
 
-    static bool requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type);
-
     /// Check if conversion to AST requires wrapping with _CAST function.
-    bool requiresCastCall() const;
+    static bool requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type);
+    static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
 
     /// Check if constant is a result of _CAST function constant folding.
     bool receivedFromInitiatorServer() const;
@@ -109,10 +108,9 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    std::tuple<String, Field::Types::Which, DataTypePtr> getFieldAttributes() const
+    std::pair<String, DataTypePtr> getValueNameAndType() const
     {
-        const auto & [name, type, field_type] = constant_value.getFieldAttributes();
-        return {name + "_" + constant_value.getType()->getName(), type, field_type};
+        return constant_value.getValueNameAndType();
     }
 
 protected:
