@@ -78,7 +78,7 @@ namespace ErrorCodes
   *
   * ---------------------------------------------------------------------------------------------------------------------
   *
-  * We can also calculate the Precision and the Recall ("Pr"):
+  * We can also calculate the Precision and the Recall ("PR"):
   *
   * Precision is the ratio `tp / (tp + fp)` where `tp` is the number of true positives and `fp` the number of false positives.
   * It represents how often the classifier is correct when giving a positive result.
@@ -116,12 +116,12 @@ namespace ErrorCodes
   *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   */
 
-template <bool Pr>
+template <bool PR>
 class FunctionArrayAUC : public IFunction
 {
 public:
-    static constexpr auto name = Pr ? "arrayAUCPr" : "arrayAUC";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<Pr>>(); }
+    static constexpr auto name = PR ? "arrayAUCPR" : "arrayROCAUC";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<PR>>(); }
 
 private:
     static Float64 apply(
@@ -139,7 +139,7 @@ private:
 
         size_t size = next_offset - current_offset;
 
-        if (Pr && size == 0)
+        if (PR && size == 0)
             return 0.0;
 
         PODArrayWithStackMemory<ScoreLabel, 1024> sorted_labels(size);
@@ -153,7 +153,7 @@ private:
         /// Sorting scores in descending order to traverse the ROC / Precision-Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
-        if constexpr (!Pr)
+        if constexpr (!PR)
         {
             /// We will first calculate non-normalized area.
             Float64 area = 0.0;
@@ -265,8 +265,8 @@ private:
 public:
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return Pr ? false : true; }
-    size_t getNumberOfArguments() const override { return Pr ? 2 : 0; }
+    bool isVariadic() const override { return PR ? false : true; }
+    size_t getNumberOfArguments() const override { return PR ? 2 : 0; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
@@ -274,11 +274,11 @@ public:
     {
         size_t number_of_arguments = arguments.size();
 
-        if ((!Pr && (number_of_arguments < 2 || number_of_arguments > 3))
-            || (Pr && number_of_arguments != 2))
+        if ((!PR && (number_of_arguments < 2 || number_of_arguments > 3))
+            || (PR && number_of_arguments != 2))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Number of arguments for function {} doesn't match: passed {}, should be {}",
-                            getName(), number_of_arguments, Pr ? "2" : "2 or 3");
+                            getName(), number_of_arguments, PR ? "2" : "2 or 3");
 
         for (size_t i = 0; i < 2; ++i)
         {
@@ -291,7 +291,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}", getName(), nested_type->getName());
         }
 
-        if (!Pr && number_of_arguments == 3)
+        if (!PR && number_of_arguments == 3)
         {
             if (!isBool(arguments[2].type) || arguments[2].column.get() == nullptr || !isColumnConst(*arguments[2].column))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be of type const Bool.", getName());
@@ -346,6 +346,7 @@ REGISTER_FUNCTION(ArrayAUC)
 {
     factory.registerFunction<FunctionArrayAUC<false>>();
     factory.registerFunction<FunctionArrayAUC<true>>();
+    factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
 }
 
 }

@@ -1229,7 +1229,7 @@ argMin
 argmax
 argmin
 arrayAUC
-arrayAUCPr
+arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -1272,6 +1272,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
