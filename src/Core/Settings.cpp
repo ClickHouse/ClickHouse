@@ -2532,7 +2532,7 @@ Possible values:
 
 - default
 
- This is the equivalent of `hash`, `parallel_hash` or `direct`, if possible (same as `direct,parallel_hash,hash`)
+ Same as `direct,parallel_hash,hash`, i.e. try to use direct join, parallel hash join, and hash join join (in this order).
 
 - grace_hash
 
