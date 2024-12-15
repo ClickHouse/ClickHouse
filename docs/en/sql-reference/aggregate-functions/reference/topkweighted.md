@@ -1,4 +1,5 @@
 ---
+title: topKWeighted
 slug: /en/sql-reference/aggregate-functions/reference/topkweighted
 sidebar_position: 203
 ---

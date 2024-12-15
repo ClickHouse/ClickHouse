@@ -1,4 +1,5 @@
 ---
+title: entropy
 slug: /en/sql-reference/aggregate-functions/reference/entropy
 sidebar_position: 131
 ---

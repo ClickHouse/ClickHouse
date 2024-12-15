@@ -1,4 +1,5 @@
 ---
+title: argMax
 slug: /en/sql-reference/aggregate-functions/reference/argmax
 sidebar_position: 109
 ---

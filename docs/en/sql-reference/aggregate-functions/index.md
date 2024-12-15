@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/aggregate-functions/
+slug: /en/sql-reference/aggregate-functions/
 sidebar_position: 33
 displayed_sidebar: sqlreference
 toc_folder_title: Aggregate Functions

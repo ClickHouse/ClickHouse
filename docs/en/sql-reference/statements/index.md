@@ -6,7 +6,7 @@ sidebar_label: List of statements
 
 # ClickHouse SQL Statements
 
-Statements represent various kinds of action you can perform using SQL queries. Each kind of statement has it’s own syntax and usage details that are described separately:
+Statements represent various kinds of action you can perform using SQL queries. Each kind of statement has its own syntax and usage details that are described separately:
 
 - [SELECT](/docs/en/sql-reference/statements/select/index.md)
 - [INSERT INTO](/docs/en/sql-reference/statements/insert-into.md)

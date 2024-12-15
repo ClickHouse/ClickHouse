@@ -17,16 +17,16 @@
 	{
 	"title": "Database and Table Engines",
 	"description": "Information on database and table engines which determine where and how your data is stored.",
-	"url": "/docs/en/engines/engines"
+	"url": "/docs/en/engines/"
 	},
 	{
 		"title": "Functions",
 		"description": "A complete and ever expanding list of functions for manipulating and transforming your data.",
-		"url": "/docs/en/engines/engines"
+		"url": "/docs/en/sql-reference/functions"
 	},
 	{
 		"title": "Other Features",
 		"description": "Additional features which are unique to ClickHouse.",
-		"url": "/docs/en/engines/engines"
+		"url": "/docs/en/sql-reference/operators"
 	}
 ]

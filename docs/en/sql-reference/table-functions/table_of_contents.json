@@ -1,0 +1,166 @@
+[
+    {
+        "title": "azureBlobStorage",
+        "slug": "/en/sql-reference/table-functions/azureBlobStorage"
+    },
+    {
+        "title": "azureBlobStorageCluster",
+        "slug": "/en/sql-reference/table-functions/azureBlobStorageCluster"
+    },
+    {
+        "title": "cluster",
+        "slug": "/en/sql-reference/table-functions/cluster"
+    },
+    {
+        "title": "deltaLake",
+        "slug": "/en/sql-reference/table-functions/deltalake"
+    },
+    {
+        "title": "dictionary",
+        "slug": "/en/sql-reference/table-functions/dictionary"
+    },
+    {
+        "title": "executable",
+        "slug": "/en/engines/table-functions/executable"
+    },
+    {
+        "title": "file",
+        "slug": "/en/sql-reference/table-functions/file"
+    },
+    {
+        "title": "fileCluster",
+        "slug": "/en/sql-reference/table-functions/fileCluster"
+    },
+    {
+        "title": "format",
+        "slug": "/en/sql-reference/table-functions/format"
+    },
+    {
+        "title": "fuzzJSON",
+        "slug": "/en/sql-reference/table-functions/fuzzJSON"
+    },
+    {
+        "title": "fuzzQuery",
+        "slug": "/en/sql-reference/table-functions/fuzzQuery"
+    },
+    {
+        "title": "gcs",
+        "slug": "/en/sql-reference/table-functions/gcs"
+    },
+    {
+        "title": "generateRandom",
+        "slug": "/en/sql-reference/table-functions/generate"
+    },
+    {
+        "title": "generateSeries",
+        "slug": "/en/sql-reference/table-functions/generateSeries"
+    },
+    {
+        "title": "generate_series",
+        "slug": "/en/sql-reference/table-functions/generate_series"
+    },
+    {
+        "title": "hdfs",
+        "slug": "/en/sql-reference/table-functions/hdfs"
+    },
+    {
+        "title": "hdfsCluster",
+        "slug": "/en/sql-reference/table-functions/hdfsCluster"
+    },
+    {
+        "title": "hudi",
+        "slug": "/en/sql-reference/table-functions/hudi"
+    },
+    {
+        "title": "iceberg",
+        "slug": "/en/sql-reference/table-functions/iceberg"
+    },
+    {
+        "title": "input",
+        "slug": "/en/sql-reference/table-functions/input"
+    },
+    {
+        "title": "jdbc",
+        "slug": "/en/sql-reference/table-functions/jdbc"
+    },
+    {
+        "title": "loop",
+        "slug": "/en/sql-reference/table-functions/loop"
+    },
+    {
+        "title": "merge",
+        "slug": "/en/sql-reference/table-functions/merge"
+    },
+    {
+        "title": "mergeTreeIndex",
+        "slug": "/en/sql-reference/table-functions/mergeTreeIndex"
+    },
+    {
+        "title": "mongodb",
+        "slug": "/en/sql-reference/table-functions/mongodb"
+    },
+    {
+        "title": "mysql",
+        "slug": "/en/sql-reference/table-functions/mysql"
+    },
+    {
+        "title": "null function",
+        "slug": "/en/sql-reference/table-functions/null"
+    },
+    {
+        "title": "numbers",
+        "slug": "/en/sql-reference/table-functions/numbers"
+    },
+    {
+        "title": "odbc",
+        "slug": "/en/sql-reference/table-functions/odbc"
+    },
+    {
+        "title": "postgresql",
+        "slug": "/en/sql-reference/table-functions/postgresql"
+    },
+    {
+        "title": "redis",
+        "slug": "/en/sql-reference/table-functions/redis"
+    },
+    {
+        "title": "remote",
+        "slug": "/en/sql-reference/table-functions/remote"
+    },
+    {
+        "title": "s3",
+        "slug": "/en/sql-reference/table-functions/s3"
+    },
+    {
+        "title": "s3Cluster",
+        "slug": "/en/sql-reference/table-functions/s3Cluster"
+    },
+    {
+        "title": "sqlite",
+        "slug": "/en/sql-reference/table-functions/sqlite"
+    },
+    {
+        "title": "timeSeriesData",
+        "slug": "/en/sql-reference/table-functions/timeSeriesData"
+    },
+    {
+        "title": "timeSeriesMetrics",
+        "slug": "/en/sql-reference/table-functions/timeSeriesMetrics"
+    },
+    {
+        "title": "timeSeriesTags",
+        "slug": "/en/sql-reference/table-functions/timeSeriesTags"
+    },
+    {
+        "title": "url",
+        "slug": "/en/sql-reference/table-functions/url"
+    },
+    {
+        "title": "urlCluster",
+        "slug": "/en/sql-reference/table-functions/urlCluster"
+    },
+    {
+        "title": "view",
+        "slug": "/en/sql-reference/table-functions/view"
+    }
+]
