@@ -1041,6 +1041,7 @@ TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TableOfContentsJSON
+TableOfContents
 TargetSpecific
 Telegraf
 TemplateIgnoreSpaces
