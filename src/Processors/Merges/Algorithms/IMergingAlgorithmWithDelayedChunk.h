@@ -36,11 +36,13 @@ protected:
 
         auto first_non_equal = lhs.firstNonEqualSortColumnsWith(prev_unequal_column, rhs);
 
-        if (first_non_equal > lhs.num_columns)
-           return false;
+        if (first_non_equal < lhs.num_columns)
+        {
+            prev_unequal_column = first_non_equal;
+            return true;
+        }
 
-        prev_unequal_column = first_non_equal;
-        return true;
+        return false;
     }
 
     Block header;

@@ -161,22 +161,22 @@ struct RowRef
 
     static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
     {
-        auto & cur_column = lhs[offset];
-        auto & other_column = rhs[offset];
-
-        if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
+        if (0 != lhs[offset]->compareAt(lhs_row, rhs_row, *rhs[offset], 1))
             return offset;
 
-        for (size_t i = size - 1; i > -offset + 1; --i)
+        for (size_t col_number = 0; col_number < size; ++col_number)
         {
-            cur_column = lhs[offset + i];
-            other_column = rhs[offset + i];
+            if (col_number == offset)
+                continue;
+
+            auto & cur_column = lhs[col_number];
+            auto & other_column = rhs[col_number];
 
             if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
-                return offset + i;
+                return col_number;
         }
 
-        return size + 1;
+        return size;
     }
 
     size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
