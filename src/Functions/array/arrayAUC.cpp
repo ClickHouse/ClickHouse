@@ -94,7 +94,7 @@ namespace ErrorCodes
   * For the curve we can calculate, literally, Area Under the Curve, that will be in the range of [0..1].
   *
   * Let's look at the example:
-  * arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+  * arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
   *
   * 1. We have pairs: (-, 0.1), (-, 0.4), (+, 0.35), (+, 0.8)
   *
@@ -347,6 +347,7 @@ REGISTER_FUNCTION(ArrayAUC)
     factory.registerFunction<FunctionArrayAUC<false>>();
     factory.registerFunction<FunctionArrayAUC<true>>();
     factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
+    factory.registerAlias("arrayPRAUC", "arrayAUCPR");
 }
 
 }

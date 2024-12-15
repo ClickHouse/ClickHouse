@@ -2195,6 +2195,8 @@ For more details, please see [here](https://developers.google.com/machine-learni
 arrayAUCPR(arr_scores, arr_labels)
 ```
 
+Alias: `arrayPRAUC`
+
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.

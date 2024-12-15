@@ -46,3 +46,6 @@ select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [1, 1, 0, 1]); -- { serve
 select arrayAUCPR(['a', 'b', 'c', 'd'], [1, 0, 1, 1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select arrayAUCPR([0.1, 0.4, NULL, 0.8], [0, 0, 1, 1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, NULL, 1, 1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+--alias
+SELECT floor(arrayPRAUC([1], [1]), 10);
