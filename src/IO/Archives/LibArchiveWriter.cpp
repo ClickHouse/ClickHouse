@@ -231,6 +231,20 @@ void LibArchiveWriter::finalize()
     finalized = true;
 }
 
+void LibArchiveWriter::cancel() noexcept
+{
+    std::lock_guard lock{mutex};
+    if (finalized)
+        return;
+    if (archive)
+        archive_write_close(archive);
+    if (stream_info)
+    {
+        stream_info->archive_write_buffer->cancel();
+        stream_info.reset();
+    }
+}
+
 void LibArchiveWriter::setPassword(const String & password_)
 {
     if (password_.empty())

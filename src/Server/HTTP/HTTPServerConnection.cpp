@@ -112,7 +112,6 @@ void HTTPServerConnection::run()
             else
                 throw;
         }
-
         catch (const Poco::Exception &)
         {
             if (session.networkException())

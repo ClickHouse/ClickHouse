@@ -106,7 +106,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
+void registerStorages()
 {
     auto & factory = StorageFactory::instance();
 
@@ -169,10 +169,7 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     #endif
 
     #if USE_MONGODB
-    if (use_legacy_mongodb_integration)
-        registerStorageMongoDBPocoLegacy(factory);
-    else
-        registerStorageMongoDB(factory);
+    registerStorageMongoDB(factory);
     #endif
 
     registerStorageRedis(factory);

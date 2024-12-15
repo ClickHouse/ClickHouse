@@ -32,6 +32,7 @@ public:
 
     void start(const ContextPtr &) override {}
     void finish() override;
+    void cancel() noexcept override;
 
 private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaProducers};

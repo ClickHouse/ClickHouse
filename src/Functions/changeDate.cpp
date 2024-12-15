@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/DateLUT.h>
 #include <Common/typeid_cast.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -194,8 +195,10 @@ public:
         auto minutes = (time % 10'000) / 100;
         auto seconds = time % 100;
 
-        Int64 min_date = 0, max_date = 0;
-        Int16 min_year, max_year;
+        Int64 min_date = 0;
+        Int64 max_date = 0;
+        Int16 min_year;
+        Int16 max_year;
         if (isDate(result_type))
         {
             min_date = date_lut.makeDayNum(1970, 1, 1);

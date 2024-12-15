@@ -357,6 +357,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
         writeIntText(inode, *out);
         writeChar('\n', *out);
         writeIntText(file_meta.last_writen_position, *out);
+        out->finalize();
     }
     catch (...)
     {
@@ -572,7 +573,8 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     read_settings.local_fs_method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
-    UInt64 inode, last_written_pos;
+    UInt64 inode;
+    UInt64 last_written_pos;
 
     if (in->eof()) /// File is empty.
     {

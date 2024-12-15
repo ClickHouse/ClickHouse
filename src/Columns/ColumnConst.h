@@ -274,6 +274,12 @@ public:
         callback(data);
     }
 
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    {
+        callback(*data);
+        data->forEachSubcolumnRecursively(callback);
+    }
+
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*data);

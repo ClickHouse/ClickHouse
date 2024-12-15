@@ -151,7 +151,8 @@ static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & conne
         {std::make_shared<DataTypeString>(), "current_user_grants"}
     };
 
-    String grants_query, sub_privs;
+    String grants_query;
+    String sub_privs;
     StreamSettings mysql_input_stream_settings(global_settings);
     auto input = std::make_unique<MySQLSource>(connection, "SHOW GRANTS FOR CURRENT_USER();", sync_user_privs_header, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(input));
@@ -165,11 +166,11 @@ static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & conne
             grants_query = (*block.getByPosition(0).column)[index].safeGet<String>();
             out << grants_query << "; ";
             sub_privs = grants_query.substr(0, grants_query.find(" ON "));
-            if (sub_privs.find("ALL PRIVILEGES") == std::string::npos)
+            if (!sub_privs.contains("ALL PRIVILEGES"))
             {
-                if ((sub_privs.find("RELOAD") != std::string::npos and
-                    sub_privs.find("REPLICATION SLAVE") != std::string::npos and
-                    sub_privs.find("REPLICATION CLIENT") != std::string::npos))
+                if ((sub_privs.contains("RELOAD") and
+                    sub_privs.contains("REPLICATION SLAVE") and
+                    sub_privs.contains("REPLICATION CLIENT")))
                     return true;
             }
             else

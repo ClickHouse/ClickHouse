@@ -185,6 +185,8 @@ public:
 
     bool assertCorrectness() const;
 
+    size_t getSizeForBackgroundDownload() const;
+
     /**
      * ========== Methods that must do cv.notify() ==================
      */
@@ -230,6 +232,7 @@ private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
+    size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
     void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);

@@ -172,7 +172,7 @@ size_t MergeTreeReaderWide::readRows(
                 throw;
             }
 
-            if (column->empty())
+            if (column->empty() && max_rows_to_read > 0)
                 res_columns[pos] = nullptr;
         }
 

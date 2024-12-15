@@ -1,6 +1,10 @@
 #pragma once
-#include <Processors/IProcessor.h>
+
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
+#include <Processors/IProcessor.h>
+
+#include <deque>
 #include <memory>
 
 namespace DB
@@ -66,7 +70,7 @@ protected:
 
 private:
     Chunk input_chunk;
-    Chunk output_chunk;
+    std::deque<Chunk> output_chunks;
     bool has_input = false;
     bool has_output = false;
     bool stop_reading = false;
@@ -80,13 +84,16 @@ private:
     bool default_totals;
     bool initialized = false;
 
+    /// Only used with ConcurrentHashJoin
+    ExtraScatteredBlocks remaining_blocks;
+
     ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
-    Block readExecute(Chunk & chunk);
+    Blocks readExecute(Chunk & chunk);
 };
 
 /// Fills Join with block from right table.

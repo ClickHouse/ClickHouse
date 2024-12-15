@@ -2,6 +2,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
+#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
