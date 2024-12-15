@@ -57,16 +57,16 @@ struct InMemoryDirectoryPathMap
         return it->second;
     }
 
+    bool removePathIfExists(const std::filesystem::path & path)
+    {
+        std::lock_guard lock(mutex);
+        return map.erase(path) != 0;
+    }
+
     mutable SharedMutex mutex;
 
-#ifdef OS_LINUX
     FileNames TSA_GUARDED_BY(mutex) unique_filenames;
     Map TSA_GUARDED_BY(mutex) map;
-/// std::shared_mutex may not be annotated with the 'capability' attribute in libcxx.
-#else
-    FileNames unique_filenames;
-    Map map;
-#endif
 };
 
 }

@@ -27,8 +27,9 @@ public:
     }
 
     /// Write progress table with metrics.
-    void writeTable(WriteBufferFromFileDescriptor & message, bool show_table, bool toggle_enabled);
-    void clearTableOutput(WriteBufferFromFileDescriptor & message);
+    void writeTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock,
+            bool show_table, bool toggle_enabled);
+    void clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
     void writeFinalTable();
 
     /// Update the metric values. They can be updated from:

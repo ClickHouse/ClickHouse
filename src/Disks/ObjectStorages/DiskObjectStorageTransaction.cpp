@@ -10,6 +10,7 @@
 #include <base/defines.h>
 
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <boost/algorithm/string/join.hpp>
 
 namespace DB
@@ -480,8 +481,7 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
     void undo() override
     {
-        if (object_storage.exists(object))
-            object_storage.removeObject(object);
+        object_storage.removeObjectIfExists(object);
     }
 
     void finalize() override
@@ -543,8 +543,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void undo() override
     {
-        for (const auto & object : created_objects)
-            destination_object_storage.removeObject(object);
+         destination_object_storage.removeObjectsIfExist(created_objects);
     }
 
     void finalize() override
@@ -593,6 +592,39 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
         if (!truncate_outcome->objects_to_remove.empty())
             object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
     }
+};
+
+struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOperation
+{
+    StoredObject object;
+
+    CreateEmptyFileObjectStorageOperation(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        const std::string & path_)
+        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+    {
+        const auto key = object_storage.generateObjectKeyForPath(path_, std::nullopt);
+        object = StoredObject(key.serialize(), path_, /* file_size */0);
+    }
+
+    std::string getInfoForLog() const override
+    {
+        return fmt::format("CreateEmptyFileObjectStorageOperation (remote path: {}, local path: {})", object.remote_path, object.local_path);
+    }
+
+    void execute(MetadataTransactionPtr /* tx */) override
+    {
+        auto buf = object_storage.writeObject(object, WriteMode::Rewrite);
+        buf->finalize();
+    }
+
+    void undo() override
+    {
+        object_storage.removeObjectIfExists(object);
+    }
+
+    void finalize() override {}
 };
 
 }
@@ -770,9 +802,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     }
     else
     {
-        auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
+        auto write_operation = std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
-        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation.get(), mode, path, key_ = std::move(object_key)](size_t count)
+        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation, mode, path, key_ = std::move(object_key)](size_t count)
         {
             /// This callback called in WriteBuffer finalize method -- only there we actually know
             /// how many bytes were written. We don't control when this finalize method will be called
@@ -912,6 +944,12 @@ void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
 
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
+    if (object_storage.isPlain() && !object_storage.isWriteOnce())
+    {
+        operations_to_execute.emplace_back(
+            std::make_unique<CreateEmptyFileObjectStorageOperation>(object_storage, metadata_storage, path));
+    }
+
     operations_to_execute.emplace_back(
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {

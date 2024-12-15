@@ -392,7 +392,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor::Data data(getContext());
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
+            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
             break;
         }
         case ASTExplainQuery::QueryTree:
@@ -441,7 +441,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (need_newline)
                     buf << "\n\n";
 
-                query_tree->toAST()->format(IAST::FormatSettings(buf, false));
+                query_tree->toAST()->format(buf, IAST::FormatSettings(false));
             }
 
             break;
@@ -547,6 +547,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* async_isnert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
+                // we do not need it anymore, it would be executed
+                io.pipeline.cancel();
             }
             else
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT and INSERT is supported for EXPLAIN PIPELINE query");
@@ -617,6 +619,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             break;
         }
     }
+    buf.finalize();
     if (insert_buf)
     {
         if (single_line)

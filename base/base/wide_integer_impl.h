@@ -337,7 +337,7 @@ struct integer<Bits, Signed>::_impl
 
         /** Here we have to use strict comparison.
           * The max_int is 2^64 - 1.
-          * When casted to floating point type, it will be rounded to the closest representable number,
+          * When cast to a floating point type, it will be rounded to the closest representable number,
           * which is 2^64.
           * But 2^64 is not representable in uint64_t,
           * so the maximum representable number will be strictly less.

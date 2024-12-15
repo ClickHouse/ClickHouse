@@ -76,7 +76,7 @@ struct HashTableNoState
 template <typename T>
 inline bool bitEquals(T a, T b)
 {
-    if constexpr (std::is_floating_point_v<T>)
+    if constexpr (is_floating_point<T>)
         /// Note that memcmp with constant size is a compiler builtin.
         return 0 == memcmp(&a, &b, sizeof(T)); /// NOLINT
     else
@@ -172,7 +172,7 @@ struct HashTableCell
     const value_type & getValue() const { return key; }
 
     /// Get the key (internally).
-    static const Key & getKey(const value_type & value) { return value; }
+    static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }

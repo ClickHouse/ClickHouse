@@ -132,7 +132,7 @@ private:
     Names left_key_names;
     Names right_key_names;
 
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
 
     Buckets buckets;
     mutable SharedMutex rehash_mutex;
