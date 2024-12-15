@@ -1033,6 +1033,7 @@ TablesLoaderBackgroundThreadsActive
 TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
+TableOfContentsJSON
 TargetSpecific
 Telegraf
 TemplateIgnoreSpaces
