@@ -161,14 +161,19 @@ struct RowRef
 
     static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
     {
-        for (size_t i = 0; i < size; ++i)
+        auto & cur_column = lhs[offset];
+        auto & other_column = rhs[offset];
+
+        if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
+            return offset;
+
+        for (size_t i = size - 1; i > -offset + 1; --i)
         {
-            auto col_number = (offset + i) % size;
-            auto & cur_column = lhs[col_number];
-            auto & other_column = rhs[col_number];
+            cur_column = lhs[offset + i];
+            other_column = rhs[offset + i];
 
             if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
-                return col_number;
+                return offset + i;
         }
 
         return size + 1;
@@ -201,7 +206,7 @@ struct RowRefWithOwnedChunk
 
     UInt64 source_stream_index = 0;
 
-    void swap(RowRefWithOwnedChunk & other)
+    void swap(RowRefWithOwnedChunk & other) /// NOLINT(performance-noexcept-swap)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);
