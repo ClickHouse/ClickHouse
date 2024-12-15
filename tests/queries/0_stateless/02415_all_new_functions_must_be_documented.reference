@@ -90,8 +90,7 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 array
-arrayAUC
-arrayAUCPr
+arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -128,6 +127,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
