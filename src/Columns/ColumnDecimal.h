@@ -13,7 +13,6 @@
 #include <Columns/IColumnImpl.h>
 
 
-
 namespace DB
 {
 

@@ -120,7 +120,7 @@ void ColumnNullable::get(size_t n, Field & res) const
 std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
 {
     if (isNullAt(n))
-        return {"NULL",  std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
 
     return getNestedColumn().getValueNameAndType(n);
 }

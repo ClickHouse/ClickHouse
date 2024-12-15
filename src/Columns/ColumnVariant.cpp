@@ -410,7 +410,7 @@ std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) cons
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
-        return {"NULL",  std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
 
     return variants[discr]->getValueNameAndType(offsetAt(n));
 }
