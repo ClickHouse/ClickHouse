@@ -1,6 +1,3 @@
-[unstable]
-@RUST_CARGO_BUILD_STD@
-
 [source.crates-io]
 registry = 'sparse+https://index.crates.io/'
 replace-with = 'local-registry'
