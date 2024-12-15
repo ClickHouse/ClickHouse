@@ -15,7 +15,3 @@ import { TableOfContents } from '/src/components/TableOfContents'
 The following aggregate functions are available in ClickHouse:
 
 <TableOfContents items={AggregateFunctionsJSON} />
-
-
-
-

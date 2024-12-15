@@ -669,6 +669,7 @@ void DiskLocal::setup()
             {
                 auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
                 writeIntBinary(magic_number, *buf);
+                buf->finalize();
             }
             disk_checker_magic_number = magic_number;
         }

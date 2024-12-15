@@ -1,4 +1,3 @@
-
 ---
 slug: /en/sql-reference/statements/check-grant
 sidebar_position: 56

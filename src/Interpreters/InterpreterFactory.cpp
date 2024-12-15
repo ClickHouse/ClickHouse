@@ -44,6 +44,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTCheckGrantQuery.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
@@ -307,6 +308,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTShowGrantsQuery>())
     {
         interpreter_name = "InterpreterShowGrantsQuery";
+    }
+    else if (query->as<ASTCheckGrantQuery>())
+    {
+        interpreter_name = "InterpreterCheckGrantQuery";
     }
     else if (query->as<ASTShowAccessEntitiesQuery>())
     {

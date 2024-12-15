@@ -18,7 +18,7 @@ because working with values of such types can lead to ambiguity. By default, cre
 :::
 
 :::note
-The Variant data type is an experimental feature. To use it, set `allow_experimental_variant_type = 1`.
+The Variant data type is a beta feature. To use it, set `enable_variant_type = 1`.
 :::
 
 ## Creating Variant

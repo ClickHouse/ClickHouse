@@ -40,6 +40,8 @@ public:
     }
 
     bool executeStep() override;
+    void cancel() noexcept override;
+
     void onCompleted() override;
     StorageID getStorageID() const override;
     Priority getPriority() const override { return priority; }

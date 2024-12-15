@@ -170,7 +170,6 @@ class SourceMongo(ExternalSource):
         user,
         password,
         secure=False,
-        legacy=False,
     ):
         ExternalSource.__init__(
             self,
@@ -183,13 +182,10 @@ class SourceMongo(ExternalSource):
             password,
         )
         self.secure = secure
-        self.legacy = legacy
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure and self.legacy:
-            options = "<options>ssl=true</options>"
-        if self.secure and not self.legacy:
+        if self.secure:
             options = "<options>tls=true&amp;tlsAllowInvalidCertificates=true</options>"
 
         return """
@@ -267,9 +263,7 @@ class SourceMongoURI(SourceMongo):
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure and self.legacy:
-            options = "ssl=true"
-        if self.secure and not self.legacy:
+        if self.secure:
             options = "tls=true&amp;tlsAllowInvalidCertificates=true"
 
         return """

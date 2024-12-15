@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Core/UUID.h>
+#include <base/defines.h>
 #include <base/scope_guard.h>
+#include <base/types.h>
 #include <mutex>
 #include <unordered_map>
 
@@ -19,9 +20,9 @@ public:
     /// Checks concurrency of a BACKUP operation or a RESTORE operation.
     /// Keep a constructed instance of BackupConcurrencyCheck until the operation is done.
     BackupConcurrencyCheck(
-        const UUID & backup_or_restore_uuid_,
         bool is_restore_,
         bool on_cluster_,
+        const String & zookeeper_path_,
         bool allow_concurrency_,
         BackupConcurrencyCounters & counters_);
 
@@ -31,8 +32,8 @@ public:
 
 private:
     const bool is_restore;
-    const UUID backup_or_restore_uuid;
     const bool on_cluster;
+    const String zookeeper_path;
     BackupConcurrencyCounters & counters;
 };
 
@@ -47,8 +48,8 @@ private:
     friend class BackupConcurrencyCheck;
     size_t local_backups TSA_GUARDED_BY(mutex) = 0;
     size_t local_restores TSA_GUARDED_BY(mutex) = 0;
-    std::unordered_map<UUID /* backup_uuid */, size_t /* num_refs */> on_cluster_backups TSA_GUARDED_BY(mutex);
-    std::unordered_map<UUID /* restore_uuid */, size_t /* num_refs */> on_cluster_restores TSA_GUARDED_BY(mutex);
+    std::unordered_map<String /* zookeeper_path */, size_t /* num_refs */> on_cluster_backups TSA_GUARDED_BY(mutex);
+    std::unordered_map<String /* zookeeper_path */, size_t /* num_refs */> on_cluster_restores TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 

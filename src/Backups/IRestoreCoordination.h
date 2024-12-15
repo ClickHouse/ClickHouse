@@ -18,29 +18,27 @@ class IRestoreCoordination
 public:
     virtual ~IRestoreCoordination() = default;
 
+    /// Sets that the restore query was sent to other hosts.
+    /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
+    virtual void setRestoreQueryIsSentToOtherHosts() = 0;
+    virtual bool isRestoreQuerySentToOtherHosts() const = 0;
+
     /// Sets the current stage and waits for other hosts to come to this stage too.
     virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
 
-    /// Sets that the restore query was sent to other hosts.
-    /// Function waitForOtherHostsToFinish() will check that to find out if it should really wait or not.
-    virtual void setRestoreQueryWasSentToOtherHosts() = 0;
-
     /// Lets other hosts know that the current host has encountered an error.
-    virtual bool trySetError(std::exception_ptr exception) = 0;
-
-    /// Lets other hosts know that the current host has finished its work.
-    virtual void finish() = 0;
-
-    /// Lets other hosts know that the current host has finished its work (as a part of error-handling process).
-    virtual bool tryFinishAfterError() noexcept = 0;
+    /// Returns true if the information is successfully passed so other hosts can read it.
+    virtual bool setError(std::exception_ptr exception, bool throw_if_error) = 0;
 
     /// Waits until all the other hosts finish their work.
     /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
-    virtual void waitForOtherHostsToFinish() = 0;
+    virtual bool waitOtherHostsFinish(bool throw_if_error) const = 0;
 
-    /// Waits until all the other hosts finish their work (as a part of error-handling process).
-    /// Doesn't stops waiting if some host encounters an error or gets cancelled.
-    virtual bool tryWaitForOtherHostsToFinishAfterError() noexcept = 0;
+    /// Lets other hosts know that the current host has finished its work.
+    virtual bool finish(bool throw_if_error) = 0;
+
+    /// Removes temporary nodes in ZooKeeper.
+    virtual bool cleanup(bool throw_if_error) = 0;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;

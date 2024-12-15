@@ -28,7 +28,7 @@ TEST(AsyncInsertsTest, testScatterOffsetsBySelector)
         ASSERT_EQ(results.size(), expected.size());
         for (size_t i = 0; i < results.size(); i++)
         {
-            auto result = results[i];
+            const auto & result = results[i];
             auto expect = expected[i];
             ASSERT_EQ(result->offsets.size(), expect.size());
             ASSERT_EQ(result->tokens.size(), expect.size());

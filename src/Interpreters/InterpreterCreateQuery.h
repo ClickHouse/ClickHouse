@@ -122,6 +122,9 @@ private:
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
+    void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
+    void throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const;
+
     ASTPtr query_ptr;
 
     /// Skip safety threshold when loading tables.

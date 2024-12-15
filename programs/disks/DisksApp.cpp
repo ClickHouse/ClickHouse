@@ -129,7 +129,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     }
     if (arguments.size() == 1)
     {
-        String command_prefix = arguments[0];
+        const String & command_prefix = arguments[0];
         return getCommandsToComplete(command_prefix);
     }
 

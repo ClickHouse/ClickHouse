@@ -529,22 +529,25 @@ Field Field::restoreFromDump(std::string_view dump_)
 template <typename T>
 bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
+    bool check_overflow = true;
     using Comparator = DecimalComparison<T, T, EqualsOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    return Comparator::compare(x, y, x_scale, y_scale, check_overflow);
 }
 
 template <typename T>
 bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
+    bool check_overflow = true;
     using Comparator = DecimalComparison<T, T, LessOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    return Comparator::compare(x, y, x_scale, y_scale, check_overflow);
 }
 
 template <typename T>
 bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
 {
+    bool check_overflow = true;
     using Comparator = DecimalComparison<T, T, LessOrEqualsOp>;
-    return Comparator::compare(x, y, x_scale, y_scale);
+    return Comparator::compare(x, y, x_scale, y_scale, check_overflow);
 }
 
 

@@ -17,16 +17,16 @@ class ASTCreateQuery;
 class RestoreCoordinationLocal : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationLocal(const UUID & restore_uuid_, bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_);
+    RestoreCoordinationLocal(bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_);
     ~RestoreCoordinationLocal() override;
 
+    void setRestoreQueryIsSentToOtherHosts() override {}
+    bool isRestoreQuerySentToOtherHosts() const override { return false; }
     Strings setStage(const String &, const String &, bool) override { return {}; }
-    void setRestoreQueryWasSentToOtherHosts() override {}
-    bool trySetError(std::exception_ptr) override { return true; }
-    void finish() override {}
-    bool tryFinishAfterError() noexcept override { return true; }
-    void waitForOtherHostsToFinish() override {}
-    bool tryWaitForOtherHostsToFinishAfterError() noexcept override { return true; }
+    bool setError(std::exception_ptr, bool) override { return true; }
+    bool waitOtherHostsFinish(bool) const override { return true; }
+    bool finish(bool) override { return true; }
+    bool cleanup(bool) override { return true; }
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
