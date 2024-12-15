@@ -1188,6 +1188,22 @@ namespace
         source_ast->children.push_back(source_ast->elements);
         dict.set(dict.source, source_ast);
     }
+
+    ASTs * getEngineArgsFromCreateQuery(ASTCreateQuery & create_query)
+    {
+        ASTStorage * storage_def = create_query.storage;
+        if (!storage_def)
+            return nullptr;
+
+        if (!storage_def->engine)
+            return nullptr;
+
+        const ASTFunction & engine_def = *storage_def->engine;
+        if (!engine_def.arguments)
+            return nullptr;
+
+        return &engine_def.arguments->children;
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -1607,7 +1623,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr);
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -1884,7 +1900,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             mode);
 
         /// If schema wes inferred while storage creation, add columns description to create query.
-        addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+        addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
+        /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
+        if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
+            res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
     validateVirtualColumns(*res);
