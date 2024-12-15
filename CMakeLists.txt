@@ -89,7 +89,6 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
-option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
     # Also set WITH_COVERAGE=1 for better fuzzing process
@@ -591,6 +590,20 @@ if (FUZZER)
 endif()
 
 include (cmake/sanitize_targets.cmake)
+
+if (COMPILER_CACHE STREQUAL "chcache")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+
+    get_all_targets(all_targets)
+    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+    foreach(target ${all_targets})
+        if (target IN_LIST chcache_targets)
+            continue()
+        endif()
+
+        add_dependencies(${target} cargo-build_chcache)
+    endforeach()
+endif()
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
