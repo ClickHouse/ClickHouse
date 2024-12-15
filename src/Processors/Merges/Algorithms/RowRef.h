@@ -161,7 +161,7 @@ struct RowRef
 
     static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
     {
-        if (0 != lhs[offset]->compareAt(lhs_row, rhs_row, *rhs[offset], 1))
+        if (size > 0 && 0 != lhs[offset]->compareAt(lhs_row, rhs_row, *rhs[offset], 1))
             return offset;
 
         for (size_t col_number = 0; col_number < size; ++col_number)
