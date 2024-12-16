@@ -114,8 +114,12 @@ class HashJoin : public IJoin
 {
 public:
     HashJoin(
-        std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block,
-        bool any_take_last_row_ = false, size_t reserve_num_ = 0, const String & instance_id_ = "");
+        std::shared_ptr<TableJoin> table_join_,
+        const Block & right_sample_block,
+        bool any_take_last_row_ = false,
+        size_t reserve_num_ = 0,
+        const String & instance_id_ = "",
+        bool use_two_level_maps_ = false);
 
     ~HashJoin() override;
 
@@ -198,6 +202,7 @@ public:
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
+    // clang-format off
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
         M(key8)                        \
@@ -208,17 +213,14 @@ public:
         M(key_fixed_string)            \
         M(keys128)                     \
         M(keys256)                     \
-        M(hashed)
-
-    /// Only for maps using hash table.
-    #define APPLY_FOR_HASH_JOIN_VARIANTS(M) \
-        M(key32)                            \
-        M(key64)                            \
-        M(key_string)                       \
-        M(key_fixed_string)                 \
-        M(keys128)                          \
-        M(keys256)                          \
-        M(hashed)
+        M(hashed)                      \
+        M(two_level_key32)             \
+        M(two_level_key64)             \
+        M(two_level_key_string)        \
+        M(two_level_key_fixed_string)  \
+        M(two_level_keys128)           \
+        M(two_level_keys256)           \
+        M(two_level_hashed)
 
     /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
@@ -243,17 +245,24 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-/// NOLINTBEGIN(bugprone-macro-parentheses)
+        /// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
-        std::shared_ptr<FixedHashMap<UInt8, Mapped>> key8;
-        std::shared_ptr<FixedHashMap<UInt16, Mapped>> key16;
-        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>> key32;
-        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>> key64;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_string;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>> key_fixed_string;
-        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>> keys128;
-        std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>> keys256;
-        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
+        std::shared_ptr<FixedHashMap<UInt8, Mapped>>                          key8;
+        std::shared_ptr<FixedHashMap<UInt16, Mapped>>                         key16;
+        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
+        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
+        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_string;
+        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_fixed_string;
+        std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
+        std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
+        std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
+        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
+        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_fixed_string;
+        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
+        std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
+        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
 
         void create(Type which, size_t reserve = 0)
         {
@@ -320,6 +329,7 @@ public:
         }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
+    // clang-format on
 
     using MapsOne = MapsTemplate<RowRef>;
     using MapsAll = MapsTemplate<RowRefList>;
@@ -475,12 +485,15 @@ private:
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
+    bool use_two_level_maps = false;
+
     void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
+    static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_map);
     static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;

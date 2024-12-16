@@ -133,7 +133,12 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
                     auto inner_hash_join = std::make_shared<InternalHashJoin>();
                     inner_hash_join->data = std::make_unique<HashJoin>(
-                        table_join_, right_sample_block, any_take_last_row_, /*reserve_size*/ 0, fmt::format("concurrent{}", idx));
+                        table_join_,
+                        right_sample_block,
+                        any_take_last_row_,
+                        /*reserve_size*/ 0,
+                        fmt::format("concurrent{}", idx),
+                        /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     hash_joins[idx] = std::move(inner_hash_join);
                 });
