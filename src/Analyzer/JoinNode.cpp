@@ -178,8 +178,30 @@ void CrossJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     }
 }
 
-bool CrossJoinNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const { return true; }
-void CrossJoinNode::updateTreeHashImpl(HashState &, CompareOptions) const {}
+bool CrossJoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+{
+    const auto & rhs_typed = assert_cast<const CrossJoinNode &>(rhs);
+
+    if (rhs_typed.join_types.size() != join_types.size())
+        return false;
+
+    for (size_t i = 0; i < join_types.size(); ++i)
+        if (!(join_types[i].is_comma == rhs_typed.join_types[i].is_comma &&
+              join_types[i].locality == rhs_typed.join_types[i].locality))
+              return false;
+
+    return true;
+}
+
+void CrossJoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+{
+    state.update(join_types.size());
+    for (const auto & join_type : join_types)
+    {
+        state.update(join_type.is_comma);
+        state.update(join_type.locality);
+    }
+}
 
 QueryTreeNodePtr CrossJoinNode::cloneImpl() const
 {

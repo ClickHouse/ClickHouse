@@ -89,6 +89,8 @@ CREATE TABLE date
 )
 ENGINE = MergeTree ORDER BY D_DATEKEY;
 
+set cross_to_inner_join_rewrite = 2;
+
 EXPLAIN QUERY TREE dump_ast=1
 select D_YEARMONTHNUM, S_CITY, P_BRAND, sum(LO_REVENUE - LO_SUPPLYCOST) as profit
 from date, customer, supplier, part, lineorder
