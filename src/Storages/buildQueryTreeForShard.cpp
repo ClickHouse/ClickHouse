@@ -329,7 +329,8 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     else if (
         join_table_expression_node_type == QueryTreeNodeType::TABLE || join_table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
-        const auto & columns = column_source_to_columns.at(join_table_expression).columns;
+        auto columns_it = column_source_to_columns.find(join_table_expression);
+        const NamesAndTypes & columns = columns_it != column_source_to_columns.end() ? columns_it->second.columns : NamesAndTypes();
         subquery_node = buildSubqueryToReadColumnsFromTableExpression(columns, join_table_expression, context);
     }
     else
