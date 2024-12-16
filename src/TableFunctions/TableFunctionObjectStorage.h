@@ -96,7 +96,7 @@ public:
       const String & format,
       const ContextPtr & context)
     {
-        Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context);
+        Configuration().addStructureAndFormatToArgsIfNeeded(args, structure, format, context, /*with_structure=*/true);
     }
 
 protected:
