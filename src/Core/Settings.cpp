@@ -5966,6 +5966,11 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 Allow experimental database engine Iceberg
 )", EXPERIMENTAL) \
     \
+    /** Experimental tsToGrid aggregate function. */ \
+    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
+Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
+)", EXPERIMENTAL) \
+    \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \

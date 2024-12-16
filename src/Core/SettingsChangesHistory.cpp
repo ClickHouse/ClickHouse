@@ -60,7 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-
+                {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
         }
     },
     {"24.12",
