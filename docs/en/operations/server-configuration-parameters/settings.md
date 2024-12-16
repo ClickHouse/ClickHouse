@@ -3277,8 +3277,6 @@ Type: UInt64
 
 Default value: 100
 
-Zero means unlimited
-
 ## allow_feature_tier
 
 Controls if the user can change settings related to the different feature tiers.
