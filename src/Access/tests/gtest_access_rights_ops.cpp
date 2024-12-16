@@ -239,7 +239,8 @@ TEST(AccessRights, GrantWildcard)
 
 TEST(AccessRights, Union)
 {
-    AccessRights lhs, rhs;
+    AccessRights lhs;
+    AccessRights rhs;
     lhs.grant(AccessType::CREATE_TABLE, "db1", "tb1");
     rhs.grant(AccessType::SELECT, "db2");
     lhs.makeUnion(rhs);
@@ -324,7 +325,8 @@ TEST(AccessRights, Union)
 
 TEST(AccessRights, Intersection)
 {
-    AccessRights lhs, rhs;
+    AccessRights lhs;
+    AccessRights rhs;
     lhs.grant(AccessType::CREATE_TABLE, "db1", "tb1");
     rhs.grant(AccessType::SELECT, "db2");
     lhs.makeIntersection(rhs);
@@ -448,7 +450,8 @@ TEST(AccessRights, Intersection)
 
 TEST(AccessRights, Difference)
 {
-    AccessRights lhs, rhs;
+    AccessRights lhs;
+    AccessRights rhs;
     lhs.grant(AccessType::SELECT);
     rhs.grant(AccessType::SELECT);
     rhs.revoke(AccessType::SELECT, "system");
@@ -490,7 +493,8 @@ TEST(AccessRights, Difference)
 
 TEST(AccessRights, Contains)
 {
-    AccessRights lhs, rhs;
+    AccessRights lhs;
+    AccessRights rhs;
     lhs.grant(AccessType::SELECT, "db1");
     rhs.grant(AccessType::SELECT, "db1", "tb1");
     ASSERT_EQ(lhs.contains(rhs), true);

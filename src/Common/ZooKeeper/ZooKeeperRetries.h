@@ -16,21 +16,25 @@ namespace ErrorCodes
 struct ZooKeeperRetriesInfo
 {
     ZooKeeperRetriesInfo() = default;
-    ZooKeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_)
+
+    ZooKeeperRetriesInfo(UInt64 max_retries_, UInt64 initial_backoff_ms_, UInt64 max_backoff_ms_, QueryStatusPtr query_status_)
         : max_retries(max_retries_), initial_backoff_ms(std::min(initial_backoff_ms_, max_backoff_ms_)), max_backoff_ms(max_backoff_ms_)
+        , query_status(query_status_)
     {
     }
 
     UInt64 max_retries = 0; /// "max_retries = 0" means only one attempt.
-    UInt64 initial_backoff_ms = 100;
-    UInt64 max_backoff_ms = 5000;
+    UInt64 initial_backoff_ms = 0;
+    UInt64 max_backoff_ms = 0;
+
+    QueryStatusPtr query_status; /// can be nullptr
 };
 
 class ZooKeeperRetriesControl
 {
 public:
-    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_, QueryStatusPtr elem)
-        : name(std::move(name_)), logger(logger_), retries_info(retries_info_), process_list_element(elem)
+    ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_)
+        : name(std::move(name_)), logger(logger_), retries_info(retries_info_)
     {
     }
 
@@ -39,7 +43,6 @@ public:
         , logger(other.logger)
         , retries_info(other.retries_info)
         , total_failures(other.total_failures)
-        , process_list_element(other.process_list_element)
         , current_backoff_ms(other.current_backoff_ms)
     {
     }
@@ -222,8 +225,8 @@ private:
         }
 
         /// Check if the query was cancelled.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
+        if (retries_info.query_status)
+            retries_info.query_status->checkTimeLimit();
 
         /// retries
         logLastError("will retry due to error");
@@ -231,8 +234,8 @@ private:
         current_backoff_ms = std::min(current_backoff_ms * 2, retries_info.max_backoff_ms);
 
         /// Check if the query was cancelled again after sleeping.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
+        if (retries_info.query_status)
+            retries_info.query_status->checkTimeLimit();
 
         return true;
     }
@@ -288,7 +291,6 @@ private:
     std::function<void()> action_after_last_failed_retry = []() {};
     bool iteration_succeeded = true;
     bool stop_retries = false;
-    QueryStatusPtr process_list_element;
 
     UInt64 current_iteration = 0;
     UInt64 current_backoff_ms = 0;

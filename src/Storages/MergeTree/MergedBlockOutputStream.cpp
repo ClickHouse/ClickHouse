@@ -29,6 +29,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     TransactionID tid,
+    size_t part_uncompressed_bytes,
     bool reset_columns_,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_)
@@ -38,9 +39,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , write_settings(write_settings_)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm() != nullptr;
+    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
     /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm();
+    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
 
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
@@ -118,7 +119,7 @@ struct MergedBlockOutputStream::Finalizer::Impl
     }
 
     void finish();
-    void cancel();
+    void cancel() noexcept;
 };
 
 void MergedBlockOutputStream::Finalizer::finish()
@@ -129,7 +130,7 @@ void MergedBlockOutputStream::Finalizer::finish()
         to_finish->finish();
 }
 
-void MergedBlockOutputStream::Finalizer::cancel()
+void MergedBlockOutputStream::Finalizer::cancel() noexcept
 {
     std::unique_ptr<Impl> to_cancel = std::move(impl);
     impl.reset();
@@ -166,7 +167,7 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
         part->getDataPartStorage().removeFile(file_name);
 }
 
-void MergedBlockOutputStream::Finalizer::Impl::cancel()
+void MergedBlockOutputStream::Finalizer::Impl::cancel() noexcept
 {
     writer.cancel();
 
@@ -182,15 +183,8 @@ MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : imp
 
 MergedBlockOutputStream::Finalizer::~Finalizer()
 {
-    try
-    {
-        if (impl)
-            finish();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (impl)
+        cancel();
 }
 
 

@@ -38,6 +38,7 @@ struct FormatSettings
     bool try_infer_variant = false;
 
     bool seekable_read = true;
+    String composed_data_type_output_format_mode = "default";
     UInt64 max_rows_to_read_for_schema_inference = 25000;
     UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
 
@@ -220,7 +221,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
-        bool write_named_tuples_as_objects = false;
+        bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
         bool ignore_unknown_keys_in_named_tuple = false;
