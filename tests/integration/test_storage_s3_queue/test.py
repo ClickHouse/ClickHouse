@@ -1982,6 +1982,8 @@ def test_commit_on_limit(started_cluster):
 
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
+    if "24.5" not in node.query("select version()").strip():
+        node.restart_with_original_version()
 
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
@@ -2538,6 +2540,8 @@ def test_registry(started_cluster):
 
 def test_upgrade_3(started_cluster):
     node = started_cluster.instances["instance_24.5"]
+    if "24.5" not in node.query("select version()").strip():
+        node.restart_with_original_version()
 
     table_name = f"test_upgrade_3_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
