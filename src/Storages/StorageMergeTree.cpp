@@ -319,16 +319,6 @@ std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &)
     return res;
 }
 
-std::optional<UInt64> StorageMergeTree::totalBytesWithInactive(const Settings &) const
-{
-    UInt64 res = 0;
-    auto outdated_parts = getDataPartsVectorForInternalUsage({DataPartState::Outdated});
-    for (const auto & part : outdated_parts)
-        res += part->getBytesOnDisk();
-    return res;
-}
-
-
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
@@ -1439,7 +1429,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     assert(!isStaticStorage());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    MergeMutateSelectedEntryPtr merge_entry, mutate_entry;
+    MergeMutateSelectedEntryPtr merge_entry;
+    MergeMutateSelectedEntryPtr mutate_entry;
 
     auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 

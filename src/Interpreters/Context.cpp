@@ -176,6 +176,9 @@ namespace CurrentMetrics
     extern const Metric AttachedDictionary;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
+    extern const Metric IcebergCatalogThreads;
+    extern const Metric IcebergCatalogThreadsActive;
+    extern const Metric IcebergCatalogThreadsScheduled;
 }
 
 
@@ -284,6 +287,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
     extern const ServerSettingsUInt64 threadpool_writer_pool_size;
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
+    extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
+    extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
 
 }
 
@@ -305,6 +310,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
 }
 
@@ -362,6 +368,8 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
+    std::shared_ptr<IDisk> db_disk TSA_GUARDED_BY(mutex);
+
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
     /// Initialized once during server startup.
@@ -415,6 +423,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> iceberg_catalog_threadpool;
+    mutable OnceFlag iceberg_catalog_threadpool_initialized;
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
@@ -556,9 +566,7 @@ struct ContextSharedPart : boost::noncopyable
 #endif
 
     ContextSharedPart()
-        : access_control(std::make_unique<AccessControl>())
-        , global_overcommit_tracker(&process_list)
-        , macros(std::make_unique<Macros>())
+        : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -1128,6 +1136,42 @@ String Context::getFilesystemCachesPath() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->filesystem_caches_path;
+}
+
+std::shared_ptr<IDisk> Context::getDatabaseDisk() const
+{
+    {
+        SharedLockGuard lock(shared->mutex);
+        if (shared->db_disk)
+            return shared->db_disk;
+    }
+
+    // This is called first time early during the initialization.
+    // Even if multiple threads try to get target_db_disk, only the first one will initialize the disks as there is another mutex in `getDiskMap()`
+    // It is not necessary to introduce a mutex here.
+    auto target_db_disk = [&]() -> std::shared_ptr<IDisk>
+    {
+        const auto & config = shared->getConfigRef();
+        const auto & disk_map = getDisksMap();
+        auto disk_name = config.getString("database_disk.disk", DiskSelector::DEFAULT_DISK_NAME);
+
+        LOG_INFO(shared->log, "Database disk name: {}", disk_name);
+
+        auto it = disk_map.find(disk_name);
+        if (it == disk_map.end())
+            throw Exception(ErrorCodes::UNKNOWN_DISK, "No disk {}", backQuote(disk_name));
+
+        chassert(it->second);
+
+        LOG_INFO(shared->log, "Database disk name: {}, path: {}", disk_name, it->second->getPath());
+        return it->second;
+    }();
+
+    std::lock_guard lock(shared->mutex);
+    if (shared->db_disk)
+        return shared->db_disk;
+
+    return shared->db_disk = target_db_disk;
 }
 
 String Context::getFilesystemCacheUser() const
@@ -3257,6 +3301,23 @@ ThreadPool & Context::getLoadMarksThreadpool() const
     return *shared->load_marks_threadpool;
 }
 
+ThreadPool & Context::getIcebergCatalogThreadpool() const
+{
+    callOnce(shared->iceberg_catalog_threadpool_initialized, [&]
+    {
+        auto pool_size = shared->server_settings[ServerSetting::iceberg_catalog_threadpool_pool_size];
+        auto queue_size = shared->server_settings[ServerSetting::iceberg_catalog_threadpool_queue_size];
+
+        shared->iceberg_catalog_threadpool = std::make_unique<ThreadPool>(
+            CurrentMetrics::IcebergCatalogThreads,
+            CurrentMetrics::IcebergCatalogThreadsActive,
+            CurrentMetrics::IcebergCatalogThreadsScheduled,
+            pool_size, pool_size, queue_size);
+    });
+
+    return *shared->iceberg_catalog_threadpool;
+}
+
 void Context::setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -4848,14 +4909,16 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
+    auto db_disk = getDatabaseDisk();
+
     fs::path force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = fs::exists(force_file);
+    bool force_file_exists = db_disk->existsFile(force_file);
 
     if (force_file_exists)
     {
         try
         {
-            fs::remove(force_file);
+            db_disk->removeFileIfExists(force_file);
             return;
         }
         catch (...)

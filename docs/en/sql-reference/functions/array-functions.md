@@ -770,7 +770,8 @@ i
 
 ## indexOf(arr, x)
 
-Returns the index of the first ‘x’ element (starting from 1) if it is in the array, or 0 if it is not.
+Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
+If the array does not contain the searched-for value, the function returns 0.
 
 Example:
 
@@ -788,9 +789,11 @@ Elements set to `NULL` are handled as normal values.
 
 ## indexOfAssumeSorted(arr, x)
 
-Returns the index of the first ‘x’ element (starting from 1) if it is in the array, or 0 if it is not.
-The function should be used for an array sorted not in descending order since binary search is used for the search.
-If the internal array type is Nullable, the ‘indexOf‘ function will be used.
+Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
+If the array does not contain the searched-for value, the function returns 0.
+Assumes that the array is sorted in ascending order (i.e., the function uses binary search).
+If the array is not sorted, results are undefined.
+If the internal array is of type Nullable, function ‘indexOf‘ will be called.
 
 Example:
 
@@ -799,9 +802,9 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 ```
 
 ``` text
-┌─indexOf([1, 3, 3, 3, 4, 4, 5], NULL)─┐
-│                                 5    │
-└──────────────────────────────────--─-┘
+┌─indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)─┐
+│                                             5 │
+└───────────────────────────────────────────────┘
 ```
 
 ## arrayCount(\[func,\] arr1, ...)
@@ -2139,15 +2142,18 @@ Result:
 ```
 
 
-## arrayAUC
+## arrayROCAUC
 
-Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>).
+Calculates the Area Under the Curve (AUC), which is a concept in machine learning.
+For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
 **Syntax**
 
 ``` sql
-arrayAUC(arr_scores, arr_labels[, scale])
+arrayROCAUC(arr_scores, arr_labels[, scale])
 ```
+
+Alias: `arrayAUC`
 
 **Arguments**
 
@@ -2164,26 +2170,32 @@ Returns AUC value with type Float64.
 Query:
 
 ``` sql
-select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
 
 ``` text
-┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
-│                                          0.75 │
-└───────────────────────────────────────────────┘
+┌─arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                                             0.75 │
+└──────────────────────────────────────────────────┘
 ```
 
-## arrayPrAUC
+## arrayAUCPR
 
-Calculate AUC (Area Under the Curve) for the Precision Recall curve.
+Calculate the area under the precision-recall (PR) curve.
+A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
+The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
+PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
+For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
 **Syntax**
 
 ``` sql
-arrayPrAUC(arr_scores, arr_labels)
+arrayAUCPR(arr_scores, arr_labels)
 ```
+
+Alias: `arrayPRAUC`
 
 **Arguments**
 
@@ -2199,13 +2211,13 @@ Returns PR-AUC value with type Float64.
 Query:
 
 ``` sql
-select arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
 
 ``` text
-┌─arrayPrAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+┌─arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                              0.8333333333333333 │
 └─────────────────────────────────────────────────┘
 ```
