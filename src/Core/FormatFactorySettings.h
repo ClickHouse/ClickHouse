@@ -1096,6 +1096,9 @@ Add row numbers before each row for pretty output format
     DECLARE(Bool, output_format_pretty_highlight_digit_groups, true, R"(
 If enabled and if output is a terminal, highlight every digit corresponding to the number of thousands, millions, etc. with underline.
 )", 0) \
+    DECLARE(Bool, output_format_pretty_highlight_trailing_whitespace, false, R"(
+If enabled and if output is a terminal, highlight trailing whitespace with gray color and underline.
+)", 0) \
     DECLARE(UInt64, output_format_pretty_single_large_number_tip_threshold, 1'000'000, R"(
 Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)
 )", 0) \
