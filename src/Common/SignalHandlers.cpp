@@ -1,6 +1,7 @@
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
@@ -63,6 +64,20 @@ void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
     writeSignalIDtoSignalPipe(sig);
 }
 
+void childSignalHandler(int sig, siginfo_t * info, void *)
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
+    char buf[signal_pipe_buf_size];
+    auto & signal_pipe = HandledSignals::instance().signal_pipe;
+    WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
+    writeBinary(sig, out);
+    writeBinary(info->si_pid, out);
+
+    out.finalize();
+    errno = saved_errno;
+}
 
 void signalHandler(int sig, siginfo_t * info, void * context)
 {
@@ -292,6 +307,12 @@ void SignalListener::run()
         {
             if (daemon)
                 daemon->handleSignal(sig);
+        }
+        else if (sig == SIGCHLD)
+        {
+            pid_t child_pid = 0;
+            readBinary(child_pid, in);
+            ShellCommandsHolder::instance().removeCommand(child_pid);
         }
         else
         {

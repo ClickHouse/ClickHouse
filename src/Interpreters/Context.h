@@ -1259,8 +1259,6 @@ public:
     /// Overrides values of existing parameters.
     void addQueryParameters(const NameToNameMap & parameters);
 
-    /// Add started bridge command. It will be killed after context destruction
-    void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
