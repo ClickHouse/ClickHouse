@@ -202,61 +202,67 @@ int StatementGenerator::generateNextTTL(
         generateTTLExpression(rg, t, ientries, entry->mutable_time_expr());
         if (nopt < 5)
         {
-            generateNextCodecs(rg, entry->mutable_codecs());
-        }
-        else if (!fc.disks.empty() && nopt < 9)
-        {
-            generateStorage(rg, entry->mutable_storage());
-        }
-        else
-        {
-            entry->set_delete_(true);
-        }
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        if (t.has_value())
-        {
-            addTableRelation(rg, true, "", t.value());
-        }
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
-        generateWherePredicate(rg, ttl_expr->mutable_where()->mutable_expr()->mutable_expr());
-        this->levels.clear();
-    }
-    if (te && !entries.empty()
-        && ((te->has_order() && te->order().exprs_size()) || (te->has_primary_key() && te->primary_key().exprs_size()))
-        && rg.nextSmallNumber() < 4)
-    {
-        TTLGroupBy * gb = ttl_expr->mutable_group_by();
-        ExprList * el = gb->mutable_expr_list();
-        const TableKey & tk = te->has_primary_key() && te->primary_key().exprs_size() ? te->primary_key() : te->order();
-        std::uniform_int_distribution<uint32_t> table_key_dist(1, tk.exprs_size());
-        const uint32_t ttl_group_size = table_key_dist(rg.generator);
-        const size_t nset = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(ientries.size()), UINT32_C(3))) + 1;
+            TTLUpdate * tupt = entry->mutable_update();
+            const uint32_t nopt2 = rg.nextSmallNumber();
 
-        for (uint32_t i = 0; i < ttl_group_size; i++)
-        {
-            const TableKeyExpr & tke = tk.exprs(i);
-            Expr * expr = i == 0 ? el->mutable_expr() : el->add_extra_exprs();
-
-            expr->CopyFrom(tke.expr());
+            if (nopt2 < 5)
+            {
+                generateNextCodecs(rg, tupt->mutable_codecs());
+            }
+            else if (!fc.disks.empty() && nopt2 < 9)
+            {
+                generateStorage(rg, tupt->mutable_storage());
+            }
+            else
+            {
+                tupt->set_delete_(true);
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                if (t.has_value())
+                {
+                    addTableRelation(rg, true, "", t.value());
+                }
+                this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+                generateWherePredicate(rg, tupt->mutable_where()->mutable_expr()->mutable_expr());
+                this->levels.clear();
+            }
         }
-
-        if (t.has_value())
+        else if (
+            nopt < 9 && te && !entries.empty()
+            && ((te->has_order() && te->order().exprs_size()) || (te->has_primary_key() && te->primary_key().exprs_size())))
         {
-            addTableRelation(rg, true, "", t.value());
-        }
-        this->levels[this->current_level].global_aggregate = true;
-        std::shuffle(ientries.begin(), ientries.end(), rg.generator);
+            TTLGroupBy * gb = entry->mutable_group_by();
+            ExprList * el = gb->mutable_expr_list();
+            const TableKey & tk = te->has_primary_key() && te->primary_key().exprs_size() ? te->primary_key() : te->order();
+            std::uniform_int_distribution<uint32_t> table_key_dist(1, tk.exprs_size());
+            const uint32_t ttl_group_size = table_key_dist(rg.generator);
+            const size_t nset = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(ientries.size()), UINT32_C(3))) + 1;
 
-        for (size_t i = 0; i < nset; i++)
-        {
-            TTLSet * tset = i == 0 ? gb->mutable_ttl_set() : gb->add_other_ttl_set();
+            for (uint32_t j = 0; j < ttl_group_size; j++)
+            {
+                const TableKeyExpr & tke = tk.exprs(j);
+                Expr * expr = j == 0 ? el->mutable_expr() : el->add_extra_exprs();
 
-            insertEntryRefCP(ientries[i], tset->mutable_col());
-            generateExpression(rg, tset->mutable_expr());
+                expr->CopyFrom(tke.expr());
+            }
+
+            if (t.has_value())
+            {
+                addTableRelation(rg, true, "", t.value());
+            }
+            this->levels[this->current_level].global_aggregate = true;
+            std::shuffle(ientries.begin(), ientries.end(), rg.generator);
+
+            for (size_t j = 0; j < nset; j++)
+            {
+                TTLSet * tset = j == 0 ? gb->mutable_ttl_set() : gb->add_other_ttl_set();
+
+                insertEntryRefCP(ientries[i], tset->mutable_col());
+                generateExpression(rg, tset->mutable_expr());
+            }
+            this->levels.clear();
         }
-        this->levels.clear();
     }
     return 0;
 }

@@ -257,10 +257,9 @@ int QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 int QueryOracle::generateImportQuery(const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
     Insert * ins = sq4.mutable_inner_query()->mutable_insert();
-    InsertIntoTable * iit = ins->mutable_itable();
     InsertFromFile * iff = ins->mutable_insert_file();
     const FileFunc & ff = sq2.inner_query().insert().tfunction().file();
-    ExprSchemaTable * est = iit->mutable_est();
+    ExprSchemaTable * est = ins->mutable_est();
 
     if (t.db)
     {
@@ -271,7 +270,7 @@ int QueryOracle::generateImportQuery(const SQLTable & t, const SQLQuery & sq2, S
     {
         if (entry.second.CanBeInserted())
         {
-            ColumnPath * cp = iit->add_cols();
+            ColumnPath * cp = ins->add_cols();
 
             cp->mutable_col()->set_column("c" + std::to_string(entry.first));
         }
@@ -723,14 +722,19 @@ int QueryOracle::replaceQueryWithTablePeers(
                 {
                     for (const auto & tcol2 : ntp->subtypes)
                     {
+                        ColumnPath * cp = ins->add_cols();
                         ExprColumn * ec = sel->add_result_columns()->mutable_etc()->mutable_col();
+                        cp->mutable_col()->set_column("c" + std::to_string(tcol.first));
+                        cp->add_sub_cols()->set_column("c" + std::to_string(tcol2.cname));
                         ec->mutable_col()->set_column("c" + std::to_string(tcol.first));
                         ec->mutable_subcol()->set_column("c" + std::to_string(tcol2.cname));
                     }
                 }
                 else
                 {
+                    ColumnPath * cp = ins->add_cols();
                     ExprColumn * ec = sel->add_result_columns()->mutable_etc()->mutable_col();
+                    cp->mutable_col()->set_column("c" + std::to_string(tcol.first));
                     ec->mutable_col()->set_column("c" + std::to_string(tcol.first));
                 }
             }

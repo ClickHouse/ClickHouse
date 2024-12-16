@@ -2512,6 +2512,29 @@ CONV_FN(TableEngineParam, tep)
     }
 }
 
+CONV_FN(TTLUpdate, upt)
+{
+    using TTLUpdateType = TTLUpdate::TtlupdateOneofCase;
+    switch (upt.ttlupdate_oneof_case())
+    {
+        case TTLUpdateType::kCodecs:
+            ret += "RECOMPRESS ";
+            CodecListToString(ret, upt.codecs());
+            break;
+        case TTLUpdateType::kStorage:
+            ret += "TO ";
+            StorageToString(ret, upt.storage());
+            break;
+        default:
+            ret += "DELETE";
+    }
+    if (upt.has_where())
+    {
+        ret += " WHERE ";
+        WhereStatementToString(ret, upt.where());
+    }
+}
+
 CONV_FN(TTLSet, ttl_set)
 {
     ColumnPathToString(ret, false, ttl_set.col());
@@ -2532,23 +2555,17 @@ CONV_FN(TTLGroupBy, ttl_groupby)
     }
 }
 
-CONV_FN(TTLEntry, entry)
+CONV_FN(TTLEntry, ttl_entry)
 {
-    ExprToString(ret, entry.time_expr());
+    ExprToString(ret, ttl_entry.time_expr());
     ret += " ";
-    using TTLEntryType = TTLEntry::TtlentryOneofCase;
-    switch (entry.ttlentry_oneof_case())
+    if (ttl_entry.has_update())
     {
-        case TTLEntryType::kCodecs:
-            ret += "RECOMPRESS ";
-            CodecListToString(ret, entry.codecs());
-            break;
-        case TTLEntryType::kStorage:
-            ret += "TO ";
-            StorageToString(ret, entry.storage());
-            break;
-        default:
-            ret += "DELETE";
+        TTLUpdateToString(ret, ttl_entry.update());
+    }
+    else if (ttl_entry.has_group_by())
+    {
+        TTLGroupByToString(ret, ttl_entry.group_by());
     }
 }
 
@@ -2560,16 +2577,6 @@ CONV_FN(TTLExpr, ttl_expr)
     {
         ret += ", ";
         TTLEntryToString(ret, ttl_expr.other_ttl(i));
-    }
-    if (ttl_expr.has_where())
-    {
-        ret += " WHERE ";
-        WhereStatementToString(ret, ttl_expr.where());
-    }
-    if (ttl_expr.has_group_by())
-    {
-        ret += " ";
-        TTLGroupByToString(ret, ttl_expr.group_by());
     }
 }
 
@@ -2735,24 +2742,6 @@ CONV_FN(Drop, dt)
     }
 }
 
-CONV_FN(InsertIntoTable, insert)
-{
-    ExprSchemaTableToString(ret, insert.est());
-    if (insert.cols_size())
-    {
-        ret += " (";
-        for (int i = 0; i < insert.cols_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            ColumnPathToString(ret, true, insert.cols(i));
-        }
-        ret += ")";
-    }
-}
-
 CONV_FN(ValuesStatement, values)
 {
     if (values.has_setting_values())
@@ -2817,19 +2806,32 @@ CONV_FN(InsertStringQuery, insert_query)
 
 CONV_FN(Insert, insert)
 {
-    if (insert.has_ctes() && insert.has_itable() && insert.has_insert_select())
+    if (insert.has_ctes() && insert.has_est() && insert.has_insert_select())
     {
         CTEsToString(ret, insert.ctes());
     }
     ret += "INSERT INTO TABLE ";
-    if (insert.has_itable())
+    if (insert.has_est())
     {
-        InsertIntoTableToString(ret, insert.itable());
+        ExprSchemaTableToString(ret, insert.est());
     }
-    else
+    else if (insert.has_tfunction())
     {
         ret += "FUNCTION ";
         TableFunctionToString(ret, insert.tfunction());
+    }
+    if (insert.cols_size())
+    {
+        ret += " (";
+        for (int i = 0; i < insert.cols_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ColumnPathToString(ret, true, insert.cols(i));
+        }
+        ret += ")";
     }
     ret += " ";
     if (insert.has_values())

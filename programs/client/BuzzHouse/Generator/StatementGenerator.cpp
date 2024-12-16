@@ -477,8 +477,7 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
     const NestedType * ntp = nullptr;
     const uint32_t noption = rg.nextMediumNumber();
-    InsertIntoTable * iit = ins->mutable_itable();
-    ExprSchemaTable * est = iit->mutable_est();
+    ExprSchemaTable * est = ins->mutable_est();
     const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
 
     if (t.db)
@@ -515,7 +514,7 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 
     for (const auto & entry : this->entries)
     {
-        insertEntryRefCP(entry, iit->add_cols());
+        insertEntryRefCP(entry, ins->add_cols());
     }
 
     if (noption < 901)

@@ -2913,13 +2913,13 @@ message TableEngineParam {
     }
 }
 
-message TTLEntry {
-    required Expr time_expr = 1;
-    oneof ttlentry_oneof {
-        bool delete = 2;
-        CodecList codecs = 3;
-        Storage storage = 4;
+message TTLUpdate {
+    oneof ttlupdate_oneof {
+        bool delete = 1;
+        CodecList codecs = 2;
+        Storage storage = 3;
     }
+    optional WhereStatement where = 4;
 }
 
 message TTLSet {
@@ -2933,11 +2933,17 @@ message TTLGroupBy {
     repeated TTLSet other_ttl_set = 3;
 }
 
+message TTLEntry {
+    required Expr time_expr = 1;
+    oneof ttlentry_oneof {
+        TTLUpdate update = 2;
+        TTLGroupBy group_by = 3;
+    }
+}
+
 message TTLExpr {
     required TTLEntry ttl_expr = 1;
     repeated TTLEntry other_ttl = 2;
-    optional WhereStatement where = 3;
-    optional TTLGroupBy group_by = 4;
 }
 
 message TableEngine {
@@ -2999,11 +3005,6 @@ message Drop {
     optional SettingValues setting_values = 8;
 }
 
-message InsertIntoTable {
-    required ExprSchemaTable est = 1;
-    repeated ColumnPath cols = 2;
-}
-
 message ValuesStatement {
     optional SettingValues setting_values = 1;
     required ExprList expr_list = 2;
@@ -3030,14 +3031,15 @@ message InsertStringQuery {
 message Insert {
     optional CTEs ctes = 1;
     oneof into_oneof {
-        InsertIntoTable itable = 2;
+        ExprSchemaTable est = 2;
         TableFunction tfunction = 3;
     }
+    repeated ColumnPath cols = 4;
     oneof insert_oneof {
-        ValuesStatement values = 4;
-        InsertSelect insert_select = 5;
-        InsertFromFile insert_file = 6;
-        InsertStringQuery query = 7;
+        ValuesStatement values = 5;
+        InsertSelect insert_select = 6;
+        InsertFromFile insert_file = 7;
+        InsertStringQuery query = 8;
     }
 }
 

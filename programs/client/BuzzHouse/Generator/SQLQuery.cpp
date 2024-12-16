@@ -411,10 +411,12 @@ int StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool 
             std::vector<std::string> cols2;
             std::vector<std::string> intersect;
 
+            cols1.reserve(rel1.cols.size());
             for (const auto & entry : rel1.cols)
             {
                 cols1.push_back(entry.name);
             }
+            cols2.reserve(rel2.cols.size());
             for (const auto & entry : rel2.cols)
             {
                 cols2.push_back(entry.name);

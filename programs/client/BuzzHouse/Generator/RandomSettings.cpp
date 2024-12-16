@@ -103,7 +103,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
      }},
     {"decimal_check_overflow", trueOrFalse},
     //{"deduplicate_blocks_in_dependent_materialized_views", trueOrFalse},
-    {"describe_compact_output", trueOrFalse},
+    //{"describe_compact_output", trueOrFalse},
     {"describe_extend_object_types", trueOrFalse},
     {"describe_include_subcolumns", trueOrFalse},
     {"dictionary_use_async_executor", trueOrFalse},
