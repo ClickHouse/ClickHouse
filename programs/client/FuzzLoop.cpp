@@ -423,11 +423,18 @@ bool Client::buzzHouse()
     {
         std::string full_query2;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
-        bool has_cloud_features = false, replica_setup = false;
+        bool replica_setup = false;
+        bool has_cloud_features = false;
         BuzzHouse::RandomGenerator rg(fc.seed);
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
-        BuzzHouse::SQLQuery sq1, sq2, sq3, sq4;
-        int nsuccessfull_create_database = 0, total_create_database_tries = 0, nsuccessfull_create_table = 0, total_create_table_tries = 0;
+        BuzzHouse::SQLQuery sq1;
+        BuzzHouse::SQLQuery sq2;
+        BuzzHouse::SQLQuery sq3;
+        BuzzHouse::SQLQuery sq4;
+        int nsuccessfull_create_database = 0;
+        int total_create_database_tries = 0;
+        int nsuccessfull_create_table = 0;
+        int total_create_table_tries = 0;
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
