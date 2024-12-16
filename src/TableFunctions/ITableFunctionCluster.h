@@ -31,7 +31,7 @@ public:
 
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context);
+        Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context, /*with_structure=*/true);
         args.insert(args.begin(), cluster_name_arg);
     }
 

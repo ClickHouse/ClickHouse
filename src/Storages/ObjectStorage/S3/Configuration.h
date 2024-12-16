@@ -88,7 +88,8 @@ public:
         ASTs & args,
         const String & structure,
         const String & format,
-        ContextPtr context) override;
+        ContextPtr context,
+        bool with_structure) override;
 
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
