@@ -159,7 +159,7 @@ public:
     /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
     MutableColumnPtr getDataInRange(size_t start, size_t length) const;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     ColumnCheckpointPtr getCheckpoint() const override;
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;

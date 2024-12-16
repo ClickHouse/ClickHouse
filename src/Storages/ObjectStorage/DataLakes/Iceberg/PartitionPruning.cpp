@@ -1,239 +1,143 @@
-#include <exception>
-#include "Common/DateLUT.h"
-#include "Core/NamesAndTypes.h"
-#include "config.h"
+#include "PartitionPruning.h"
+#include "Common/logger_useful.h"
+#include "Columns/ColumnNullable.h"
+#include "Columns/ColumnsDateTime.h"
+#include "DataTypes/DataTypeNullable.h"
 
-#if USE_AVRO
-
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/IColumn.h>
-#    include <Core/Settings.h>
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeDate.h>
-#    include <DataTypes/DataTypeDateTime64.h>
-#    include <DataTypes/DataTypeFactory.h>
-#    include <DataTypes/DataTypeFixedString.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <DataTypes/DataTypeUUID.h>
-#    include <DataTypes/DataTypesDecimal.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Formats/FormatFactory.h>
-#    include <IO/ReadBufferFromFileBase.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <IO/ReadHelpers.h>
-#    include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#    include <Storages/ObjectStorage/DataLakes/Common.h>
-#    include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#    include <Common/logger_useful.h>
-
-
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Object.h>
-#    include <Poco/JSON/Parser.h>
-
-#    include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
-#    include <DataFile.hh>
-
-#    include <Common/ProfileEvents.h>
-
-namespace ProfileEvents
+namespace Iceberg
 {
-extern const Event IcebergPartitionPrunnedFiles;
-}
 
-namespace DB
-{
+using namespace DB;
+
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
+extern const int BAD_ARGUMENTS;
 }
 
-CommonPartitionInfo PartitionPruningProcessor::getCommonPartitionInfo(
-    const Poco::JSON::Array::Ptr & partition_specification,
-    const ColumnTuple * big_partition_column,
-    ColumnPtr file_path_column,
-    ColumnPtr status_column,
-    const String & manifest_file) const
+Iceberg::PartitionTransform getTransform(const String & transform_name)
 {
-    CommonPartitionInfo common_info;
-
-    // LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Partition column index: {}", data_file_tuple_type.getPositionByName("partition"));
-    // LOG_DEBUG(&Poco::Logger::get("File path Spec"), "File path column index: {}", data_file_tuple_type.getPositionByName("file_path"));
-
-    // const auto * big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition")).get();
-
-    // common_info.file_path_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("file_path"));
-    common_info.file_path_column = file_path_column;
-    common_info.status_column = status_column;
-    common_info.manifest_file = manifest_file;
-    for (size_t i = 0; i != partition_specification->size(); ++i)
+    if (transform_name == "year")
     {
-        auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
-
-        auto source_id = current_field->getValue<Int32>("source-id");
-        PartitionTransform transform = getTransform(current_field->getValue<String>("transform"));
-
-        if (transform == PartitionTransform::Unsupported)
-        {
-            continue;
-        }
-        auto partition_name = current_field->getValue<String>("name");
-        LOG_DEBUG(&Poco::Logger::get("Partition Spec"), "Name: {}", partition_name);
-
-        common_info.partition_columns.push_back(big_partition_column->getColumnPtr(i));
-        common_info.partition_transforms.push_back(transform);
-        common_info.partition_source_ids.push_back(source_id);
+        return Iceberg::PartitionTransform::Year;
     }
-    return common_info;
+    else if (transform_name == "month")
+    {
+        return Iceberg::PartitionTransform::Month;
+    }
+    else if (transform_name == "day")
+    {
+        return Iceberg::PartitionTransform::Day;
+    }
+    else if (transform_name == "hour")
+    {
+        return Iceberg::PartitionTransform::Hour;
+    }
+    else if (transform_name == "identity")
+    {
+        return Iceberg::PartitionTransform::Identity;
+    }
+    else if (transform_name == "void")
+    {
+        return Iceberg::PartitionTransform::Void;
+    }
+    else
+    {
+        return Iceberg::PartitionTransform::Unsupported;
+    }
 }
 
-SpecificSchemaPartitionInfo PartitionPruningProcessor::getSpecificPartitionInfo(
-    const CommonPartitionInfo & common_info, [[maybe_unused]] Int32 schema_version, const IcebergSchemaProcessor & processor) const
+DateLUTImpl::Values getValues(Int32 value, Iceberg::PartitionTransform transform)
 {
-    SpecificSchemaPartitionInfo specific_info;
-
-    // LOG_DEBUG(&Poco::Logger::get("Form specific info"), "name_and_type_by_source_id size: {}", name_and_type_by_source_id.size());
-
-    for (size_t i = 0; i < common_info.partition_columns.size(); ++i)
+    if (transform == Iceberg::PartitionTransform::Year)
     {
-        if (common_info.partition_transforms[i] == PartitionTransform::Unsupported
-            || common_info.partition_transforms[i] == PartitionTransform::Void)
+        return DateLUT::instance().lutIndexByYearSinceEpochStartsZeroIndexing(value);
+    }
+    else if (transform == Iceberg::PartitionTransform::Month)
+    {
+        return DateLUT::instance().lutIndexByMonthSinceEpochStartsZeroIndexing(static_cast<UInt32>(value));
+    }
+    else if (transform == Iceberg::PartitionTransform::Day)
+    {
+        return DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value));
+    }
+    else if (transform == Iceberg::PartitionTransform::Hour)
+    {
+        DateLUTImpl::Values values = DateLUT::instance().getValues(static_cast<ExtendedDayNum>(value / 24));
+        values.date += (value % 24) * 3600;
+        return values;
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform for get day function: {}", transform);
+}
+
+Int64 getTime(Int32 value, Iceberg::PartitionTransform transform)
+{
+    DateLUTImpl::Values values = getValues(value, transform);
+    return values.date;
+}
+
+Int16 getDay(Int32 value, Iceberg::PartitionTransform transform)
+{
+    DateLUTImpl::Time got_time = getTime(value, transform);
+    // LOG_DEBUG(&Poco::Logger::get("Get field"), "Time: {}", got_time);
+    return DateLUT::instance().toDayNum(got_time);
+}
+
+Range getPartitionRange(
+    Iceberg::PartitionTransform partition_transform, UInt32 index, ColumnPtr partition_column, DataTypePtr column_data_type)
+{
+    if (partition_transform == Iceberg::PartitionTransform::Unsupported)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition transform: {}", partition_transform);
+    }
+    auto column = dynamic_cast<const ColumnNullable *>(partition_column.get())->getNestedColumnPtr();
+    if (partition_transform == Iceberg::PartitionTransform::Identity)
+    {
+        Field entry = (*column.get())[index];
+        return Range{entry, true, entry, true};
+    }
+    auto [nested_data_type, value] = [&]() -> std::pair<DataTypePtr, Int32>
+    {
+        if (column->getDataType() == TypeIndex::Int32)
         {
-            continue;
+            const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(column.get());
+            Int32 begin_value = static_cast<Int32>(casted_innner_column->getInt(index));
+            LOG_DEBUG(
+                &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column_type: int", begin_value, partition_transform);
+            return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), begin_value};
         }
-        Int32 source_id = common_info.partition_source_ids[i];
-        NameAndTypePair name_and_type = processor.getFieldCharacteristics(schema_version, source_id);
-        LOG_DEBUG(
-            &Poco::Logger::get("Form specific info"),
-            "Added schema: {}, source id: {}, name_and_type: {}",
-            schema_version,
-            source_id,
-            name_and_type.dump());
-        size_t column_size = common_info.partition_columns[i]->size();
-        if (specific_info.ranges.empty())
+        else if (column->getDataType() == TypeIndex::Date && (partition_transform == Iceberg::PartitionTransform::Day))
         {
-            specific_info.ranges.resize(column_size);
+            const auto * casted_innner_column = assert_cast<const ColumnDate *>(column.get());
+            Int32 begin_value = static_cast<Int32>(casted_innner_column->getInt(index));
+            LOG_DEBUG(
+                &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column type: date", begin_value, partition_transform);
+            return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), begin_value};
         }
         else
         {
-            assert(specific_info.ranges.size() == column_size);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partition column type: {}", column->getFamilyName());
         }
-        specific_info.partition_names_and_types.push_back(name_and_type);
-        for (size_t j = 0; j < column_size; ++j)
-        {
-            specific_info.ranges[j].push_back(getPartitionRange(
-                common_info.partition_transforms[i], static_cast<UInt32>(j), common_info.partition_columns[i], name_and_type.type));
-        }
+    }();
+    if (WhichDataType(nested_data_type).isDate() && (partition_transform != Iceberg::PartitionTransform::Hour))
+    {
+        const UInt16 begin_range_value = getDay(value, partition_transform);
+        const UInt16 end_range_value = getDay(value + 1, partition_transform);
+        LOG_DEBUG(&Poco::Logger::get("Partition"), "Range begin: {}, range end {}", begin_range_value, end_range_value);
+        return Range{begin_range_value, true, end_range_value, false};
     }
-    return specific_info;
+    else if (WhichDataType(nested_data_type).isDateTime64())
+    {
+        const UInt64 begin_range_value = getTime(value, partition_transform);
+        const UInt64 end_range_value = getTime(value + 1, partition_transform);
+        return Range{begin_range_value, true, end_range_value, false};
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Partition transform {} is not supported for the type: {}", partition_transform, nested_data_type);
+    }
 }
 
-std::vector<bool> PartitionPruningProcessor::getPruningMask(
-    const String & manifest_file,
-    const SpecificSchemaPartitionInfo & specific_info,
-    const ActionsDAG * filter_dag,
-    ContextPtr context) const
-{
-    std::vector<bool> pruning_mask(specific_info.ranges.size(), true);
-    LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Name and types size: {}", specific_info.partition_names_and_types.size());
 
-    for (const auto & name_and_type : specific_info.partition_names_and_types)
-    {
-        LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Name and type: {}", name_and_type.dump());
-    }
-
-    for (const auto & range : specific_info.ranges)
-    {
-        LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "New data file");
-        for (const auto & field_range : range)
-        {
-            LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Field range: {}", field_range.toString());
-        }
-    }
-
-    if (!specific_info.partition_names_and_types.empty())
-    {
-        ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(specific_info.partition_names_and_types), ExpressionActionsSettings::fromContext(context));
-        const KeyCondition partition_key_condition(
-            filter_dag, context, specific_info.partition_names_and_types.getNames(), partition_minmax_idx_expr);
-        for (size_t j = 0; j < specific_info.ranges.size(); ++j)
-        {
-            if (!partition_key_condition.checkInHyperrectangle(specific_info.ranges[j], specific_info.partition_names_and_types.getTypes())
-                     .can_be_true)
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("Partition pruning"),
-                    "Partition pruning in manifest {} was successful for file number {}",
-                    manifest_file,
-                    j);
-
-                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
-                pruning_mask[j] = false;
-            }
-            else
-            {
-                LOG_DEBUG(
-                    &Poco::Logger::get("Partition pruning"),
-                    "Partition pruning in manifest {} failed for file number {}",
-                    manifest_file,
-                    j);
-                pruning_mask[j] = true;
-            }
-        }
-    }
-    return pruning_mask;
-}
-
-Strings PartitionPruningProcessor::getDataFiles(
-    const std::vector<CommonPartitionInfo> & manifest_partitions_infos,
-    const std::vector<SpecificSchemaPartitionInfo> & specific_infos,
-    const ActionsDAG * filter_dag,
-    ContextPtr context,
-    const std::string & common_path) const
-{
-    Strings data_files;
-    for (size_t index = 0; index < manifest_partitions_infos.size(); ++index)
-    {
-        const auto & manifest_partition_info = manifest_partitions_infos[index];
-        const auto & specific_partition_info = specific_infos[index];
-        size_t number_of_files_in_manifest = manifest_partition_info.file_path_column->size();
-        LOG_DEBUG(&Poco::Logger::get("Getting prunned files"), "Filter dag is null: {}", filter_dag == nullptr);
-        auto pruning_mask = filter_dag ? getPruningMask(manifest_partition_info.manifest_file, specific_partition_info, filter_dag, context)
-                                       : std::vector<bool>{};
-        LOG_DEBUG(&Poco::Logger::get("Getting prunned files"), "Number of files in manifest: {}", number_of_files_in_manifest);
-        LOG_DEBUG(&Poco::Logger::get("Getting prunned files"), "Number of files in pruning mask: {}", pruning_mask.size());
-        chassert(pruning_mask.empty() || number_of_files_in_manifest == pruning_mask.size());
-        for (size_t i = 0; i < number_of_files_in_manifest; ++i)
-        {
-            if (!filter_dag || pruning_mask.empty() || pruning_mask[i])
-            {
-                const auto status = manifest_partition_info.status_column->getInt(i);
-                const auto data_path = std::string(manifest_partition_info.file_path_column->getDataAt(i).toView());
-                const auto pos = data_path.find(common_path);
-                if (pos == std::string::npos)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
-
-                const auto file_path = data_path.substr(pos);
-
-                if (ManifestEntryStatus(status) == ManifestEntryStatus::DELETED)
-                {
-                    throw Exception(
-                        ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
-                }
-                else
-                {
-                    data_files.push_back(file_path);
-                }
-            }
-        }
-    }
-    return data_files;
-}
-}
-
-#endif
+} // namespace Iceberg
