@@ -48,7 +48,7 @@ FilterTransform::FilterTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
             true)
-    , expression(expression_->clone())
+    , expression(expression_->clone()) // We make a copy of expression_ here, eliminate lock contention between threads.
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)

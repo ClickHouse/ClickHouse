@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 
 #include <variant>
+#include <shared_mutex>
 
 #include "config.h"
 
@@ -52,6 +53,10 @@ public:
 
     struct Action
     {
+        // Since action could be updated between threads, we need a lock.
+        // But we recomment to make multiple ExpressionActions instance, make sure that every thread only takes
+        // one of them to execute.
+        mutable std::shared_mutex mutex;
         const Node * node;
         Arguments arguments;
         size_t result_position;
@@ -74,6 +79,38 @@ public:
             is_short_circuit_node(is_short_circuit_node_),
             could_reorder_arguments(could_reorder_arguments_)
         {}
+        Action(const Action & b)
+        {
+            node = b.node;
+            {
+                std::shared_lock lock(b.mutex);
+                arguments = b.arguments;
+            }
+            result_position = b.result_position;
+            is_lazy_executed = b.is_lazy_executed;
+            is_short_circuit_node = b.is_short_circuit_node;
+            could_reorder_arguments = b.could_reorder_arguments;
+            elapsed_ns = b.elapsed_ns;
+            input_rows = b.input_rows;
+            short_circuit_selected_rows = b.short_circuit_selected_rows;
+        }
+        Action & operator=(const Action &b)
+        {
+            std::unique_lock this_lock(mutex);
+            node = b.node;
+            {
+                std::shared_lock lock(b.mutex);
+                arguments = b.arguments;
+            }
+            result_position = b.result_position;
+            is_lazy_executed = b.is_lazy_executed;
+            is_short_circuit_node = b.is_short_circuit_node;
+            could_reorder_arguments = b.could_reorder_arguments;
+            elapsed_ns = b.elapsed_ns;
+            input_rows = b.input_rows;
+            short_circuit_selected_rows = b.short_circuit_selected_rows;
+            return *this;
+        }
 
         /// Followings are used for reordering arguments of short-circuit nodes
         /// Rank value is caculated as elapsed_ns/input_rows/(1-short_circuit_selected_rows/input_rows)
@@ -108,7 +145,7 @@ private:
 
     ExpressionActionsSettings settings;
 
-    static const size_t reorder_short_circuit_arguments_every_rows = 100000;
+    static const size_t reorder_short_circuit_arguments_every_rows = 10000;
     size_t current_profile_rows = 0;
 
 public:

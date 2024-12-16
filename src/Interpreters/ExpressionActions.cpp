@@ -660,12 +660,26 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
             }
 
             ColumnsWithTypeAndName arguments(action.arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
+            if (enable_adaptive_short_circuit)
             {
-                if (!action.arguments[i].needed_later)
-                    arguments[i] = std::move(columns[action.arguments[i].pos]);
-                else
-                    arguments[i] = columns[action.arguments[i].pos];
+                std::shared_lock lock(action.mutex);
+                for (size_t i = 0; i < arguments.size(); ++i)
+                {
+                    if (!action.arguments[i].needed_later)
+                        arguments[i] = std::move(columns[action.arguments[i].pos]);
+                    else
+                        arguments[i] = columns[action.arguments[i].pos];
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < arguments.size(); ++i)
+                {
+                    if (!action.arguments[i].needed_later)
+                        arguments[i] = std::move(columns[action.arguments[i].pos]);
+                    else
+                        arguments[i] = columns[action.arguments[i].pos];
+                }
             }
 
             if (action.is_lazy_executed)
@@ -891,6 +905,7 @@ void ExpressionActions::assertDeterministic() const
 
 void ExpressionActions::updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile)
 {
+    std::unique_lock lock(action.mutex);
     action.elapsed_ns += profile.elapsed_ns;
     action.input_rows += profile.input_rows;
     action.short_circuit_selected_rows += profile.short_circuit_selected_rows;
@@ -914,14 +929,17 @@ void ExpressionActions::tryReorderShortCircuitArguments(size_t current_bach_rows
         if (!action.could_reorder_arguments)
             continue;
         std::vector<std::pair<size_t, double>> rank_values;
-        for (size_t i = 0; i < action.arguments.size(); ++i)
         {
-            const auto & arg = action.arguments[i];
-            const auto & arg_action = actions[arg.actions_pos];
-            double rank_value = arg_action.input_rows ?
-                (arg_action.elapsed_ns * 1.0 / arg_action.input_rows/(1.000001 - arg_action.short_circuit_selected_rows/arg_action.input_rows))
-                : 0.0;
-            rank_values.push_back(std::make_pair(i, rank_value));
+            std::shared_lock lock(action.mutex);
+            for (size_t i = 0; i < action.arguments.size(); ++i)
+            {
+                const auto & arg = action.arguments[i];
+                const auto & arg_action = actions[arg.actions_pos];
+                double rank_value = arg_action.input_rows ?
+                    (arg_action.elapsed_ns * 1.0 / arg_action.input_rows/(1.000001 - arg_action.short_circuit_selected_rows/arg_action.input_rows))
+                    : 0.0;
+                rank_values.push_back(std::make_pair(i, rank_value));
+            }
         }
         ::sort(rank_values.begin(), rank_values.end(), [](const auto & a, const auto & b) { return a.second < b.second; });
         std::vector<std::pair<size_t, Argument>> reordered_args;
@@ -938,9 +956,12 @@ void ExpressionActions::tryReorderShortCircuitArguments(size_t current_bach_rows
         }
 
         // This will reorder the execution of arguments. We don't need to topological sort the actions again
-        for (const auto & [pos, arg] : reordered_args)
         {
-            action.arguments[pos] = std::move(arg);
+            std::unique_lock lock(action.mutex);
+            for (const auto & [pos, arg] : reordered_args)
+            {
+                action.arguments[pos] = std::move(arg);
+            }
         }
     }
 
