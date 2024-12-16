@@ -280,7 +280,7 @@ def create_table(
     bucket=None,
     expect_error=False,
     database_name="default",
-    no_settings=False
+    no_settings=False,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -1982,6 +1982,8 @@ def test_commit_on_limit(started_cluster):
 
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
+    if "24.5" not in node.query("select version()").strip():
+        node.restart_with_original_version()
 
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
@@ -2538,6 +2540,8 @@ def test_registry(started_cluster):
 
 def test_upgrade_3(started_cluster):
     node = started_cluster.instances["instance_24.5"]
+    if "24.5" not in node.query("select version()").strip():
+        node.restart_with_original_version()
 
     table_name = f"test_upgrade_3_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
@@ -2546,12 +2550,7 @@ def test_upgrade_3(started_cluster):
     files_to_generate = 10
 
     create_table(
-        started_cluster,
-        node,
-        table_name,
-        "ordered",
-        files_path,
-        no_settings=True
+        started_cluster, node, table_name, "ordered", files_path, no_settings=True
     )
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
@@ -2577,6 +2576,7 @@ def test_upgrade_3(started_cluster):
         f"""
         ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=111
     """
+        )
     )
     assert 111 == int(
         node.query(
