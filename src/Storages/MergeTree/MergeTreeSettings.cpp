@@ -676,8 +676,7 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         res_columns[2]->insert(setting.isValueChanged());
         res_columns[3]->insert(setting.getDescription());
 
-        Field min;
-        Field max;
+        Field min, max;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         constraints.get(*this, setting_name, min, max, writability);
 

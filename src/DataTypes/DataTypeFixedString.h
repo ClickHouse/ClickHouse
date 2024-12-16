@@ -4,8 +4,8 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/Exception.h>
 
-constexpr size_t MAX_FIXEDSTRING_SIZE = 0xFFFFFF;
-constexpr size_t MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS = 256;
+#define MAX_FIXEDSTRING_SIZE 0xFFFFFF
+#define MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS 256
 
 
 namespace DB
