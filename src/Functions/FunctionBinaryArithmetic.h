@@ -41,7 +41,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context.h>
@@ -111,7 +110,6 @@ template <typename DataType> constexpr bool IsIntegralOrExtendedOrDecimal =
     IsDataTypeDecimal<DataType>;
 
 template <typename DataType> constexpr bool IsFloatingPoint = false;
-template <> inline constexpr bool IsFloatingPoint<DataTypeBFloat16> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
 template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 
@@ -231,27 +229,6 @@ public:
 
 namespace impl_
 {
-
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
-{
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
-}
-
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
-{
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
-}
-
-template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
-inline DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
-{
-    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
-    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
-}
 
 /** Arithmetic operations: +, -, *, /, %,
   * intDiv (integer division)
@@ -595,7 +572,7 @@ public:
                         scale_a);
                 return;
             }
-            if (scale_b != 1)
+            else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false>(
@@ -616,7 +593,7 @@ public:
                         scale_a);
                 return;
             }
-            if (scale_b != 1)
+            else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false, false>(
@@ -625,6 +602,7 @@ public:
                         scale_b);
                 return;
             }
+
         }
         else if constexpr (is_division && is_decimal_b)
         {
@@ -810,7 +788,6 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division = IsOperation<Op>::division;
     static constexpr bool is_bit_hamming_distance = IsOperation<Op>::bit_hamming_distance;
     static constexpr bool is_modulo = IsOperation<Op>::modulo;
-    static constexpr bool is_positive_modulo = IsOperation<Op>::positive_modulo;
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
 
@@ -827,7 +804,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeFixedString, DataTypeString,
             DataTypeInterval>;
 
-        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64, DataTypeBFloat16>;
+        using Floats = TypeList<DataTypeFloat32, DataTypeFloat64>;
 
         using ValidTypes = std::conditional_t<valid_on_float_arguments,
             TypeListConcat<Types, Floats>,
@@ -1140,7 +1117,8 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (agg_state_is_const)
             return ColumnConst::create(std::move(column_to), input_rows_count);
-        return column_to;
+        else
+            return column_to;
     }
 
     /// Merge two aggregation states together.
@@ -1172,7 +1150,8 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (lhs_is_const && rhs_is_const)
             return ColumnConst::create(std::move(column_to), input_rows_count);
-        return column_to;
+        else
+            return column_to;
     }
 
     ColumnPtr executeDateTimeIntervalPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1189,7 +1168,7 @@ class FunctionBinaryArithmetic : public IFunction
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
         auto function = function_builder->build(new_arguments);
-        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
+        return function->execute(new_arguments, result_type, input_rows_count);
     }
 
     ColumnPtr executeDateTimeTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1203,7 +1182,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         auto function = function_builder->build(new_arguments);
 
-        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
+        return function->execute(new_arguments, result_type, input_rows_count);
     }
 
     ColumnPtr executeIntervalTupleOfIntervalsPlusMinus(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -1211,7 +1190,7 @@ class FunctionBinaryArithmetic : public IFunction
     {
         auto function = function_builder->build(arguments);
 
-        return function->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
+        return function->execute(arguments, result_type, input_rows_count);
     }
 
     ColumnPtr executeArraysImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -1301,7 +1280,7 @@ class FunctionBinaryArithmetic : public IFunction
             new_arguments[1] = {right_const->convertToFullColumnIfConst(), arguments[1].type, arguments[1].name};
             return executeImpl(new_arguments, result_type, input_rows_count);
         }
-        if (left_const && !is_swapped)
+        else if (left_const && !is_swapped)
         {
             new_arguments[0] = {left_const->convertToFullColumnIfConst(), arguments[0].type, arguments[0].name};
             new_arguments[1] = {arguments[1].column.get()->getPtr(), arguments[1].type, arguments[1].name};
@@ -1346,7 +1325,7 @@ class FunctionBinaryArithmetic : public IFunction
 
         auto function = function_builder->build(new_arguments);
 
-        return function->execute(new_arguments, result_type, input_rows_count, /* dry_run = */ false);
+        return function->execute(new_arguments, result_type, input_rows_count);
     }
 
     template <typename T, typename ResultDataType>
@@ -1714,13 +1693,6 @@ public:
             }
             else
             {
-                if constexpr ((std::is_same_v<LeftDataType, DataTypeBFloat16> || std::is_same_v<RightDataType, DataTypeBFloat16>)
-                    && (sizeof(typename LeftDataType::FieldType) > 8 || sizeof(typename RightDataType::FieldType) > 8))
-                {
-                    /// Big integers and BFloat16 are not supported together.
-                    return false;
-                }
-
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
@@ -2012,12 +1984,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
             return ColumnConst::create(std::move(col_res), col_left_const->size());
         }
-        if (!col_left_const && !col_right_const && col_right)
+        else if (!col_left_const && !col_right_const && col_right)
         {
             if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
             {
-                OpImpl::template processFixedString<OpCase::Vector>(
-                    in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
+                OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
             }
             else
             {
@@ -2047,8 +2018,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             const T1 value = col_right_const->template getValue<T1>();
             if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
             {
-                OpImpl::template processFixedString<OpCase::RightConstant>(
-                    in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
+                OpImpl::template processFixedString<OpCase::RightConstant>(in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
             }
             else
             {
@@ -2073,15 +2043,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         using DecimalResultType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::DecimalResultDataType;
 
         if constexpr (std::is_same_v<ResultDataType, InvalidType>)
-        {
             return nullptr;
-        }
-        else if constexpr ((std::is_same_v<LeftDataType, DataTypeBFloat16> || std::is_same_v<RightDataType, DataTypeBFloat16>)
-            && (sizeof(typename LeftDataType::FieldType) > 8 || sizeof(typename RightDataType::FieldType) > 8))
-        {
-            /// Big integers and BFloat16 are not supported together.
-            return nullptr;
-        }
         else // we can't avoid the else because otherwise the compiler may assume the ResultDataType may be Invalid
              // and that would produce the compile error.
         {
@@ -2098,7 +2060,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             ColumnPtr left_col = nullptr;
             ColumnPtr right_col = nullptr;
 
-            /// When Decimal op Float32/64/16, convert both of them into Float64
+            /// When Decimal op Float32/64, convert both of them into Float64
             if constexpr (decimal_with_float)
             {
                 const auto converted_type = std::make_shared<DataTypeFloat64>();
@@ -2133,6 +2095,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             /// Here we check if we have `intDiv` or `intDivOrZero` and at least one of the arguments is decimal, because in this case originally we had result as decimal, so we need to convert result into integer after calculations
             else if constexpr (!decimal_with_float && (is_int_div || is_int_div_or_zero) && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>))
             {
+
                 if constexpr (!std::is_same_v<DecimalResultType, InvalidType>)
                 {
                     DataTypePtr type_res;
@@ -2248,7 +2211,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
         {
-            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count, /* dry_run = */ false);
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
@@ -2388,105 +2351,59 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
             return false;
 
-        auto denull_left_type = removeNullable(arguments[0]);
-        auto denull_right_type = removeNullable(arguments[1]);
-        WhichDataType data_type_lhs(denull_left_type);
-        WhichDataType data_type_rhs(denull_right_type);
+        WhichDataType data_type_lhs(arguments[0]);
+        WhichDataType data_type_rhs(arguments[1]);
         if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
             (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
             return false;
 
-        return castBothTypes(
-            denull_left_type.get(),
-            denull_right_type.get(),
-            [&](const auto & left, const auto & right)
+        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
+                !std::is_same_v<DataTypeFixedString, RightDataType> &&
+                !std::is_same_v<DataTypeString, LeftDataType> &&
+                !std::is_same_v<DataTypeString, RightDataType>)
             {
-                using LeftDataType = std::decay_t<decltype(left)>;
-                using RightDataType = std::decay_t<decltype(right)>;
-                if constexpr (
-                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
-                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
-                {
-                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-
-                    if constexpr (
-                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
-                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
-                    {
-                        if constexpr (is_modulo || is_positive_modulo)
-                        {
-                            using LeftType = typename LeftDataType::FieldType;
-                            using RightType = typename RightDataType::FieldType;
-                            using PromotedType = typename NumberTraits::ResultOfModuloNativePromotion<LeftType, RightType>::Type;
-                            if constexpr (std::is_arithmetic_v<PromotedType>)
-                            {
-                                return true;
-                            }
-                        }
-                        else
-                            return true;
-                    }
-                }
-                return false;
-            });
+                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
+                    return true;
+            }
+            return false;
+        });
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
         assert(2 == arguments.size());
 
-        auto denull_left_type = removeNullable(arguments[0].type);
-        auto denull_right_type = removeNullable(arguments[1].type);
         llvm::Value * result = nullptr;
-
-        castBothTypes(
-            denull_left_type.get(),
-            denull_right_type.get(),
-            [&](const auto & left, const auto & right)
+        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            if constexpr (!std::is_same_v<DataTypeFixedString, LeftDataType> &&
+                !std::is_same_v<DataTypeFixedString, RightDataType> &&
+                !std::is_same_v<DataTypeString, LeftDataType> &&
+                !std::is_same_v<DataTypeString, RightDataType>)
             {
-                using LeftDataType = std::decay_t<decltype(left)>;
-                using RightDataType = std::decay_t<decltype(right)>;
-                if constexpr (
-                    !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
-                    && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>)
+                using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
                 {
-                    using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-                    using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-                    if constexpr (
-                        !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType>
-                        && !IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && OpSpec::compilable)
-                    {
-                        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                        if constexpr (is_modulo || is_positive_modulo)
-                        {
-                            using LeftType = typename LeftDataType::FieldType;
-                            using RightType = typename RightDataType::FieldType;
-                            using PromotedType = typename NumberTraits::ResultOfModuloNativePromotion<LeftType, RightType>::Type;
-                            if constexpr (std::is_arithmetic_v<PromotedType>)
-                            {
-                                DataTypePtr promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
-                                if (result_type->isNullable())
-                                    promoted_type = std::make_shared<DataTypeNullable>(promoted_type);
+                    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                    auto * lval = nativeCast(b, arguments[0], result_type);
+                    auto * rval = nativeCast(b, arguments[1], result_type);
+                    result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
 
-                                auto * lval = nativeCast(b, arguments[0], promoted_type);
-                                auto * rval = nativeCast(b, arguments[1], promoted_type);
-                                result = nativeCast(
-                                    b, promoted_type, OpSpec::compile(b, lval, rval, std::is_signed_v<PromotedType>), result_type);
-                                return true;
-                            }
-                        }
-                        else
-                        {
-                            auto * lval = nativeCast(b, arguments[0], result_type);
-                            auto * rval = nativeCast(b, arguments[1], result_type);
-                            result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
-                            return true;
-                        }
-                    }
+                    return true;
                 }
-                return false;
-            });
+            }
+
+            return false;
+        });
 
         return result;
     }
@@ -2531,14 +2448,16 @@ public:
 
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
-        if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
+        else if (right.column && isColumnConst(*right.column) && arguments.size() == 1)
         {
             ColumnsWithTypeAndName columns_with_constant
-                = {arguments[0], {right.column->cloneResized(input_rows_count), right.type, right.name}};
+                = {arguments[0],
+                   {right.column->cloneResized(input_rows_count), right.type, right.name}};
 
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
-        return Base::executeImpl(arguments, result_type, input_rows_count);
+        else
+            return Base::executeImpl(arguments, result_type, input_rows_count);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -2607,16 +2526,20 @@ public:
                     // Check if there is an overflow
                     if (is_positive_monotonicity)
                         return {true, true, false, true};
-                    return {false, true, false, false};
+                    else
+                        return {false, true, false, false};
                 }
-
-                // Check if there is an overflow
-                if (!is_positive_monotonicity)
-                    return {true, false, false, true};
-                return {false, false, false, false};
+                else
+                {
+                    // Check if there is an overflow
+                    if (!is_positive_monotonicity)
+                        return {true, false, false, true};
+                    else
+                        return {false, false, false, false};
+                }
             }
             // variable +|- constant
-            if (right.column && isColumnConst(*right.column))
+            else if (right.column && isColumnConst(*right.column))
             {
                 auto left_type = removeNullable(removeLowCardinality(left.type));
                 auto right_type = removeNullable(removeLowCardinality(right.type));
@@ -2638,7 +2561,8 @@ public:
                 if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
                     == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
                     return {true, true, false, true};
-                return {false, true, false, false};
+                else
+                    return {false, true, false, false};
             }
         }
         if (name_view == "divide" || name_view == "intDiv")
@@ -2658,7 +2582,8 @@ public:
                 {
                     return {true, is_constant_positive, false, is_strict};
                 }
-                if (applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
+                else if (
+                    applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
                     && applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
                 {
                     return {true, !is_constant_positive, false, is_strict};

@@ -8,7 +8,7 @@ namespace DB
 
 class RPNBuilderTreeNode;
 
-/// Estimates the selectivity of a condition.
+/// It estimates the selectivity of a condition.
 class ConditionSelectivityEstimator
 {
 public:
@@ -16,28 +16,29 @@ public:
     /// Right now we only support simple condition like col = val / col < val
     Float64 estimateRowCount(const RPNBuilderTreeNode & node) const;
 
-    void addStatistics(String part_name, ColumnStatisticsPartPtr column_stat);
-    void incrementRowCount(UInt64 rows);
+    void merge(String part_name, ColumnStatisticsPtr column_stat);
+    void addRows(UInt64 part_rows) { total_rows += part_rows; }
 
 private:
-    friend class ColumnPartStatistics;
-
+    friend class ColumnStatistics;
     struct ColumnSelectivityEstimator
     {
         /// We store the part_name and part_statistics.
         /// then simply get selectivity for every part_statistics and combine them.
-        std::map<String, ColumnStatisticsPartPtr> part_statistics;
+        std::map<String, ColumnStatisticsPtr> part_statistics;
 
-        void addStatistics(String part_name, ColumnStatisticsPartPtr stats);
+        void merge(String part_name, ColumnStatisticsPtr stats);
 
         Float64 estimateLess(const Field & val, Float64 rows) const;
+
         Float64 estimateGreater(const Field & val, Float64 rows) const;
+
         Float64 estimateEqual(const Field & val, Float64 rows) const;
     };
 
     std::pair<String, Field> extractBinaryOp(const RPNBuilderTreeNode & node, const String & column_name) const;
 
-    /// Magic constants for estimating the selectivity of a condition no statistics exists.
+    /// Used to estimate the selectivity of a condition when there is no statistics.
     static constexpr auto default_cond_range_factor = 0.5;
     static constexpr auto default_cond_equal_factor = 0.01;
     static constexpr auto default_unknown_cond_factor = 1;

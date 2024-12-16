@@ -15,12 +15,6 @@
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 index_granularity;
-    extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-}
-
 namespace ErrorCodes
 {
     extern const int METADATA_MISMATCH;
@@ -56,7 +50,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     const auto data_settings = data.getSettings();
     sampling_expression = formattedASTNormalized(metadata_snapshot->getSamplingKeyAST());
-    index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
+    index_granularity = data_settings->index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
     is_deleted_column = data.merging_params.is_deleted_column;
@@ -102,7 +96,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     projections = metadata_snapshot->getProjections().toString();
 
     if (data.canUseAdaptiveGranularity())
-        index_granularity_bytes = (*data_settings)[MergeTreeSetting::index_granularity_bytes];
+        index_granularity_bytes = data_settings->index_granularity_bytes;
     else
         index_granularity_bytes = 0;
 

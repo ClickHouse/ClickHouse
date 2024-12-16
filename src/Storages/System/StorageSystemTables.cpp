@@ -2,7 +2,6 @@
 
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -32,12 +31,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
-}
 
 namespace
 {
@@ -57,9 +50,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     }
     return false;
 }
-
 }
-
 
 namespace detail
 {
@@ -178,10 +169,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"total_bytes_uncompressed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
             "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into account)."
-        },
-        {"total_bytes_with_inactive", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-         "Total number of bytes with inactive parts, if it is possible to quickly determine exact number "
-         "of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). "
         },
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of parts in this table."},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
@@ -405,7 +392,8 @@ protected:
                     static const size_t DATA_PATHS_INDEX = 5;
                     if (columns_mask[DATA_PATHS_INDEX])
                     {
-                        lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                        lock = table->tryLockForShare(context->getCurrentQueryId(),
+                                                      context->getSettingsRef().lock_acquire_timeout);
                         if (!lock)
                             // Table was dropped while acquiring the lock, skipping table
                             continue;
@@ -493,7 +481,7 @@ protected:
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
-                    if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
+                    if (ast_create && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {
                         ast_create->uuid = UUIDHelpers::Nil;
                         if (ast_create->targets)
@@ -573,7 +561,7 @@ protected:
                 }
 
                 auto settings = context->getSettingsRef();
-                settings[Setting::select_sequential_consistency] = 0;
+                settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
                     auto total_rows = table ? table->totalRows(settings) : std::nullopt;
@@ -597,15 +585,6 @@ protected:
                     auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
                     if (total_bytes_uncompressed)
                         res_columns[res_index++]->insert(*total_bytes_uncompressed);
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    auto total_bytes_with_inactive = table->totalBytesWithInactive(settings);
-                    if (total_bytes_with_inactive)
-                        res_columns[res_index++]->insert(*total_bytes_with_inactive);
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -741,7 +720,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -797,7 +776,7 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
+        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
     pipeline.init(std::move(pipe));
 }
 

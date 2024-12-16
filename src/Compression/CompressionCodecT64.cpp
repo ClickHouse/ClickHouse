@@ -1,6 +1,5 @@
 #include <cstring>
 
-#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
@@ -452,9 +451,11 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     {
         if (min + max >= 0)
             return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
-        return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
+        else
+            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
     }
-    return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+    else
+        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
 }
 
 

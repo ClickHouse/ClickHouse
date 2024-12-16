@@ -224,12 +224,6 @@ void initFinished()
     init_finished.store(true, std::memory_order_relaxed);
 }
 
-std::atomic<double> force_sample_probability = 0.0;
-
-void setForceSampleProbability(double value)
-{
-    force_sample_probability.store(value, std::memory_order_relaxed);
-}
 
 }
 

@@ -45,7 +45,6 @@
 #include <pcg_random.hpp>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/SipHash.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -761,35 +760,35 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
     {
         return kind;
     }
-    if (fuzz_rand() % 11 == 0)
+    else if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::ParsedAST;
     }
-    if (fuzz_rand() % 11 == 0)
+    else if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::AnalyzedSyntax;
     }
-    if (fuzz_rand() % 11 == 0)
+    else if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryTree;
     }
-    if (fuzz_rand() % 11 == 0)
+    else if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryPlan;
     }
-    if (fuzz_rand() % 11 == 0)
+    else if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryPipeline;
     }
-    if (fuzz_rand() % 11 == 0)
+    else if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::QueryEstimates;
     }
-    if (fuzz_rand() % 11 == 0)
+    else if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::TableOverride;
     }
-    if (fuzz_rand() % 11 == 0)
+    else if (fuzz_rand() % 11 == 0)
     {
         return ASTExplainQuery::ExplainKind::CurrentTransaction;
     }
@@ -1006,7 +1005,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
 {
     for (auto & child : expr_list.children)
     {
-        if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
+        if (auto * literal = typeid_cast<ASTLiteral *>(child.get()))
         {
             if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
@@ -1288,9 +1287,9 @@ void QueryFuzzer::addTableLike(ASTPtr ast)
     if (table_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
         const auto iter = std::next(table_like.begin(), fuzz_rand() % table_like.size());
-        const auto & ast_del = *iter;
-        table_like_map.erase(ast_del.first);
+        const auto ast_del = *iter;
         table_like.erase(iter);
+        table_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -1309,9 +1308,9 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
     if (column_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
         const auto iter = std::next(column_like.begin(), fuzz_rand() % column_like.size());
-        const auto & ast_del = *iter;
-        column_like_map.erase(ast_del.first);
+        const auto ast_del = *iter;
         column_like.erase(iter);
+        column_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();

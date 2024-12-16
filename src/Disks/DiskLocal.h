@@ -42,9 +42,11 @@ public:
 
     UInt64 getKeepingFreeSpace() const override { return keep_free_space_bytes; }
 
-    bool existsFile(const String & path) const override;
-    bool existsDirectory(const String & path) const override;
-    bool existsFileOrDirectory(const String & path) const override;
+    bool exists(const String & path) const override;
+
+    bool isFile(const String & path) const override;
+
+    bool isDirectory(const String & path) const override;
 
     size_t getFileSize(const String & path) const override;
 

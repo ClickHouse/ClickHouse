@@ -351,14 +351,10 @@ Shows privileges for a user.
 **Syntax**
 
 ``` sql
-SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
+SHOW GRANTS [FOR user1 [, user2 ...]]
 ```
 
 If user is not specified, the query returns privileges for the current user.
-
-The `WITH IMPLICIT` modifier allows to show the implicit grants (e.g., `GRANT SELECT ON system.one`)
-
-The `FINAL` modifier merges all grants from the user and its granted roles (with inheritance)
 
 ## SHOW CREATE USER
 

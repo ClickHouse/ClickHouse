@@ -23,7 +23,7 @@ namespace
         Role & role,
         const ASTCreateRoleQuery & query,
         const String & override_name,
-        const std::optional<AlterSettingsProfileElements> & override_settings)
+        const std::optional<SettingsProfileElements> & override_settings)
     {
         if (!override_name.empty())
             role.setName(override_name);
@@ -33,11 +33,9 @@ namespace
             role.setName(query.names.front());
 
         if (override_settings)
-            role.settings.applyChanges(*override_settings);
-        else if (query.alter_settings)
-            role.settings.applyChanges(AlterSettingsProfileElements{*query.alter_settings});
+            role.settings = *override_settings;
         else if (query.settings)
-            role.settings.applyChanges(AlterSettingsProfileElements{*query.settings});
+            role.settings = *query.settings;
     }
 }
 
@@ -53,14 +51,14 @@ BlockIO InterpreterCreateRoleQuery::execute()
     else
         getContext()->checkAccess(AccessType::CREATE_ROLE);
 
-    std::optional<AlterSettingsProfileElements> settings_from_query;
-    if (query.alter_settings)
-        settings_from_query = AlterSettingsProfileElements{*query.alter_settings, access_control};
-    else if (query.settings)
-        settings_from_query = AlterSettingsProfileElements{SettingsProfileElements(*query.settings, access_control)};
+    std::optional<SettingsProfileElements> settings_from_query;
+    if (query.settings)
+    {
+        settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
-    if (settings_from_query && !query.attach)
-        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::ROLE);
+        if (!query.attach)
+            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::ROLE);
+    }
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
@@ -76,7 +74,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
 
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
             auto updated_role = typeid_cast<std::shared_ptr<Role>>(entity->clone());
             updateRoleFromQueryImpl(*updated_role, query, {}, settings_from_query);

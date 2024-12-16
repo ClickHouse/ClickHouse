@@ -17,10 +17,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 regexp_max_matches_per_row;
-}
 
 namespace ErrorCodes
 {
@@ -136,7 +132,7 @@ public:
                 const auto * end = pos + current_row.size();
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, RE2::UNANCHORED,
+                        0, end - pos, regexp->UNANCHORED,
                         matched_groups.data(), static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
@@ -159,7 +155,7 @@ public:
         else
         {
             /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row];
+            const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
 
             PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
@@ -180,7 +176,7 @@ public:
                 const auto * end = pos + current_row.size;
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, RE2::UNANCHORED, matched_groups.data(),
+                        0, end - pos, regexp->UNANCHORED, matched_groups.data(),
                         static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.

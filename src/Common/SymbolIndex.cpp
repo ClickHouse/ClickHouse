@@ -460,11 +460,13 @@ const T * find(const void * address, const std::vector<T> & vec)
 
     if (it == vec.begin())
         return nullptr;
-    --it; /// Last range that has left boundary less or equals than address.
+    else
+        --it; /// Last range that has left boundary less or equals than address.
 
     if (address >= it->address_begin && address < it->address_end)
         return &*it;
-    return nullptr;
+    else
+        return nullptr;
 }
 
 }
