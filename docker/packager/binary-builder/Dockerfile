@@ -37,7 +37,6 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         yasm \
         zstd \
         zip \
-        pkg-config \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
