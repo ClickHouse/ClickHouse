@@ -1,0 +1,11 @@
+Code: 117. DB::Exception: Too many tuple elements during Tuple type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many tuple elements during Tuple type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many enum elements during Enum type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many function arguments during Function type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many variants during Variant type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many elements during Nested type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many parameters during AggregateFunction type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many function arguments during AggregateFunction type decoding: 0. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many typed paths during JSON type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many paths to skip during JSON type decoding: 2000000. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
+Code: 117. DB::Exception: Too many path regexps to skip during JSON type decoding: 0. Maximum: 1000000. (INCORRECT_DATA) (version 25.1.1.1).
