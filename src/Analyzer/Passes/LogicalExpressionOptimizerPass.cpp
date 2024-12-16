@@ -869,10 +869,13 @@ public:
             tryOptimizeCommonExpressions(maybe_node, *function_node, getContext());
         };
 
+        // TODO: This optimization can also be applied to HAVING and QUALIFY clauses,
+        // but it can be allowed if and only if every logical expression is optimized.
+        // Example:
+        // SELECT a FROM t GROUP BY <logical_expression> as a HAVING a
+        // All the references of `a` should be optimized to produce a valid query.
         try_optimize_if_function(query_node->getWhere());
         try_optimize_if_function(query_node->getPrewhere());
-        try_optimize_if_function(query_node->getHaving());
-        try_optimize_if_function(query_node->getQualify());
     }
 
 private:
