@@ -35,8 +35,7 @@ DEFINE_BINARY_PROTO_FUZZER(const Sentence& main)
             out.finalize();
             std::cerr << std::endl;
         }
-        catch (...)
-        {}
+        catch (...) {}
 
         input.clear();
     }

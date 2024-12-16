@@ -1,7 +1,5 @@
 #include <base/types.h>
 
-#include <Common/tests/gtest_global_register.h>
-
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
