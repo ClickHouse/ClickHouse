@@ -125,7 +125,7 @@ namespace DB
  * SELECT * FROM t1 WHERE a AND b AND (c OR d)
  * SELECT * FROM t1 WHERE a AND b
  * -------------------------------
- * 
+ *
  * 9. Populate constant comparison in AND chains.
  * -------------------------------
  * SELECT * FROM table WHERE a < b AND b < c AND c < 5;
