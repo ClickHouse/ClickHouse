@@ -31,6 +31,6 @@ private:
     ManifestListsByName::const_iterator reference;
 };
 
-}
+} // namespace Iceberg
 
 #endif

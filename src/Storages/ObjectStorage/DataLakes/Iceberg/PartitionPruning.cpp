@@ -21,19 +21,19 @@ namespace Iceberg
 
 Iceberg::PartitionTransform getTransform(const String & transform_name)
 {
-    if (transform_name == "year")
+    if (transform_name == "year" || transform_name == "years")
     {
         return Iceberg::PartitionTransform::Year;
     }
-    else if (transform_name == "month")
+    else if (transform_name == "month" || transform_name == "months")
     {
         return Iceberg::PartitionTransform::Month;
     }
-    else if (transform_name == "day")
+    else if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
     {
         return Iceberg::PartitionTransform::Day;
     }
-    else if (transform_name == "hour")
+    else if (transform_name == "hour" || transform_name == "hours")
     {
         return Iceberg::PartitionTransform::Hour;
     }

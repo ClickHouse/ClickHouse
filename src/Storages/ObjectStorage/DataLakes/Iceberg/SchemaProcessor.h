@@ -99,4 +99,4 @@ private:
     std::mutex mutex;
 };
 
-}
+} // namespace DB

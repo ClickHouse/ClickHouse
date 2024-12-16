@@ -67,6 +67,6 @@ private:
     ManifestFilesByName::const_iterator reference;
 };
 
-}
+} // namespace Iceberg
 
 #endif

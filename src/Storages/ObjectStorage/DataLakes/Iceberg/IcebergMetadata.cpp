@@ -542,6 +542,6 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         return data_files_getter();
     }
 }
-}
+} // namespace DB
 
 #endif

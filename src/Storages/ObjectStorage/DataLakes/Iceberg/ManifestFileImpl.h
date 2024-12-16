@@ -59,6 +59,6 @@ public:
     std::vector<DataFileEntry> data_files;
 };
 
-}
+} // namespace Iceberg
 
 #endif

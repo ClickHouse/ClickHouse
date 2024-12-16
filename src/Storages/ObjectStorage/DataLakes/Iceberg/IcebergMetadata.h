@@ -145,6 +145,6 @@ private:
     DataLakePartitionColumns partition_columns;
 };
 
-}
+} // namespace DB
 
 #endif
