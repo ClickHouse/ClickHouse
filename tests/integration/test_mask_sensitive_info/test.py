@@ -16,6 +16,7 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
     with_azurite=True,
+    with_minio=True,
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
