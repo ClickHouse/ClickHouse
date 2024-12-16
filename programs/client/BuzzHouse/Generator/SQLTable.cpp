@@ -852,6 +852,11 @@ int StatementGenerator::addTableColumn(
     {
         possible_types &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
     }
+    if (t.hasDatabasePeer())
+    {
+        //ClickHouse's UUID sorting order is different from other databases
+        possible_types &= ~(allow_uuid);
+    }
 
     col.cname = cname;
     cd->mutable_col()->set_column("c" + std::to_string(cname));
