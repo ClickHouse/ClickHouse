@@ -83,6 +83,12 @@ def test_system_wide_metrics(start_cluster):
     # /proc/uptime - OSUptime
     # /proc/stat - OSProcessesRunning, OSInterrupts
     # /proc/meminfo - OSMemoryTotal
-    for metric in ["LoadAverage1", "OSUptime", "OSProcessesRunning", "OSInterrupts", "OSMemoryTotal"]:
+    for metric in [
+        "LoadAverage1",
+        "OSUptime",
+        "OSProcessesRunning",
+        "OSInterrupts",
+        "OSMemoryTotal",
+    ]:
         node1_value = get_async_metric(node1, metric)
         assert float(node1_value) > 0
