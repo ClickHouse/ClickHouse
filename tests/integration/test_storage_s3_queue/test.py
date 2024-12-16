@@ -2576,7 +2576,6 @@ def test_upgrade_3(started_cluster):
         f"""
         ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=111
     """
-        )
     )
     assert 111 == int(
         node.query(
