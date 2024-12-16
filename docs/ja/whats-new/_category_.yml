@@ -1,0 +1,7 @@
+position: 100
+label: "What's New"
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: "What's New"

@@ -30,7 +30,7 @@ void ASTShowIndexesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
     if (where_expression)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-        where_expression->format(ostr, settings, state, frame);
+        where_expression->formatImpl(ostr, settings, state, frame);
     }
 }
 

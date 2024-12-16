@@ -98,4 +98,3 @@ function(add_rust_subdirectory src)
 endfunction()
 
 add_rust_subdirectory (workspace)
-add_rust_subdirectory (chcache)
