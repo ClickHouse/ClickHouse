@@ -1,9 +1,11 @@
+#include <cstddef>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include "DataTypes/IDataType.h"
 
 
 namespace DB
@@ -68,6 +70,20 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   *
   * This implementation is not interpolated and is different from computing the AUC with the trapezoidal rule,
   *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
+  *
+  *
+  * A third argument is optional and is used to calculate the PR AUC distributedly.
+  *
+  * The PR AUC can be calculated distributedly as long as the data is partitioned by scores.
+  *  The same score should not appear in different partitions. Also, each partition must know
+  *  how many true positives and total labels are there on higher scores partitions.
+  *
+  * After calculating the partial PR AUC for each partition, the whole PR AUC can be obtained by summing the partial areas.
+  *
+  * The needed information is passed as the third argument, which is an Array of three integers:
+  * - higher_partitions_tp: how many positive labels are there on higher scores partitions
+  * - higher_partitions_total: how many labels are there on higher scores partitions
+  * - total_positives: how many positive labels are there in the whole dataset
   */
 
 class FunctionArrayPrAUC : public IFunction
@@ -77,7 +93,14 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayPrAUC>(); }
 
 private:
-    static Float64 apply(const IColumn & scores, const IColumn & labels, ColumnArray::Offset current_offset, ColumnArray::Offset next_offset)
+    static Float64 apply(
+        const IColumn & scores,
+        const IColumn & labels,
+        ColumnArray::Offset current_offset,
+        ColumnArray::Offset next_offset,
+        size_t higher_partitions_tp = 0,
+        size_t higher_partitions_total = 0,
+        size_t total_positives = 0)
     {
         size_t size = next_offset - current_offset;
         if (size == 0)
@@ -100,9 +123,15 @@ private:
         /// Sorting scores in descending order to traverse the Precision Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
-        size_t prev_tp = 0;
-        size_t curr_tp = 0; /// True positives predictions (positive label and score > threshold)
-        size_t curr_p = 0; /// Total positive predictions (score > threshold)
+        /* If the PR AUC is being partially calculated, we need to account for positive labels and total labels from partitions with higher scores
+         * A higher score partition will have all its labels predicted as positive when considering thresholds equal to current partition's scores
+         * For that reason, we consider the following offsets:
+         * - higher_partitions_tp: the number of positive labels on higher scores partitions increases the true positives count
+         * - higher_partitions_total: the number of labels on higher scores partitions increases the total positive predictions count
+         */
+        size_t prev_tp = higher_partitions_tp;
+        size_t curr_tp = higher_partitions_tp; /// True positives predictions (positive label and score > threshold)
+        size_t curr_p = higher_partitions_total; /// Total positive predictions (score > threshold)
 
         Float64 prev_score = sorted_labels[0].score;
         Float64 curr_precision;
@@ -136,21 +165,25 @@ private:
             curr_p += 1;
         }
 
-        /// If there were no positive labels, Recall did not change and the area is 0
-        if (curr_tp == 0)
+        /// If there were no new positive labels, Recall did not change and the area is 0
+        if (curr_tp == higher_partitions_tp)
             return 0.0;
 
         curr_precision = curr_p > 0 ? static_cast<Float64>(curr_tp) / curr_p : 1.0;
         area += curr_precision * (curr_tp - prev_tp);
 
         /// Finally, we divide by (TP + FN) to obtain the Recall
-        /// At this point we've traversed the whole curve and curr_tp = total positive labels (TP + FN)
+        /// If the PR AUC is being calculated distributedly, the total positive labels is passed as an argument
+        if (total_positives > 0)
+            return area / total_positives;
+        /// Else, this partition has all the positive labels, which means that the final curr_tp is equal to total positives
         return area / curr_tp;
     }
 
     static void vector(
         const IColumn & scores,
         const IColumn & labels,
+        const ColumnArray * partial_computing_offsets,
         const ColumnArray::Offsets & offsets,
         PaddedPODArray<Float64> & result,
         size_t input_rows_count)
@@ -161,7 +194,23 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             auto next_offset = offsets[i];
-            result[i] = apply(scores, labels, current_offset, next_offset);
+            // For partial computation of PR AUC, we need to pass additional information about the dataset
+            if (partial_computing_offsets)
+            {
+                result[i] = apply(
+                    scores,
+                    labels,
+                    current_offset,
+                    next_offset,
+                    partial_computing_offsets->getData().getUInt(3 * i),
+                    partial_computing_offsets->getData().getUInt(3 * i + 1),
+                    partial_computing_offsets->getData().getUInt(3 * i + 2));
+            }
+            /// Otherwise, the whole dataset is in this partition and no additional information is needed
+            else
+            {
+                result[i] = apply(scores, labels, current_offset, next_offset);
+            }
             current_offset = next_offset;
         }
     }
@@ -170,34 +219,52 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 2)
+        size_t number_of_arguments = arguments.size();
+
+        if (number_of_arguments < 2 || number_of_arguments > 3)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2.",
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3.",
                 getName(),
-                arguments.size());
+                number_of_arguments);
 
-        for (size_t i = 0; i < 2; ++i)
+        for (size_t i = 0; i < number_of_arguments; ++i)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
             if (!array_type)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both arguments for function {} must be of type Array", getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every argument for function {} must be of type Array", getName());
 
             const auto & nested_type = array_type->getNestedType();
 
             /// The first argument (scores) must be an array of numbers
             if (i == 0 && !isNativeNumber(nested_type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot process values of type {} in its first argument", getName(), nested_type->getName());
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} cannot process values of type {} in its first argument, should be number",
+                    getName(),
+                    nested_type->getName());
 
             /// The second argument (labels) must be an array of numbers or enums
             if (i == 1 && !isNativeNumber(nested_type) && !isEnum(nested_type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} cannot process values of type {} in its second argument", getName(), nested_type->getName());
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} cannot process values of type {} in its second argument, should be number or enum",
+                    getName(),
+                    nested_type->getName());
+
+            /// The third and optional argument (partial_offsets) must be an array of integers
+            if (i == 2 && !isInteger(nested_type))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} cannot process values of type {} in its third argument, should be integer",
+                    getName(),
+                    nested_type->getName());
         }
 
         return std::make_shared<DataTypeFloat64>();
@@ -229,9 +296,39 @@ public:
         if (!col_array1->hasEqualOffsets(*col_array2))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
+        ColumnPtr col3 = nullptr;
+        const ColumnArray * col_array3;
+        if (arguments.size() == 3)
+        {
+            col3 = arguments[2].column->convertToFullColumnIfConst();
+            col_array3 = checkAndGetColumn<ColumnArray>(col3.get());
+            if (!col_array3)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of third argument of function {}, should be an Array",
+                    arguments[2].column->getName(),
+                    getName());
+
+            /// The third argument must be a column containing 3-elements arrays on each row
+            if (col_array3->getData().size() != 3 * input_rows_count)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument for function {} must contain Arrays of size 3", getName());
+            const auto & offsets = col_array3->getOffsets();
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                auto current = offsets[i];
+                auto previous = i > 0 ? offsets[i - 1] : 0;
+                if (current - previous != 3)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Third argument for function {} must contain Arrays of size 3, not {}",
+                        getName(),
+                        current - previous);
+            }
+        }
+
         auto col_res = ColumnVector<Float64>::create();
 
-        vector(col_array1->getData(), col_array2->getData(), col_array1->getOffsets(), col_res->getData(), input_rows_count);
+        vector(col_array1->getData(), col_array2->getData(), col_array3, col_array1->getOffsets(), col_res->getData(), input_rows_count);
 
         return col_res;
     }
