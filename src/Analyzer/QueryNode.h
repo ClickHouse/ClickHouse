@@ -630,19 +630,9 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-    bool hasProjectionAliasesToOverride()
+    void setProjectionAliasesToOverride(Names pr_aliases)
     {
-        return !projection_aliases_to_override.empty();
-    }
-
-    Names getProjectionAliasesToOverride()
-    {
-        return projection_aliases_to_override;
-    }
-
-    void setProjectionAliasesToOverride(Names && pr_aliases)
-    {
-        projection_aliases_to_override = pr_aliases;
+        projection_aliases_to_override = std::move(pr_aliases);
     }
 
 protected:

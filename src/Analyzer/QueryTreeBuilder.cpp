@@ -352,7 +352,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
             collected_aliases.push_back(alias_ast.name());
         }
 
-        current_query_tree->setProjectionAliasesToOverride(std::move(collected_aliases));
+        current_query_tree->setProjectionAliasesToOverride(collected_aliases);
     }
 
     auto prewhere_expression = select_query_typed.prewhere();
