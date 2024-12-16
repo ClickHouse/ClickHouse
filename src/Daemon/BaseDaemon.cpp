@@ -450,6 +450,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
     HandledSignals::instance().setupCommonTerminateRequestSignalHandlers();
     HandledSignals::instance().addSignalHandler({SIGHUP}, closeLogsSignalHandler, true);
+    HandledSignals::instance().addSignalHandler({SIGCHLD}, childSignalHandler, true);
 
     /// Set up Poco ErrorHandler for Poco Threads.
     static KillingErrorHandler killing_error_handler;
