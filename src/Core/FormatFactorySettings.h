@@ -1252,7 +1252,34 @@ Set the quoting rule for identifiers in SHOW CREATE query
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(String, composed_data_type_output_format_mode, "default", R"(
-Set composed data type output format mode, default or spark.
+Set output format mode for composed data types like Array, Map, Tuple. Possible values: 'default', 'spark'.
+
+In 'default' mode, the output format is the same as in the previous versions of ClickHouse,
+    - Arrays are displayed without spaces between elements.
+    - Maps use curly braces `{}` and colons `:` to separate keys and values.
+    - Tuples are displayed with single quotes around string elements.
+
+Example of 'default' mode:
+
+```
+┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
+│ [1,2,3]   │ {'a':1,'b':2}       │ (123,'abc')  │
+└───────────┴─────────────────────┴──────────────┘
+```
+
+In 'spark' mode, the output format is similar to Apache Spark:
+    - Arrays are displayed with spaces between elements.
+    - Maps use curly braces `{}` and arrows `->` to separate keys and values.
+    - Tuples are displayed without single quotes around string elements.
+
+Example of 'spark' mode:
+
+```
+┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
+│ [1, 2, 3] │ {a -> 1, b -> 2}    │ (123, abc)   │
+└───────────┴─────────────────────┴──────────────┘
+```
+
 )", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
