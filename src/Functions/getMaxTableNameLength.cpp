@@ -92,7 +92,37 @@ private:
 
 REGISTER_FUNCTION(getMaxTableName)
 {
-    factory.registerFunction<FunctionGetMaxTableNameLength>();
+    factory.registerFunction<FunctionGetMaxTableNameLength>(FunctionDocumentation{
+        .description=R"(
+Returns the maximum table name length in a specified database.
+
+Syntax:
+getMaxTableNameLengthForDatabase(database_name)
+
+Arguments:
+database_name — The name of the specified database. String.
+
+Returned value:
+Returns the length of the maximum table name.
+
+Example:
+[example:typical]
+)",
+        .examples{
+            {"typical", R"(
+Query:
+```
+SELECT getMaxTableNameLengthForDatabase('default');
+```
+
+Result:
+```
+┌─getMaxTableNameLengthForDatabase('default')─┐
+│                                         206 │
+└─────────────────────────────────────────────┘
+```
+)", ""}},
+        .categories{"String"}});
 }
 
 }
