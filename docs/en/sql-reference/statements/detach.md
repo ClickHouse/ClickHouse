@@ -71,7 +71,7 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 ```
 
 :::note
-In ClickHouse Cloud we recommend users use the `PERMANENTLY` clause e.g. `DETACH TABLE <table> PERMANENTLY`. If this clause is not used, tables will be reattached on cluster restart e.g. during upgrades.
+In ClickHouse Cloud users should use the `PERMANENTLY` clause e.g. `DETACH TABLE <table> PERMANENTLY`. If this clause is not used, tables will be reattached on cluster restart e.g. during upgrades.
 :::
 
 **See Also**
