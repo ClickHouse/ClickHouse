@@ -3,13 +3,6 @@
 
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
-#include <IO/WriteBuffer.h>
-#include <Common/DNSResolver.h>
-#include <Common/InterruptListener.h>
-#include <Common/ProgressIndication.h>
-#include <Common/QueryFuzzer.h>
-#include <Common/ShellCommand.h>
-#include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -18,7 +11,12 @@
 #include <Poco/SimpleFileChannel.h>
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/Application.h>
-
+#include <Common/DNSResolver.h>
+#include <Common/InterruptListener.h>
+#include <Common/ProgressIndication.h>
+#include <Common/QueryFuzzer.h>
+#include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/SelectQueryInfo.h>
@@ -315,7 +313,7 @@ protected:
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> std_out;
+    WriteBufferFromFileDescriptor std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
@@ -334,7 +332,6 @@ protected:
 
     String home_path;
     String history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     String current_profile;
 
@@ -400,6 +397,9 @@ protected:
     std::atomic_bool cancelled_printed = false;
 
     /// Unpacked descriptors and streams for the ease of use.
+    int in_fd = STDIN_FILENO;
+    int out_fd = STDOUT_FILENO;
+    int err_fd = STDERR_FILENO;
     std::istream & input_stream;
     std::ostream & output_stream;
     std::ostream & error_stream;

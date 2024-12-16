@@ -1132,8 +1132,8 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto partition_columns = partition_desc.expression->getRequiredColumns();
             NameSet partition_columns_set(partition_columns.begin(), partition_columns.end());
 
-            const auto & partition_virtuals = MergeTreeData::virtuals_useful_for_filter;
-            partition_columns_set.insert(partition_virtuals.begin(), partition_virtuals.end());
+            const auto & parititon_virtuals = MergeTreeData::virtuals_useful_for_filter;
+            partition_columns_set.insert(parititon_virtuals.begin(), parititon_virtuals.end());
 
             optimize_trivial_count = true;
             for (const auto & required_column : required)

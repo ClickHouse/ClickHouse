@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <type_traits>
@@ -308,9 +309,9 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
-    bool hasTemporaryData() const;
+    bool hasTemporaryData() const { return tmp_data && !tmp_data->empty(); }
 
-    std::list<TemporaryBlockStreamHolder> detachTemporaryData();
+    const TemporaryDataOnDisk & getTemporaryData() const { return *tmp_data; }
 
     /// Get data structure of the result.
     Block getHeader(bool final) const;
@@ -354,9 +355,7 @@ private:
     LoggerPtr log = getLogger("Aggregator");
 
     /// For external aggregation.
-    TemporaryDataOnDiskScopePtr tmp_data;
-    mutable std::mutex tmp_files_mutex;
-    mutable std::list<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
+    TemporaryDataOnDiskPtr tmp_data;
 
     size_t min_bytes_for_prefetch = 0;
 
@@ -457,7 +456,7 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        TemporaryBlockStreamHolder & out) const;
+        TemporaryFileStream & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>

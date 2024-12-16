@@ -889,7 +889,7 @@ private:
             }
         };
 
-        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_multiread;
+        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_keeper_multiread;
 
         auto keys_it = data_children.begin();
         while (keys_it != data_children.end())
@@ -941,8 +941,9 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
-            BackupKeeperSettings::fromContext(backup_entries_collector.getContext()),
-            backup_entries_collector.getContext()->getProcessListElement()
+            WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
+            backup_entries_collector.getContext()->getProcessListElement(),
+            [](WithRetries::FaultyKeeper &) {}
         );
 
         backup_entries_collector.addBackupEntries(
@@ -971,8 +972,9 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     (
         getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
-        BackupKeeperSettings::fromContext(restorer.getContext()),
-        restorer.getContext()->getProcessListElement()
+        WithRetries::KeeperSettings::fromContext(restorer.getContext()),
+        restorer.getContext()->getProcessListElement(),
+        [](WithRetries::FaultyKeeper &) {}
     );
 
     bool allow_non_empty_tables = restorer.isNonEmptyTableAllowed();
@@ -1026,16 +1028,16 @@ void StorageKeeperMap::restoreDataImpl(
     if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
     {
         temp_data_file.emplace(temporary_disk);
-        auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
-        copyData(*in, *out);
-        out.reset();
+        auto out = WriteBufferFromFile(temp_data_file->getAbsolutePath());
+        copyData(*in, out);
+        out.finalize();
         in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
     }
     std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
     CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
     fs::path data_path_fs(zk_data_path);
 
-    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;
+    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_keeper_multi;
 
     Coordination::Requests create_requests;
     const auto flush_create_requests = [&]

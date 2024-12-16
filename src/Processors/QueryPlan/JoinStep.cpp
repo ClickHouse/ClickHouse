@@ -1,10 +1,9 @@
-#include <IO/Operators.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Transforms/SquashingTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 
@@ -44,14 +43,9 @@ JoinStep::JoinStep(
     const Header & right_header_,
     JoinPtr join_,
     size_t max_block_size_,
-    size_t min_block_size_bytes_,
     size_t max_streams_,
     bool keep_left_read_in_order_)
-    : join(std::move(join_))
-    , max_block_size(max_block_size_)
-    , min_block_size_bytes(min_block_size_bytes_)
-    , max_streams(max_streams_)
-    , keep_left_read_in_order(keep_left_read_in_order_)
+    : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -69,24 +63,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         return joined_pipeline;
     }
 
-    auto pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
+    return QueryPipelineBuilder::joinPipelinesRightLeft(
         std::move(pipelines[0]),
         std::move(pipelines[1]),
         join,
         *output_header,
         max_block_size,
-        min_block_size_bytes,
         max_streams,
         keep_left_read_in_order,
         &processors);
-
-    if (join->supportParallelJoin())
-    {
-        pipeline->addSimpleTransform([&](const Block & header)
-                                     { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
-    }
-
-    return pipeline;
 }
 
 bool JoinStep::allowPushDownToRight() const

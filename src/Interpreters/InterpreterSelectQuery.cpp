@@ -582,7 +582,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
             if (!maybe_storage)
                 continue;
-            checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
+            checkStorageSupportsTransactionsIfNeeded(maybe_storage, context, /* is_readonly_query */ true);
         }
     }
 
@@ -1887,7 +1887,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         joined_plan->getCurrentHeader(),
                         expressions.join,
                         settings[Setting::max_block_size],
-                        0,
                         max_streams,
                         analysis_result.optimize_read_in_order);
 

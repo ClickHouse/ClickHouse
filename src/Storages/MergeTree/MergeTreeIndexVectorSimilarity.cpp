@@ -178,20 +178,23 @@ String USearchIndexWithSerialization::Statistics::toString() const
 }
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
+    const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_)
-    : MergeTreeIndexGranuleVectorSimilarity(index_name_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr)
+    : MergeTreeIndexGranuleVectorSimilarity(index_name_, index_sample_block_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr)
 {
 }
 
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
+    const Block & index_sample_block_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_,
     USearchIndexWithSerializationPtr index_)
     : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
@@ -258,7 +261,7 @@ MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilari
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index);
+    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, index_sample_block, metric_kind, scalar_kind, usearch_hnsw_params, index);
     index = nullptr;
     return granule;
 }
@@ -342,11 +345,10 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         throw Exception(ErrorCodes::INCORRECT_DATA, "Index granularity is too big: more than {} rows per index granule.", std::numeric_limits<UInt32>::max());
 
     if (index_sample_block.columns() > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected that index is build over a single column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected block with single column");
 
-    const auto & index_column_name = index_sample_block.getByPosition(0).name;
-
-    const auto & index_column = block.getByName(index_column_name).column;
+    const String & index_column_name = index_sample_block.getByPosition(0).name;
+    const ColumnPtr & index_column = block.getByName(index_column_name).column;
     ColumnPtr column_cut = index_column->cut(*pos, rows_read);
 
     const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
@@ -380,7 +382,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     if (index->size() + rows > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Size of vector similarity index would exceed 4 billion entries");
 
-    const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
+    DataTypePtr data_type = block.getDataTypes()[0];
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(data_type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
@@ -487,7 +490,7 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
 
 MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, index.sample_block, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
@@ -528,17 +531,15 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
 {
     const bool has_two_args = (index.arguments.size() == 2);
     const bool has_five_args = (index.arguments.size() == 5);
-    const bool has_six_args = (index.arguments.size() == 6); /// Legacy index creation syntax before #70616. Supported only to be able to load old tables, can be removed mid-2025.
-                                                             /// The 6th argument (ef_search) is ignored.
 
     /// Check number and type of arguments
-    if (!has_two_args && !has_five_args && !has_six_args)
+    if (!has_two_args && !has_five_args)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have two or five arguments");
     if (index.arguments[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (method) must be of type String");
     if (index.arguments[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
-    if (has_five_args || has_six_args)
+    if (has_five_args)
     {
         if (index.arguments[2].getType() != Field::Types::String)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (quantization) must be of type String");

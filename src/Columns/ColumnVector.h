@@ -52,7 +52,6 @@ private:
     explicit ColumnVector(const size_t n) : data(n) {}
     ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
     ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
-    ColumnVector(Container::const_iterator begin, Container::const_iterator end) : data(begin, end) { }
 
     /// Sugar constructor.
     ColumnVector(std::initializer_list<T> il) : data{il} {}
@@ -482,7 +481,6 @@ extern template class ColumnVector<Int32>;
 extern template class ColumnVector<Int64>;
 extern template class ColumnVector<Int128>;
 extern template class ColumnVector<Int256>;
-extern template class ColumnVector<BFloat16>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
 extern template class ColumnVector<UUID>;

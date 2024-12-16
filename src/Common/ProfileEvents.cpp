@@ -61,8 +61,6 @@
     M(ArenaAllocBytes, "Number of bytes allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Bytes) \
     M(FunctionExecute, "Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).", ValueType::Number) \
     M(TableFunctionExecute, "Number of table function calls.", ValueType::Number) \
-    M(DefaultImplementationForNullsRows, "Number of rows processed by default implementation for nulls in function execution", ValueType::Number) \
-    M(DefaultImplementationForNullsRowsWithNulls, "Number of rows which contain null values processed by default implementation for nulls in function execution", ValueType::Number) \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.", ValueType::Number) \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
@@ -549,7 +547,6 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
-    M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
     M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts", ValueType::Number) \
@@ -748,12 +745,6 @@ The server successfully detected this situation and will download merged part fr
     M(ReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.", ValueType::Microseconds) \
     M(MergeTreeReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.", ValueType::Microseconds) \
     M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.", ValueType::Microseconds) \
-    M(MergerMutatorsGetPartsForMergeElapsedMicroseconds, "Time spent to take data parts snapshot to build ranges from them.", ValueType::Microseconds) \
-    M(MergerMutatorPrepareRangesForMergeElapsedMicroseconds, "Time spent to prepare parts ranges which can be merged according to merge predicate.", ValueType::Microseconds) \
-    M(MergerMutatorSelectPartsForMergeElapsedMicroseconds, "Time spent to select parts from ranges which can be merged.", ValueType::Microseconds) \
-    M(MergerMutatorRangesForMergeCount, "Amount of candidate ranges for merge", ValueType::Number) \
-    M(MergerMutatorPartsInRangesForMergeCount, "Amount of candidate parts for merge", ValueType::Number) \
-    M(MergerMutatorSelectRangePartsCount, "Amount of parts in selected range for merge", ValueType::Number) \
     \
     M(ConnectionPoolIsFullMicroseconds, "Total time spent waiting for a slot in connection pool.", ValueType::Microseconds) \
     M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.", ValueType::Microseconds) \

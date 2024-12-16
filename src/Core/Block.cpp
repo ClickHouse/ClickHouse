@@ -449,6 +449,14 @@ MutableColumns Block::cloneEmptyColumns() const
     return columns;
 }
 
+MutableColumns Block::cloneEmptyColumns(const Serializations & serializations) const
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].type->createColumn(*serializations[i]);
+    return columns;
+}
 
 Columns Block::getColumns() const
 {
@@ -769,22 +777,18 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
     while (r > 0)
         right_columns.push_back(rhs.safeGetByPosition(--r));
 
-    {
-        WriteBufferFromString lhs_diff_writer(out_lhs_diff);
-        for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
-        {
-            lhs_diff_writer << it->dumpStructure();
-            lhs_diff_writer << ", position: " << lhs.getPositionByName(it->name) << '\n';
-        }
-    }
+    WriteBufferFromString lhs_diff_writer(out_lhs_diff);
+    WriteBufferFromString rhs_diff_writer(out_rhs_diff);
 
+    for (auto it = left_columns.rbegin(); it != left_columns.rend(); ++it)
     {
-        WriteBufferFromString rhs_diff_writer(out_rhs_diff);
-        for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
-        {
-            rhs_diff_writer << it->dumpStructure();
-            rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
-        }
+        lhs_diff_writer << it->dumpStructure();
+        lhs_diff_writer << ", position: " << lhs.getPositionByName(it->name) << '\n';
+    }
+    for (auto it = right_columns.rbegin(); it != right_columns.rend(); ++it)
+    {
+        rhs_diff_writer << it->dumpStructure();
+        rhs_diff_writer << ", position: " << rhs.getPositionByName(it->name) << '\n';
     }
 }
 

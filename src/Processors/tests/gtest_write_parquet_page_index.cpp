@@ -152,16 +152,11 @@ void writeParquet(SourcePtr source, const FormatSettings & format_settings, Stri
     QueryPipelineBuilder pipeline_builder;
     pipeline_builder.init(Pipe(source));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
-
     WriteBufferFromFile write_buffer(parquet_path);
     auto output = std::make_shared<ParquetBlockOutputFormat>(write_buffer, pipeline.getHeader(), format_settings);
-
     pipeline.complete(output);
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
-
-    output->finalize();
-    write_buffer.finalize();
 }
 
 TEST(Parquet, WriteParquetPageIndexParrelel)

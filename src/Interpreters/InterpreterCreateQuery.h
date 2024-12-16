@@ -122,8 +122,6 @@ private:
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
-    void throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const;
-
     ASTPtr query_ptr;
 
     /// Skip safety threshold when loading tables.

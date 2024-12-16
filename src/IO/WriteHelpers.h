@@ -150,12 +150,11 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 
 template <typename T>
-requires is_floating_point<T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
     Int64 result = 0;
 
-    if constexpr (std::is_same_v<T, Float64>)
+    if constexpr (std::is_same_v<T, double>)
     {
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
@@ -165,21 +164,12 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
-    else if constexpr (std::is_same_v<T, Float32>)
+    else
     {
         if (DecomposedFloat32(x).isIntegerInRepresentableRange())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-    }
-    else if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 f32 = Float32(x);
-
-        if (DecomposedFloat32(f32).isIntegerInRepresentableRange())
-            result = itoa(Int32(f32), buffer) - buffer;
-        else
-            result = jkj::dragonbox::to_chars_n(f32, buffer) - buffer;
     }
 
     if (result <= 0)
@@ -188,9 +178,10 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
 }
 
 template <typename T>
-requires is_floating_point<T>
 inline void writeFloatText(T x, WriteBuffer & buf)
 {
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
+
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
@@ -549,9 +540,9 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
         writeCString("null", ostr);
     else
     {
-        if constexpr (is_floating_point<T>)
+        if constexpr (std::is_floating_point_v<T>)
         {
-            if (signBit(x))
+            if (std::signbit(x))
             {
                 if (isNaN(x))
                     writeCString("-nan", ostr);
@@ -807,6 +798,7 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
 }
 
 /// @brief Serialize `uuid` into an array of characters in big-endian byte order.
+/// @param uuid UUID to serialize.
 /// @return Array of characters in big-endian byte order.
 std::array<char, 36> formatUUID(const UUID & uuid);
 
@@ -1107,9 +1099,7 @@ inline void writeText(is_integer auto x, WriteBuffer & buf)
         writeIntText(x, buf);
 }
 
-template <typename T>
-requires is_floating_point<T>
-inline void writeText(T x, WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeText(is_floating_point auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 

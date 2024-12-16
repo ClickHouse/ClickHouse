@@ -72,7 +72,7 @@ TraceCollector::~TraceCollector()
         */
         WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
         writeChar(true, out);
-        out.finalize();
+        out.next();
     }
     catch (...)
     {

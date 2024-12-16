@@ -381,15 +381,17 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         LimitReadBuffer limit_buf(
             *read_buf,
-            {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
+            query_context->getSettingsRef()[Setting::async_insert_max_data_size],
+            /*throw_exception=*/false,
+            /*exact_limit=*/{});
 
-        {
-            WriteBufferFromString write_buf(bytes);
-            copyData(limit_buf, write_buf);
-        }
+        WriteBufferFromString write_buf(bytes);
+        copyData(limit_buf, write_buf);
 
         if (!read_buf->eof())
         {
+            write_buf.finalize();
+
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             std::vector<std::unique_ptr<ReadBuffer>> buffers;
@@ -1048,14 +1050,15 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
     }
 
-    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
     {
         current_exception = e.displayText();
         LOG_ERROR(logger, "Failed parsing for query '{}' with query id {}. {}",
             key.query_str, current_entry->query_id, current_exception);
 
-        for (size_t i = 0; i < result_columns.size(); ++i)
-            result_columns[i]->rollback(*checkpoints[i]);
+        for (const auto & column : result_columns)
+            if (column->size() > total_rows)
+                column->popBack(column->size() - total_rows);
 
         current_entry->finish(std::current_exception());
         return 0;

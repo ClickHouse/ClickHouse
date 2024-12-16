@@ -54,9 +54,9 @@ namespace
     class SourceFromNativeStream : public ISource
     {
     public:
-        explicit SourceFromNativeStream(const Block & header, TemporaryBlockStreamReaderHolder tmp_stream_)
-            : ISource(header)
-            , tmp_stream(std::move(tmp_stream_))
+        explicit SourceFromNativeStream(TemporaryFileStream * tmp_stream_)
+            : ISource(tmp_stream_->getHeader())
+            , tmp_stream(tmp_stream_)
         {}
 
         String getName() const override { return "SourceFromNativeStream"; }
@@ -69,7 +69,7 @@ namespace
             auto block = tmp_stream->read();
             if (!block)
             {
-                tmp_stream.reset();
+                tmp_stream = nullptr;
                 return {};
             }
             return convertToChunk(block);
@@ -78,7 +78,7 @@ namespace
         std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
 
     private:
-        TemporaryBlockStreamReaderHolder tmp_stream;
+        TemporaryFileStream * tmp_stream;
     };
 }
 
@@ -811,18 +811,15 @@ void AggregatingTransform::initGenerate()
 
         Pipes pipes;
         /// Merge external data from all aggregators used in query.
-        for (auto & aggregator : *params->aggregator_list_ptr)
+        for (const auto & aggregator : *params->aggregator_list_ptr)
         {
-            tmp_files = aggregator.detachTemporaryData();
-            num_streams += tmp_files.size();
+            const auto & tmp_data = aggregator.getTemporaryData();
+            for (auto * tmp_stream : tmp_data.getStreams())
+                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
 
-            for (auto & tmp_stream : tmp_files)
-            {
-                auto stat = tmp_stream.finishWriting();
-                compressed_size += stat.compressed_size;
-                uncompressed_size += stat.uncompressed_size;
-                pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream.getHeader(), tmp_stream.getReadStream())));
-            }
+            num_streams += tmp_data.getStreams().size();
+            compressed_size += tmp_data.getStat().compressed_size;
+            uncompressed_size += tmp_data.getStat().uncompressed_size;
         }
 
         LOG_DEBUG(

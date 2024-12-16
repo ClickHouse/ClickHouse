@@ -1,6 +1,3 @@
-#include <Common/Logger.h>
-#include <Common/logger_useful.h>
-#include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
@@ -120,6 +117,7 @@ namespace Setting
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsString log_comment;
     extern const SettingsBool log_formatted_queries;
+    extern const SettingsBool log_processors_profiles;
     extern const SettingsBool log_profile_events;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool log_queries;
@@ -175,7 +173,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
@@ -555,8 +552,53 @@ void logQueryFinish(
             if (auto query_log = context->getQueryLog())
                 query_log->add(elem);
         }
+        if (settings[Setting::log_processors_profiles])
+        {
+            if (auto processors_profile_log = context->getProcessorsProfileLog())
+            {
+                ProcessorProfileLogElement processor_elem;
+                processor_elem.event_time = elem.event_time;
+                processor_elem.event_time_microseconds = elem.event_time_microseconds;
+                processor_elem.initial_query_id = elem.client_info.initial_query_id;
+                processor_elem.query_id = elem.client_info.current_query_id;
 
-        logProcessorProfile(context, query_pipeline.getProcessors());
+                auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+
+                for (const auto & processor : query_pipeline.getProcessors())
+                {
+                    std::vector<UInt64> parents;
+                    for (const auto & port : processor->getOutputs())
+                    {
+                        if (!port.isConnected())
+                            continue;
+                        const IProcessor & next = port.getInputPort().getProcessor();
+                        parents.push_back(get_proc_id(next));
+                    }
+
+                    processor_elem.id = get_proc_id(*processor);
+                    processor_elem.parent_ids = std::move(parents);
+
+                    processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                    processor_elem.plan_step_name = processor->getPlanStepName();
+                    processor_elem.plan_step_description = processor->getPlanStepDescription();
+                    processor_elem.plan_group = processor->getQueryPlanStepGroup();
+
+                    processor_elem.processor_name = processor->getName();
+
+                    processor_elem.elapsed_us = static_cast<UInt64>(processor->getElapsedNs() / 1000U);
+                    processor_elem.input_wait_elapsed_us = static_cast<UInt64>(processor->getInputWaitElapsedNs() / 1000U);
+                    processor_elem.output_wait_elapsed_us = static_cast<UInt64>(processor->getOutputWaitElapsedNs() / 1000U);
+
+                    auto stats = processor->getProcessorDataStats();
+                    processor_elem.input_rows = stats.input_rows;
+                    processor_elem.input_bytes = stats.input_bytes;
+                    processor_elem.output_rows = stats.output_rows;
+                    processor_elem.output_bytes = stats.output_bytes;
+
+                    processors_profile_log->add(processor_elem);
+                }
+            }
+        }
 
         logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
@@ -725,9 +767,7 @@ void logExceptionBeforeStart(
 
     if (settings[Setting::calculate_text_stack_trace])
         setExceptionStackTrace(elem);
-
-    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
-    logException(context, elem, log_error);
+    logException(context, elem);
 
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
@@ -874,65 +914,56 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
 #ifndef NDEBUG
+            /// Verify that AST formatting is consistent:
+            /// If you format AST, parse it back, and format it again, you get the same string.
+
+            String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+
+            /// The query can become more verbose after formatting, so:
+            size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
+
+            ASTPtr ast2;
             try
             {
-                /// Verify that AST formatting is consistent:
-                /// If you format AST, parse it back, and format it again, you get the same string.
-
-                String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
-                    /*max_length=*/0,
-                    /*one_line=*/true,
-                    /*show_secrets=*/true,
-                    /*print_pretty_type_names=*/false,
-                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-
-                /// The query can become more verbose after formatting, so:
-                size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
-
-                ASTPtr ast2;
-                try
-                {
-                    ast2 = parseQuery(
-                        parser,
-                        formatted1.data(),
-                        formatted1.data() + formatted1.size(),
-                        "",
-                        new_max_query_size,
-                        settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::SYNTAX_ERROR)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
-                            formatted1, std::string_view(begin, end-begin));
-                    else
-                        throw;
-                }
-
-                chassert(ast2);
-
-                String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
-                    /*max_length=*/0,
-                    /*one_line=*/true,
-                    /*show_secrets=*/true,
-                    /*print_pretty_type_names=*/false,
-                    /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-                    /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-
-                if (formatted1 != formatted2)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
-                        formatted1, formatted2);
+                ast2 = parseQuery(
+                    parser,
+                    formatted1.data(),
+                    formatted1.data() + formatted1.size(),
+                    "",
+                    new_max_query_size,
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
             }
-            catch (Exception & e)
+            catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
-                if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
-                    throw;
+                if (e.code() == ErrorCodes::SYNTAX_ERROR)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
+                        formatted1, std::string_view(begin, end-begin));
+
+                throw;
             }
+
+            chassert(ast2);
+
+            String formatted2 = ast2->formatWithPossiblyHidingSensitiveData(
+                /*max_length=*/0,
+                /*one_line=*/true,
+                /*show_secrets=*/true,
+                /*print_pretty_type_names=*/false,
+                /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+                /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+
+            if (formatted1 != formatted2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
+                    formatted1, formatted2);
 #endif
         }
 
@@ -1585,7 +1616,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(istr, {.read_no_more = max_query_size + 1});
+        LimitReadBuffer limit(istr, max_query_size + 1, /* trow_exception */ false, /* exact_limit */ {});
         copyData(limit, out);
         out.finalize();
 

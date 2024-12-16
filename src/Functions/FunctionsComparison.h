@@ -721,7 +721,6 @@ private:
                 || (res = executeNumRightType<T0, Int64>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int128>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Int256>(col_left, col_right_untyped))
-                || (res = executeNumRightType<T0, BFloat16>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Float32>(col_left, col_right_untyped))
                 || (res = executeNumRightType<T0, Float64>(col_left, col_right_untyped)))
                 return res;
@@ -742,7 +741,6 @@ private:
                 || (res = executeNumConstRightType<T0, Int64>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int128>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Int256>(col_left_const, col_right_untyped))
-                || (res = executeNumConstRightType<T0, BFloat16>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Float32>(col_left_const, col_right_untyped))
                 || (res = executeNumConstRightType<T0, Float64>(col_left_const, col_right_untyped)))
                 return res;
@@ -1294,10 +1292,9 @@ public:
                 || (res = executeNumLeftType<Int64>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int128>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Int256>(col_left_untyped, col_right_untyped))
-                || (res = executeNumLeftType<BFloat16>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float32>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<Float64>(col_left_untyped, col_right_untyped))))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of the first argument of function {}",
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     col_left_untyped->getName(), getName());
 
             return res;
@@ -1345,7 +1342,7 @@ public:
                     getName(),
                     left_type->getName(),
                     right_type->getName());
-            /// When Decimal comparing to Float32/64/16, we convert both of them into Float64.
+            /// When Decimal comparing to Float32/64, we convert both of them into Float64.
             /// Other systems like MySQL and Spark also do as this.
             if (left_is_float || right_is_float)
             {

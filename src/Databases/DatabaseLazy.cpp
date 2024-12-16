@@ -47,7 +47,6 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
     : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
-    createDirectories();
 }
 
 

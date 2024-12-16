@@ -2,8 +2,8 @@
 
 #include <Core/Settings.h>
 
-#include <Core/ParallelReplicasMode.h>
 #include <Common/scope_guard_safe.h>
+#include <Core/ParallelReplicasMode.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -104,7 +104,6 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsUInt64 min_joined_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -956,18 +955,20 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// query_plan can be empty if there is nothing to read
                 if (query_plan.isInitialized() && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    const bool allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
+                    auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
                     {
                         const JoinNode * join_node = join_tree_node->as<JoinNode>();
                         if (!join_node)
                             return true;
 
                         const auto join_kind = join_node->getKind();
-                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right || join_kind == JoinKind::Inner)
+                        const auto join_strictness = join_node->getStrictness();
+                        if (join_kind == JoinKind::Left || join_kind == JoinKind::Right
+                            || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                             return true;
 
                         return false;
-                    }(parent_join_tree);
+                    };
 
                     if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
                     {
@@ -991,7 +992,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    else if (ClusterProxy::canUseParallelReplicasOnInitiator(query_context) && allow_parallel_replicas_for_table_expression)
+                    else if (
+                        ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
+                        && allow_parallel_replicas_for_table_expression(parent_join_tree))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
@@ -1268,13 +1271,11 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
 }
 
-JoinTreeQueryPlan buildQueryPlanForJoinNode(
-    const QueryTreeNodePtr & join_table_expression,
+JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan,
     const ColumnIdentifierSet & outer_scope_columns,
-    PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info)
+    PlannerContextPtr & planner_context)
 {
     auto & join_node = join_table_expression->as<JoinNode &>();
     if (left_join_tree_query_plan.from_stage != QueryProcessingStage::FetchColumns)
@@ -1557,8 +1558,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     }
 
     const Block & right_header = right_plan.getCurrentHeader();
-    auto join_algorithm = chooseJoinAlgorithm(
-        table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context, select_query_info);
+    auto join_algorithm = chooseJoinAlgorithm(table_join, join_node.getRightTableExpression(), left_header, right_header, planner_context);
 
     auto result_plan = QueryPlan();
 
@@ -1650,7 +1650,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             right_plan.getCurrentHeader(),
             std::move(join_algorithm),
             settings[Setting::max_block_size],
-            settings[Setting::min_joined_block_size_bytes],
             settings[Setting::max_threads],
             false /*optimize_read_in_order*/);
 
@@ -1843,16 +1842,43 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
     }
 
+    size_t joins_count = 0;
+    bool is_full_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
         auto table_expression_type = table_expression->getNodeType();
-        if (table_expression_type == QueryTreeNodeType::JOIN ||
-            table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
+        if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             continue;
 
+        if (table_expression_type == QueryTreeNodeType::JOIN)
+        {
+            ++joins_count;
+            const auto & join_node = table_expression->as<const JoinNode &>();
+            if (join_node.getKind() == JoinKind::Full)
+                is_full_join = true;
+
+            continue;
+        }
+
         prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
+    }
+
+    /// disable parallel replicas for n-way join with FULL JOIN involved
+    if (joins_count > 1 && is_full_join)
+        planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
+    // in case of n-way JOINs the table expression stack contains several join nodes
+    // so, we need to find right parent node for a table expression to pass into buildQueryPlanForTableExpression()
+    QueryTreeNodePtr parent_join_tree = join_tree_node;
+    for (const auto & node : table_expressions_stack)
+    {
+        if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        {
+            parent_join_tree = node;
+            break;
+        }
     }
 
     /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
@@ -1863,7 +1889,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     auto left_table_expression = table_expressions_stack.front();
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(
         left_table_expression,
-        join_tree_node,
+        parent_join_tree,
         select_query_info,
         select_query_options,
         planner_context,
@@ -1917,13 +1943,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             auto left_query_plan = std::move(query_plans_stack.back());
             query_plans_stack.pop_back();
 
-            query_plans_stack.push_back(buildQueryPlanForJoinNode(
-                table_expression,
+            query_plans_stack.push_back(buildQueryPlanForJoinNode(table_expression,
                 std::move(left_query_plan),
                 std::move(right_query_plan),
                 table_expressions_outer_scope_columns[i],
-                planner_context,
-                select_query_info));
+                planner_context));
         }
         else
         {
@@ -1932,6 +1956,18 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 query_plans_stack.push_back(std::move(left_table_expression_query_plan)); /// NOLINT
                 left_table_expression = {};
                 continue;
+            }
+
+            // find parent join node
+            parent_join_tree.reset();
+            for (size_t j = i + 1; j < table_expressions_stack.size(); ++j)
+            {
+                const auto & node = table_expressions_stack[j];
+                if (node->getNodeType() == QueryTreeNodeType::JOIN || node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                {
+                    parent_join_tree = node;
+                    break;
+                }
             }
 
             /** If table expression is remote and it is not left most table expression, we wrap read columns from such

@@ -145,12 +145,11 @@ void SortingStep::updateLimit(size_t limit_)
     }
 }
 
-void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_, bool apply_virtual_row_conversions_)
+void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bool use_buffering_)
 {
     type = Type::FinishSorting;
     prefix_description = std::move(prefix_description_);
     use_buffering = use_buffering_;
-    apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
@@ -254,10 +253,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*max_block_size_bytes=*/0,
             SortingQueueStrategy::Batch,
             limit_,
-            always_read_till_end,
-            nullptr,
-            false,
-            apply_virtual_row_conversions);
+            always_read_till_end);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -282,9 +278,9 @@ void SortingStep::mergeSorting(
             if (increase_sort_description_compile_attempts)
                 increase_sort_description_compile_attempts = false;
 
-            TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
-            if (sort_settings.tmp_data)
-                tmp_data_on_disk = sort_settings.tmp_data->childScope(CurrentMetrics::TemporaryFilesForSort);
+            auto tmp_data_on_disk = sort_settings.tmp_data
+                ? std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort)
+                : std::unique_ptr<TemporaryDataOnDisk>();
 
             return std::make_shared<MergeSortingTransform>(
                 header,

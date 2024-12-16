@@ -497,7 +497,7 @@ public:
 
 
 protected:
-    friend class DiskReadOnlyWrapper;
+    friend class DiskDecorator;
 
     const String name;
 
@@ -579,7 +579,6 @@ inline String directoryPath(const String & path)
 {
     return fs::path(path).parent_path() / "";
 }
-
 
 }
 

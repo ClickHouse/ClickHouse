@@ -69,12 +69,14 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
 {
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
+        const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_);
 
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
+        const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_,
@@ -88,6 +90,7 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     bool empty() const override { return !index || index->size() == 0; }
 
     const String index_name;
+    const Block index_sample_block;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;

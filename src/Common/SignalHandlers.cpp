@@ -1,6 +1,7 @@
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
@@ -51,7 +52,7 @@ void writeSignalIDtoSignalPipe(int sig)
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
     WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
     writeBinary(sig, out);
-    out.finalize();
+    out.next();
 
     errno = saved_errno;
 }
@@ -68,6 +69,20 @@ void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
     writeSignalIDtoSignalPipe(sig);
 }
 
+void childSignalHandler(int sig, siginfo_t * info, void *)
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
+    char buf[signal_pipe_buf_size];
+    auto & signal_pipe = HandledSignals::instance().signal_pipe;
+    WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
+    writeBinary(sig, out);
+    writeBinary(info->si_pid, out);
+
+    out.finalize();
+    errno = saved_errno;
+}
 
 void signalHandler(int sig, siginfo_t * info, void * context)
 {
@@ -97,7 +112,8 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : std::vector<StackTrace::FramePointers>{}, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
-    out.finalize();
+
+    out.next();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
@@ -151,7 +167,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writeBinary(log_message, out);
-    out.finalize();
+    out.next();
 
     abort();
 }
@@ -192,7 +208,8 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     ValueHolder<UInt32> thread_id{static_cast<UInt32>(getThreadId())};
     writeBinary(thread_id.value, out);
     writePODBinary(current_thread, out);
-    out.finalize();
+
+    out.next();
 
     /// The time that is usually enough for separate thread to print info into log.
     sleepForSeconds(20);
@@ -293,6 +310,12 @@ void SignalListener::run()
         {
             if (daemon)
                 daemon->handleSignal(sig);
+        }
+        else if (sig == SIGCHLD)
+        {
+            pid_t child_pid = 0;
+            readBinary(child_pid, in);
+            ShellCommandsHolder::instance().removeCommand(child_pid);
         }
         else
         {

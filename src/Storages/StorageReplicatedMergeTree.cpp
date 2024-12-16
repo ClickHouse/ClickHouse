@@ -103,7 +103,6 @@
 #include <Backups/RestorerFromBackup.h>
 
 #include <Common/scope_guard_safe.h>
-#include <IO/SharedThreadPools.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -208,7 +207,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
-    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace FailPoints
@@ -218,6 +216,8 @@ namespace FailPoints
     extern const char finish_set_quorum_failed_parts[];
     extern const char zero_copy_lock_zk_fail_before_op[];
     extern const char zero_copy_lock_zk_fail_after_op[];
+    extern const char zero_copy_unlock_zk_fail_before_op[];
+    extern const char zero_copy_unlock_zk_fail_after_op[];
 }
 
 namespace ErrorCodes
@@ -511,7 +511,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
-    prewarmMarkCacheIfNeeded(getActivePartsLoadingThreadPool().get());
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
@@ -2097,7 +2096,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const auto part_old_name = part_info->getPartNameV1();
             const auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
 
-            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name, getReadSettings())
+            auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / part_old_name)
                 .withPartFormatFromDisk()
                 .build();
 
@@ -5084,12 +5083,6 @@ bool StorageReplicatedMergeTree::fetchPart(
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
 
-            if ((*getSettings())[MergeTreeSetting::prewarm_mark_cache] && getContext()->getMarkCache())
-            {
-                auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
-                part->loadMarksToCache(column_names, getContext()->getMarkCache().get());
-            }
-
             write_part_log({});
         }
         else
@@ -5601,7 +5594,8 @@ void StorageReplicatedMergeTree::read(
             cluster->getName());
     }
 
-    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams); }
+    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
+}
 
 void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
     QueryPlan & query_plan,
@@ -9852,6 +9846,9 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
 
         LOG_TRACE(logger, "Removing zookeeper lock {} for part {} (files to keep: [{}])", zookeeper_part_replica_node, part_name, fmt::join(files_not_to_remove, ", "));
 
+        fiu_do_on(FailPoints::zero_copy_unlock_zk_fail_before_op, { zookeeper_ptr->forceFailureBeforeOperation(); });
+        fiu_do_on(FailPoints::zero_copy_unlock_zk_fail_after_op, { zookeeper_ptr->forceFailureAfterOperation(); });
+
         if (auto ec = zookeeper_ptr->tryRemove(zookeeper_part_replica_node); ec != Coordination::Error::ZOK)
         {
             /// Very complex case. It means that lock already doesn't exist when we tried to remove it.
@@ -9899,14 +9896,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
         }
         else if (error_code == Coordination::Error::ZNOTEMPTY)
         {
-            LOG_TRACE(
-                logger,
-                "Cannot remove last parent zookeeper lock {} for part {} with id {}, another replica locked part concurrently",
-                zookeeper_part_uniq_node,
-                part_name,
-                part_id);
-            part_has_no_more_locks = false;
-            continue;
+            LOG_TRACE(logger, "Cannot remove last parent zookeeper lock {} for part {} with id {}, another replica locked part concurrently", zookeeper_part_uniq_node, part_name, part_id);
         }
         else if (error_code == Coordination::Error::ZNONODE)
         {

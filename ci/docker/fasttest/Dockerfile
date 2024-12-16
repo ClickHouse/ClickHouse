@@ -33,8 +33,6 @@ RUN apt-get update \
 # moreutils - provides ts fo FT
 # expect, bzip2 - requried by FT
 # bsdmainutils - provides hexdump for FT
-# nasm - nasm copiler for one of submodules, required from normal build
-# yasm - asssembler for libhdfs3, required from normal build
 
 RUN apt-get update \
     && apt-get install \
@@ -55,8 +53,6 @@ RUN apt-get update \
         pv \
         jq \
         bzip2 \
-        nasm \
-        yasm \
         --yes --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
