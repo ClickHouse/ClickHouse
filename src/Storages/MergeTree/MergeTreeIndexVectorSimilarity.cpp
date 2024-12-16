@@ -33,7 +33,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_limit_for_ann_queries;
+    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
 }
 
 namespace ServerSetting
@@ -51,11 +51,6 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace Setting
-{
-    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
 }
 
 namespace
@@ -408,7 +403,6 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     ContextPtr context)
     : parameters(parameters_)
     , metric_kind(metric_kind_)
-    , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
     if (expansion_search == 0)
@@ -428,11 +422,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
         ((parameters->distance_function == "L2Distance" && metric_kind == unum::usearch::metric_kind_t::l2sq_k)
         || (parameters->distance_function == "cosineDistance" && metric_kind == unum::usearch::metric_kind_t::cos_k));
 
-    /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
-    if (distance_function_in_query_and_distance_function_in_index_match && (parameters->limit <= max_limit_for_ann_queries))
-        return false;
-
-    return true;
+    return !distance_function_in_query_and_distance_function_in_index_match;
 }
 
 std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const

@@ -29,6 +29,7 @@ struct Optimization
 {
     struct ExtraSettings
     {
+        size_t max_limit_for_ann_queries;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

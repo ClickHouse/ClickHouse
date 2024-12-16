@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsString force_optimize_projection_name;
+    extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
 }
 
@@ -68,6 +69,7 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.optimize_use_implicit_projections = settings.optimize_projection && from[Setting::optimize_use_implicit_projections];
     settings.force_use_projection = settings.optimize_projection && from[Setting::force_optimize_projection];
     settings.force_projection_name = settings.optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
+    settings.max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
 
     return settings;
 }
