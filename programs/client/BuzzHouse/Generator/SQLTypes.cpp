@@ -1,4 +1,5 @@
 #include "SQLTypes.h"
+#include <sys/types.h>
 #include "Hugeint.h"
 #include "StatementGenerator.h"
 #include "UHugeint.h"
@@ -255,22 +256,22 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
 {
     const SQLType * res = nullptr;
 
-    const uint32_t int_type
-        = 40,
-        floating_point_type = 10 * static_cast<uint32_t>((allowed_types & allow_floating_points) != 0 && this->fc.fuzz_floating_points),
-        date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0),
-        datetime_type = 15 * static_cast<uint32_t>((allowed_types & allow_datetimes) != 0),
-        string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0),
-        decimal_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_decimals) != 0),
-        bool_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_bool) != 0),
-        enum_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0),
-        uuid_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_uuid) != 0),
-        ipv4_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv4) != 0),
-        ipv6_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv6) != 0),
-        j_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_JSON) != 0),
-        dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0),
-        prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type + enum_type
-        + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type;
+    const uint32_t int_type = 40;
+    const uint32_t floating_point_type
+        = 10 * static_cast<uint32_t>((allowed_types & allow_floating_points) != 0 && this->fc.fuzz_floating_points);
+    const uint32_t date_type = 15 * static_cast<uint32_t>((allowed_types & allow_dates) != 0);
+    const uint32_t datetime_type = 15 * static_cast<uint32_t>((allowed_types & allow_datetimes) != 0);
+    const uint32_t string_type = 30 * static_cast<uint32_t>((allowed_types & allow_strings) != 0);
+    const uint32_t decimal_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_decimals) != 0);
+    const uint32_t bool_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_bool) != 0);
+    const uint32_t enum_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_enum) != 0);
+    const uint32_t uuid_type = 10 * static_cast<uint32_t>(!low_card && (allowed_types & allow_uuid) != 0);
+    const uint32_t ipv4_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv4) != 0);
+    const uint32_t ipv6_type = 5 * static_cast<uint32_t>(!low_card && (allowed_types & allow_ipv6) != 0);
+    const uint32_t j_type = 20 * static_cast<uint32_t>(!low_card && (allowed_types & allow_JSON) != 0);
+    const uint32_t dynamic_type = 30 * static_cast<uint32_t>(!low_card && (allowed_types & allow_dynamic) != 0);
+    const uint32_t prob_space = int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + bool_type
+        + enum_type + uuid_type + ipv4_type + ipv6_type + j_type + dynamic_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -334,7 +335,8 @@ const SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint3
     else if (decimal_type && nopt < (int_type + floating_point_type + date_type + datetime_type + string_type + decimal_type + 1))
     {
         Decimal * dec = tp ? tp->mutable_decimal() : nullptr;
-        std::optional<uint32_t> precision = std::nullopt, scale = std::nullopt;
+        std::optional<uint32_t> precision = std::nullopt;
+        std::optional<uint32_t> scale = std::nullopt;
 
         if (rg.nextBool())
         {
@@ -566,17 +568,18 @@ const SQLType * StatementGenerator::generateArraytype(RandomGenerator & rg, cons
 const SQLType *
 StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp)
 {
-    const uint32_t non_nullable_type = 60, nullable_type = 25 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0),
-                   array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) != 0 && this->depth < this->fc.max_depth),
-                   map_type = 10
-        * static_cast<uint32_t>((allowed_types & allow_map) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width),
-                   tuple_type = 10 * static_cast<uint32_t>((allowed_types & allow_tuple) != 0 && this->depth < this->fc.max_depth),
-                   variant_type = 10 * static_cast<uint32_t>((allowed_types & allow_variant) != 0 && this->depth < this->fc.max_depth),
-                   nested_type = 10
+    const uint32_t non_nullable_type = 60;
+    const uint32_t nullable_type = 25 * static_cast<uint32_t>((allowed_types & allow_nullable) != 0);
+    const uint32_t array_type = 10 * static_cast<uint32_t>((allowed_types & allow_array) != 0 && this->depth < this->fc.max_depth);
+    const uint32_t map_type = 10
+        * static_cast<uint32_t>((allowed_types & allow_map) != 0 && this->depth < this->fc.max_depth && this->width < this->fc.max_width);
+    const uint32_t tuple_type = 10 * static_cast<uint32_t>((allowed_types & allow_tuple) != 0 && this->depth < this->fc.max_depth);
+    const uint32_t variant_type = 10 * static_cast<uint32_t>((allowed_types & allow_variant) != 0 && this->depth < this->fc.max_depth);
+    const uint32_t nested_type = 10
         * static_cast<uint32_t>((allowed_types & allow_nested) != 0 && this->depth < this->fc.max_depth
-                                && this->width < this->fc.max_width),
-                   geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0 && this->fc.fuzz_floating_points),
-                   prob_space
+                                && this->width < this->fc.max_width);
+    const uint32_t geo_type = 10 * static_cast<uint32_t>((allowed_types & allow_geo) != 0 && this->fc.fuzz_floating_points);
+    const uint32_t prob_space
         = nullable_type + non_nullable_type + array_type + map_type + tuple_type + variant_type + nested_type + geo_type;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -799,7 +802,8 @@ static inline void nextFloatingPoint(RandomGenerator & rg, std::string & ret)
     else
     {
         std::uniform_int_distribution<uint32_t> next_dist(0, 9);
-        const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
+        const uint32_t left = next_dist(rg.generator);
+        const uint32_t right = next_dist(rg.generator);
 
         appendDecimal(rg, ret, left, right);
     }
@@ -992,7 +996,8 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
     }
     else if ((detp = dynamic_cast<const DecimalType *>(tp)))
     {
-        const uint32_t right = detp->scale.value_or(0), left = detp->precision.value_or(10) - right;
+        const uint32_t right = detp->scale.value_or(0);
+        const uint32_t left = detp->precision.value_or(10) - right;
 
         appendDecimal(rg, ret, left, right);
     }
@@ -1099,7 +1104,8 @@ void StatementGenerator::strAppendVariant(RandomGenerator & rg, std::string & re
 void strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidth, std::string & ret)
 {
     std::uniform_int_distribution<int> jopt(1, 3);
-    int nelems = 0, next_width = 0;
+    int nelems = 0;
+    int next_width = 0;
 
     if (jwidth)
     {
@@ -1171,7 +1177,8 @@ void strBuildJSONElement(RandomGenerator & rg, std::string & ret)
         case 9:
         case 10: { //decimal
             std::uniform_int_distribution<uint32_t> next_dist(0, 8);
-            const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
+            const uint32_t left = next_dist(rg.generator);
+            const uint32_t right = next_dist(rg.generator);
 
             appendDecimal(rg, ret, left, right);
         }
@@ -1293,7 +1300,8 @@ void StatementGenerator::strAppendAnyValueInternal(RandomGenerator & rg, std::st
     }
     else if (dynamic_cast<const JSONType *>(tp))
     {
-        std::uniform_int_distribution<int> dopt(1, this->fc.max_depth), wopt(1, this->fc.max_width);
+        std::uniform_int_distribution<int> dopt(1, this->fc.max_depth);
+        std::uniform_int_distribution<int> wopt(1, this->fc.max_width);
 
         ret += "'";
         strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), ret);

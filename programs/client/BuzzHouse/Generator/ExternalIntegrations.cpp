@@ -22,11 +22,14 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     struct tm ttm;
     ssize_t nbytes = 0;
     bool created = false;
-    int sock = -1, error = 0;
-    char buffer[1024], found_ip[1024];
+    int sock = -1;
+    int error = 0;
+    char buffer[1024];
+    char found_ip[1024];
     const std::time_t time = std::time({});
     DB::WriteBufferFromOwnString http_request, sign_cmd, sign_out, sign_err;
-    struct addrinfo hints = {}, *result = nullptr;
+    struct addrinfo hints = {};
+    struct addrinfo * result = nullptr;
 
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
@@ -206,7 +209,8 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
         else
         {
             std::uniform_int_distribution<uint32_t> next_dist(0, 8);
-            const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
+            const uint32_t left = next_dist(rg.generator);
+            const uint32_t right = next_dist(rg.generator);
 
             appendDecimal(rg, buf, left, right);
         }
@@ -255,7 +259,8 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     }
     else if ((detp = dynamic_cast<const DecimalType *>(tp)))
     {
-        const uint32_t right = detp->scale.value_or(0), left = detp->precision.value_or(10) - right;
+        const uint32_t right = detp->scale.value_or(0);
+        const uint32_t left = detp->precision.value_or(10) - right;
 
         buf.resize(0);
         appendDecimal(rg, buf, left, right);

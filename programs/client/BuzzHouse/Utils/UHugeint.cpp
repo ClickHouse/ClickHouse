@@ -397,7 +397,8 @@ uhugeint_t::operator bool() const
 void uhugeint_t::toString(std::string & res) const
 {
     std::string in;
-    uhugeint_t input = *this, remainder;
+    uhugeint_t input = *this;
+    uhugeint_t remainder;
 
     while (true)
     {

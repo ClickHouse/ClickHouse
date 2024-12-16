@@ -59,7 +59,7 @@ public:
     ServerCredentials(const ServerCredentials & c) = default;
     ServerCredentials(ServerCredentials && c) = default;
     ServerCredentials & operator=(const ServerCredentials & c) = default;
-    ServerCredentials & operator=(ServerCredentials && c) = default;
+    ServerCredentials & operator=(ServerCredentials && c) noexcept = default;
 };
 
 static std::optional<ServerCredentials> loadServerCredentials(

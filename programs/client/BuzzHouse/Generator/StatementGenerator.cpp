@@ -249,11 +249,11 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
 int StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
 {
     SQLObjectName * sot = dp->mutable_object();
-    const uint32_t drop_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3),
-                   drop_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3),
-                   drop_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
-                   drop_function = 1 * static_cast<uint32_t>(functions.size() > 3),
-                   prob_space = drop_table + drop_view + drop_database + drop_function;
+    const uint32_t drop_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3);
+    const uint32_t drop_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3);
+    const uint32_t drop_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
+    const uint32_t drop_function = 1 * static_cast<uint32_t>(functions.size() > 3);
+    const uint32_t prob_space = drop_table + drop_view + drop_database + drop_function;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -670,9 +670,9 @@ int StatementGenerator::generateNextDelete(RandomGenerator & rg, LightDelete * d
 int StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * trunc)
 {
     const bool trunc_database = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
-    const uint32_t trunc_table = 980 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
-                   trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database), trunc_db = 5 * static_cast<uint32_t>(trunc_database),
-                   prob_space = trunc_table + trunc_db_tables + trunc_db;
+    const uint32_t trunc_table = 980 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database), trunc_db = 5 * static_cast<uint32_t>(trunc_database);
+    const uint32_t prob_space = trunc_table + trunc_db_tables + trunc_db;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -725,7 +725,8 @@ int StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, Exchang
         this->ids.push_back(entry.get().tname);
     }
     std::shuffle(this->ids.begin(), this->ids.end(), rg.generator);
-    const SQLTable &t1 = this->tables[this->ids[0]], &t2 = this->tables[this->ids[1]];
+    const SQLTable & t1 = this->tables[this->ids[0]];
+    const SQLTable & t2 = this->tables[this->ids[1]];
 
     if (t1.db)
     {
@@ -749,13 +750,10 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
 {
     ExprSchemaTable * est = at->mutable_est();
     const uint32_t nalters = rg.nextBool() ? 1 : ((rg.nextMediumNumber() % 4) + 1);
-    const bool has_tables
-        = collectionHas<SQLTable>(
-            [](const SQLTable & tt)
-            {
-                return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED && !tt.isFileEngine();
-            }),
-        has_views = collectionHas<SQLView>(attached_views);
+    const bool has_tables = collectionHas<SQLTable>(
+        [](const SQLTable & tt)
+        { return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED && !tt.isFileEngine(); });
+    const bool has_views = collectionHas<SQLView>(attached_views);
 
     if (has_views && (!has_tables || rg.nextBool()))
     {
@@ -768,8 +766,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
         est->mutable_table()->set_table("v" + std::to_string(v.tname));
         for (uint32_t i = 0; i < nalters; i++)
         {
-            const uint32_t alter_refresh = 1 * static_cast<uint32_t>(v.is_refreshable), alter_query = 3,
-                           prob_space = alter_refresh + alter_query;
+            const uint32_t alter_refresh = 1 * static_cast<uint32_t>(v.is_refreshable);
+            const uint32_t alter_query = 3;
+            const uint32_t prob_space = alter_refresh + alter_query;
             AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
@@ -814,7 +813,8 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                                                                                     && !tt.isFileEngine();
                                                                             }))
                                                   .get());
-        const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "", tname = "t" + std::to_string(t.tname);
+        const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
+        const std::string tname = "t" + std::to_string(t.tname);
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions<false>(dname, tname);
 
         at->set_is_temp(t.is_temp);
@@ -825,49 +825,59 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
         est->mutable_table()->set_table(tname);
         for (uint32_t i = 0; i < nalters; i++)
         {
-            const uint32_t alter_order_by
-                = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                heavy_delete = 30, heavy_update = 40, add_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() < 10),
-                materialize_column = 2, drop_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() > 1),
-                rename_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer()), clear_column = 2,
-                modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer()), comment_column = 2,
-                add_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()), mod_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                drop_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                clear_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                mat_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                delete_mask = 8 * static_cast<uint32_t>(t.isMergeTreeFamily()), add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3),
-                materialize_idx = 2 * static_cast<uint32_t>(!t.idxs.empty()), clear_idx = 2 * static_cast<uint32_t>(!t.idxs.empty()),
-                drop_idx = 2 * static_cast<uint32_t>(!t.idxs.empty()), column_remove_property = 2,
-                column_modify_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty()),
-                column_remove_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty()),
-                table_modify_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty()),
-                table_remove_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty()),
-                add_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty()),
-                materialize_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty()),
-                clear_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty()),
-                add_constraint = 2 * static_cast<uint32_t>(t.constrs.size() < 4),
-                remove_constraint = 2 * static_cast<uint32_t>(!t.constrs.empty()),
-                detach_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                drop_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                drop_detached_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                forget_partition = 5 * static_cast<uint32_t>(table_has_partitions),
-                attach_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                move_partition_to = 5 * static_cast<uint32_t>(table_has_partitions),
-                clear_column_partition = 5 * static_cast<uint32_t>(table_has_partitions),
-                freeze_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily()),
-                unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty()),
-                clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty()),
-                move_partition = 5 * static_cast<uint32_t>(table_has_partitions && !fc.disks.empty()),
-                modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer()),
-                remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer()), comment_table = 2,
-                prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column + rename_column
-                + clear_column + modify_column + comment_column + delete_mask + add_stats + mod_stats + drop_stats + clear_stats + mat_stats
-                + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting + column_remove_setting
-                + table_modify_setting + table_remove_setting + add_projection + remove_projection + materialize_projection
-                + clear_projection + add_constraint + remove_constraint + detach_partition + drop_partition + drop_detached_partition
-                + forget_partition + attach_partition + move_partition_to + clear_column_partition + freeze_partition + unfreeze_partition
-                + clear_index_partition + move_partition + modify_ttl + remove_ttl + comment_table;
+            const uint32_t alter_order_by = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t heavy_delete = 30;
+            const uint32_t heavy_update = 40;
+            const uint32_t add_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() < 10);
+            const uint32_t materialize_column = 2;
+            const uint32_t drop_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer() && t.cols.size() > 1);
+            const uint32_t rename_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer());
+            const uint32_t clear_column = 2;
+            const uint32_t modify_column = 2 * static_cast<uint32_t>(!t.hasDatabasePeer());
+            const uint32_t comment_column = 2;
+            const uint32_t add_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t mod_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t drop_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t clear_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t mat_stats = 3 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t delete_mask = 8 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t add_idx = 2 * static_cast<uint32_t>(t.idxs.size() < 3);
+            const uint32_t materialize_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
+            const uint32_t clear_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
+            const uint32_t drop_idx = 2 * static_cast<uint32_t>(!t.idxs.empty());
+            const uint32_t column_remove_property = 2;
+            const uint32_t column_modify_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
+            const uint32_t column_remove_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
+            const uint32_t table_modify_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty());
+            const uint32_t table_remove_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty());
+            const uint32_t add_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
+            const uint32_t materialize_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
+            const uint32_t clear_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
+            const uint32_t add_constraint = 2 * static_cast<uint32_t>(t.constrs.size() < 4);
+            const uint32_t remove_constraint = 2 * static_cast<uint32_t>(!t.constrs.empty());
+            const uint32_t detach_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t drop_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t drop_detached_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t forget_partition = 5 * static_cast<uint32_t>(table_has_partitions);
+            const uint32_t attach_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t move_partition_to = 5 * static_cast<uint32_t>(table_has_partitions);
+            const uint32_t clear_column_partition = 5 * static_cast<uint32_t>(table_has_partitions);
+            const uint32_t freeze_partition = 5 * static_cast<uint32_t>(t.isMergeTreeFamily());
+            const uint32_t unfreeze_partition = 7 * static_cast<uint32_t>(!t.frozen_partitions.empty());
+            const uint32_t clear_index_partition = 5 * static_cast<uint32_t>(table_has_partitions && !t.idxs.empty());
+            const uint32_t move_partition = 5 * static_cast<uint32_t>(table_has_partitions && !fc.disks.empty());
+            const uint32_t modify_ttl = 5 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer());
+            const uint32_t remove_ttl = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.hasDatabasePeer());
+            const uint32_t comment_table = 2;
+            const uint32_t prob_space = alter_order_by + heavy_delete + heavy_update + add_column + materialize_column + drop_column
+                + rename_column + clear_column + modify_column + comment_column + delete_mask + add_stats + mod_stats + drop_stats
+                + clear_stats + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property
+                + column_modify_setting + column_remove_setting + table_modify_setting + table_remove_setting + add_projection
+                + remove_projection + materialize_projection + clear_projection + add_constraint + remove_constraint + detach_partition
+                + drop_partition + drop_detached_partition + forget_partition + attach_partition + move_partition_to
+                + clear_column_partition + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl
+                + remove_ttl + comment_table;
             AlterTableItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
@@ -1676,10 +1686,10 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
 int StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
 {
     SQLObjectName * sot = att->mutable_object();
-    const uint32_t attach_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(detached_tables)),
-                   attach_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(detached_views)),
-                   attach_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)),
-                   prob_space = attach_table + attach_view + attach_database;
+    const uint32_t attach_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(detached_tables));
+    const uint32_t attach_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(detached_views));
+    const uint32_t attach_database = 2 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases));
+    const uint32_t prob_space = attach_table + attach_view + attach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -1733,10 +1743,10 @@ int StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
 int StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
 {
     SQLObjectName * sot = det->mutable_object();
-    const uint32_t detach_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3),
-                   detach_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3),
-                   detach_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
-                   prob_space = detach_table + detach_view + detach_database;
+    const uint32_t detach_table = 10 * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3);
+    const uint32_t detach_view = 10 * static_cast<uint32_t>(collectionCount<SQLView>(attached_views) > 3);
+    const uint32_t detach_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
+    const uint32_t prob_space = detach_table + detach_view + detach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -1796,38 +1806,79 @@ const auto has_refreshable_view_func = [](const SQLView & v)
 
 int StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc)
 {
-    const uint32_t has_merge_tree
-        = static_cast<uint32_t>(collectionHas<SQLTable>(has_merge_tree_func)),
-        has_replicated_merge_tree = has_merge_tree * static_cast<uint32_t>(collectionHas<SQLTable>(has_replicated_merge_tree_func)),
-        has_replicated_database = static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(
-            [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED && d->isReplicatedDatabase(); })),
-        has_refreshable_view = static_cast<uint32_t>(collectionHas<SQLView>(has_refreshable_view_func)), reload_embedded_dictionaries = 1,
-        reload_dictionaries = 3, reload_models = 3, reload_functions = 3, reload_function = 8 * static_cast<uint32_t>(!functions.empty()),
-        reload_asynchronous_metrics = 3, drop_dns_cache = 3, drop_mark_cache = 3, drop_uncompressed_cache = 9,
-        drop_compiled_expression_cache = 3, drop_query_cache = 3, drop_format_schema_cache = 3, flush_logs = 3, reload_config = 3,
-        reload_users = 3,
-        //for merge trees
-        stop_merges = 0 * has_merge_tree, start_merges = 0 * has_merge_tree, stop_ttl_merges = 8 * has_merge_tree,
-        start_ttl_merges = 8 * has_merge_tree, stop_moves = 8 * has_merge_tree, start_moves = 8 * has_merge_tree,
-        wait_loading_parts = 8 * has_merge_tree,
-        //for replicated merge trees
-        stop_fetches = 8 * has_replicated_merge_tree, start_fetches = 8 * has_replicated_merge_tree,
-        stop_replicated_sends = 8 * has_replicated_merge_tree, start_replicated_sends = 8 * has_replicated_merge_tree,
-        stop_replication_queues = 0 * has_replicated_merge_tree, start_replication_queues = 0 * has_replicated_merge_tree,
-        stop_pulling_replication_log = 0 * has_replicated_merge_tree, start_pulling_replication_log = 0 * has_replicated_merge_tree,
-        sync_replica = 8 * has_replicated_merge_tree, sync_replicated_database = 8 * has_replicated_database,
-        restart_replica = 8 * has_replicated_merge_tree, restore_replica = 8 * has_replicated_merge_tree, restart_replicas = 3,
-        drop_filesystem_cache = 3, sync_file_cache = 1,
-        //for merge trees
-        load_pks = 3, load_pk = 8 * has_merge_tree, unload_pks = 3, unload_pk = 8 * has_merge_tree,
-        //for refreshable views
-        refresh_views = 3, refresh_view = 8 * has_refreshable_view, stop_views = 3, stop_view = 8 * has_refreshable_view, start_views = 3,
-        start_view = 8 * has_refreshable_view, cancel_view = 8 * has_refreshable_view, wait_view = 8 * has_refreshable_view,
-        prewarm_cache = 8 * has_merge_tree, prewarm_primary_index_cache = 8 * has_merge_tree, drop_connections_cache = 3,
-        drop_primary_index_cache = 3, drop_index_mark_cache = 3, drop_index_uncompressed_cache = 3, drop_mmap_cache = 3,
-        drop_page_cache = 3, drop_schema_cache = 3, drop_s3_client_cache = 3, flush_async_insert_queue = 3, sync_filesystem_cache = 3,
-        drop_cache = 3,
-        prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
+    const uint32_t has_merge_tree = static_cast<uint32_t>(collectionHas<SQLTable>(has_merge_tree_func));
+    const uint32_t has_replicated_merge_tree
+        = has_merge_tree * static_cast<uint32_t>(collectionHas<SQLTable>(has_replicated_merge_tree_func));
+    const uint32_t has_replicated_database = static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(
+        [](const std::shared_ptr<SQLDatabase> & d) { return d->attached == DetachStatus::ATTACHED && d->isReplicatedDatabase(); }));
+    const uint32_t has_refreshable_view = static_cast<uint32_t>(collectionHas<SQLView>(has_refreshable_view_func));
+    const uint32_t reload_embedded_dictionaries = 1;
+    const uint32_t reload_dictionaries = 3;
+    const uint32_t reload_models = 3;
+    const uint32_t reload_functions = 3;
+    const uint32_t reload_function = 8 * static_cast<uint32_t>(!functions.empty());
+    const uint32_t reload_asynchronous_metrics = 3;
+    const uint32_t drop_dns_cache = 3;
+    const uint32_t drop_mark_cache = 3;
+    const uint32_t drop_uncompressed_cache = 9;
+    const uint32_t drop_compiled_expression_cache = 3;
+    const uint32_t drop_query_cache = 3;
+    const uint32_t drop_format_schema_cache = 3;
+    const uint32_t flush_logs = 3;
+    const uint32_t reload_config = 3;
+    const uint32_t reload_users = 3;
+    //for merge trees
+    const uint32_t stop_merges = 0 * has_merge_tree;
+    const uint32_t start_merges = 0 * has_merge_tree;
+    const uint32_t stop_ttl_merges = 8 * has_merge_tree;
+    const uint32_t start_ttl_merges = 8 * has_merge_tree;
+    const uint32_t stop_moves = 8 * has_merge_tree;
+    const uint32_t start_moves = 8 * has_merge_tree;
+    const uint32_t wait_loading_parts = 8 * has_merge_tree;
+    //for replicated merge trees
+    const uint32_t stop_fetches = 8 * has_replicated_merge_tree;
+    const uint32_t start_fetches = 8 * has_replicated_merge_tree;
+    const uint32_t stop_replicated_sends = 8 * has_replicated_merge_tree;
+    const uint32_t start_replicated_sends = 8 * has_replicated_merge_tree;
+    const uint32_t stop_replication_queues = 0 * has_replicated_merge_tree;
+    const uint32_t start_replication_queues = 0 * has_replicated_merge_tree;
+    const uint32_t stop_pulling_replication_log = 0 * has_replicated_merge_tree;
+    const uint32_t start_pulling_replication_log = 0 * has_replicated_merge_tree;
+    const uint32_t sync_replica = 8 * has_replicated_merge_tree;
+    const uint32_t sync_replicated_database = 8 * has_replicated_database;
+    const uint32_t restart_replica = 8 * has_replicated_merge_tree;
+    const uint32_t restore_replica = 8 * has_replicated_merge_tree;
+    const uint32_t restart_replicas = 3;
+    const uint32_t drop_filesystem_cache = 3;
+    const uint32_t sync_file_cache = 1;
+    //for merge trees
+    const uint32_t load_pks = 3;
+    const uint32_t load_pk = 8 * has_merge_tree;
+    const uint32_t unload_pks = 3;
+    const uint32_t unload_pk = 8 * has_merge_tree;
+    //for refreshable views
+    const uint32_t refresh_views = 3;
+    const uint32_t refresh_view = 8 * has_refreshable_view;
+    const uint32_t stop_views = 3;
+    const uint32_t stop_view = 8 * has_refreshable_view;
+    const uint32_t start_views = 3;
+    const uint32_t start_view = 8 * has_refreshable_view;
+    const uint32_t cancel_view = 8 * has_refreshable_view;
+    const uint32_t wait_view = 8 * has_refreshable_view;
+    const uint32_t prewarm_cache = 8 * has_merge_tree;
+    const uint32_t prewarm_primary_index_cache = 8 * has_merge_tree;
+    const uint32_t drop_connections_cache = 3;
+    const uint32_t drop_primary_index_cache = 3;
+    const uint32_t drop_index_mark_cache = 3;
+    const uint32_t drop_index_uncompressed_cache = 3;
+    const uint32_t drop_mmap_cache = 3;
+    const uint32_t drop_page_cache = 3;
+    const uint32_t drop_schema_cache = 3;
+    const uint32_t drop_s3_client_cache = 3;
+    const uint32_t flush_async_insert_queue = 3;
+    const uint32_t sync_filesystem_cache = 3;
+    const uint32_t drop_cache = 3;
+    const uint32_t prob_space = reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
         + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
         + drop_query_cache + drop_format_schema_cache + flush_logs + reload_config + reload_users + stop_merges + start_merges
         + stop_ttl_merges + start_ttl_merges + stop_moves + start_moves + wait_loading_parts + stop_fetches + start_fetches
@@ -2584,55 +2635,56 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
 {
     const uint32_t create_table = 6
         * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
-                                && static_cast<uint32_t>(tables.size()) < this->fc.max_tables),
-                   create_view = 10
+                                && static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
+    const uint32_t create_view = 10
         * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
-                                && static_cast<uint32_t>(views.size()) < this->fc.max_views),
-                   drop = 2
+                                && static_cast<uint32_t>(views.size()) < this->fc.max_views);
+    const uint32_t drop = 2
         * static_cast<uint32_t>(
                               collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
-                              || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3),
-                   insert = 150 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
-                   light_delete = 6 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
-                   truncate = 2
+                              || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
+    const uint32_t insert = 150 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t light_delete = 6 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t truncate = 2
         * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
-                                || collectionHas<SQLTable>(attached_tables)),
-                   optimize_table = 2
+                                || collectionHas<SQLTable>(attached_tables));
+    const uint32_t optimize_table = 2
         * static_cast<uint32_t>(collectionHas<SQLTable>(
             [](const SQLTable & t)
             {
                 return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily();
-            })),
-                   check_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables)),
-                   desc_table
-        = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables) || collectionHas<SQLView>(attached_views)),
-                   exchange_tables = 1
+            }));
+    const uint32_t check_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t desc_table
+        = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables) || collectionHas<SQLView>(attached_views));
+    const uint32_t exchange_tables = 1
         * static_cast<uint32_t>(collectionCount<SQLTable>(
                                     [](const SQLTable & t)
                                     {
                                         return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
                                             && !t.hasDatabasePeer();
                                     })
-                                > 1),
-                   alter_table = 6
+                                > 1);
+    const uint32_t alter_table = 6
         * static_cast<uint32_t>(collectionHas<SQLTable>(
                                     [](const SQLTable & t)
                                     {
                                         return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
                                             && !t.isFileEngine();
                                     })
-                                || collectionHas<SQLView>(attached_views)),
-                   set_values = 5,
-                   attach = 2
+                                || collectionHas<SQLView>(attached_views));
+    const uint32_t set_values = 5;
+    const uint32_t attach = 2
         * static_cast<uint32_t>(collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
-                                || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases)),
-                   detach = 2
+                                || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases));
+    const uint32_t detach = 2
         * static_cast<uint32_t>(collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
-                                || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3),
-                   create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases),
-                   create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions),
-                   system_stmt = 1, select_query = 800,
-                   prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
+                                || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
+    const uint32_t create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases);
+    const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
+    const uint32_t system_stmt = 1;
+    const uint32_t select_query = 800;
+    const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
         + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -2819,9 +2871,11 @@ int StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery *
 
 int StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
 {
-    const uint32_t start_transaction = 2 * static_cast<uint32_t>(!this->in_transaction),
-                   commit = 50 * static_cast<uint32_t>(this->in_transaction), explain_query = 10, run_query = 120,
-                   prob_space = start_transaction + commit + explain_query + run_query;
+    const uint32_t start_transaction = 2 * static_cast<uint32_t>(!this->in_transaction);
+    const uint32_t commit = 50 * static_cast<uint32_t>(this->in_transaction);
+    const uint32_t explain_query = 10;
+    const uint32_t run_query = 120;
+    const uint32_t prob_space = start_transaction + commit + explain_query + run_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -2949,8 +3003,8 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     }
     else if (sq.has_inner_query() && query.has_exchange() && success)
     {
-        const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table().table().substr(1))),
-                       tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table().table().substr(1)));
+        const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table().table().substr(1)));
+        const uint32_t tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table().table().substr(1)));
         SQLTable tx = std::move(this->tables[tname1]), ty = std::move(this->tables[tname2]);
         auto db_tmp = tx.db;
 
@@ -3008,8 +3062,8 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                 }
                 else if (ati.has_rename_column() && success)
                 {
-                    const uint32_t old_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().old_name().column().substr(1))),
-                                   new_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().column().substr(1)));
+                    const uint32_t old_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().old_name().column().substr(1)));
+                    const uint32_t new_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().column().substr(1)));
 
                     t.cols[new_cname] = std::move(t.cols[old_cname]);
                     t.cols[new_cname].cname = new_cname;
@@ -3098,9 +3152,9 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     else if (sq.has_inner_query() && query.has_attach() && success)
     {
         const Attach & att = sq.inner_query().attach();
-        const bool istable = att.object().has_est() && att.object().est().table().table()[0] == 't',
-                   isview = att.object().has_est() && att.object().est().table().table()[0] == 'v',
-                   isdatabase = att.object().has_database();
+        const bool istable = att.object().has_est() && att.object().est().table().table()[0] == 't';
+        const bool isview = att.object().has_est() && att.object().est().table().table()[0] == 'v';
+        const bool isdatabase = att.object().has_database();
 
         if (isview)
         {
@@ -3127,9 +3181,9 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     else if (sq.has_inner_query() && query.has_detach() && success)
     {
         const Detach & det = sq.inner_query().detach();
-        const bool istable = det.object().has_est() && det.object().est().table().table()[0] == 't',
-                   isview = det.object().has_est() && det.object().est().table().table()[0] == 'v',
-                   isdatabase = det.object().has_database(), is_permanent = det.permanently();
+        const bool istable = det.object().has_est() && det.object().est().table().table()[0] == 't';
+        const bool isview = det.object().has_est() && det.object().est().table().table()[0] == 'v';
+        const bool isdatabase = det.object().has_database(), is_permanent = det.permanently();
 
         if (isview)
         {

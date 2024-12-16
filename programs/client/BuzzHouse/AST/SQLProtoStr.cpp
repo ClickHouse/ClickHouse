@@ -3071,7 +3071,8 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
-    const bool materialized = create_view.materialized(), refreshable = create_view.has_refresh();
+    const bool materialized = create_view.materialized();
+    const bool refreshable = create_view.has_refresh();
 
     ret += create_view.replace() ? "REPLACE" : "CREATE";
     ret += " ";

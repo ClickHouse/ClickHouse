@@ -46,8 +46,8 @@ int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * ex
     {
         TypeName * tpn = nullptr;
         JSONColumns * subcols = expr->mutable_subcols();
-        const uint32_t noption = rg.nextMediumNumber(),
-                       nvalues = std::max(std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 5), UINT32_C(1));
+        const uint32_t noption = rg.nextMediumNumber();
+        const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 5), UINT32_C(1));
 
         for (uint32_t i = 0; i < nvalues; i++)
         {
@@ -242,7 +242,8 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
     else if (noption < 501)
     {
         std::uniform_int_distribution<uint32_t> next_dist(0, 30);
-        const uint32_t left = next_dist(rg.generator), right = next_dist(rg.generator);
+        const uint32_t left = next_dist(rg.generator);
+        const uint32_t right = next_dist(rg.generator);
 
         buf.resize(0);
         buf += "(";
@@ -252,7 +253,8 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
     }
     else if (this->allow_not_deterministic && noption < 551)
     {
-        const uint32_t nlen = rg.nextLargeNumber(), noption2 = rg.nextSmallNumber();
+        const uint32_t nlen = rg.nextLargeNumber();
+        const uint32_t noption2 = rg.nextSmallNumber();
 
         buf.resize(0);
         if (noption2 < 3)
@@ -325,7 +327,8 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
     }
     else if (noption < 951)
     {
-        std::uniform_int_distribution<int> dopt(1, 3), wopt(1, 3);
+        std::uniform_int_distribution<int> dopt(1, 3);
+        std::uniform_int_distribution<int> wopt(1, 3);
 
         buf.resize(0);
         buf += "'";
@@ -373,9 +376,9 @@ int StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
 
 int StatementGenerator::generateSubquery(RandomGenerator & rg, Select * sel)
 {
-    const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate,
-               prev_allow_aggregates = this->levels[this->current_level].allow_aggregates,
-               prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
+    const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
+    const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
+    const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
     this->levels[this->current_level].inside_aggregate = false;
     this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
@@ -549,9 +552,9 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
 {
     SQLRelation rel("");
     std::map<uint32_t, QueryLevel> levels_backup;
-    const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate,
-               prev_allow_aggregates = this->levels[this->current_level].allow_aggregates,
-               prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
+    const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
+    const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
+    const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
     for (const auto & entry : this->levels)
     {
@@ -596,13 +599,14 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
     {
         //aggregate
         const CHAggregate & agg = CHAggrs[nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0)];
-        const uint32_t agg_max_params
-            = std::min(agg.max_params, UINT32_C(5)),
-            max_params = std::min(this->fc.max_width - this->width, agg_max_params), agg_max_args = std::min(agg.max_args, UINT32_C(5)),
-            max_args = std::min(this->fc.max_width - this->width, agg_max_args),
-            ncombinators = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + 1) : 0;
-        const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate,
-                   prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
+        const uint32_t agg_max_params = std::min(agg.max_params, UINT32_C(5));
+        const uint32_t max_params = std::min(this->fc.max_width - this->width, agg_max_params);
+        const uint32_t agg_max_args = std::min(agg.max_args, UINT32_C(5));
+        const uint32_t max_args = std::min(this->fc.max_width - this->width, agg_max_args);
+        const uint32_t ncombinators
+            = rg.nextSmallNumber() < 4 ? std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + 1) : 0;
+        const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
+        const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
         this->levels[this->current_level].inside_aggregate = true;
         this->levels[this->current_level].allow_window_funcs = false;
@@ -648,7 +652,7 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
 
         for (uint32_t i = 0; i < ncombinators; i++)
         {
-            SQLFuncCall_AggregateCombinator comb = static_cast<SQLFuncCall_AggregateCombinator>(
+            const SQLFuncCall_AggregateCombinator comb = static_cast<SQLFuncCall_AggregateCombinator>(
                 (rg.nextRandomUInt32()
                  % static_cast<uint32_t>(this->allow_not_deterministic ? SQLFuncCall::AggregateCombinator_MAX : SQLFuncCall::ArgMax))
                 + 1);
@@ -691,7 +695,9 @@ int StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_
     else
     {
         //function
-        uint32_t n_lambda = 0, min_args = 0, max_args = 0;
+        uint32_t n_lambda = 0;
+        uint32_t min_args = 0;
+        uint32_t max_args = 0;
         SQLFuncName * sfn = func_call->mutable_func();
 
         if (!this->functions.empty()
@@ -839,7 +845,8 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         }
         else if (nopt2 < 10)
         {
-            const uint32_t first = rg.nextSmallNumber() - 1, second = std::max(rg.nextSmallNumber() - 1, first);
+            const uint32_t first = rg.nextSmallNumber() - 1;
+            const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
 
             buf += "[";
             buf += std::to_string(first);
@@ -922,8 +929,8 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (this->width < this->fc.max_width && noption < 801)
     {
         TupleSequence * tupl = expr->mutable_comp_expr()->mutable_tuple();
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8),
-                       ncols = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 8);
+        const uint32_t ncols = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
 
         this->depth++;
         for (uint32_t i = 0; i < ncols; i++)
@@ -1042,7 +1049,7 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         {
             ExprFrameSpec * efs = wdf->mutable_frame_spec();
             FrameSpecSubLeftExpr * fssle = efs->mutable_left_expr();
-            FrameSpecSubLeftExpr_Which fspec = static_cast<FrameSpecSubLeftExpr_Which>(
+            const FrameSpecSubLeftExpr_Which fspec = static_cast<FrameSpecSubLeftExpr_Which>(
                 (rg.nextRandomUInt32() % static_cast<uint32_t>(FrameSpecSubLeftExpr_Which_Which_MAX)) + 1);
 
             efs->set_range_rows(rg.nextBool() ? ExprFrameSpec_RangeRows_RANGE : ExprFrameSpec_RangeRows_ROWS);
@@ -1054,7 +1061,7 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             if (rg.nextBool())
             {
                 FrameSpecSubRightExpr * fsslr = efs->mutable_right_expr();
-                FrameSpecSubRightExpr_Which fspec2 = static_cast<FrameSpecSubRightExpr_Which>(
+                const FrameSpecSubRightExpr_Which fspec2 = static_cast<FrameSpecSubRightExpr_Which>(
                     (rg.nextRandomUInt32() % static_cast<uint32_t>(FrameSpecSubRightExpr_Which_Which_MAX)) + 1);
 
                 fsslr->set_which(fspec2);

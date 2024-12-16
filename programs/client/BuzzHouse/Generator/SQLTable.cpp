@@ -636,11 +636,10 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
     }
     else if (b.isBufferEngine())
     {
-        const bool has_tables
-            = collectionHas<SQLTable>([](const SQLTable & t)
-                                      { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; }),
-            has_views = collectionHas<SQLView>(
-                [](const SQLView & v) { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; });
+        const bool has_tables = collectionHas<SQLTable>(
+            [](const SQLTable & t) { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; });
+        const bool has_views = collectionHas<SQLView>(
+            [](const SQLView & v) { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; });
 
         if (has_tables && (!has_views || rg.nextSmallNumber() < 8))
         {
@@ -897,7 +896,7 @@ int StatementGenerator::addTableColumn(
     if (col.special == ColumnSpecial::NONE && rg.nextSmallNumber() < 2)
     {
         DefaultModifier * def_value = cd->mutable_defaultv();
-        DModifier dmod = static_cast<DModifier>((rg.nextRandomUInt32() % static_cast<uint32_t>(DModifier_MAX)) + 1);
+        const DModifier dmod = static_cast<DModifier>((rg.nextRandomUInt32() % static_cast<uint32_t>(DModifier_MAX)) + 1);
 
         def_value->set_dvalue(dmod);
         col.dmod = std::optional<DModifier>(dmod);
@@ -945,7 +944,7 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
     SQLIndex idx;
     const uint32_t iname = t.idx_counter++;
     Expr * expr = idef->mutable_expr();
-    IndexType itpe = static_cast<IndexType>((rg.nextRandomUInt32() % static_cast<uint32_t>(IndexType_MAX)) + 1);
+    const IndexType itpe = static_cast<IndexType>((rg.nextRandomUInt32() % static_cast<uint32_t>(IndexType_MAX)) + 1);
     auto & to_add = staged ? t.staged_idxs : t.idxs;
 
     idx.iname = iname;
@@ -988,11 +987,14 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
         if (itpe == IndexType::IDX_hypothesis && entries.size() > 1 && rg.nextSmallNumber() < 9)
         {
             BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-            Expr *expr1 = bexpr->mutable_lhs(), *expr2 = bexpr->mutable_rhs();
-            ExprSchemaTableColumn *estc1 = expr1->mutable_comp_expr()->mutable_expr_stc(),
-                                  *estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
-            ExprColumn *ecol1 = estc1->mutable_col(), *ecol2 = estc2->mutable_col();
-            const InsertEntry &entry1 = this->entries[0], &entry2 = this->entries[1];
+            Expr * expr1 = bexpr->mutable_lhs();
+            Expr * expr2 = bexpr->mutable_rhs();
+            ExprSchemaTableColumn * estc1 = expr1->mutable_comp_expr()->mutable_expr_stc();
+            ExprSchemaTableColumn * estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
+            ExprColumn * ecol1 = estc1->mutable_col();
+            ExprColumn * ecol2 = estc2->mutable_col();
+            const InsertEntry & entry1 = this->entries[0];
+            const InsertEntry & entry2 = this->entries[1];
 
             bexpr->set_op(
                 rg.nextSmallNumber() < 8
@@ -1080,8 +1082,8 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
 
 int StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef)
 {
-    const uint32_t pname = t.proj_counter++,
-                   ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
+    const uint32_t pname = t.proj_counter++;
+    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, (rg.nextMediumNumber() % UINT32_C(3)) + 1), UINT32_C(1));
     auto & to_add = staged ? t.staged_projs : t.projs;
 
     pdef->mutable_proj()->set_projection("p" + std::to_string(pname));
@@ -1278,28 +1280,36 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         added_pkey |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isRedisEngine());
         const bool add_version_to_replacing = next.teng == TableEngineValues::ReplacingMergeTree && !next.hasPostgreSQLPeer()
             && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;
-        uint32_t added_cols = 0, added_idxs = 0, added_projs = 0, added_consts = 0, added_sign = 0, added_is_deleted = 0, added_version = 0;
-        const uint32_t to_addcols
-            = (rg.nextMediumNumber() % 5) + 1,
-            to_addidxs = (rg.nextMediumNumber() % 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4),
-            to_addprojs = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5),
-            to_addconsts = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3),
-            to_add_sign = static_cast<uint32_t>(next.hasSignColumn()),
-            to_add_version = static_cast<uint32_t>(next.hasVersionColumn() || add_version_to_replacing),
-            to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing && rg.nextSmallNumber() < 4),
-            total_to_add = to_addcols + to_addidxs + to_addprojs + to_addconsts + to_add_sign + to_add_version + to_add_is_deleted;
+        uint32_t added_cols = 0;
+        uint32_t added_idxs = 0;
+        uint32_t added_projs = 0;
+        uint32_t added_consts = 0;
+        uint32_t added_sign = 0;
+        uint32_t added_is_deleted = 0;
+        uint32_t added_version = 0;
+        const uint32_t to_addcols = (rg.nextMediumNumber() % 5) + 1;
+        const uint32_t to_addidxs
+            = (rg.nextMediumNumber() % 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
+        const uint32_t to_addprojs
+            = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
+        const uint32_t to_addconsts = (rg.nextMediumNumber() % 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
+        const uint32_t to_add_sign = static_cast<uint32_t>(next.hasSignColumn());
+        const uint32_t to_add_version = static_cast<uint32_t>(next.hasVersionColumn() || add_version_to_replacing);
+        const uint32_t to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing && rg.nextSmallNumber() < 4);
+        const uint32_t total_to_add
+            = to_addcols + to_addidxs + to_addprojs + to_addconsts + to_add_sign + to_add_version + to_add_is_deleted;
 
         for (uint32_t i = 0; i < total_to_add; i++)
         {
-            const uint32_t add_idx = 4 * static_cast<uint32_t>(!next.cols.empty() && added_idxs < to_addidxs),
-                           add_proj = 4 * static_cast<uint32_t>(!next.cols.empty() && added_projs < to_addprojs),
-                           add_const = 4 * static_cast<uint32_t>(!next.cols.empty() && added_consts < to_addconsts),
-                           add_col = 8 * static_cast<uint32_t>(added_cols < to_addcols),
-                           add_sign = 2 * static_cast<uint32_t>(added_sign < to_add_sign),
-                           add_version = 2 * static_cast<uint32_t>(added_version < to_add_version && added_sign == to_add_sign),
-                           add_is_deleted
-                = 2 * static_cast<uint32_t>(added_is_deleted < to_add_is_deleted && added_version == to_add_version),
-                           prob_space = add_idx + add_proj + add_const + add_col + add_sign + add_version + add_is_deleted;
+            const uint32_t add_idx = 4 * static_cast<uint32_t>(!next.cols.empty() && added_idxs < to_addidxs);
+            const uint32_t add_proj = 4 * static_cast<uint32_t>(!next.cols.empty() && added_projs < to_addprojs);
+            const uint32_t add_const = 4 * static_cast<uint32_t>(!next.cols.empty() && added_consts < to_addconsts);
+            const uint32_t add_col = 8 * static_cast<uint32_t>(added_cols < to_addcols);
+            const uint32_t add_sign = 2 * static_cast<uint32_t>(added_sign < to_add_sign);
+            const uint32_t add_version = 2 * static_cast<uint32_t>(added_version < to_add_version && added_sign == to_add_sign);
+            const uint32_t add_is_deleted
+                = 2 * static_cast<uint32_t>(added_is_deleted < to_add_is_deleted && added_version == to_add_version);
+            const uint32_t prob_space = add_idx + add_proj + add_const + add_col + add_sign + add_version + add_is_deleted;
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
 
@@ -1330,8 +1340,8 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
             else
             {
                 const uint32_t cname = next.col_counter++;
-                const bool add_pkey = !added_pkey && rg.nextMediumNumber() < 4,
-                           add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version + 1);
+                const bool add_pkey = !added_pkey && rg.nextMediumNumber() < 4;
+                const bool add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version + 1);
                 ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
                 addTableColumn(
