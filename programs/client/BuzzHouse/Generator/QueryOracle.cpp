@@ -300,17 +300,23 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("aggregate_functions_null_for_empty", {"0", "1"}),
     TestSetting("aggregation_in_order_max_block_bytes", {"0", "1"}),
     TestSetting("allow_aggregate_partitions_independently", {"0", "1"}),
+    TestSetting("allow_experimental_parallel_reading_from_replicas", {"0", "1"}),
     TestSetting("allow_introspection_functions", {"0", "1"}),
     TestSetting("allow_reorder_prewhere_conditions", {"0", "1"}),
     TestSetting("analyze_index_with_space_filling_curves", {"0", "1"}),
+    TestSetting("analyzer_compatibility_join_using_top_level_identifier", {"0", "1"}),
     TestSetting("any_join_distinct_right_table_keys", {"0", "1"}),
     TestSetting("async_insert", {"0", "1"}),
     TestSetting("async_query_sending_for_remote", {"0", "1"}),
     TestSetting("async_socket_for_remote", {"0", "1"}),
     TestSetting("check_query_single_value_result", {"0", "1"}),
+    TestSetting("cloud_mode", {"0", "1"}),
+    TestSetting("collect_hash_table_stats_during_aggregation", {"0", "1"}),
+    TestSetting("collect_hash_table_stats_during_joins", {"0", "1"}),
     TestSetting("compile_aggregate_expressions", {"0", "1"}),
     TestSetting("compile_expressions", {"0", "1"}),
     TestSetting("compile_sort_description", {"0", "1"}),
+    TestSetting("count_distinct_optimization", {"0", "1"}),
     TestSetting("cross_join_min_bytes_to_compress", {"0", "1"}),
     TestSetting("cross_join_min_rows_to_compress", {"0", "1"}),
     TestSetting("describe_include_subcolumns", {"0", "1"}),
@@ -361,13 +367,13 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("log_queries", {"0", "1"}),
     TestSetting("log_query_threads", {"0", "1"}),
     TestSetting("low_cardinality_use_single_dictionary_for_part", {"0", "1"}),
-    TestSetting("max_bytes_before_external_group_by", {"0", "100000000"}),
-    TestSetting("max_bytes_before_external_sort", {"0", "100000000"}),
+    TestSetting("max_bytes_before_external_group_by", {"0", "1", "100000000"}),
+    TestSetting("max_bytes_before_external_sort", {"0", "1", "100000000"}),
     TestSetting("max_bytes_before_remerge_sort", {"0", "1"}),
     TestSetting("max_final_threads", {"0", "1"}),
     TestSetting("max_threads", {"1", std::to_string(std::thread::hardware_concurrency())}),
     TestSetting("min_chunk_bytes_for_parallel_parsing", {"0", "1"}),
-    TestSetting("min_external_table_block_size_bytes", {"0", "100000000"}),
+    TestSetting("min_external_table_block_size_bytes", {"0", "1", "100000000"}),
     TestSetting("move_all_conditions_to_prewhere", {"0", "1"}),
     TestSetting("move_primary_key_columns_to_end_of_prewhere", {"0", "1"}),
     TestSetting("optimize_aggregation_in_order", {"0", "1"}),
@@ -416,15 +422,17 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("output_format_pretty_row_numbers", {"0", "1"}),
     TestSetting("output_format_write_statistics", {"0", "1"}),
     TestSetting("page_cache_inject_eviction", {"0", "1"}),
+    TestSetting("parallel_distributed_insert_select", {"0", "1", "2"}),
     TestSetting("parallel_replicas_allow_in_with_subquery", {"0", "1"}),
     TestSetting("parallel_replicas_for_non_replicated_merge_tree", {"0", "1"}),
+    TestSetting("parallel_replicas_index_analysis_only_on_coordinator", {"0", "1"}),
     TestSetting("parallel_replicas_local_plan", {"0", "1"}),
     TestSetting("parallel_replicas_prefer_local_join", {"0", "1"}),
     TestSetting("parallel_view_processing", {"0", "1"}),
     TestSetting("parallelize_output_from_storages", {"0", "1"}),
     TestSetting("partial_merge_join_optimizations", {"0", "1"}),
     TestSetting("precise_float_parsing", {"0", "1"}),
-    TestSetting("prefer_external_sort_block_bytes", {"0", "1"}),
+    TestSetting("prefer_external_sort_block_bytes", {"0", "1", "100000000"}),
     TestSetting("prefer_global_in_and_join", {"0", "1"}),
     TestSetting("prefer_localhost_replica", {"0", "1"}),
     TestSetting("query_plan_aggregation_in_order", {"0", "1"}),
@@ -450,19 +458,23 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("read_in_order_use_buffering", {"0", "1"}),
     TestSetting("read_in_order_use_virtual_row", {"0", "1"}),
     TestSetting("read_through_distributed_cache", {"0", "1"}),
+    TestSetting("regexp_dict_allow_hyperscan", {"0", "1"}),
+    TestSetting("regexp_dict_flag_case_insensitive", {"0", "1"}),
+    TestSetting("regexp_dict_flag_dotall", {"0", "1"}),
     TestSetting("remote_filesystem_read_prefetch", {"0", "1"}),
     TestSetting("rewrite_count_distinct_if_with_count_distinct_implementation", {"0", "1"}),
     TestSetting("rows_before_aggregation", {"0", "1"}),
+    TestSetting("single_join_prefer_left_table", {"0", "1"}),
     TestSetting("split_intersecting_parts_ranges_into_layers_final", {"0", "1"}),
     TestSetting("split_parts_ranges_into_intersecting_and_non_intersecting_final", {"0", "1"}),
     TestSetting("splitby_max_substrings_includes_remaining_string", {"0", "1"}),
+    TestSetting("stream_like_engine_allow_direct_select", {"0", "1"}),
     TestSetting("throw_on_error_from_cache_on_write_operations", {"0", "1"}),
     TestSetting("transform_null_in", {"0", "1"}),
     TestSetting("update_insert_deduplication_token_in_dependent_materialized_views", {"0", "1"}),
     TestSetting("use_async_executor_for_materialized_views", {"0", "1"}),
     TestSetting("use_cache_for_count_from_files", {"0", "1"}),
     TestSetting("use_concurrency_control", {"0", "1"}),
-    TestSetting("use_index_for_in_with_subqueries", {"0", "1"}),
     TestSetting("use_index_for_in_with_subqueries", {"0", "1"}),
     TestSetting("use_local_cache_for_remote_storage", {"0", "1"}),
     TestSetting("use_page_cache_for_disks_without_file_cache", {"0", "1"}),
@@ -472,8 +484,10 @@ static const std::vector<TestSetting> test_settings{
          "1, set_overflow_mode = 'throw', group_by_overflow_mode = 'throw', join_overflow_mode = 'throw'"}),
     TestSetting("use_skip_indexes", {"0", "1"}),
     TestSetting("use_skip_indexes_if_final", {"0", "1"}),
+    TestSetting("use_structure_from_insertion_table_in_table_functions", {"0", "1"}),
     TestSetting("use_uncompressed_cache", {"0", "1"}),
-    TestSetting("use_variant_as_common_type", {"0", "1"})};
+    TestSetting("use_variant_as_common_type", {"0", "1"}),
+    TestSetting("use_with_fill_by_sorting_prefix", {"0", "1"})};
 
 int QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 {
@@ -525,7 +539,7 @@ int QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
     return 0;
 }
 
-int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq2)
+int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const bool peer_query, StatementGenerator & gen, SQLQuery & sq2)
 {
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
     TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
@@ -534,9 +548,11 @@ int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, StatementGenera
 
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
+    gen.generatingPeerQuery(peer_query);
     gen.generateTopSelect(rg, global_aggregate, std::numeric_limits<uint32_t>::max(), ts);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
+    gen.generatingPeerQuery(false);
 
     if (!global_aggregate)
     {

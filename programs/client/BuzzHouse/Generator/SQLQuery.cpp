@@ -407,7 +407,9 @@ int StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool 
             //using clause
             const SQLRelation & rel1 = rg.pickRandomlyFromVector(this->levels[this->current_level].rels);
             const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
-            std::vector<std::string> cols1, cols2, intersect;
+            std::vector<std::string> cols1;
+            std::vector<std::string> cols2;
+            std::vector<std::string> intersect;
 
             for (const auto & entry : rel1.cols)
             {
@@ -492,7 +494,8 @@ int StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<G
     {
         //binary expr
         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-        Expr *lexpr = bexpr->mutable_lhs(), *rexpr = bexpr->mutable_rhs();
+        Expr * lexpr = bexpr->mutable_lhs();
+        Expr * rexpr = bexpr->mutable_rhs();
 
         if (rg.nextSmallNumber() < 9)
         {
@@ -778,7 +781,7 @@ int StatementGenerator::generateGroupBy(
         const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
         const bool no_grouping_sets = next_opt < 91 || !allow_settings;
         const bool has_gsm = !enforce_having && next_opt < 51 && allow_settings && rg.nextSmallNumber() < 4;
-        const bool has_totals = !enforce_having && no_grouping_sets && allow_settings && rg.nextSmallNumber() < 4;
+        const bool has_totals = !enforce_having && !this->peer_query && no_grouping_sets && allow_settings && rg.nextSmallNumber() < 4;
 
         if (no_grouping_sets)
         {

@@ -546,7 +546,7 @@ bool Client::buzzHouse()
 
                     sq2.Clear();
                     full_query2.resize(0);
-                    (void)qo.generateOracleSelectQuery(rg, gen, sq2);
+                    (void)qo.generateOracleSelectQuery(rg, false, gen, sq2);
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
@@ -612,7 +612,7 @@ bool Client::buzzHouse()
                     //test results with peer tables
                     sq1.Clear();
                     full_query.resize(0);
-                    (void)qo.generateOracleSelectQuery(rg, gen, sq1);
+                    (void)qo.generateOracleSelectQuery(rg, true, gen, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);

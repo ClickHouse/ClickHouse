@@ -27,7 +27,10 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     char buffer[1024];
     char found_ip[1024];
     const std::time_t time = std::time({});
-    DB::WriteBufferFromOwnString http_request, sign_cmd, sign_out, sign_err;
+    DB::WriteBufferFromOwnString sign_cmd;
+    DB::WriteBufferFromOwnString sign_out;
+    DB::WriteBufferFromOwnString sign_err;
+    DB::WriteBufferFromOwnString http_request;
     struct addrinfo hints = {};
     struct addrinfo * result = nullptr;
 
@@ -391,7 +394,8 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
     }
     else if (dynamic_cast<const JSONType *>(tp))
     {
-        std::uniform_int_distribution<int> dopt(1, 10), wopt(1, 10);
+        std::uniform_int_distribution<int> dopt(1, 10);
+        std::uniform_int_distribution<int> wopt(1, 10);
 
         buf.resize(0);
         strBuildJSON(rg, dopt(rg.generator), wopt(rg.generator), buf);

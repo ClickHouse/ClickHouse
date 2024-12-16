@@ -606,8 +606,6 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         {
             case JoinType::J_LEFT:
             case JoinType::J_INNER:
-                tep->set_join_const(static_cast<JoinConst>((rg.nextRandomUInt32() % static_cast<uint32_t>(JoinConst_MAX)) + 1));
-                break;
             case JoinType::J_RIGHT:
                 tep->set_join_const(static_cast<JoinConst>((rg.nextRandomUInt32() % static_cast<uint32_t>(JoinConst::J_ANTI)) + 1));
                 break;

@@ -37,7 +37,7 @@ public:
 
     /* Run query with different settings oracle */
     int generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
-    int generateOracleSelectQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq2);
+    int generateOracleSelectQuery(RandomGenerator & rg, bool peer_query, StatementGenerator & gen, SQLQuery & sq2);
     int generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3);
 
     /* Replace query with peer tables */

@@ -75,7 +75,7 @@ private:
     std::string buf;
 
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
-         allow_subqueries = true, enforce_final = false;
+         allow_subqueries = true, enforce_final = false, peer_query = false;
     uint32_t depth = 0, width = 0, database_counter = 0, table_counter = 0, zoo_path_counter = 0, function_counter = 0, current_level = 0;
     std::map<uint32_t, std::shared_ptr<SQLDatabase>> staged_databases, databases;
     std::map<uint32_t, SQLTable> staged_tables, tables;
@@ -112,6 +112,7 @@ private:
 
     void setAllowNotDetermistic(const bool value) { allow_not_deterministic = value; }
     void enforceFinal(const bool value) { enforce_final = value; }
+    void generatingPeerQuery(const bool value) { peer_query = value; }
 
     template <typename T>
     const std::map<uint32_t, T> & getNextCollection() const
