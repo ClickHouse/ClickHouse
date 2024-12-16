@@ -671,7 +671,8 @@ int StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * tr
 {
     const bool trunc_database = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
     const uint32_t trunc_table = 980 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
-    const uint32_t trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database), trunc_db = 5 * static_cast<uint32_t>(trunc_database);
+    const uint32_t trunc_db_tables = 15 * static_cast<uint32_t>(trunc_database);
+    const uint32_t trunc_db = 5 * static_cast<uint32_t>(trunc_database);
     const uint32_t prob_space = trunc_table + trunc_db_tables + trunc_db;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -715,7 +716,8 @@ int StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * tr
 
 int StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et)
 {
-    ExprSchemaTable *est1 = et->mutable_est1(), *est2 = et->mutable_est2();
+    ExprSchemaTable * est1 = et->mutable_est1();
+    ExprSchemaTable * est2 = et->mutable_est2();
     const auto & input = filterCollection<SQLTable>(
         [](const SQLTable & t)
         { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.hasDatabasePeer(); });
@@ -3005,7 +3007,8 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     {
         const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table().table().substr(1)));
         const uint32_t tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table().table().substr(1)));
-        SQLTable tx = std::move(this->tables[tname1]), ty = std::move(this->tables[tname2]);
+        SQLTable tx = std::move(this->tables[tname1]);
+        SQLTable ty = std::move(this->tables[tname2]);
         auto db_tmp = tx.db;
 
         tx.tname = tname2;
@@ -3183,7 +3186,8 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         const Detach & det = sq.inner_query().detach();
         const bool istable = det.object().has_est() && det.object().est().table().table()[0] == 't';
         const bool isview = det.object().has_est() && det.object().est().table().table()[0] == 'v';
-        const bool isdatabase = det.object().has_database(), is_permanent = det.permanently();
+        const bool isdatabase = det.object().has_database();
+        const bool is_permanent = det.permanently();
 
         if (isview)
         {

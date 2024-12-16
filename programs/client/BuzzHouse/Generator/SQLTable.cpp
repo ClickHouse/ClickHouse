@@ -836,7 +836,9 @@ int StatementGenerator::addTableColumn(
             | allow_geo);
         if (t.hasSQLitePeer())
         {
-            possible_types &= ~(allow_bool); //it maps to int type, then it outputs 0 as default instead of false
+            //for bool it maps to int type, then it outputs 0 as default instead of false
+            // for decimal it prints as text
+            possible_types &= ~(allow_bool | allow_decimals);
         }
     }
     if (t.isMongoDBEngine())
@@ -1050,7 +1052,8 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
         break;
         case IndexType::IDX_ngrambf_v1:
         case IndexType::IDX_tokenbf_v1: {
-            std::uniform_int_distribution<uint32_t> next_dist1(1, 1000), next_dist2(1, 5);
+            std::uniform_int_distribution<uint32_t> next_dist1(1, 1000);
+            std::uniform_int_distribution<uint32_t> next_dist2(1, 5);
 
             if (itpe == IndexType::IDX_ngrambf_v1)
             {

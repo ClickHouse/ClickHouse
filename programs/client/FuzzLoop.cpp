@@ -366,6 +366,7 @@ bool Client::processBuzzHouseQuery(const std::string & full_query)
         // uniformity.
         // Surprisingly, this is a client exception, because we get the
         // server exception w/o throwing (see onReceiveException()).
+        server_up &= connection->isConnected();
         client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
         have_error = true;
     }
