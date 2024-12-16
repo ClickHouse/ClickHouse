@@ -337,7 +337,8 @@ private:
 
         if (t.isMergeTreeFamily())
         {
-            const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "", tname = "t" + std::to_string(t.tname);
+            const std::string dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
+            const std::string tname = "t" + std::to_string(t.tname);
             const bool table_has_partitions = rg.nextSmallNumber() < 9 && fc.tableHasPartitions<false>(dname, tname);
 
             if (table_has_partitions)

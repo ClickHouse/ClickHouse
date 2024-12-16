@@ -162,7 +162,8 @@ public:
     //range [1970-01-01, 2149-06-06]
     void nextDate(std::string & ret)
     {
-        const uint32_t month = months(generator), day = days[month - 1](generator);
+        const uint32_t month = months(generator);
+        const uint32_t day = days[month - 1](generator);
 
         ret += std::to_string(1970 + date_years(generator));
         ret += "-";
@@ -182,7 +183,8 @@ public:
     //range [1900-01-01, 2299-12-31]
     void nextDate32(std::string & ret)
     {
-        const uint32_t month = months(generator), day = days[month - 1](generator);
+        const uint32_t month = months(generator);
+        const uint32_t day = days[month - 1](generator);
 
         ret += std::to_string(1900 + datetime64_years(generator));
         ret += "-";
@@ -202,8 +204,11 @@ public:
     //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
     void nextDateTime(std::string & ret)
     {
-        const uint32_t month = months(generator), day = days[month - 1](generator), hour = hours(generator), minute = minutes(generator),
-                       second = minutes(generator);
+        const uint32_t month = months(generator);
+        const uint32_t day = days[month - 1](generator);
+        const uint32_t hour = hours(generator);
+        const uint32_t minute = minutes(generator);
+        const uint32_t second = minutes(generator);
 
         ret += std::to_string(1970 + datetime_years(generator));
         ret += "-";
@@ -241,8 +246,11 @@ public:
     //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
     void nextDateTime64(std::string & ret)
     {
-        const uint32_t month = months(generator), day = days[month - 1](generator), hour = hours(generator), minute = minutes(generator),
-                       second = minutes(generator);
+        const uint32_t month = months(generator);
+        const uint32_t day = days[month - 1](generator);
+        const uint32_t hour = hours(generator);
+        const uint32_t minute = minutes(generator);
+        const uint32_t second = minutes(generator);
 
         ret += std::to_string(1900 + datetime64_years(generator));
         ret += "-";
@@ -390,7 +398,8 @@ public:
             /* A few times, generate a large string */
             if (this->nextLargeNumber() < 4)
             {
-                uint32_t i = 0, len = static_cast<uint32_t>(pick.size());
+                uint32_t i = 0;
+                uint32_t len = static_cast<uint32_t>(pick.size());
                 const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
 
                 while (i < max_iterations)

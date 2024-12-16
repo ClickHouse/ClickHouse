@@ -26,8 +26,8 @@ int QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Stateme
     gen.levels[gen.current_level] = QueryLevel(gen.current_level);
     gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
 
-    const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates,
-               prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
+    const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
+    const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
     if (combination != 1)
     {
@@ -189,7 +189,7 @@ int QueryOracle::generateExportQuery(RandomGenerator & rg, const SQLTable & t, S
 
     if (std::filesystem::exists(nfile))
     {
-        std::remove(nfile.generic_string().c_str()); //remove the file
+        (void)std::remove(nfile.generic_string().c_str()); //remove the file
     }
     ff->set_path(nfile.generic_string());
 

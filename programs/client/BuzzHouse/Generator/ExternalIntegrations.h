@@ -661,7 +661,8 @@ public:
     {
         try
         {
-            const bool permute = can_shuffle && rg.nextBool(), miss_cols = rg.nextBool();
+            const bool permute = can_shuffle && rg.nextBool();
+            const bool miss_cols = rg.nextBool();
             const uint32_t ndocuments = rg.nextMediumNumber();
             const std::string str_tname = "t" + std::to_string(tname);
             mongocxx::collection coll = database[str_tname];

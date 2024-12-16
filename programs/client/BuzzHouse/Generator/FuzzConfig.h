@@ -65,8 +65,13 @@ public:
 static std::optional<ServerCredentials> loadServerCredentials(
     const JSONParserImpl::Element & jobj, const std::string & sname, const uint32_t default_port, const uint32_t default_mysql_port = 0)
 {
-    uint32_t port = default_port, mysql_port = default_mysql_port;
-    std::string hostname = "localhost", unix_socket, user = "test", password, database = "test";
+    uint32_t port = default_port;
+    uint32_t mysql_port = default_mysql_port;
+    std::string hostname = "localhost";
+    std::string unix_socket;
+    std::string user = "test";
+    std::string password;
+    std::string database = "test";
     std::filesystem::path query_log_file = std::filesystem::temp_directory_path() / (sname + ".sql");
 
     for (const auto [key, value] : jobj.getObject())

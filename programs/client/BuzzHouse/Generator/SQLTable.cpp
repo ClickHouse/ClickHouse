@@ -100,7 +100,8 @@ int StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
     for (uint32_t i = 0; i < ncodecs; i++)
     {
         CodecParam * cp = i == 0 ? cl->mutable_codec() : cl->add_other_codecs();
-        CompressionCodec cc = static_cast<CompressionCodec>((rg.nextRandomUInt32() % static_cast<uint32_t>(CompressionCodec_MAX)) + 1);
+        const CompressionCodec cc
+            = static_cast<CompressionCodec>((rg.nextRandomUInt32() % static_cast<uint32_t>(CompressionCodec_MAX)) + 1);
 
         cp->set_codec(cc);
         switch (cc)
