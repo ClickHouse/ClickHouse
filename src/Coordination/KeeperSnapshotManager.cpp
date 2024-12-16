@@ -11,13 +11,11 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
 #include <Disks/DiskLocal.h>
-#include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
@@ -412,13 +410,14 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                 LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
                 continue;
             }
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "{}. Ignoring it can lead to data loss. "
-                "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                get_error_msg());
+            else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "{}. Ignoring it can lead to data loss. "
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                    get_error_msg());
         }
-        if (match_result == EXACT)
+        else if (match_result == EXACT)
         {
             if (!node.empty())
             {
@@ -730,7 +729,7 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotB
 {
     const auto & [snapshot_path, snapshot_disk, size] = *existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
-    auto reader = snapshot_disk->readFile(snapshot_path, getReadSettings());
+    auto reader = snapshot_disk->readFile(snapshot_path);
     copyData(*reader, writer);
     return writer.getBuffer();
 }
@@ -915,7 +914,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() cons
 
         try
         {
-            if (disk->existsFile(path))
+            if (disk->exists(path))
                 return std::make_shared<SnapshotFileInfo>(path, disk);
         }
         catch (...)

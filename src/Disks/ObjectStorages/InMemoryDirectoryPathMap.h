@@ -2,9 +2,7 @@
 
 #include <filesystem>
 #include <map>
-#include <memory>
 #include <optional>
-#include <set>
 #include <shared_mutex>
 #include <base/defines.h>
 #include <Common/SharedLockGuard.h>
@@ -27,19 +25,10 @@ struct InMemoryDirectoryPathMap
             return path1 < path2;
         }
     };
-
-    using FileNames = std::set<std::string>;
-    using FileNamesIterator = FileNames::iterator;
-    struct FileNameIteratorComparator
-    {
-        bool operator()(const FileNames::iterator & lhs, const FileNames::iterator & rhs) const { return *lhs < *rhs; }
-    };
-
     struct RemotePathInfo
     {
         std::string path;
         time_t last_modified = 0;
-        std::set<FileNamesIterator, FileNameIteratorComparator> filename_iterators;
     };
 
     using Map = std::map<std::filesystem::path, RemotePathInfo, PathComparator>;
@@ -66,11 +55,9 @@ struct InMemoryDirectoryPathMap
     mutable SharedMutex mutex;
 
 #ifdef OS_LINUX
-    FileNames TSA_GUARDED_BY(mutex) unique_filenames;
     Map TSA_GUARDED_BY(mutex) map;
 /// std::shared_mutex may not be annotated with the 'capability' attribute in libcxx.
 #else
-    FileNames unique_filenames;
     Map map;
 #endif
 };

@@ -72,10 +72,8 @@ function configure()
 
     if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
         randomize_config_boolean_value use_compression zookeeper_fault_injection
-        randomize_config_boolean_value use_xid_64 zookeeper_fault_injection
     else
         randomize_config_boolean_value use_compression zookeeper
-        randomize_config_boolean_value use_xid_64 zookeeper
     fi
 
     randomize_config_boolean_value enable_block_number_column block_number
@@ -184,9 +182,6 @@ function stop_server()
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    # FIXME: workaround for slow shutdown of Distributed tables (due to sequential tables shutdown)
-    # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
-    clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS" ||:
     clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     if [ "$check_hang" == true ]

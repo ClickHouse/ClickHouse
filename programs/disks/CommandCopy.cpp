@@ -38,10 +38,18 @@ public:
         String path_to = disk_to.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
         bool recursive = options.count("recursive");
 
-        if (disk_from.getDisk()->existsFile(path_from))
+        if (!disk_from.getDisk()->exists(path_from))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "cannot stat '{}' on disk '{}': No such file or directory",
+                path_from,
+                disk_from.getDisk()->getName());
+        }
+        else if (disk_from.getDisk()->isFile(path_from))
         {
             auto target_location = getTargetLocation(path_from, disk_to, path_to);
-            if (!disk_to.getDisk()->existsDirectory(target_location))
+            if (!disk_to.getDisk()->exists(target_location) || disk_to.getDisk()->isFile(target_location))
             {
                 disk_from.getDisk()->copyFile(
                     path_from,
@@ -57,7 +65,7 @@ public:
                     ErrorCodes::BAD_ARGUMENTS, "cannot overwrite directory {} with non-directory {}", target_location, path_from);
             }
         }
-        else if (disk_from.getDisk()->existsDirectory(path_from))
+        else if (disk_from.getDisk()->isDirectory(path_from))
         {
             if (!recursive)
             {
@@ -65,11 +73,11 @@ public:
             }
             auto target_location = getTargetLocation(path_from, disk_to, path_to);
 
-            if (disk_to.getDisk()->existsFile(target_location))
+            if (disk_to.getDisk()->isFile(target_location))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot overwrite non-directory {} with directory {}", path_to, target_location);
             }
-            if (!disk_to.getDisk()->existsDirectory(target_location))
+            else if (!disk_to.getDisk()->exists(target_location))
             {
                 disk_to.getDisk()->createDirectory(target_location);
             }
@@ -80,14 +88,6 @@ public:
                 /* read_settings= */ {},
                 /* write_settings= */ {},
                 /* cancellation_hook= */ {});
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "cannot stat '{}' on disk '{}': No such file or directory",
-                path_from,
-                disk_from.getDisk()->getName());
         }
     }
 };

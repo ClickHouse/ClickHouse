@@ -23,15 +23,6 @@ namespace Setting
     extern const SettingsMaxThreads max_parsing_threads;
 }
 
-namespace ObjectStorageQueueSetting
-{
-    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
-    extern const ObjectStorageQueueSettingsUInt64 max_processed_bytes_before_commit;
-    extern const ObjectStorageQueueSettingsUInt64 max_processed_files_before_commit;
-    extern const ObjectStorageQueueSettingsUInt64 max_processed_rows_before_commit;
-    extern const ObjectStorageQueueSettingsUInt64 max_processing_time_sec_before_commit;
-}
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -49,15 +40,11 @@ ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObject
 ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
     std::unique_ptr<Source::GlobIterator> glob_iterator_,
-    ObjectStoragePtr object_storage_,
-    bool file_deletion_on_processed_enabled_,
     std::atomic<bool> & shutdown_called_,
     LoggerPtr logger_)
     : StorageObjectStorageSource::IIterator("ObjectStorageQueueIterator")
     , metadata(metadata_)
-    , object_storage(object_storage_)
     , glob_iterator(std::move(glob_iterator_))
-    , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -118,39 +105,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
 
         auto file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
         if (file_metadata->setProcessing())
-        {
-            if (file_deletion_on_processed_enabled
-                && !object_storage->exists(StoredObject(object_info->relative_path)))
-            {
-                /// Imagine the following case:
-                /// Replica A processed fileA and deletes it afterwards.
-                /// Replica B has a list request batch (by default list batch is 1000 elements)
-                /// and this batch was collected from object storage before replica A processed fileA.
-                /// fileA could be somewhere in the middle of this batch of replica B
-                /// and replica A processed it before replica B reached fileA in this batch.
-                /// All would be alright, unless user has tracked_files_size_limit or tracked_files_ttl_limit
-                /// which could expire before replica B reached fileA in this list batch.
-                /// It would mean that replica B listed this file while it no longer
-                /// exists in object storage at the moment it wants to process it, but
-                /// because of tracked_files_size(ttl)_limit expiration - we no longer
-                /// have information in keeper that the file was actually processed before,
-                /// so replica B would successfully set itself as processor of this file in keeper
-                /// and face "The specified key does not exist" after that.
-                ///
-                /// This existence check here is enough,
-                /// only because we do applyActionAfterProcessing BEFORE setting file as processed
-                /// and because at this exact place we already successfully set file as processing,
-                /// e.g. file deletion and marking file as processed in keeper already took place.
-                ///
-                /// Note: this all applies only for Unordered mode.
-                LOG_TRACE(log, "Ignoring {} because of the race with list & delete", object_info->getPath());
-
-                file_metadata->resetProcessing();
-                continue;
-            }
-
             return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, file_metadata);
-        }
     }
     return {};
 }
@@ -366,35 +321,43 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 /// Bucket is already acquired, process the file.
                 return std::pair{object_info, current_bucket_holder->getBucketInfo()};
             }
-
-            auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
-            if (acquired_bucket)
+            else
             {
-                bucket_holder_it->second.push_back(acquired_bucket);
-                current_bucket_holder = bucket_holder_it->second.back().get();
-
-                bucket_cache.processor = current_processor;
-                if (!bucket_cache.keys.empty())
+                auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
+                if (acquired_bucket)
                 {
-                    /// We have to maintain ordering between keys,
-                    /// so if some keys are already in cache - start with them.
-                    bucket_cache.keys.emplace_back(object_info);
-                    object_info = bucket_cache.keys.front();
-                    bucket_cache.keys.pop_front();
+                    bucket_holder_it->second.push_back(acquired_bucket);
+                    current_bucket_holder = bucket_holder_it->second.back().get();
+
+                    bucket_cache.processor = current_processor;
+                    if (!bucket_cache.keys.empty())
+                    {
+                        /// We have to maintain ordering between keys,
+                        /// so if some keys are already in cache - start with them.
+                        bucket_cache.keys.emplace_back(object_info);
+                        object_info = bucket_cache.keys.front();
+                        bucket_cache.keys.pop_front();
+                    }
+                    return std::pair{object_info, current_bucket_holder->getBucketInfo()};
                 }
-                return std::pair{object_info, current_bucket_holder->getBucketInfo()};
+                else
+                {
+                    LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
+                    bucket_cache.keys.emplace_back(object_info);
+                    continue;
+                }
             }
-
-            LOG_TEST(log, "Bucket {} is already locked for processing", bucket);
-            bucket_cache.keys.emplace_back(object_info);
-            continue;
         }
+        else
+        {
+            LOG_TEST(log, "Reached the end of file iterator");
+            iterator_finished = true;
 
-        LOG_TEST(log, "Reached the end of file iterator");
-        iterator_finished = true;
-
-        if (listed_keys_cache.empty())
-            return {};
+            if (listed_keys_cache.empty())
+                return {};
+            else
+                continue;
+        }
     }
 }
 
@@ -406,7 +369,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     ObjectStoragePtr object_storage_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
-    const CommitSettings & commit_settings_,
+    const ObjectStorageQueueSettings & queue_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
     size_t max_block_size_,
@@ -425,7 +388,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , object_storage(object_storage_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
-    , commit_settings(commit_settings_)
+    , queue_settings(queue_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
     , shutdown_called(shutdown_called_)
@@ -610,8 +573,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
         processed_rows_from_file = 0;
         processed_files.push_back(file_metadata);
 
-        if (commit_settings.max_processed_files_before_commit
-            && processed_files.size() == commit_settings.max_processed_files_before_commit)
+        if (queue_settings.max_processed_files_before_commit
+            && processed_files.size() == queue_settings.max_processed_files_before_commit)
         {
             LOG_TRACE(log, "Number of max processed files before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
@@ -619,35 +582,28 @@ Chunk ObjectStorageQueueSource::generateImpl()
             break;
         }
 
-        if (commit_settings.max_processed_rows_before_commit
-            && total_processed_rows == commit_settings.max_processed_rows_before_commit)
+        if (queue_settings.max_processed_rows_before_commit
+            && total_processed_rows == queue_settings.max_processed_rows_before_commit)
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
                       "(rows: {}, bytes: {}, files: {})",
                       total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-        if (commit_settings.max_processed_bytes_before_commit && total_processed_bytes == commit_settings.max_processed_bytes_before_commit)
+        else if (queue_settings.max_processed_bytes_before_commit
+                 && total_processed_bytes == queue_settings.max_processed_bytes_before_commit)
         {
-            LOG_TRACE(
-                log,
-                "Number of max processed bytes before commit reached "
-                "(rows: {}, bytes: {}, files: {})",
-                total_processed_rows,
-                total_processed_bytes,
-                processed_files.size());
+            LOG_TRACE(log, "Number of max processed bytes before commit reached "
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-        if (commit_settings.max_processing_time_sec_before_commit
-            && total_stopwatch.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
+        else if (queue_settings.max_processing_time_sec_before_commit
+                 && total_stopwatch.elapsedSeconds() >= queue_settings.max_processing_time_sec_before_commit)
         {
-            LOG_TRACE(
-                log,
-                "Max processing time before commit reached "
-                "(rows: {}, bytes: {}, files: {})",
-                total_processed_rows,
-                total_processed_bytes,
-                processed_files.size());
+            LOG_TRACE(log, "Max processing time before commit reached "
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
     }
@@ -664,8 +620,8 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
     {
         if (success)
         {
-            applyActionAfterProcessing(file_metadata->getPath());
             file_metadata->setProcessed();
+            applyActionAfterProcessing(file_metadata->getPath());
         }
         else
         {
@@ -693,9 +649,15 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
 
 void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
-    if (files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+    switch (queue_settings.after_processing.value)
     {
-        object_storage->removeObjectIfExists(StoredObject(path));
+        case ObjectStorageQueueAction::DELETE:
+        {
+            object_storage->removeObject(StoredObject(path));
+            break;
+        }
+        case ObjectStorageQueueAction::KEEP:
+            break;
     }
 }
 

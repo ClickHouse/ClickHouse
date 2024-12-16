@@ -34,7 +34,7 @@ namespace ErrorCodes
 namespace
 {
 
-void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_conditions, QueryTreeNodes & other)
+void exctractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_conditions, QueryTreeNodes & other)
 {
     auto * func = node->as<FunctionNode>();
     if (!func)
@@ -52,7 +52,7 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
     else if (func->getFunctionName() == "and")
     {
         for (const auto & arg : args)
-            extractJoinConditions(arg, equi_conditions, other);
+            exctractJoinConditions(arg, equi_conditions, other);
     }
     else
     {
@@ -118,7 +118,7 @@ public:
 
         QueryTreeNodes equi_conditions;
         QueryTreeNodes other_conditions;
-        extractJoinConditions(where_condition, equi_conditions, other_conditions);
+        exctractJoinConditions(where_condition, equi_conditions, other_conditions);
         bool can_convert_cross_to_inner = false;
         for (auto & condition : equi_conditions)
         {

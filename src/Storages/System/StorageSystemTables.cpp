@@ -57,9 +57,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     }
     return false;
 }
-
 }
-
 
 namespace detail
 {
@@ -178,10 +176,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"total_bytes_uncompressed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
             "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into account)."
-        },
-        {"total_bytes_with_inactive", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-         "Total number of bytes with inactive parts, if it is possible to quickly determine exact number "
-         "of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). "
         },
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of parts in this table."},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
@@ -601,15 +595,6 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                if (columns_mask[src_index++])
-                {
-                    auto total_bytes_with_inactive = table->totalBytesWithInactive(settings);
-                    if (total_bytes_with_inactive)
-                        res_columns[res_index++]->insert(*total_bytes_with_inactive);
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
                 auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
                 if (columns_mask[src_index++])
                 {
@@ -741,7 +726,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -797,7 +782,7 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
+        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
     pipeline.init(std::move(pipe));
 }
 

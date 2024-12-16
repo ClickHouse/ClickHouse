@@ -290,16 +290,17 @@ private:
 
     size_t importChunk(std::span<const std::byte> values, std::span<TUInt> current_chunk)
     {
-        auto chunk_view = std::as_writable_bytes(current_chunk);
-        if (chunk_view.size() <= values.size())
+        if (auto chunk_view = std::as_writable_bytes(current_chunk); chunk_view.size() <= values.size())
         {
             memcpy(chunk_view.data(), values.data(), chunk_view.size());
             return chunk_view.size() / VALUE_SIZE;
         }
-
-        memset(chunk_view.data(), 0, chunk_view.size());
-        memcpy(chunk_view.data(), values.data(), values.size());
-        return ceilBytesToEvenValues(values.size());
+        else
+        {
+            memset(chunk_view.data(), 0, chunk_view.size());
+            memcpy(chunk_view.data(), values.data(), values.size());
+            return ceilBytesToEvenValues(values.size());
+        }
     }
 
     void exportChunk(std::span<const TUInt> current_chunk)

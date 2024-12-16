@@ -91,7 +91,7 @@ public:
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
-    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const;
+    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const;
 
 private:
     const String & getOldServerStatePath();

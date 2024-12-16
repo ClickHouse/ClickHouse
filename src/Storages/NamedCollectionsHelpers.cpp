@@ -140,7 +140,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             // if allow_override_by_default is false we don't allow extra arguments
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed because setting allow_override_by_default is disabled");
         }
-        if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
+        else if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))

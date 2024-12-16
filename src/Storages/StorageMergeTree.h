@@ -68,7 +68,6 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
-    std::optional<UInt64> totalBytesWithInactive(const Settings &) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -190,7 +189,6 @@ private:
     /// If not force, then take merges selector and check that part is not participating in background operations.
     MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
     ActionLock stopMergesAndWait();
-    ActionLock stopMergesAndWaitForPartition(String partition_id);
 
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.

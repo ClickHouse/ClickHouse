@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import datetime
-import logging
 import os
 import uuid
 import warnings
@@ -9,6 +8,7 @@ import cassandra.cluster
 import pymongo
 import pymysql.cursors
 import redis
+import logging
 
 
 class ExternalSource(object):
@@ -184,10 +184,6 @@ class SourceMongo(ExternalSource):
         self.secure = secure
 
     def get_source_str(self, table_name):
-        options = ""
-        if self.secure:
-            options = "<options>tls=true&amp;tlsAllowInvalidCertificates=true</options>"
-
         return """
             <mongodb>
                 <host>{host}</host>
@@ -204,7 +200,7 @@ class SourceMongo(ExternalSource):
             user=self.user,
             password=self.password,
             tbl=table_name,
-            options=options,
+            options="<options>ssl=true</options>" if self.secure else "",
         )
 
     def prepare(self, structure, table_name, cluster):
@@ -233,13 +229,7 @@ class SourceMongo(ExternalSource):
                 self.converters[field.name] = lambda x: x
 
         self.db = self.connection["test"]
-        user_info = self.db.command("usersInfo", self.user)
-        if user_info["users"]:
-            self.db.command("updateUser", self.user, pwd=self.password)
-        else:
-            self.db.command(
-                "createUser", self.user, pwd=self.password, roles=["readWrite"]
-            )
+        self.db.add_user(self.user, self.password)
         self.prepared = True
 
     def load_data(self, data, table_name):
@@ -262,13 +252,9 @@ class SourceMongoURI(SourceMongo):
         return layout.name == "flat"
 
     def get_source_str(self, table_name):
-        options = ""
-        if self.secure:
-            options = "tls=true&amp;tlsAllowInvalidCertificates=true"
-
         return """
             <mongodb>
-                <uri>mongodb://{user}:{password}@{host}:{port}/test?{options}</uri>
+                <uri>mongodb://{user}:{password}@{host}:{port}/test{options}</uri>
                 <collection>{tbl}</collection>
             </mongodb>
         """.format(
@@ -277,7 +263,7 @@ class SourceMongoURI(SourceMongo):
             user=self.user,
             password=self.password,
             tbl=table_name,
-            options=options,
+            options="?ssl=true" if self.secure else "",
         )
 
 

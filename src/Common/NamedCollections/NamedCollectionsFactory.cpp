@@ -93,7 +93,7 @@ MutableNamedCollectionPtr NamedCollectionFactory::getMutable(
             "There is no named collection `{}`",
             collection_name);
     }
-    if (!collection->isMutable())
+    else if (!collection->isMutable())
     {
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,

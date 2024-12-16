@@ -119,14 +119,16 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
             {cols[4].type->createColumn(), cols[4].type, cols[4].name},
         });
     }
-
-    Block res;
-    ColumnWithTypeAndName col;
-    col.name = "explain";
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    res.insert(col);
-    return res;
+    else
+    {
+        Block res;
+        ColumnWithTypeAndName col;
+        col.name = "explain";
+        col.type = std::make_shared<DataTypeString>();
+        col.column = col.type->createColumn();
+        res.insert(col);
+        return res;
+    }
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
@@ -392,7 +394,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor::Data data(getContext());
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
+            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
             break;
         }
         case ASTExplainQuery::QueryTree:
@@ -441,7 +443,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (need_newline)
                     buf << "\n\n";
 
-                query_tree->toAST()->format(buf, IAST::FormatSettings(false));
+                query_tree->toAST()->format(IAST::FormatSettings(buf, false));
             }
 
             break;
@@ -547,8 +549,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* async_isnert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
-                // we do not need it anymore, it would be executed
-                io.pipeline.cancel();
             }
             else
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT and INSERT is supported for EXPLAIN PIPELINE query");
@@ -619,7 +619,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             break;
         }
     }
-    buf.finalize();
     if (insert_buf)
     {
         if (single_line)

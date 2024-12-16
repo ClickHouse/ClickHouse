@@ -8,23 +8,6 @@ set -x -e
 DEST_SERVER_PATH="${1:-/etc/clickhouse-server}"
 DEST_CLIENT_PATH="${2:-/etc/clickhouse-client}"
 SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-if [ $# -ge 2 ]; then
-    shift 2
-fi
-
-FAST_TEST=0
-
-NO_AZURE=0
-
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --fast-test) FAST_TEST=1 ;;
-        --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 ;;
-        --no-azure) NO_AZURE=1 ;;
-        *) echo "Unknown option: $1" ; exit 1 ;;
-    esac
-    shift
-done
 
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
@@ -89,8 +72,9 @@ ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/confi
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 
 # Not supported with fasttest.
-if [ "$FAST_TEST" != "1" ]; then
-   ln -sf "$SRC_PATH/config.d/legacy_geobase.xml" "$DEST_SERVER_PATH/config.d/"
+if [ "${DEST_SERVER_PATH}" = "/etc/clickhouse-server" ]
+then
+   ln -sf $SRC_PATH/config.d/legacy_geobase.xml $DEST_SERVER_PATH/config.d/
 fi
 
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
@@ -131,7 +115,6 @@ ln -sf $SRC_PATH/test_function.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/top_level_domains $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/regions_hierarchy.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/regions_names_en.txt $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/regions_names_es.txt $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/ext-en.txt $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/ext-ru.txt $DEST_SERVER_PATH/config.d/
@@ -201,10 +184,8 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
 fi
 
-if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
-    if [[ "$NO_AZURE" != "1" ]]; then
-      ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
-    fi
+if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
+    ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
@@ -213,7 +194,7 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi
 
-if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/
     rm /etc/clickhouse-server/config.d/zookeeper.xml

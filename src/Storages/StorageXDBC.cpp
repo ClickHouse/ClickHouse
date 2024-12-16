@@ -25,11 +25,6 @@ namespace Setting
     extern const SettingsBool odbc_bridge_use_connection_pooling;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsSeconds keep_alive_timeout;
-}
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -156,7 +151,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(
             local_context->getSettingsRef(),
-            local_context->getServerSettings()),
+            local_context->getServerSettings().keep_alive_timeout),
         compression_method);
 }
 

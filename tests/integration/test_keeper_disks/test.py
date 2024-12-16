@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-import os
-
 import pytest
+from helpers.cluster import ClickHouseCluster, is_arm
+import helpers.keeper_utils as keeper_utils
 from minio.deleteobjects import DeleteObject
 
-import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster, is_arm
+import os
 
 if is_arm():
     pytestmark = pytest.mark.skip

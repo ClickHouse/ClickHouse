@@ -11,13 +11,11 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 
 #include <IO/WriteBufferFromString.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 
 #include <Storages/StorageDummy.h>
@@ -80,7 +78,7 @@ namespace ErrorCodes
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 }
 
-String dumpQueryPlan(const QueryPlan & query_plan)
+String dumpQueryPlan(QueryPlan & query_plan)
 {
     WriteBufferFromOwnString query_plan_buffer;
     query_plan.explainPlan(query_plan_buffer, QueryPlan::ExplainPlanOptions{true, true, true, true});
@@ -88,7 +86,7 @@ String dumpQueryPlan(const QueryPlan & query_plan)
     return query_plan_buffer.str();
 }
 
-String dumpQueryPipeline(const QueryPlan & query_plan)
+String dumpQueryPipeline(QueryPlan & query_plan)
 {
     QueryPlan::ExplainPipelineOptions explain_pipeline;
     WriteBufferFromOwnString query_pipeline_buffer;
@@ -146,9 +144,9 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 
     while (true)
     {
-        if (auto * /*select_query*/ _ = result_ast->as<ASTSelectQuery>())
+        if (auto * select_query = result_ast->as<ASTSelectQuery>())
             break;
-        if (auto * select_with_union = result_ast->as<ASTSelectWithUnionQuery>())
+        else if (auto * select_with_union = result_ast->as<ASTSelectWithUnionQuery>())
             result_ast = select_with_union->list_of_selects->children.at(0);
         else if (auto * subquery = result_ast->as<ASTSubquery>())
             result_ast = subquery->children.at(0);

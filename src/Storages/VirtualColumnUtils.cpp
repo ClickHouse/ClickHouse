@@ -130,7 +130,7 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
     }
 }
 
-static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
+NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
     return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
@@ -144,7 +144,7 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
+std::unordered_map<std::string, std::string> parseHivePartitioningKeysAndValues(const String & path)
 {
     std::string pattern = "([^/]+)=([^/]+)/";
     re2::StringPiece input_piece(path);
@@ -416,7 +416,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
             return &node_copy;
         }
-        if (node->function_base->getName() == "or")
+        else if (node->function_base->getName() == "or")
         {
             auto & node_copy = additional_nodes.emplace_back(*node);
             for (auto & child : node_copy.children)
@@ -425,7 +425,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
             return &node_copy;
         }
-        if (node->function_base->getName() == "indexHint")
+        else if (node->function_base->getName() == "indexHint")
         {
             if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get()))
             {
@@ -444,8 +444,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 
                         if (atoms.size() > 1)
                         {
-                            FunctionOverloadResolverPtr func_builder_and
-                                = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
                             res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 

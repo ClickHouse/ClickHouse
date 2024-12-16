@@ -46,11 +46,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
 }
 
-namespace MySQLSetting
-{
-    extern const MySQLSettingsMySQLDataTypesSupport mysql_datatypes_support_level;
-}
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -334,7 +329,7 @@ DatabaseMySQL::fetchTablesColumnsList(const std::vector<String> & tables_name, C
             database_name_in_mysql,
             tables_name,
             settings,
-            (*mysql_settings)[MySQLSetting::mysql_datatypes_support_level]);
+            mysql_settings->mysql_datatypes_support_level);
 }
 
 void DatabaseMySQL::shutdown()

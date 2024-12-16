@@ -217,7 +217,7 @@ static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UIn
         insertData(chars, offsets, str.data() + start, end - start);
 }
 
-static void dumpFlameGraph(
+void dumpFlameGraph(
     const AggregateFunctionFlameGraphTree::Traces & traces,
     DB::PaddedPODArray<UInt8> & chars,
     DB::PaddedPODArray<UInt64> & offsets)
@@ -328,19 +328,21 @@ struct AggregateFunctionFlameGraphData
             list = list->next;
             return entry;
         }
-
-        Entry * parent = list;
-        while (parent->next && parent->next->size != size)
-            parent = parent->next;
-
-        if (parent->next && parent->next->size == size)
+        else
         {
-            Entry * entry = parent->next;
-            parent->next = entry->next;
-            return entry;
-        }
+            Entry * parent = list;
+            while (parent->next && parent->next->size != size)
+                parent = parent->next;
 
-        return nullptr;
+            if (parent->next && parent->next->size == size)
+            {
+                Entry * entry = parent->next;
+                parent->next = entry->next;
+                return entry;
+            }
+
+            return nullptr;
+        }
     }
 
     void add(UInt64 ptr, Int64 size, const UInt64 * stack, size_t stack_size, Arena * arena)
@@ -630,7 +632,7 @@ static void check(const std::string & name, const DataTypes & argument_types, co
             name, argument_types[2]->getName());
 }
 
-static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
+AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
     if (!(*settings)[Setting::allow_introspection_functions])
         throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,

@@ -136,7 +136,7 @@ public:
     const Processors & getProcessors() const { return *processors; }
 
     /// Traverse graph the first time to update all the childless nodes.
-    void initializeExecution(Queue & queue, Queue & async_queue);
+    void initializeExecution(Queue & queue);
 
     enum class UpdateNodeStatus
     {

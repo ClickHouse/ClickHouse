@@ -25,11 +25,6 @@
 
 namespace DB
 {
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 max_authentication_methods_per_user;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -43,7 +38,7 @@ namespace
         const std::vector<AuthenticationData> authentication_methods,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
-        const std::optional<AlterSettingsProfileElements> & override_settings,
+        const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
         const std::optional<time_t> & global_valid_until,
         bool reset_authentication_methods,
@@ -172,11 +167,9 @@ namespace
             user.default_database = query.default_database->database_name;
 
         if (override_settings)
-            user.settings.applyChanges(*override_settings);
-        else if (query.alter_settings)
-            user.settings.applyChanges(AlterSettingsProfileElements{*query.alter_settings});
+            user.settings = *override_settings;
         else if (query.settings)
-            user.settings.applyChanges(AlterSettingsProfileElements{*query.settings});
+            user.settings = *query.settings;
 
         if (override_grantees)
             user.grantees = *override_grantees;
@@ -221,14 +214,14 @@ BlockIO InterpreterCreateUserQuery::execute()
         }
     }
 
-    std::optional<AlterSettingsProfileElements> settings_from_query;
-    if (query.alter_settings)
-        settings_from_query = AlterSettingsProfileElements{*query.alter_settings, access_control};
-    else if (query.settings)
-        settings_from_query = AlterSettingsProfileElements{*query.settings, access_control};
+    std::optional<SettingsProfileElements> settings_from_query;
+    if (query.settings)
+    {
+        settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
-    if (settings_from_query && !query.attach)
-        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
+        if (!query.attach)
+            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
+    }
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
@@ -256,7 +249,7 @@ BlockIO InterpreterCreateUserQuery::execute()
                 *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
-                plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
+                plaintext_password_allowed, getContext()->getServerSettings().max_authentication_methods_per_user);
             return updated_user;
         };
 
@@ -278,7 +271,7 @@ BlockIO InterpreterCreateUserQuery::execute()
                 *new_user, query, authentication_methods, name, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
-                plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
+                plaintext_password_allowed, getContext()->getServerSettings().max_authentication_methods_per_user);
             new_users.emplace_back(std::move(new_user));
         }
 

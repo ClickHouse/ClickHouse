@@ -161,9 +161,11 @@ std::string PostgreSQLDictionarySource::getUpdateFieldAndDate()
         update_time = std::chrono::system_clock::now();
         return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
-
-    update_time = std::chrono::system_clock::now();
-    return query_builder.composeLoadAllQuery();
+    else
+    {
+        update_time = std::chrono::system_clock::now();
+        return query_builder.composeLoadAllQuery();
+    }
 }
 
 

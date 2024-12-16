@@ -4,13 +4,12 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/NamePrompter.h>
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename T>
@@ -36,9 +35,9 @@ public:
 
     auto findByValue(const T & value) const
     {
-        auto it = value_to_name_map.find(value);
-        if (it == value_to_name_map.end())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
+        const auto it = value_to_name_map.find(value);
+        if (it == std::end(value_to_name_map))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(value));
 
         return it;
     }
@@ -58,15 +57,15 @@ public:
     bool getNameForValue(const T & value, StringRef & result) const
     {
         const auto it = value_to_name_map.find(value);
-        if (it == value_to_name_map.end())
+        if (it == std::end(value_to_name_map))
             return false;
 
         result = it->second;
         return true;
     }
 
-    T getValue(StringRef field_name) const;
-    bool tryGetValue(T & x, StringRef field_name) const;
+    T getValue(StringRef field_name, bool try_treat_as_id = false) const;
+    bool tryGetValue(T & x, StringRef field_name, bool try_treat_as_id = false) const;
 
     template <typename TValues>
     bool containsAll(const TValues & rhs_values) const
@@ -94,3 +93,4 @@ public:
 };
 
 }
+

@@ -120,12 +120,12 @@ public:
         if (!child)
             return;
 
-        T * cast = dynamic_cast<T *>(child.get());
-        if (!cast)
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         children.push_back(child);
-        field = cast;
+        field = casted;
     }
 
     template <typename T>
@@ -134,8 +134,8 @@ public:
         if (!child)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
 
-        T * cast = dynamic_cast<T *>(child.get());
-        if (!cast)
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         for (ASTPtr & current_child : children)
@@ -143,7 +143,7 @@ public:
             if (current_child.get() == field)
             {
                 current_child = child;
-                field = cast;
+                field = casted;
                 return;
             }
         }
@@ -193,6 +193,7 @@ public:
     /// Format settings.
     struct FormatSettings
     {
+        WriteBuffer & ostr;
         bool one_line;
         bool hilite;
         IdentifierQuotingRule identifier_quoting_rule;
@@ -201,18 +202,18 @@ public:
         char nl_or_ws; /// Newline or whitespace.
         LiteralEscapingStyle literal_escaping_style;
         bool print_pretty_type_names;
-        bool enforce_strict_identifier_format;
 
         explicit FormatSettings(
+            WriteBuffer & ostr_,
             bool one_line_,
             bool hilite_ = false,
             IdentifierQuotingRule identifier_quoting_rule_ = IdentifierQuotingRule::WhenNecessary,
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
-            bool print_pretty_type_names_ = false,
-            bool enforce_strict_identifier_format_ = false)
-            : one_line(one_line_)
+            bool print_pretty_type_names_ = false)
+            : ostr(ostr_)
+            , one_line(one_line_)
             , hilite(hilite_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
@@ -220,12 +221,23 @@ public:
             , nl_or_ws(one_line ? ' ' : '\n')
             , literal_escaping_style(literal_escaping_style_)
             , print_pretty_type_names(print_pretty_type_names_)
-            , enforce_strict_identifier_format(enforce_strict_identifier_format_)
         {
         }
 
-        void writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const;
-        void checkIdentifier(const String & name) const;
+        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
+            : ostr(ostr_)
+            , one_line(other.one_line)
+            , hilite(other.hilite)
+            , identifier_quoting_rule(other.identifier_quoting_rule)
+            , identifier_quoting_style(other.identifier_quoting_style)
+            , show_secrets(other.show_secrets)
+            , nl_or_ws(other.nl_or_ws)
+            , literal_escaping_style(other.literal_escaping_style)
+            , print_pretty_type_names(other.print_pretty_type_names)
+        {
+        }
+
+        void writeIdentifier(const String & name, bool ambiguous) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -253,13 +265,13 @@ public:
         const IAST * current_select = nullptr;
     };
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings) const
+    void format(const FormatSettings & settings) const
     {
         FormatState state;
-        formatImpl(ostr, settings, state, FormatStateStacked());
+        formatImpl(settings, state, FormatStateStacked());
     }
 
-    virtual void formatImpl(WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
+    virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }

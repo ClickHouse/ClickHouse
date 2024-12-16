@@ -1,10 +1,9 @@
-import contextlib
-import os
-import subprocess
 import time
-
+import contextlib
 import pymysql.cursors
 import pytest
+import os
+import subprocess
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path

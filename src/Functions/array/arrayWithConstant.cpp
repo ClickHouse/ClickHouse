@@ -62,17 +62,16 @@ public:
         for (size_t i = 0; i < num_rows; ++i)
         {
             auto array_size = col_num->getInt(i);
-            auto element_size = col_value->byteSizeAt(i);
 
             if (unlikely(array_size < 0))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} cannot be negative: while executing function {}", array_size, getName());
 
             Int64 estimated_size = 0;
-            if (unlikely(common::mulOverflow(array_size, element_size, estimated_size)))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, element_size, getName());
+            if (unlikely(common::mulOverflow(array_size, col_value->byteSize(), estimated_size)))
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, col_value->byteSize(), getName());
 
             if (unlikely(estimated_size > max_array_size_in_columns_bytes))
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, element_size, getName());
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array size {} with element size {} bytes is too large: while executing function {}", array_size, col_value->byteSize(), getName());
 
             offset += array_size;
 
