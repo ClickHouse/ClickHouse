@@ -1,5 +1,4 @@
 import argparse
-import os
 import time
 from pathlib import Path
 
@@ -118,7 +117,7 @@ def main():
             f"chmod +x /tmp/praktika/input/clickhouse-odbc-bridge",
         ]
         results.append(
-            Result.create_from_command_execution(
+            Result.from_commands_run(
                 name="Install ClickHouse", command=commands, with_log=True
             )
         )

@@ -21,7 +21,7 @@ while [[ "$#" -gt 0 ]]; do
         --fast-test) FAST_TEST=1 ;;
         --s3-storage) EXPORT_S3_STORAGE_POLICIES=1 ;;
         --no-azure) NO_AZURE=1 ;;
-        *) echo "Unknown option: $1" ;;
+        *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
 done
@@ -83,7 +83,6 @@ ln -sf $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/block_number.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/

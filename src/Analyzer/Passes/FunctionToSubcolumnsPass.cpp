@@ -46,7 +46,7 @@ using NodeToSubcolumnTransformer = std::function<void(QueryTreeNodePtr &, Functi
 
 void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
-    /// Replace `length(argument)` with `argument.size0`
+    /// Replace `length(argument)` with `argument.size0`.
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
@@ -56,8 +56,8 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
 template <bool positive>
 void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
 {
-    /// Replace `empty(argument)` with `equals(argument.size0, 0)` if positive
-    /// Replace `notEmpty(argument)` with `notEquals(argument.size0, 0)` if not positive
+    /// Replace `empty(argument)` with `equals(argument.size0, 0)` if positive.
+    /// Replace `notEmpty(argument)` with `notEquals(argument.size0, 0)` if not positive.
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
@@ -136,19 +136,25 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Map, "mapKeys"},
-        [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        [](QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
         {
             /// Replace `mapKeys(map_argument)` with `map_argument.keys`
-            NameAndTypePair column{ctx.column.name + ".keys", function_node.getResultType()};
+            const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+            auto key_type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
+
+            NameAndTypePair column{ctx.column.name + ".keys", key_type};
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
     {
         {TypeIndex::Map, "mapValues"},
-        [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        [](QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
         {
             /// Replace `mapValues(map_argument)` with `map_argument.values`
-            NameAndTypePair column{ctx.column.name + ".values", function_node.getResultType()};
+            const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+            auto value_type = std::make_shared<DataTypeArray>(data_type_map.getValueType());
+
+            NameAndTypePair column{ctx.column.name + ".values", value_type};
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
     },
@@ -286,6 +292,12 @@ public:
         }
 
         if (const auto * /*join_node*/ _ = node->as<JoinNode>())
+        {
+            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
+            return;
+        }
+
+        if (const auto * /*cross_join_node*/ _ = node->as<CrossJoinNode>())
         {
             can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
             return;
@@ -439,11 +451,16 @@ public:
         if (!identifiers_to_optimize.contains(qualified_name))
             return;
 
+        auto result_type = function_node->getResultType();
         auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
+
         if (transformer_it != node_transformers.end())
         {
             ColumnContext ctx{std::move(column), first_argument_column_node->getColumnSource(), getContext()};
             transformer_it->second(node, *function_node, ctx);
+
+            if (!result_type->equals(*node->getResultType()))
+                node = buildCastFunction(node, result_type, getContext());
         }
     }
 };

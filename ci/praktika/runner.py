@@ -6,17 +6,17 @@ import sys
 import traceback
 from pathlib import Path
 
-from praktika._environment import _Environment
-from praktika.artifact import Artifact
-from praktika.cidb import CIDB
-from praktika.digest import Digest
-from praktika.hook_cache import CacheRunnerHooks
-from praktika.hook_html import HtmlRunnerHooks
-from praktika.result import Result, ResultInfo
-from praktika.runtime import RunConfig
-from praktika.s3 import S3
-from praktika.settings import Settings
-from praktika.utils import Shell, TeePopen, Utils
+from ._environment import _Environment
+from .artifact import Artifact
+from .cidb import CIDB
+from .digest import Digest
+from .hook_cache import CacheRunnerHooks
+from .hook_html import HtmlRunnerHooks
+from .result import Result, ResultInfo
+from .runtime import RunConfig
+from .s3 import S3
+from .settings import Settings
+from .utils import Shell, TeePopen, Utils
 
 
 class Runner:
@@ -61,8 +61,6 @@ class Runner:
                 docker, workflow.dockers
             )
 
-        # work around for old clickhouse jobs
-        os.environ["DOCKER_TAG"] = json.dumps(workflow_config.digest_dockers)
         workflow_config.dump()
 
         Result.generate_pending(job.name).dump()
@@ -86,6 +84,7 @@ class Runner:
         print("Read GH Environment")
         env = _Environment.from_env()
         env.JOB_NAME = job.name
+        os.environ["JOB_NAME"] = job.name
         env.dump()
         print(env)
 
@@ -148,6 +147,14 @@ class Runner:
         env.JOB_NAME = job.name
         env.dump()
 
+        # work around for old clickhouse jobs
+        try:
+            os.environ["DOCKER_TAG"] = json.dumps(
+                RunConfig.from_fs(workflow.name).digest_dockers
+            )
+        except Exception as e:
+            print(f"WARNING: Failed to set DOCKER_TAG, ex [{e}]")
+
         if param:
             if not isinstance(param, str):
                 Utils.raise_with_error(
@@ -200,13 +207,15 @@ class Runner:
                             ResultInfo.TIMEOUT
                         )
                     elif result.is_running():
-                        info = f"ERROR: Job terminated with an error, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
+                        info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                        result.set_files([Settings.RUN_LOG])
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
+                        result.set_files([Settings.RUN_LOG])
             result.dump()
 
         return exit_code
@@ -257,10 +266,6 @@ class Runner:
             info = f"ERROR: {ResultInfo.KILLED}"
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
-        else:
-            # TODO: add setting with different ways of storing general praktika log: always, on error, never.
-            #   now let's store it on error only
-            result.files = [file for file in result.files if file != Settings.RUN_LOG]
 
         result.update_duration().dump()
 

@@ -1,19 +1,19 @@
 import sys
 from typing import Dict
 
-from praktika import Job, Workflow
-from praktika._environment import _Environment
-from praktika.cidb import CIDB
-from praktika.digest import Digest
-from praktika.docker import Docker
-from praktika.gh import GH
-from praktika.hook_cache import CacheRunnerHooks
-from praktika.hook_html import HtmlRunnerHooks
-from praktika.mangle import _get_workflows
-from praktika.result import Result, ResultInfo, _ResultS3
-from praktika.runtime import RunConfig
-from praktika.settings import Settings
-from praktika.utils import Shell, Utils
+from . import Job, Workflow
+from ._environment import _Environment
+from .cidb import CIDB
+from .digest import Digest
+from .docker import Docker
+from .gh import GH
+from .hook_cache import CacheRunnerHooks
+from .hook_html import HtmlRunnerHooks
+from .mangle import _get_workflows
+from .result import Result, ResultInfo, _ResultS3
+from .runtime import RunConfig
+from .settings import Settings
+from .utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
 
@@ -144,7 +144,7 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
         )
         info = ""
-        status = Result.Status.SUCCESS
+        status = Result.Status.FAILED
         if exit_code != 0:
             info = f"workspace has uncommitted files unexpectedly [{output}]"
             status = Result.Status.ERROR
@@ -154,10 +154,14 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             exit_code, output, err = Shell.get_res_stdout_stderr(
                 f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
-            if exit_code != 0:
-                info = f"workspace has outdated workflows [{output}] - regenerate with [python -m praktika --generate]"
-                status = Result.Status.ERROR
+            if output:
+                info = f"workflows are outdated: [{output}]"
+                status = Result.Status.FAILED
                 print("ERROR: ", info)
+            elif exit_code == 0 and not err:
+                status = Result.Status.SUCCESS
+            else:
+                print(f"ERROR: exit code [{exit_code}], err [{err}]")
 
         return (
             Result(
