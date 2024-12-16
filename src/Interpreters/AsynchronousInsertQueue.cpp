@@ -2,7 +2,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
@@ -979,7 +978,6 @@ try
         if (chunk.getNumRows() == 0)
         {
             finish_entries(/*num_rows=*/ 0, /*num_bytes=*/ 0);
-            pipeline.cancel();
             return;
         }
 

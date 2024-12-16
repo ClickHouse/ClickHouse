@@ -28,7 +28,8 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Common/MultiVersion.h>
+#include <azure/storage/blobs.hpp>
 #endif
 
 #if USE_AWS_S3
@@ -255,7 +256,7 @@ public:
     virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
 
 #if USE_AZURE_BLOB_STORAGE
-    virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
+    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }

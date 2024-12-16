@@ -27,7 +27,6 @@
 #include <Core/Settings.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/SingleDiskVolume.h>
 
 #include <base/sort.h>
 
@@ -209,6 +208,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
+    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace FailPoints
@@ -320,13 +320,6 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotReadonl
     /// before using new ZooKeeper session to write something (except maybe GET_PART) into replication log.
     auto res = getZooKeeper();
     assertNotReadonly();
-    return res;
-}
-
-zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotStaticStorage() const
-{
-    auto res = getZooKeeper();
-    assertNotStaticStorage();
     return res;
 }
 
@@ -520,11 +513,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks, expected_parts_on_this_replica);
-
-    prewarmCaches(
-        getActivePartsLoadingThreadPool().get(),
-        getMarkCacheToPrewarm(0),
-        getPrimaryIndexCacheToPrewarm(0));
+    prewarmMarkCacheIfNeeded(getActivePartsLoadingThreadPool().get());
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
     {
@@ -1859,7 +1848,9 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
 
     /// detached all unexpected data parts after sanity check.
     for (auto & part_state : unexpected_data_parts)
-        part_state.part->renameToDetached("ignored", /* ignore_error= */ true);
+    {
+        part_state.part->renameToDetached("ignored");
+    }
     unexpected_data_parts.clear();
 
     return true;
@@ -3661,20 +3652,9 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         last_queue_update_start_time.store(time(nullptr));
         queue_update_in_progress = true;
     }
-
     try
     {
-        auto zookeeper = getZooKeeperAndAssertNotStaticStorage();
-        if (is_readonly)
-        {
-            /// Note that we need to check shutdown_prepared_called, not shutdown_called, since the table will be marked as readonly
-            /// after calling StorageReplicatedMergeTree::flushAndPrepareForShutdown().
-            if (shutdown_prepared_called)
-                return;
-            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {}), cannot update queue", replica_path);
-        }
-
-        queue.pullLogsToQueue(zookeeper, queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
+        queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
     }
@@ -3906,15 +3886,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// (OPTIMIZE queries) can assign new merges.
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
 
-        auto zookeeper = getZooKeeperAndAssertNotStaticStorage();
-        if (is_readonly)
-        {
-            /// Note that we need to check shutdown_prepared_called, not shutdown_called, since the table will be marked as readonly
-            /// after calling StorageReplicatedMergeTree::flushAndPrepareForShutdown().
-            if (shutdown_prepared_called)
-                return AttemptStatus::CannotSelect;
-            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {}), cannot assign new merges", replica_path);
-        }
+        auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
         std::optional<ReplicatedMergeTreeMergePredicate> merge_pred;
 
@@ -4068,17 +4040,7 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
 
     try
     {
-        auto zookeeper = getZooKeeperAndAssertNotStaticStorage();
-        if (is_readonly)
-        {
-            /// Note that we need to check shutdown_prepared_called, not shutdown_called, since the table will be marked as readonly
-            /// after calling StorageReplicatedMergeTree::flushAndPrepareForShutdown().
-            if (shutdown_prepared_called)
-                return;
-            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {}), cannot finalize mutations", replica_path);
-        }
-
-        needs_reschedule = queue.tryFinalizeMutations(zookeeper);
+        needs_reschedule = queue.tryFinalizeMutations(getZooKeeperAndAssertNotReadonly());
     }
     catch (...)
     {
@@ -5124,17 +5086,10 @@ bool StorageReplicatedMergeTree::fetchPart(
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
 
-            size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
-
-            if (auto mark_cache = getMarkCacheToPrewarm(bytes_uncompressed))
+            if ((*getSettings())[MergeTreeSetting::prewarm_mark_cache] && getContext()->getMarkCache())
             {
                 auto column_names = getColumnsToPrewarmMarks(*getSettings(), part->getColumns());
-                part->loadMarksToCache(column_names, mark_cache.get());
-            }
-
-            if (auto index_cache = getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
-            {
-                part->loadIndexToCache(*index_cache);
+                part->loadMarksToCache(column_names, getContext()->getMarkCache().get());
             }
 
             write_part_log({});
@@ -5757,24 +5712,10 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytesUncompressed(const S
     return res;
 }
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalBytesWithInactive(const Settings &) const
-{
-    UInt64 res = 0;
-    auto outdated_parts = getDataPartsStateRange(DataPartState::Outdated);
-    for (const auto & part : outdated_parts)
-        res += part->getBytesOnDisk();
-    return res;
-}
-
 void StorageReplicatedMergeTree::assertNotReadonly() const
 {
     if (is_readonly)
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {})", replica_path);
-    assertNotStaticStorage();
-}
-
-void StorageReplicatedMergeTree::assertNotStaticStorage() const
-{
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
 }
@@ -5840,8 +5781,8 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        query.IAST::format(buf, ast_format_settings);
+            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        query.IAST::format(ast_format_settings);
         query_str = buf.str();
     }
 

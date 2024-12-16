@@ -9,7 +9,6 @@
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Common/ProfileEvents.h>
-#include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/ObjectUtils.h>
@@ -570,6 +569,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
+    bool save_marks_in_cache = (*storage_settings)[MergeTreeSetting::prewarm_mark_cache] && global_ctx->context->getMarkCache();
+
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
@@ -579,8 +580,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->compression_codec,
         std::move(index_granularity_ptr),
         global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
-        global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         /*reset_columns=*/ true,
+        save_marks_in_cache,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings());
 
@@ -1119,6 +1120,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
+    bool save_marks_in_cache = (*global_ctx->data->getSettings())[MergeTreeSetting::prewarm_mark_cache] && global_ctx->context->getMarkCache();
+
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
@@ -1127,8 +1130,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         getStatisticsForColumns(columns_list, global_ctx->metadata_snapshot),
         ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
-        global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
-        &global_ctx->written_offset_columns);
+        &global_ctx->written_offset_columns,
+        save_marks_in_cache);
 
     ctx->column_elems_written = 0;
 }

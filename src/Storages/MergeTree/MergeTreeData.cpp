@@ -233,18 +233,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
-    extern const MergeTreeSettingsBool use_primary_key_cache;
-    extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
-    extern const MergeTreeSettingsBool primary_key_lazy_load;
-    extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
-    extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
-    extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
 }
 
 namespace ErrorCodes
@@ -1342,7 +1336,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             if (!prev_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects previous part {}. It is a bug or a result of manual intervention",
+                    "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the server or ZooKeeper data",
                     name, prev->second->name);
             }
         }
@@ -1359,7 +1353,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             if (!next_info.isDisjoint(info))
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Part {} intersects next part {}. It is a bug or a result of manual intervention",
+                    "Part {} intersects next part {}.  It is a bug or a result of manual intervention in the server or ZooKeeper data",
                     name, it->second->name);
             }
         }
@@ -2022,10 +2016,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (suspicious_broken_unexpected_parts != 0)
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
-    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     if (!is_static_storage)
         for (auto & part : broken_parts_to_detach)
-            part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+            part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
@@ -2113,7 +2106,6 @@ try
 
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), "UnexpectedParts");
 
-    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
@@ -2129,7 +2121,9 @@ try
 
             chassert(load_state.part);
             if (load_state.is_broken)
-                load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+            {
+                load_state.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
+            }
         }, Priority{});
     }
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -2180,7 +2174,6 @@ try
 
     ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), "OutdatedParts");
 
-    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     while (true)
     {
         ThreadFuzzer::maybeInjectSleep();
@@ -2221,7 +2214,7 @@ try
             if (res.is_broken)
             {
                 forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                res.part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
             }
             else if (res.part->is_duplicate)
                 res.part->remove();
@@ -2357,56 +2350,32 @@ void MergeTreeData::stopOutdatedAndUnexpectedDataPartsLoadingTask()
     }
 }
 
-PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCache() const
-{
-    bool use_primary_key_cache = (*getSettings())[MergeTreeSetting::use_primary_key_cache];
-    bool primary_key_lazy_load = (*getSettings())[MergeTreeSetting::primary_key_lazy_load];
-
-    if (!use_primary_key_cache || !primary_key_lazy_load)
-        return nullptr;
-
-    return getContext()->getPrimaryIndexCache();
-}
-
-PrimaryIndexCachePtr MergeTreeData::getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const
-{
-    if (!(*getSettings())[MergeTreeSetting::prewarm_primary_key_cache])
-        return nullptr;
-
-    /// Do not load data to caches for small parts because
-    /// they will be likely replaced by merge immediately.
-    size_t min_bytes_to_prewarm = (*getSettings())[MergeTreeSetting::min_bytes_to_prewarm_caches];
-    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
-        return nullptr;
-
-    return getPrimaryIndexCache();
-}
-
-MarkCachePtr MergeTreeData::getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const
+void MergeTreeData::prewarmMarkCacheIfNeeded(ThreadPool & pool)
 {
     if (!(*getSettings())[MergeTreeSetting::prewarm_mark_cache])
-        return nullptr;
+        return;
 
-    /// Do not load data to caches for small parts because
-    /// they will be likely replaced by merge immediately.
-    size_t min_bytes_to_prewarm = (*getSettings())[MergeTreeSetting::min_bytes_to_prewarm_caches];
-    if (part_uncompressed_bytes && part_uncompressed_bytes < min_bytes_to_prewarm)
-        return nullptr;
-
-    return getContext()->getMarkCache();
+    prewarmMarkCache(pool);
 }
 
-void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache)
+void MergeTreeData::prewarmMarkCache(ThreadPool & pool)
 {
-    if (!mark_cache && !index_cache)
+    auto * mark_cache = getContext()->getMarkCache().get();
+    if (!mark_cache)
+        return;
+
+    auto metadata_snaphost = getInMemoryMetadataPtr();
+    auto column_names = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
+
+    if (column_names.empty())
         return;
 
     Stopwatch watch;
-    LOG_TRACE(log, "Prewarming mark and/or primary index caches");
+    LOG_TRACE(log, "Prewarming mark cache");
 
     auto data_parts = getDataPartsVectorForInternalUsage();
 
-    /// Prewarm caches firstly for the most fresh parts according
+    /// Prewarm mark cache firstly for the most fresh parts according
     /// to time columns in partition key (if exists) and by modification time.
 
     auto to_tuple = [](const auto & part)
@@ -2419,43 +2388,20 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
         return to_tuple(lhs) > to_tuple(rhs);
     });
 
-    double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
-    double index_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::primary_index_cache_prewarm_ratio];
-
-    Names columns_to_prewarm_marks;
-
-    if (mark_cache)
-    {
-        auto metadata_snaphost = getInMemoryMetadataPtr();
-        columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
-    }
-
-    /// Allocate runner on stack after all used local variables to make its destructor
-    /// is called first and all tasks stopped before local variables are being destroyed.
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmCaches");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmMarks");
+    double ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
 
     for (const auto & part : data_parts)
     {
-        bool added_task = false;
-
-        if (index_cache && !part->isIndexLoaded() && index_cache->sizeInBytes() < index_cache->maxSizeInBytes() * index_ratio_to_prewarm)
-        {
-            added_task = true;
-            runner([&] { part->loadIndexToCache(*index_cache); });
-        }
-
-        if (mark_cache && mark_cache->sizeInBytes() < mark_cache->maxSizeInBytes() * marks_ratio_to_prewarm)
-        {
-            added_task = true;
-            runner([&] { part->loadMarksToCache(columns_to_prewarm_marks, mark_cache.get()); });
-        }
-
-        if (!added_task)
+        if (mark_cache->sizeInBytes() >= mark_cache->maxSizeInBytes() * ratio_to_prewarm)
             break;
+
+        runner([&] { part->loadMarksToCache(column_names, mark_cache); });
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {} seconds", watch.elapsedSeconds());
+    watch.stop();
+    LOG_TRACE(log, "Prewarmed mark cache in {} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.
@@ -4158,7 +4104,7 @@ void MergeTreeData::checkPartDynamicColumns(MutableDataPartPtr & part, DataParts
     const auto & columns = metadata_snapshot->getColumns();
     auto virtuals = getVirtualsPtr();
 
-    if (!hasDynamicSubcolumnsDeprecated(columns))
+    if (!hasDynamicSubcolumns(columns))
         return;
 
     const auto & part_columns = part->getColumns();
@@ -4594,7 +4540,6 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     auto lock = lockParts();
     bool removed_active_part = false;
     bool restored_active_part = false;
-    bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
 
     auto it_part = data_parts_by_info.find(part_to_detach->info);
     if (it_part == data_parts_by_info.end())
@@ -4613,7 +4558,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
     }
 
     modifyPartState(it_part, DataPartState::Deleting);
-    asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
+    asMutableDeletingPart(part)->renameToDetached(prefix);
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
 
@@ -6004,7 +5949,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
                        .withPartType(MergeTreeDataPartType::Wide)
                        .build();
         }
-        /// Errors should not be ignored in RESTORE, since you should not restore to broken disks.
         part->renameToDetached("broken-from-backup");
     };
 
@@ -6054,7 +5998,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!retryable || (try_no + 1 == loading_parts_max_tries))
         {
             if (Exception * e = exception_cast<Exception *>(error))
-                e->addMessage("while restoring part {} of table {}", part_name, getStorageID());
+                e->addMessage("while restoring part {} of table {}", part->name, getStorageID());
             std::rethrow_exception(error);
         }
 
@@ -6521,7 +6465,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
 
 void MergeTreeData::validateDetachedPartName(const String & name)
 {
-    if (name.contains('/') || name == "." || name == "..")
+    if (name.find('/') != std::string::npos || name == "." || name == "..")
         throw DB::Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid part name '{}'", name);
 
     if (startsWith(name, "attaching_") || startsWith(name, "deleting_"))
@@ -7589,11 +7533,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
-    const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
+
+    const auto check_definitions = [](const auto & my_descriptions, const auto & src_descriptions)
     {
-        bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
-        if ((my_descriptions.size() < src_descriptions.size()) ||
-            (strict_match && my_descriptions.size() != src_descriptions.size()))
+        if (my_descriptions.size() != src_descriptions.size())
             return false;
 
         std::unordered_set<std::string> my_query_strings;
@@ -8811,11 +8754,8 @@ void MergeTreeData::resetObjectColumnsFromActiveParts(const DataPartsLock & /*lo
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
-    if (!hasDynamicSubcolumnsDeprecated(columns))
-    {
-        object_columns = ColumnsDescription{};
+    if (!hasDynamicSubcolumns(columns))
         return;
-    }
 
     auto range = getDataPartsStateRange(DataPartState::Active);
     object_columns = getConcreteObjectColumns(range, columns);
@@ -8825,7 +8765,7 @@ void MergeTreeData::updateObjectColumns(const DataPartPtr & part, const DataPart
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & columns = metadata_snapshot->getColumns();
-    if (!hasDynamicSubcolumnsDeprecated(columns))
+    if (!hasDynamicSubcolumns(columns))
         return;
 
     DB::updateObjectColumns(object_columns, columns, part->getColumns());
@@ -9054,8 +8994,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         ColumnsStatistics{},
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
-        txn ? txn->tid : Tx::PrehistoricTID,
-        /*part_uncompressed_bytes=*/ 0);
+        txn ? txn->tid : Tx::PrehistoricTID);
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 
@@ -9110,16 +9049,6 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
     return true;
 }
 
-void MergeTreeData::loadPrimaryKeys() const
-{
-    auto data_parts = getDataPartsVectorForInternalUsage();
-    for (const auto & data_part : data_parts)
-    {
-        /// We call getIndex() because it calls loadIndex() after locking its mutex, but we don't need its value.
-        data_part->getIndex();
-    }
-}
-
 void MergeTreeData::unloadPrimaryKeys()
 {
     for (auto & part : getAllDataPartsVector())
@@ -9128,14 +9057,14 @@ void MergeTreeData::unloadPrimaryKeys()
     }
 }
 
-size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
+size_t MergeTreeData::unloadPrimaryKeysOfOutdatedParts()
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(unload_primary_key_mutex, std::defer_lock);
     if (!lock.try_lock())
         return 0;
 
-    DataPartsVector parts_to_clear;
+    DataPartsVector parts_to_unload_index;
 
     {
         auto parts_lock = lockParts();
@@ -9146,22 +9075,18 @@ size_t MergeTreeData::unloadPrimaryKeysAndClearCachesOfOutdatedParts()
             /// Outdated part may be hold by SELECT query and still needs the index.
             /// This check requires lock of index_mutex but if outdated part is unique then there is no
             /// contention on it, so it's relatively cheap and it's ok to check under a global parts lock.
-            if (isSharedPtrUnique(part) && (part->isIndexLoaded() || part->mayStoreDataInCaches()))
-                parts_to_clear.push_back(part);
+            if (isSharedPtrUnique(part) && part->isIndexLoaded())
+                parts_to_unload_index.push_back(part);
         }
     }
 
-    for (const auto & part : parts_to_clear)
+    for (const auto & part : parts_to_unload_index)
     {
-        auto & part_mut = const_cast<IMergeTreeDataPart &>(*part);
-
-        part_mut.unloadIndex();
-        part_mut.clearCaches();
-
+        const_cast<IMergeTreeDataPart &>(*part).unloadIndex();
         LOG_TEST(log, "Unloaded primary key for outdated part {}", part->name);
     }
 
-    return parts_to_clear.size();
+    return parts_to_unload_index.size();
 }
 
 void MergeTreeData::verifySortingKey(const KeyDescription & sorting_key)

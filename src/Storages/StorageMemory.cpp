@@ -91,7 +91,8 @@ public:
         {
             Block compressed_block;
             for (const auto & elem : block)
-                compressed_block.insert({elem.column->compress(/*force_compression=*/true), elem.type, elem.name});
+                compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
+
             new_blocks.push_back(std::move(compressed_block));
         }
         else
@@ -179,7 +180,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
 
-    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
+    if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
     auto object_columns = getConcreteObjectColumns(
@@ -258,7 +259,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     {
         if ((*memory_settings)[MemorySetting::compress])
             for (auto & elem : block)
-                elem.column = elem.column->compress(/*force_compression=*/true);
+                elem.column = elem.column->compress();
 
         out.push_back(block);
     }
@@ -560,7 +561,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             temp_data_file.emplace(temporary_disk);
             auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
             copyData(*in, *out);
-            out->finalize();
+            out.reset();
             in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
         }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
@@ -573,7 +574,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             {
                 Block compressed_block;
                 for (const auto & elem : block)
-                    compressed_block.insert({elem.column->compress(/*force_compression=*/true), elem.type, elem.name});
+                    compressed_block.insert({ elem.column->compress(), elem.type, elem.name });
 
                 new_blocks.push_back(std::move(compressed_block));
             }

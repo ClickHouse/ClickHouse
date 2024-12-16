@@ -51,7 +51,7 @@ namespace
     }
 
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
-    class SourceFromNativeStream final : public ISource
+    class SourceFromNativeStream : public ISource
     {
     public:
         explicit SourceFromNativeStream(const Block & header, TemporaryBlockStreamReaderHolder tmp_stream_)
@@ -84,7 +84,7 @@ namespace
 
 /// Worker which merges buckets for two-level aggregation.
 /// Atomically increments bucket counter and returns merged result.
-class ConvertingAggregatedToChunksWithMergingSource final : public ISource
+class ConvertingAggregatedToChunksWithMergingSource : public ISource
 {
 public:
     static constexpr UInt32 NUM_BUCKETS = 256;
@@ -143,7 +143,7 @@ private:
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
-class ConvertingAggregatedToChunksSource final : public ISource
+class ConvertingAggregatedToChunksSource : public ISource
 {
 public:
     ConvertingAggregatedToChunksSource(AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_)
@@ -188,7 +188,7 @@ private:
 };
 
 /// Reads chunks from GroupingAggregatedTransform (stored in ChunksToMerge structure) and outputs them.
-class FlattenChunksToMergeTransform final : public IProcessor
+class FlattenChunksToMergeTransform : public IProcessor
 {
 public:
     explicit FlattenChunksToMergeTransform(const Block & input_header, const Block & output_header)
@@ -272,7 +272,7 @@ private:
 /// ConvertingAggregatedToChunksWithMergingSource ->
 ///
 /// Result chunks guaranteed to be sorted by bucket number.
-class ConvertingAggregatedToChunksTransform final : public IProcessor
+class ConvertingAggregatedToChunksTransform : public IProcessor
 {
 public:
     ConvertingAggregatedToChunksTransform(AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_)

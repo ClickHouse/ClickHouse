@@ -155,11 +155,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
-
-    prewarmCaches(
-        getActivePartsLoadingThreadPool().get(),
-        getMarkCacheToPrewarm(0),
-        getPrimaryIndexCacheToPrewarm(0));
+    prewarmMarkCacheIfNeeded(getActivePartsLoadingThreadPool().get());
 }
 
 
@@ -318,16 +314,6 @@ std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &)
         res += part->getBytesUncompressedOnDisk();
     return res;
 }
-
-std::optional<UInt64> StorageMergeTree::totalBytesWithInactive(const Settings &) const
-{
-    UInt64 res = 0;
-    auto outdated_parts = getDataPartsVectorForInternalUsage({DataPartState::Outdated});
-    for (const auto & part : outdated_parts)
-        res += part->getBytesOnDisk();
-    return res;
-}
-
 
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -1532,7 +1518,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldPartsFromFilesystem();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                cleared_count += unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+                cleared_count += unloadPrimaryKeysOfOutdatedParts();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);

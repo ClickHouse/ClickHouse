@@ -10,7 +10,7 @@ HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 Checks: [
   '*',
 
-  '-abseil-string-find-str-contains', # disabled to avoid a misleading suggestion (obsolete absl::StrContains() instead of C++23 std::string::contains())
+  '-abseil-*',
 
   '-altera-*',
 
@@ -28,10 +28,13 @@ Checks: [
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
   '-bugprone-not-null-terminated-result',
+  '-bugprone-reserved-identifier', # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
   '-bugprone-unchecked-optional-access',
   '-bugprone-crtp-constructor-accessibility',
 
   '-cert-dcl16-c',
+  '-cert-dcl37-c',
+  '-cert-dcl51-cpp',
   '-cert-err58-cpp',
   '-cert-msc32-c',
   '-cert-msc51-cpp',

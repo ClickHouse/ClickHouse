@@ -30,29 +30,29 @@ ASTPtr ASTDeleteQuery::clone() const
     return res;
 }
 
-void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "DELETE FROM " << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "DELETE FROM " << (settings.hilite ? hilite_none : "");
 
     if (database)
     {
-        database->formatImpl(ostr, settings, state, frame);
-        ostr << '.';
+        database->formatImpl(settings, state, frame);
+        settings.ostr << '.';
     }
 
     chassert(table);
-    table->formatImpl(ostr, settings, state, frame);
+    table->formatImpl(settings, state, frame);
 
-    formatOnCluster(ostr, settings);
+    formatOnCluster(settings);
 
     if (partition)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(ostr, settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
     }
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-    predicate->formatImpl(ostr, settings, state, frame);
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+    predicate->formatImpl(settings, state, frame);
 }
 
 }

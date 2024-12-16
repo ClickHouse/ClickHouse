@@ -2,9 +2,9 @@ import copy
 import importlib.util
 from pathlib import Path
 
-from . import Job
-from .settings import Settings
-from .utils import Utils
+from praktika import Job
+from praktika.settings import Settings
+from praktika.utils import Utils
 
 
 def _get_workflows(name=None, file=None):
@@ -63,12 +63,14 @@ def _update_workflow_artifacts(workflow):
 
 def _update_workflow_with_native_jobs(workflow):
     if workflow.dockers:
-        from .native_jobs import _docker_build_job
+        from praktika.native_jobs import _docker_build_job
 
         print(f"Enable native job [{_docker_build_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_docker_build_job)
         if workflow.enable_cache:
-            print(f"Add automatic digest config for [{aux_job.name}] job")
+            print(
+                f"Add automatic digest config for [{aux_job.name}] job since cache is enabled"
+            )
             docker_digest_config = Job.CacheDigestConfig()
             for docker_config in workflow.dockers:
                 docker_digest_config.include_paths.append(docker_config.path)
@@ -85,7 +87,7 @@ def _update_workflow_with_native_jobs(workflow):
         or workflow.enable_report
         or workflow.enable_merge_ready_status
     ):
-        from .native_jobs import _workflow_config_job
+        from praktika.native_jobs import _workflow_config_job
 
         print(f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_workflow_config_job)
@@ -96,7 +98,7 @@ def _update_workflow_with_native_jobs(workflow):
             job.requires.append(aux_job.name)
 
     if workflow.enable_merge_ready_status:
-        from .native_jobs import _final_job
+        from praktika.native_jobs import _final_job
 
         print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_final_job)

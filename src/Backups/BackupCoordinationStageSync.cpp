@@ -692,8 +692,7 @@ void BackupCoordinationStageSync::cancelQueryIfError()
     if (!exception)
         return;
 
-    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
-
+    process_list_element->cancelQuery(false, exception);
     state_changed.notify_all();
 }
 
@@ -747,8 +746,7 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
     /// we don't want the watching thread to try waiting here for retries or a reconnection).
     /// Also we don't set the `state.host_with_error` field here because `state.host_with_error` can only be set
     /// AFTER creating the 'error' node (see the comment for `State`).
-    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
-
+    process_list_element->cancelQuery(false, exception);
     state_changed.notify_all();
 }
 

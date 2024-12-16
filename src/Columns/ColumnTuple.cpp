@@ -796,7 +796,7 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 }
 
 
-ColumnPtr ColumnTuple::compress(bool force_compression) const
+ColumnPtr ColumnTuple::compress() const
 {
     if (columns.empty())
     {
@@ -812,7 +812,7 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
     compressed.reserve(columns.size());
     for (const auto & column : columns)
     {
-        auto compressed_column = column->compress(force_compression);
+        auto compressed_column = column->compress();
         byte_size += compressed_column->byteSize();
         compressed.emplace_back(std::move(compressed_column));
     }

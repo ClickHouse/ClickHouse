@@ -42,7 +42,6 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
-#include <Common/quoteString.h>
 #include <base/sleep.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -1092,7 +1091,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     DataTypes key_types;
     if (!key_indices.empty())
     {
-        const auto index = part->getIndex();
+        const auto & index = part->getIndex();
 
         for (size_t i : key_indices)
         {

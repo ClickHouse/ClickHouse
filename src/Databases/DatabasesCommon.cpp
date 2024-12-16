@@ -23,7 +23,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 namespace DB

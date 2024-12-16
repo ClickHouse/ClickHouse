@@ -479,20 +479,12 @@ public:
         return true;
     }
 
-    template <typename T> const auto & safeGet() const &
+    template <typename T> auto & safeGet() const
     {
         return const_cast<Field *>(this)->safeGet<T>();
     }
-    template <typename T> auto safeGet() const &&
-    {
-        return std::move(const_cast<Field *>(this)->safeGet<T>());
-    }
 
-    template <typename T> auto & safeGet() &;
-    template <typename T> auto safeGet() &&
-    {
-        return std::move(safeGet<T>());
-    }
+    template <typename T> auto & safeGet();
 
     bool operator< (const Field & rhs) const
     {
@@ -888,7 +880,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 }
 
 template <typename T>
-auto & Field::safeGet() &
+auto & Field::safeGet()
 {
     const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
@@ -1011,10 +1003,6 @@ template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf);
-
-
-void writeFieldBinary(const Field & x, WriteBuffer & buf);
-Field readFieldBinary(ReadBuffer & buf);
 
 String toString(const Field & x);
 }

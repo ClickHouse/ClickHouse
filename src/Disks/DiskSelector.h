@@ -3,12 +3,11 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
 
-#include <map>
+#include <Poco/Util/AbstractConfiguration.h>
 
-namespace Poco::Util
-{
-    class AbstractConfiguration;
-};
+#include <map>
+#include <sstream>
+#include <string_view>
 
 namespace DB
 {

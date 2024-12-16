@@ -47,15 +47,6 @@ node3 = cluster.add_instance(
 node4 = cluster.add_instance(
     "node4", user_configs=["configs/user_admin.xml", "configs/config_password.xml"]
 )
-node5 = cluster.add_instance(
-    "node5",
-    # Check that the cluster can start when the dictionary with the bad source query
-    # was created using DDL
-    clickhouse_path_dir="node5",
-    main_configs=["configs/allow_remote_node.xml"],
-    dictionaries=["configs/dictionaries/dictionary_with_insert_query.xml"],
-    user_configs=["configs/user_admin.xml"],
-)
 
 
 def create_mysql_conn(user, password, hostname, port):
@@ -80,7 +71,7 @@ def execute_mysql_query(connection, query):
 def started_cluster():
     try:
         cluster.start()
-        for clickhouse in [node1, node2, node3, node4, node5]:
+        for clickhouse in [node1, node2, node3, node4]:
             clickhouse.query("CREATE DATABASE test", user="admin")
             clickhouse.query(
                 "CREATE TABLE test.xml_dictionary_table (id UInt64, SomeValue1 UInt8, SomeValue2 String) ENGINE = MergeTree() ORDER BY id",
@@ -329,39 +320,6 @@ def test_conflicting_name(started_cluster):
     node3.query(
         "select dictGetUInt8('test.conflicting_dictionary', 'SomeValue1', toUInt64(17))"
     ) == "17\n"
-
-
-def test_with_insert_query(started_cluster):
-    try:
-        node5.query(
-            """
-        CREATE DICTIONARY test.ddl_dictionary_with_insert_query (
-            id UInt64,
-            SomeValue1 UInt8,
-            SomeValue2 String
-        )
-        PRIMARY KEY id
-        LAYOUT(FLAT())
-        SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' QUERY 'insert into test.xml_dictionary_table values (234432, 29, "htms")'))
-        LIFETIME(MIN 0 MAX 0)
-        """
-        )
-        assert "Invalid dictionary should not be created" and False
-    except QueryRuntimeException as ex:
-        assert "(SYNTAX_ERROR)" in str(ex)
-        assert (
-            "Syntax error (Query for ClickHouse dictionary test.ddl_dictionary_with_insert_query)"
-            in str(ex)
-        )
-
-    try:
-        node5.query(
-            """
-        SELECT dictGet('test.dictionary_with_insert_query', 'SomeValue1', 432234)
-        """
-        )
-    except QueryRuntimeException as ex:
-        assert "Only SELECT query can be used as a dictionary source" in str(ex)
 
 
 def test_http_dictionary_restrictions(started_cluster):
@@ -654,5 +612,3 @@ def test_named_collection(started_cluster):
     node1.query(
         "select dictGetUInt8('test.clickhouse_named_collection', 'SomeValue1', toUInt64(23))"
     ) == "0\n"
-
-    node1.query("DROP DICTIONARY test.clickhouse_named_collection")

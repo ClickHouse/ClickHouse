@@ -59,13 +59,13 @@ public:
 
     bool isCompilable() const override
     {
-        if constexpr (!canBeNativeType<Weight>() || !canBeNativeType<Numerator>() || !canBeNativeType<Denominator>())
-            return false;
-        return Base::isCompilable();
+        bool can_be_compiled = Base::isCompilable();
+        can_be_compiled &= canBeNativeType<Weight>();
+
+        return can_be_compiled;
     }
 
-    void compileAddImpl(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const
-    requires(canBeNativeType<Weight>() && canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
     {
         llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -94,26 +94,6 @@ public:
         b.CreateStore(denominator_value_updated, denominator_ptr);
     }
 
-    void
-    compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
-    {
-        if constexpr (canBeNativeType<Weight>() && canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
-            Base::compileMergeImpl(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
-    }
-
-    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
-    {
-        if constexpr (canBeNativeType<Weight>() && canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
-            return Base::compileGetResultImpl(builder, aggregate_data_ptr);
-        return nullptr;
-    }
-
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
-    {
-        if constexpr (canBeNativeType<Weight>() && canBeNativeType<Numerator>() && canBeNativeType<Denominator>())
-            compileAddImpl(builder, aggregate_data_ptr, arguments);
-    }
-
 #endif
 
 };
@@ -124,7 +104,7 @@ bool allowTypes(const DataTypePtr& left, const DataTypePtr& right) noexcept
 
     constexpr auto allow = [](WhichDataType t)
     {
-        return t.isInt() || t.isUInt() || t.isNativeFloat();
+        return t.isInt() || t.isUInt() || t.isFloat();
     };
 
     return allow(l_dt) && allow(r_dt);
