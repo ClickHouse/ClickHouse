@@ -742,7 +742,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             }
         }
 
-        if (paths.empty())
+        if (!paths.empty())
             get_paths();
     };
 
