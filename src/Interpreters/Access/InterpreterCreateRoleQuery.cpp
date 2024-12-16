@@ -90,6 +90,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
     }
     else
     {
+        auto check_func = [](const AccessEntityPtr &){};
         std::vector<AccessEntityPtr> new_roles;
         for (const auto & name : query.names)
         {
@@ -110,9 +111,9 @@ BlockIO InterpreterCreateRoleQuery::execute()
         if (query.if_not_exists)
             storage->tryInsert(new_roles);
         else if (query.or_replace)
-            storage->insertOrReplace(new_roles);
+            storage->insertOrReplace(new_roles, check_func);
         else
-            storage->insert(new_roles);
+            storage->insert(new_roles, check_func);
     }
 
     return {};

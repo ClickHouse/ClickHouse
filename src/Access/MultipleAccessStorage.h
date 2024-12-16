@@ -52,7 +52,7 @@ public:
     /// Search for an access entity storage, excluding one. Returns nullptr if not found.
     StoragePtr findExcludingStorage(AccessEntityType type, const String & name, StoragePtr exclude) const;
 
-    void moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name);
+    void moveAccessEntities(const std::vector<UUID> & ids, const CheckFunc & check_func, const String & source_storage_name, const String & destination_storage_name);
 
     bool exists(const UUID & id) const override;
 
@@ -67,8 +67,8 @@ protected:
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
-    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, const CheckFunc & check_func, bool replace_if_exists, bool throw_if_exists) override;
+    bool removeImpl(const UUID & id, const CheckFunc & check_func, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
     std::optional<AuthResult> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;
 

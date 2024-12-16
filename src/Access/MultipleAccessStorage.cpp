@@ -250,7 +250,7 @@ StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, co
     return nullptr;
 }
 
-void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
+void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, const CheckFunc & check_func, const String & source_storage_name, const String & destination_storage_name)
 {
     auto source_storage = getStorageByName(source_storage_name);
     auto destination_storage = getStorageByName(destination_storage_name);
@@ -260,9 +260,9 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
     try
     {
-        source_storage->remove(ids);
+        source_storage->remove(ids, check_func);
         need_rollback = true;
-        destination_storage->insert(to_move, ids);
+        destination_storage->insert(to_move, ids, check_func);
     }
     catch (Exception & e)
     {
@@ -280,7 +280,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
         e.addMessage("while moving {} from {} to {}", message, source_storage_name, destination_storage_name);
 
         if (need_rollback)
-            source_storage->insert(to_move, ids);
+            source_storage->insert(to_move, ids, check_func);
 
         throw;
     }
@@ -353,7 +353,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, const CheckFunc & check_func, bool replace_if_exists, bool throw_if_exists)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -376,7 +376,7 @@ bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & 
             getStorageName());
     }
 
-    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists))
+    if (storage_for_insertion->insert(id, entity, check_func, replace_if_exists, throw_if_exists))
     {
         std::lock_guard lock{mutex};
         ids_cache.set(id, storage_for_insertion);
@@ -387,10 +387,10 @@ bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & 
 }
 
 
-bool MultipleAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
+bool MultipleAccessStorage::removeImpl(const UUID & id, const CheckFunc & check_func, bool throw_if_not_exists)
 {
     if (auto storage = findStorage(id))
-        return storage->remove(id, throw_if_not_exists);
+        return storage->remove(id, check_func, throw_if_not_exists);
 
     if (throw_if_not_exists)
         throwNotFound(id);

@@ -150,11 +150,13 @@ public:
 
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
+    using CheckFunc = std::function<void(const AccessEntityPtr &)>;
+
     UUID insert(const AccessEntityPtr & entity);
-    std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
-    bool insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
-    std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists = false, bool throw_if_exists = true);
-    std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists = false, bool throw_if_exists = true);
+    std::optional<UUID> insert(const AccessEntityPtr & entity, const CheckFunc & check_func, bool replace_if_exists, bool throw_if_exists);
+    bool insert(const UUID & id, const AccessEntityPtr & entity, const CheckFunc & check_func, bool replace_if_exists, bool throw_if_exists);
+    std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const CheckFunc & check_func, bool replace_if_exists = false, bool throw_if_exists = true);
+    std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, const CheckFunc & check_func, bool replace_if_exists = false, bool throw_if_exists = true);
 
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     std::optional<UUID> tryInsert(const AccessEntityPtr & entity);
@@ -162,18 +164,18 @@ public:
 
     /// Inserts an entity to the storage. Return ID of a new entry in the storage.
     /// Replaces an existing entry in the storage if the specified name already exists.
-    UUID insertOrReplace(const AccessEntityPtr & entity);
-    std::vector<UUID> insertOrReplace(const std::vector<AccessEntityPtr> & multiple_entities);
+    UUID insertOrReplace(const AccessEntityPtr & entity, const CheckFunc & check_func);
+    std::vector<UUID> insertOrReplace(const std::vector<AccessEntityPtr> & multiple_entities, const CheckFunc & check_func);
 
     /// Removes an entity from the storage. Throws an exception if couldn't remove.
-    bool remove(const UUID & id, bool throw_if_not_exists = true);
-    std::vector<UUID> remove(const std::vector<UUID> & ids, bool throw_if_not_exists = true);
+    bool remove(const UUID & id, const CheckFunc & check_func, bool throw_if_not_exists = true);
+    std::vector<UUID> remove(const std::vector<UUID> & ids, const CheckFunc & check_func, bool throw_if_not_exists = true);
 
     /// Removes an entity from the storage. Returns false if couldn't remove.
-    bool tryRemove(const UUID & id);
+    bool tryRemove(const UUID & id, const CheckFunc & check_func);
 
     /// Removes multiple entities from the storage. Returns the list of successfully dropped.
-    std::vector<UUID> tryRemove(const std::vector<UUID> & ids);
+    std::vector<UUID> tryRemove(const std::vector<UUID> & ids, const CheckFunc & check_func);
 
     using UpdateFunc = std::function<AccessEntityPtr(const AccessEntityPtr &)>;
 
@@ -216,8 +218,8 @@ protected:
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
-    virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
+    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, const CheckFunc & check_func, bool replace_if_exists, bool throw_if_exists);
+    virtual bool removeImpl(const UUID & id, const CheckFunc & check_func, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual std::optional<AuthResult> authenticateImpl(
         const Credentials & credentials,

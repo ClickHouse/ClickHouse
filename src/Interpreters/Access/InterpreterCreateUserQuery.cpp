@@ -75,6 +75,9 @@ namespace
         if (valid_until)
             user.valid_until = *valid_until;
 
+        if (query.protected_entity)
+            user.is_protected = *query.protected_entity;
+
         if (override_name && !override_name->host_pattern.empty())
         {
             user.allowed_client_hosts = AllowedClientHosts{};
@@ -124,6 +127,9 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
+    // Statements containing the PROTECTED or NOT PROTECTED keyword require an extra privilege
+    if (query.protected_entity)
+        access->checkAccess(AccessType::PROTECTED_ACCESS_MANAGEMENT);
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
@@ -193,6 +199,9 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
         {
+            // Altering a PROTECTED user requires an extra privilege
+            if (entity->isProtected())
+                access->checkAccess(AccessType::PROTECTED_ACCESS_MANAGEMENT);
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
                 *updated_user, query, auth_data, {}, default_roles_from_query, settings_from_query, grantees_from_query,
@@ -210,6 +219,11 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
     else
     {
+        auto check_func = [&](const AccessEntityPtr & entity)
+        {
+            if (entity->isProtected())
+                access->checkAccess(AccessType::PROTECTED_ACCESS_MANAGEMENT);
+        };
         std::vector<AccessEntityPtr> new_users;
         for (const auto & name : *query.names)
         {
@@ -233,9 +247,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         if (query.if_not_exists)
             ids = storage->tryInsert(new_users);
         else if (query.or_replace)
-            ids = storage->insertOrReplace(new_users);
+            ids = storage->insertOrReplace(new_users, check_func);
         else
-            ids = storage->insert(new_users);
+            ids = storage->insert(new_users, check_func);
 
         if (query.grantees)
         {

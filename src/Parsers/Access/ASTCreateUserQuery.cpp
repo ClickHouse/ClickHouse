@@ -12,6 +12,13 @@ namespace DB
 
 namespace
 {
+
+    void formatProtected(const bool protected_entity, const bool alter, const IAST::FormatSettings & settings)
+    {
+        const char * keyword = protected_entity ? " PROTECTED" : (alter ? " NOT PROTECTED" : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << keyword << (settings.hilite ? IAST::hilite_none : "");
+    }
+
     void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
@@ -227,6 +234,9 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (valid_until)
         formatValidUntil(*valid_until, format);
+
+    if (protected_entity)
+        formatProtected(*protected_entity, alter, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);

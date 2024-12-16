@@ -4,6 +4,7 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 
 
@@ -20,12 +21,19 @@ BlockIO InterpreterMoveAccessEntityQuery::execute()
 {
     auto & query = query_ptr->as<ASTMoveAccessEntityQuery &>();
     auto & access_control = getContext()->getAccessControl();
-    getContext()->checkAccess(getRequiredAccess());
+    auto access = getContext()->getAccess();
+    access->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext());
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
+    auto check_access = [&](const AccessEntityPtr & entity)
+    {
+        if(entity->isProtected())
+            access->checkAccess(AccessType::PROTECTED_ACCESS_MANAGEMENT);
+    };
 
     std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)
@@ -37,8 +45,7 @@ BlockIO InterpreterMoveAccessEntityQuery::execute()
     const auto source_storage = access_control.findStorage(ids.front());
     if (!source_storage->exists(ids))
         throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "All access entities must be from the same storage in order to be moved");
-
-    access_control.moveAccessEntities(ids, source_storage->getStorageName(), query.storage_name);
+    access_control.moveAccessEntities(ids, check_access, source_storage->getStorageName(), query.storage_name);
     return {};
 }
 

@@ -856,6 +856,8 @@ void ContextAccess::checkGranteeIsAllowed(const UUID & grantee_id, const IAccess
         return;
 
     auto current_user = getUser();
+    if (grantee.isProtected())
+        checkAccess(AccessType::PROTECTED_ACCESS_MANAGEMENT);
     if (!current_user->grantees.match(grantee_id))
         throw Exception(ErrorCodes::ACCESS_DENIED, "{} is not allowed as grantee", grantee.formatTypeWithName());
 }

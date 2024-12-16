@@ -106,6 +106,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
     }
     else
     {
+        auto check_func = [](const AccessEntityPtr &){};
         std::vector<AccessEntityPtr> new_profiles;
         for (const auto & name : query.names)
         {
@@ -126,9 +127,9 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
         if (query.if_not_exists)
             storage->tryInsert(new_profiles);
         else if (query.or_replace)
-            storage->insertOrReplace(new_profiles);
+            storage->insertOrReplace(new_profiles, check_func);
         else
-            storage->insert(new_profiles);
+            storage->insert(new_profiles, check_func);
     }
 
     return {};

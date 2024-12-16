@@ -3,6 +3,7 @@
 
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -23,12 +24,19 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
 
     auto & access_control = getContext()->getAccessControl();
-    getContext()->checkAccess(getRequiredAccess());
+    auto access = getContext()->getAccess();
+    access->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
+    auto check_access = [&](const AccessEntityPtr & entity)
+    {
+        if(entity->isProtected())
+            access->checkAccess(AccessType::PROTECTED_ACCESS_MANAGEMENT);
+    };
 
     auto do_drop = [&](const Strings & names, const String & storage_name)
     {
@@ -41,9 +49,9 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         }
 
         if (query.if_exists)
-            storage->tryRemove(storage->find(query.type, names));
+            storage->tryRemove(storage->find(query.type, names), check_access);
         else
-            storage->remove(storage->getIDs(query.type, names));
+            storage->remove(storage->getIDs(query.type, names), check_access);
     };
 
     if (query.type == AccessEntityType::ROW_POLICY)

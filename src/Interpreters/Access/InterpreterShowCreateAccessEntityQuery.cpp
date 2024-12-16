@@ -74,6 +74,8 @@ namespace
             query->valid_until = std::make_shared<ASTLiteral>(out.str());
         }
 
+        query->protected_entity = user.is_protected;
+
         if (!user.settings.empty())
         {
             if (attach_mode)

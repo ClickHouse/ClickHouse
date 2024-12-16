@@ -127,6 +127,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
     }
     else
     {
+        auto check_func = [](const AccessEntityPtr &){};
         std::vector<AccessEntityPtr> new_quotas;
         for (const String & name : query.names)
         {
@@ -147,9 +148,9 @@ BlockIO InterpreterCreateQuotaQuery::execute()
         if (query.if_not_exists)
             storage->tryInsert(new_quotas);
         else if (query.or_replace)
-            storage->insertOrReplace(new_quotas);
+            storage->insertOrReplace(new_quotas, check_func);
         else
-            storage->insert(new_quotas);
+            storage->insert(new_quotas, check_func);
     }
 
     return {};

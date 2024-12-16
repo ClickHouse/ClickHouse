@@ -31,6 +31,8 @@ struct IAccessEntity
     virtual void setName(const String & name_) { name = name_; }
     const String & getName() const { return name; }
 
+    virtual bool isProtected() const { return false; }
+
     friend bool operator ==(const IAccessEntity & lhs, const IAccessEntity & rhs) { return lhs.equal(rhs); }
     friend bool operator !=(const IAccessEntity & lhs, const IAccessEntity & rhs) { return !(lhs == rhs); }
 

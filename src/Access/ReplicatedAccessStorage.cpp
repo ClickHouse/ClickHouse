@@ -120,7 +120,7 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     }
 }
 
-bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & new_entity, const CheckFunc & check_func, bool replace_if_exists, bool throw_if_exists)
 {
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
@@ -128,7 +128,7 @@ bool ReplicatedAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr 
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists); });
+    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, check_func, replace_if_exists, throw_if_exists); });
 
     if (!ok)
         return false;
@@ -142,6 +142,7 @@ bool ReplicatedAccessStorage::insertZooKeeper(
     const zkutil::ZooKeeperPtr & zookeeper,
     const UUID & id,
     const AccessEntityPtr & new_entity,
+    const CheckFunc & check_func,
     bool replace_if_exists,
     bool throw_if_exists)
 {
@@ -201,6 +202,7 @@ bool ReplicatedAccessStorage::insertZooKeeper(
             Coordination::Stat stat;
             String existing_entity_definition = zookeeper->get(entity_path, &stat);
             auto existing_entity = deserializeAccessEntity(existing_entity_definition, entity_path);
+            check_func(existing_entity);
             const String & existing_entity_name = existing_entity->getName();
             const AccessEntityType existing_entity_type = existing_entity->getType();
             const AccessEntityTypeInfo existing_entity_type_info = AccessEntityTypeInfo::get(existing_entity_type);
@@ -224,6 +226,11 @@ bool ReplicatedAccessStorage::insertZooKeeper(
             Coordination::Stat stat;
             String existing_entity_uuid = zookeeper->get(name_path, &stat);
             const String existing_entity_path = zookeeper_path + "/uuid/" + existing_entity_uuid;
+
+            /// We also need to check if the existing entity can be replaced
+            String existing_entity_definition = zookeeper->get(existing_entity_path);
+            AccessEntityPtr existing_entity = deserializeAccessEntity(existing_entity_definition, existing_entity_path);
+            check_func(existing_entity);
 
             if (existing_entity_path != entity_path)
                 replace_ops.emplace_back(zkutil::makeRemoveRequest(existing_entity_path, -1));
@@ -249,13 +256,13 @@ bool ReplicatedAccessStorage::insertZooKeeper(
     return true;
 }
 
-bool ReplicatedAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
+bool ReplicatedAccessStorage::removeImpl(const UUID & id, const CheckFunc & check_func, bool throw_if_not_exists)
 {
     LOG_DEBUG(getLogger(), "Removing entity {}", toString(id));
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
+    retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, check_func, throw_if_not_exists); });
 
     if (!ok)
         return false;
@@ -266,7 +273,7 @@ bool ReplicatedAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exis
 }
 
 
-bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists)
+bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const CheckFunc & check_func, bool throw_if_not_exists)
 {
     const String entity_uuid = toString(id);
     const String entity_path = zookeeper_path + "/uuid/" + entity_uuid;
@@ -284,6 +291,7 @@ bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zooke
     }
 
     const AccessEntityPtr entity = deserializeAccessEntity(entity_definition, entity_path);
+    check_func(entity);
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(entity->getType());
     const String & name = entity->getName();
 
@@ -621,14 +629,16 @@ AccessEntityPtr ReplicatedAccessStorage::tryReadEntityFromZooKeeper(const zkutil
 void ReplicatedAccessStorage::setEntityNoLock(const UUID & id, const AccessEntityPtr & entity)
 {
     LOG_DEBUG(getLogger(), "Setting id {} to entity named {}", toString(id), entity->getName());
-    memory_storage.insert(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
+    auto check_func = [](const AccessEntityPtr&){};
+    memory_storage.insert(id, entity, check_func, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
 }
 
 
 void ReplicatedAccessStorage::removeEntityNoLock(const UUID & id)
 {
     LOG_DEBUG(getLogger(), "Removing entity with id {}", toString(id));
-    memory_storage.remove(id, /* throw_if_not_exists= */ false);
+    auto check_func = [](const AccessEntityPtr&){};
+    memory_storage.remove(id, check_func, /* throw_if_not_exists= */ false);
 }
 
 
@@ -712,8 +722,9 @@ void ReplicatedAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
 
     restorer.addDataRestoreTask([this, my_entities = std::move(entities), replace_if_exists, throw_if_exists]
     {
+        auto check_func = [](const AccessEntityPtr&){};
         for (const auto & [id, entity] : my_entities)
-            insert(id, entity, replace_if_exists, throw_if_exists);
+            insert(id, entity, check_func, replace_if_exists, throw_if_exists);
     });
 }
 

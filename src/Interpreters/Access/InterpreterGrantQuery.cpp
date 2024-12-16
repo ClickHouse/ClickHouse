@@ -476,6 +476,8 @@ BlockIO InterpreterGrantQuery::execute()
     /// Update roles and users listed in `grantees`.
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
+        if (entity->isProtected())
+            current_user_access->checkAccess(AccessType::PROTECTED_ACCESS_MANAGEMENT);
         auto clone = entity->clone();
         if (query.current_grants)
             grantCurrentGrants(*clone, new_rights, elements_to_revoke);

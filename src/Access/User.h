@@ -24,6 +24,9 @@ struct User : public IAccessEntity
     RolesOrUsersSet grantees = RolesOrUsersSet::AllTag{};
     String default_database;
     time_t valid_until = 0;
+    bool is_protected = false;
+
+    bool isProtected() const override { return is_protected; }
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }

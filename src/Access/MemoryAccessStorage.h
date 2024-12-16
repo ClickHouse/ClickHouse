@@ -36,16 +36,18 @@ public:
     bool isBackupAllowed() const override { return backup_allowed; }
     void restoreFromBackup(RestorerFromBackup & restorer) override;
 
+protected:
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, const CheckFunc & check_func, bool replace_if_exists, bool throw_if_exists) override;
+    bool removeImpl(const UUID & id, const CheckFunc & check_func, bool throw_if_not_exists) override;
+
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
-    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, const CheckFunc & check_func, bool replace_if_exists, bool throw_if_exists);
+    bool removeNoLock(const UUID & id, const CheckFunc & check_func, bool throw_if_not_exists);
     bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
 
     void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep);
