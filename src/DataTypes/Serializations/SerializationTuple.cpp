@@ -386,6 +386,9 @@ ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBu
                     }
                 }
 
+                if (seen_elements[element_pos])
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object contains duplicate key '{}'", name);
+
                 seen_elements[element_pos] = 1;
                 auto & element_column = extractElementColumn(column, element_pos);
 
