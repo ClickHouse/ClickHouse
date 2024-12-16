@@ -99,7 +99,7 @@ protected:
     {
         ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
                     << " " << (settings.hilite ? hilite_none : "");
-        database->formatImpl(ostr, settings, state, frame);
+        database->format(ostr, settings, state, frame);
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Exists; }
@@ -121,7 +121,7 @@ protected:
     {
         ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
                       << " " << (settings.hilite ? hilite_none : "");
-        database->formatImpl(ostr, settings, state, frame);
+        database->format(ostr, settings, state, frame);
     }
 };
 
@@ -152,7 +152,7 @@ protected:
     {
         ostr << (settings.hilite ? hilite_keyword : "")
                       << "DESCRIBE TABLE" << (settings.hilite ? hilite_none : "");
-        table_expression->formatImpl(ostr, settings, state, frame);
+        table_expression->format(ostr, settings, state, frame);
     }
 
 };

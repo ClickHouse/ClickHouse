@@ -1161,6 +1161,7 @@ argMin
 argmax
 argmin
 arrayAUC
+arrayAUCPr
 arrayAll
 arrayAvg
 arrayCompact
