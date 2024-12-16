@@ -991,36 +991,66 @@ private:
             for (const auto & v : p.second)
                 std::cout<<v->dumpTree()<<" < "<<p.first->dumpTree()<<std::endl;
 
-        std::cout<<std::endl;
+        std::cout<<"step2"<<std::endl;
 
         auto & args = function_node.getArguments().getNodes();
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(QueryTreeNodePtr)> findPairs = [&](QueryTreeNodePtr cur)
+        std::function<void(QueryTreeNodePtr, const ConstantNode *)> findPairs = [&](QueryTreeNodePtr current, const ConstantNode * constant)
         {
-            if (auto it = greater_pairs.find(cur); it != greater_pairs.end())
+            if (auto it = greater_pairs.find(current); it != greater_pairs.end())
             {
-                for (const auto & v : it->second)
+                for (const auto & left : it->second)
                 {
-                    std::cout<<v->dumpTree()<<" < "<<cur->dumpTree()<<std::endl;
-                    auto arg = args[0]->clone();
-                    arg->as<FunctionNode>()->getArguments().getNodes().clear();
-                    arg->as<FunctionNode>()->getArguments().getNodes().push_back(v->clone());
-                    arg->as<FunctionNode>()->getArguments().getNodes().push_back(cur->clone());
-                    auto less_function_resolver = FunctionFactory::instance().get("less", getContext());
-                    arg->as<FunctionNode>()->resolveAsFunction(less_function_resolver);
-                    findPairs(v);
+                    if (constant)
+                    {
+                        std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<" "<<constant->dumpTree()<<std::endl;
+                        auto arg = args[0]->clone();
+                        arg->as<FunctionNode>()->getArguments().getNodes().clear();
+                        arg->as<FunctionNode>()->getArguments().getNodes().push_back(left->clone());
+                        arg->as<FunctionNode>()->getArguments().getNodes().push_back(constant->clone());
+                        auto less_function_resolver = FunctionFactory::instance().get("less", getContext());
+                        arg->as<FunctionNode>()->resolveAsFunction(less_function_resolver);
+                        function_node.getArguments().getNodes().push_back(arg);
+                        for (const auto & argument : function_node.getArguments())
+                        {
+                            std::cout<<argument->dumpTree()<<std::endl;
+                        }
+                    }
+                    else
+                        std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<std::endl;
+
+                    findPairs(left, constant ? constant : current->as<ConstantNode>());
                 }
             }
         };
 
         for (const auto & constant : constants)
         {
-            findPairs(constant);
+            findPairs(constant, nullptr);
         }
 
-        /// Step 3: remove some loose comparing pairs
+        auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
+        function_node.resolveAsFunction(and_function_resolver);
 
+        std::cout<<std::endl;
+        for (const auto & argument : function_node.getArguments())
+        {
+            std::cout<<argument->dumpTree()<<std::endl;
+        }
+
+        const auto & expected_argument_types = function_node.getArgumentTypes();
+        size_t expected_argument_types_size = expected_argument_types.size();
+        auto actual_argument_columns = function_node.getArgumentColumns();
+
+        if (expected_argument_types_size != actual_argument_columns.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function {} expects {} arguments but has {}",
+                function_node.toAST()->formatForErrorMessage(),
+                expected_argument_types_size,
+                actual_argument_columns.size());
+
+        /// Step 3: remove some loose comparing pairs
     }
 
     void tryReplaceOrEqualsChainWithIn(QueryTreeNodePtr & node)
