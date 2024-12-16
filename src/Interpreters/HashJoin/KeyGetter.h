@@ -1,6 +1,5 @@
 #pragma once
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Common/ColumnsHashing.h>
 
 
 namespace DB

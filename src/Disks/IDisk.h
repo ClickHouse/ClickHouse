@@ -249,11 +249,6 @@ public:
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
 
-    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
-    /// Differs from removeRecursive for S3/HDFS disks
-    /// Limits the number of removing files in batches to prevent high memory consumption.
-    virtual void removeRecursiveWithLimit(const String & path) { removeRecursive(path); }
-
     /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
     /// Differs from removeFile for S3/HDFS disks
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
@@ -502,7 +497,7 @@ public:
 
 
 protected:
-    friend class DiskReadOnlyWrapper;
+    friend class DiskDecorator;
 
     const String name;
 
@@ -584,7 +579,6 @@ inline String directoryPath(const String & path)
 {
     return fs::path(path).parent_path() / "";
 }
-
 
 }
 

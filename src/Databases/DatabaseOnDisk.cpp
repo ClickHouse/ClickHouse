@@ -25,7 +25,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-#include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -68,7 +67,6 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -182,18 +180,7 @@ DatabaseOnDisk::DatabaseOnDisk(
     , metadata_path(metadata_path_)
     , data_path(data_path_)
 {
-}
-
-
-void DatabaseOnDisk::createDirectories()
-{
-    std::lock_guard lock(mutex);
-    createDirectoriesUnlocked();
-}
-
-void DatabaseOnDisk::createDirectoriesUnlocked()
-{
-    fs::create_directories(std::filesystem::path(getContext()->getPath()) / data_path);
+    fs::create_directories(local_context->getPath() + data_path);
     fs::create_directories(metadata_path);
 }
 
@@ -211,8 +198,6 @@ void DatabaseOnDisk::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    createDirectories();
-
     const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.getTable());
@@ -280,6 +265,7 @@ void DatabaseOnDisk::createTable(
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
+
     removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, false);
 }
 
@@ -307,8 +293,6 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
 {
     try
     {
-        createDirectories();
-
         /// Add a table to the map of known tables.
         attachTable(query_context, query.getTable(), table, getTableDataPath(query));
 
@@ -403,29 +387,17 @@ void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_n
 
 void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
-    // Compute allowed max length directly
-    size_t allowed_max_length = computeMaxTableNameLength(database_name, getContext());
     String table_metadata_path = getObjectMetadataPath(to_table_name);
-
-    const auto escaped_name_length = escapeForFileName(to_table_name).length();
-
-    if (escaped_name_length > allowed_max_length)
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The max length of table name for database {} is {}, current length is {}",
-                        database_name, allowed_max_length, escaped_name_length);
 
     if (fs::exists(table_metadata_path))
     {
         fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
 
         if (fs::exists(detached_permanently_flag))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                            "Table {}.{} already exists (detached permanently)",
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached permanently)",
                             backQuote(database_name), backQuote(to_table_name));
-        else
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                            "Table {}.{} already exists (detached)",
-                            backQuote(database_name), backQuote(to_table_name));
+        throw Exception(
+            ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)", backQuote(database_name), backQuote(to_table_name));
     }
 }
 
@@ -454,7 +426,6 @@ void DatabaseOnDisk::renameTable(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
-    createDirectories();
     waitDatabaseStarted();
 
     auto table_data_relative_path = getTableDataPath(table_name);
@@ -650,9 +621,6 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
 
 void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_metadata_file) const
 {
-    if (!fs::exists(metadata_path))
-        return;
-
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
         assert(getUUID() == UUIDHelpers::Nil);

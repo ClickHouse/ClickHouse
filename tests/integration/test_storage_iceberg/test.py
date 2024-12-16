@@ -73,38 +73,14 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_minio=True,
             with_azurite=True,
+            stay_alive=True,
             with_hdfs=with_hdfs,
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node2",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-            ],
-            user_configs=["configs/users.d/users.xml"],
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node3",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-            ],
-            user_configs=["configs/users.d/users.xml"],
-            stay_alive=True,
         )
 
         logging.info("Starting cluster...")
@@ -206,114 +182,53 @@ def get_creation_expression(
     cluster,
     format="Parquet",
     table_function=False,
-    allow_dynamic_metadata_for_data_lakes=False,
-    run_on_cluster=False,
     **kwargs,
 ):
-    allow_dynamic_metadata_for_datalakes_suffix = (
-        " SETTINGS allow_dynamic_metadata_for_data_lakes = 1"
-        if allow_dynamic_metadata_for_data_lakes
-        else ""
-    )
-
     if storage_type == "s3":
         if "bucket" in kwargs:
             bucket = kwargs["bucket"]
         else:
             bucket = cluster.minio_bucket
-
-        if run_on_cluster:
-            assert table_function
-            return f"icebergS3Cluster('cluster_simple', s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+        print(bucket)
+        if table_function:
+            return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
         else:
-            if table_function:
-                return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
-            else:
-                return (
-                    f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
-                )
-
+            return f"""
+                DROP TABLE IF EXISTS {table_name};
+                CREATE TABLE {table_name}
+                ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
     elif storage_type == "azure":
-        if run_on_cluster:
-            assert table_function
+        if table_function:
             return f"""
-                icebergAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
             """
         else:
-            if table_function:
-                return f"""
-                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
-                """
-            else:
-                return (
-                    f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
-                )
-
+            return f"""
+                DROP TABLE IF EXISTS {table_name};
+                CREATE TABLE {table_name}
+                ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
     elif storage_type == "hdfs":
-        if run_on_cluster:
-            assert table_function
+        if table_function:
             return f"""
-                icebergHDFSCluster('cluster_simple', hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
+                icebergHDFS(hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
             """
         else:
-            if table_function:
-                return f"""
-                    icebergHDFS(hdfs, filename= 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')
-                """
-            else:
-                return (
-                    f"""
-                    DROP TABLE IF EXISTS {table_name};
-                    CREATE TABLE {table_name}
-                    ENGINE=IcebergHDFS(hdfs, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/')"""
-                    + allow_dynamic_metadata_for_datalakes_suffix
-                )
-
+            return f"""
+                DROP TABLE IF EXISTS {table_name};
+                CREATE TABLE {table_name}
+                ENGINE=IcebergHDFS(hdfs, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'hdfs://hdfs1:9000/');"""
     elif storage_type == "local":
-        assert not run_on_cluster
-
         if table_function:
             return f"""
                 icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
             """
         else:
-            return (
-                f"""
+            return f"""
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
-                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
-                + allow_dynamic_metadata_for_datalakes_suffix
-            )
-
+                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format});"""
     else:
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
-
-
-def check_schema_and_data(instance, table_expression, expected_schema, expected_data):
-    schema = instance.query(f"DESC {table_expression}")
-    data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL")
-    schema = list(
-        map(
-            lambda x: x.split("\t")[:2],
-            filter(lambda x: len(x) > 0, schema.strip().split("\n")),
-        )
-    )
-    data = list(
-        map(
-            lambda x: x.split("\t"),
-            filter(lambda x: len(x) > 0, data.strip().split("\n")),
-        )
-    )
-    assert expected_schema == schema
-    assert expected_data == data
 
 
 def get_uuid_str():
@@ -394,7 +309,7 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
 
     write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
 
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -452,6 +367,8 @@ def test_multiple_iceberg_files(started_cluster, format_version, storage_type):
         pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
     TABLE_NAME = (
         "test_multiple_iceberg_files_"
         + format_version
@@ -576,114 +493,14 @@ def test_types(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs"])
-def test_cluster_table_function(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
-
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-
-    TABLE_NAME = (
-        "test_iceberg_cluster_"
-        + format_version
-        + "_"
-        + storage_type
-        + "_"
-        + get_uuid_str()
-    )
-
-    def add_df(mode):
-        write_iceberg_from_df(
-            spark,
-            generate_data(spark, 0, 100),
-            TABLE_NAME,
-            mode=mode,
-            format_version=format_version,
-        )
-
-        files = default_upload_directory(
-            started_cluster,
-            storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
-        )
-
-        logging.info(f"Adding another dataframe. result files: {files}")
-
-        return files
-
-    files = add_df(mode="overwrite")
-    for i in range(1, len(started_cluster.instances)):
-        files = add_df(mode="append")
-
-    logging.info(f"Setup complete. files: {files}")
-    assert len(files) == 5 + 4 * (len(started_cluster.instances) - 1)
-
-    clusters = instance.query(f"SELECT * FROM system.clusters")
-    logging.info(f"Clusters setup: {clusters}")
-
-    # Regular Query only node1
-    table_function_expr = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
-    )
-    select_regular = (
-        instance.query(f"SELECT * FROM {table_function_expr}").strip().split()
-    )
-
-    # Cluster Query with node1 as coordinator
-    table_function_expr_cluster = get_creation_expression(
-        storage_type,
-        TABLE_NAME,
-        started_cluster,
-        table_function=True,
-        run_on_cluster=True,
-    )
-    select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
-    )
-
-    # Simple size check
-    assert len(select_regular) == 600
-    assert len(select_cluster) == 600
-
-    # Actual check
-    assert select_cluster == select_regular
-
-    # Check query_log
-    for replica in started_cluster.instances.values():
-        replica.query("SYSTEM FLUSH LOGS")
-
-    for node_name, replica in started_cluster.instances.items():
-        cluster_secondary_queries = (
-            replica.query(
-                f"""
-                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
-                WHERE
-                    type = 'QueryStart' AND
-                    positionCaseInsensitive(query, '{storage_type}Cluster') != 0 AND
-                    position(query, '{TABLE_NAME}') != 0 AND
-                    position(query, 'system.query_log') = 0 AND
-                    NOT is_initial_query
-            """
-            )
-            .strip()
-            .split("\n")
-        )
-
-        logging.info(
-            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
-        )
-        assert len(cluster_secondary_queries) == 1
-
-
-@pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
 def test_delete_files(started_cluster, format_version, storage_type):
     if is_arm() and storage_type == "hdfs":
         pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
     TABLE_NAME = (
         "test_delete_files_"
         + format_version
@@ -701,7 +518,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
         format_version=format_version,
     )
 
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -712,7 +529,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 0")
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -730,7 +547,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
         format_version=format_version,
     )
 
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -740,7 +557,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 150")
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -752,16 +569,15 @@ def test_delete_files(started_cluster, format_version, storage_type):
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
-@pytest.mark.parametrize("is_table_function", [False, True])
-def test_evolved_schema_simple(
-    started_cluster, format_version, storage_type, is_table_function
-):
+def test_evolved_schema(started_cluster, format_version, storage_type):
     if is_arm() and storage_type == "hdfs":
         pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
     TABLE_NAME = (
-        "test_evolved_schema_simple_"
+        "test_evolved_schema_"
         + format_version
         + "_"
         + storage_type
@@ -769,780 +585,42 @@ def test_evolved_schema_simple(
         + get_uuid_str()
     )
 
-    def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
-            started_cluster,
-            storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
-        )
-        return
-
-    execute_spark_query(
-        f"""
-            DROP TABLE IF EXISTS {TABLE_NAME};
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
-                c decimal(9,2) NOT NULL,
-                d array<int>
-            )
-            USING iceberg 
-            OPTIONS ('format-version'='{format_version}')
-        """
-    )
-
-    table_creation_expression = get_creation_expression(
-        storage_type,
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 0, 100),
         TABLE_NAME,
+        mode="overwrite",
+        format_version=format_version,
+    )
+
+    files = default_upload_directory(
         started_cluster,
-        table_function=is_table_function,
-        allow_dynamic_metadata_for_data_lakes=True,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    table_select_expression = (
-        TABLE_NAME if not is_table_function else table_creation_expression
-    )
-
-    if not is_table_function:
-        instance.query(table_creation_expression)
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (4, NULL, 7.12, ARRAY(5, 6, 7));
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "\\N", "7.12", "[5,6,7]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN b TYPE double;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float64)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "\\N", "7.12", "[5,6,7]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (7, 5.0, 18.1, ARRAY(6, 7, 9));
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float64)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "\\N", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN d FIRST;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["a", "Int32"],
-            ["b", "Nullable(Float64)"],
-            ["c", "Decimal(9, 2)"],
-        ],
-        [["[5,6,7]", "4", "\\N", "7.12"], ["[6,7,9]", "7", "5", "18.1"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN b AFTER d;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["b", "Nullable(Float64)"],
-            ["a", "Int32"],
-            ["c", "Decimal(9, 2)"],
-        ],
-        [["[5,6,7]", "\\N", "4", "7.12"], ["[6,7,9]", "5", "7", "18.1"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME}
-            ADD COLUMNS (
-                e string
-            );
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["b", "Nullable(Float64)"],
-            ["a", "Int32"],
-            ["c", "Decimal(9, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
-            ["[6,7,9]", "5", "7", "18.1", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN c TYPE decimal(12, 2);
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["b", "Nullable(Float64)"],
-            ["a", "Int32"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
-            ["[6,7,9]", "5", "7", "18.1", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (ARRAY(5, 6, 7), 3, -30, 7.12, 'AAA');
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["b", "Nullable(Float64)"],
-            ["a", "Int32"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
-            ["[6,7,9]", "5", "7", "18.1", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN a TYPE BIGINT;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["b", "Nullable(Float64)"],
-            ["a", "Int64"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
-            ["[6,7,9]", "5", "7", "18.1", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (ARRAY(), 3.0, 12, -9.13, 'BBB');
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["b", "Nullable(Float64)"],
-            ["a", "Int64"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["[]", "3", "12", "-9.13", "BBB"],
-            ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
-            ["[6,7,9]", "5", "7", "18.1", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN a DROP NOT NULL;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["b", "Nullable(Float64)"],
-            ["a", "Nullable(Int64)"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["[]", "3", "12", "-9.13", "BBB"],
-            ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
-            ["[6,7,9]", "5", "7", "18.1", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (NULL, 3.4, NULL, -9.13, NULL);
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["d", "Array(Nullable(Int32))"],
-            ["b", "Nullable(Float64)"],
-            ["a", "Nullable(Int64)"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["[]", "3", "12", "-9.13", "BBB"],
-            ["[]", "3.4", "\\N", "-9.13", "\\N"],
-            ["[5,6,7]", "3", "-30", "7.12", "AAA"],
-            ["[5,6,7]", "\\N", "4", "7.12", "\\N"],
-            ["[6,7,9]", "5", "7", "18.1", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} DROP COLUMN d;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["b", "Nullable(Float64)"],
-            ["a", "Nullable(Int64)"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["3", "-30", "7.12", "AAA"],
-            ["3", "12", "-9.13", "BBB"],
-            ["3.4", "\\N", "-9.13", "\\N"],
-            ["5", "7", "18.1", "\\N"],
-            ["\\N", "4", "7.12", "\\N"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} RENAME COLUMN a TO f;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["b", "Nullable(Float64)"],
-            ["f", "Nullable(Int64)"],
-            ["c", "Decimal(12, 2)"],
-            ["e", "Nullable(String)"],
-        ],
-        [
-            ["3", "-30", "7.12", "AAA"],
-            ["3", "12", "-9.13", "BBB"],
-            ["3.4", "\\N", "-9.13", "\\N"],
-            ["5", "7", "18.1", "\\N"],
-            ["\\N", "4", "7.12", "\\N"],
-        ],
-    )
-
-
-@pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
-def test_not_evolved_schema(started_cluster, format_version, storage_type):
-    if is_arm() and storage_type == "hdfs":
-        pytest.skip("Disabled test IcebergHDFS for aarch64")
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = (
-        "test_evolved_schema_simple_"
-        + format_version
-        + "_"
-        + storage_type
-        + "_"
-        + get_uuid_str()
-    )
-
-    def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
-            started_cluster,
-            storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
-        )
-        return
-
-    execute_spark_query(
-        f"""
-            DROP TABLE IF EXISTS {TABLE_NAME};
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                a int NOT NULL, 
-                b float, 
-                c decimal(9,2) NOT NULL,
-                d array<int>
-            )
-            USING iceberg 
-            OPTIONS ('format-version'='{format_version}')
-        """
-    )
-
-    instance.query(
-        get_creation_expression(
-            storage_type,
-            TABLE_NAME,
-            started_cluster,
-            table_function=False,
-            allow_dynamic_metadata_for_data_lakes=False,
-        )
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (4, 3.0, 7.12, ARRAY(5, 6, 7));
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "3", "7.12", "[5,6,7]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN b TYPE double;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "3", "7.12", "[5,6,7]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (7, 5.0, 18.1, ARRAY(6, 7, 9));
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN d FIRST;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN b AFTER d;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME}
-            ADD COLUMNS (
-                e string
-            );
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN c TYPE decimal(12, 2);
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [["4", "3", "7.12", "[5,6,7]"], ["7", "5", "18.1", "[6,7,9]"]],
-    )
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
 
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (ARRAY(5, 6, 7), 3, -30, 7.12, 'AAA');
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [
-            ["-30", "3", "7.12", "[5,6,7]"],
-            ["4", "3", "7.12", "[5,6,7]"],
-            ["7", "5", "18.1", "[6,7,9]"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN a TYPE BIGINT;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [
-            ["-30", "3", "7.12", "[5,6,7]"],
-            ["4", "3", "7.12", "[5,6,7]"],
-            ["7", "5", "18.1", "[6,7,9]"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (ARRAY(), 3.0, 12, -9.13, 'BBB');
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [
-            ["-30", "3", "7.12", "[5,6,7]"],
-            ["4", "3", "7.12", "[5,6,7]"],
-            ["7", "5", "18.1", "[6,7,9]"],
-            ["12", "3", "-9.13", "[]"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN a DROP NOT NULL;
-        """
-    )
-
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [
-            ["-30", "3", "7.12", "[5,6,7]"],
-            ["4", "3", "7.12", "[5,6,7]"],
-            ["7", "5", "18.1", "[6,7,9]"],
-            ["12", "3", "-9.13", "[]"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (NULL, 3.4, NULL, -9.13, NULL);
-        """
-    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
-    check_schema_and_data(
-        instance,
-        TABLE_NAME,
-        [
-            ["a", "Int32"],
-            ["b", "Nullable(Float32)"],
-            ["c", "Decimal(9, 2)"],
-            ["d", "Array(Nullable(Int32))"],
-        ],
-        [
-            ["-30", "3", "7.12", "[5,6,7]"],
-            ["0", "3.4", "-9.13", "[]"],
-            ["4", "3", "7.12", "[5,6,7]"],
-            ["7", "5", "18.1", "[6,7,9]"],
-            ["12", "3", "-9.13", "[]"],
-        ],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} DROP COLUMN d;
-        """
-    )
-
-    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL")
-
-    assert "Not found column" in error
-
-
-@pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_evolved_schema_complex(started_cluster, format_version, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = (
-        "test_evolved_schema_complex_"
-        + format_version
-        + "_"
-        + storage_type
-        + "_"
-        + get_uuid_str()
-    )
+    expected_data = instance.query(f"SELECT * FROM {TABLE_NAME} order by a, b")
 
-    def execute_spark_query(query: str):
-        spark.sql(query)
-        default_upload_directory(
-            started_cluster,
-            storage_type,
-            f"/iceberg_data/default/{TABLE_NAME}/",
-            f"/iceberg_data/default/{TABLE_NAME}/",
-        )
-        return
-
-    execute_spark_query(
-        f"""
-            DROP TABLE IF EXISTS {TABLE_NAME};
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            CREATE TABLE {TABLE_NAME}   (
-                address STRUCT<
-                    house_number : DOUBLE,
-                    city: STRING,
-                    zip: INT
-                >,
-                animals ARRAY<INT>
-            )
-            USING iceberg
-            OPTIONS ('format-version'='{format_version}')
-        """
-    )
-
-    execute_spark_query(
-        f"""
-            INSERT INTO {TABLE_NAME} VALUES (named_struct('house_number', 3, 'city', 'Singapore', 'zip', 12345), ARRAY(4, 7));
-        """
-    )
-
-    table_function = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster, table_function=True
+    spark.sql(f"ALTER TABLE {TABLE_NAME} ADD COLUMNS (x bigint)")
+    files = default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
     )
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ADD COLUMNS ( address.appartment INT );
-        """
-    )
-
-    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY ALL")
 
+    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
     assert "UNSUPPORTED_METHOD" in error
 
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} DROP COLUMN address.appartment;
-        """
+    data = instance.query(
+        f"SELECT * FROM {TABLE_NAME} SETTINGS iceberg_engine_ignore_schema_evolution=1"
     )
-
-    check_schema_and_data(
-        instance,
-        table_function,
-        [
-            [
-                "address",
-                "Tuple(\\n    house_number Nullable(Float64),\\n    city Nullable(String),\\n    zip Nullable(Int32))",
-            ],
-            ["animals", "Array(Nullable(Int32))"],
-        ],
-        [["(3,'Singapore',12345)", "[4,7]"]],
-    )
-
-    execute_spark_query(
-        f"""
-            ALTER TABLE {TABLE_NAME} ALTER COLUMN animals.element TYPE BIGINT
-        """
-    )
-
-    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY ALL")
-
-    assert "UNSUPPORTED_METHOD" in error
+    assert data == expected_data
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs", "local"])
@@ -1551,6 +629,8 @@ def test_row_based_deletes(started_cluster, storage_type):
         pytest.skip("Disabled test IcebergHDFS for aarch64")
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
     TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
@@ -1560,7 +640,7 @@ def test_row_based_deletes(started_cluster, storage_type):
         f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100)"
     )
 
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -1572,7 +652,7 @@ def test_row_based_deletes(started_cluster, storage_type):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 10")
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -1610,7 +690,7 @@ def test_schema_inference(started_cluster, format_version, storage_type):
         spark.sql(
             f"insert into {TABLE_NAME} select 42, 4242, 42.42, 4242.4242, decimal(42.42), decimal(42.42), decimal(42.42), date('2020-01-01'), timestamp('2020-01-01 20:00:00'), 'hello', binary('hello'), array(1,2,3), map('key', 'value'), struct(42, 'hello'), array(struct(map('key', array(map('key', 42))), struct(42, 'hello')))"
         )
-        default_upload_directory(
+        files = default_upload_directory(
             started_cluster,
             storage_type,
             f"/iceberg_data/default/{TABLE_NAME}/",
@@ -1678,7 +758,7 @@ def test_metadata_file_selection(started_cluster, format_version, storage_type):
             f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10)"
         )
 
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -1721,7 +801,7 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
             f"/iceberg_data/default/{TABLE_NAME}/metadata/{str(i).zfill(5)}-{get_uuid_str()}.metadata.json",
         )
 
-    default_upload_directory(
+    files = default_upload_directory(
         started_cluster,
         storage_type,
         f"/iceberg_data/default/{TABLE_NAME}/",
@@ -1827,18 +907,11 @@ def test_filesystem_cache(started_cluster, storage_type):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    written_to_cache_first_select = int(
+    count = int(
         instance.query(
             f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
-
-    read_from_cache_first_select = int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
     assert 0 < int(
         instance.query(
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
@@ -1853,17 +926,11 @@ def test_filesystem_cache(started_cluster, storage_type):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    read_from_cache_second_select = int(
+    assert count == int(
         instance.query(
             f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
-
-    assert (
-        read_from_cache_second_select
-        == read_from_cache_first_select + written_to_cache_first_select
-    )
-
     assert 0 == int(
         instance.query(
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"

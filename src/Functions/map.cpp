@@ -133,13 +133,13 @@ public:
         const DataTypePtr & value_array_type = std::make_shared<DataTypeArray>(value_type);
 
         /// key_array = array(args[0], args[2]...)
-        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count, /* dry_run = */ false);
+        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count);
         /// value_array = array(args[1], args[3]...)
-        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count, /* dry_run = */ false);
+        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count);
 
         /// result = mapFromArrays(key_array, value_array)
         ColumnsWithTypeAndName map_args{{key_array, key_array_type, ""}, {value_array, value_array_type, ""}};
-        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count, /* dry_run = */ false);
+        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count);
     }
 
 private:

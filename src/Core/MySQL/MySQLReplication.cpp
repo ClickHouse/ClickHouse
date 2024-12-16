@@ -9,7 +9,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
-#include <Core/UUID.h>
 
 
 namespace DB

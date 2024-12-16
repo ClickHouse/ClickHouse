@@ -60,7 +60,7 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-static std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
+std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     using namespace std::string_literals;
     std::string address
@@ -99,7 +99,7 @@ static std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] c
     return fmt::format("Address: {}. Access: {}. {}.", std::move(address), access, message);
 }
 
-static constexpr std::string_view SigbusErrorString(int si_code)
+constexpr std::string_view SigbusErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -124,7 +124,7 @@ static constexpr std::string_view SigbusErrorString(int si_code)
     }
 }
 
-static constexpr std::string_view SigfpeErrorString(int si_code)
+constexpr std::string_view SigfpeErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -149,7 +149,7 @@ static constexpr std::string_view SigfpeErrorString(int si_code)
     }
 }
 
-static constexpr std::string_view SigillErrorString(int si_code)
+constexpr std::string_view SigillErrorString(int si_code)
 {
     switch (si_code)
     {
@@ -436,7 +436,7 @@ struct StackTraceTriple
 template <class T>
 concept MaybeRef = std::is_same_v<T, StackTraceTriple> || std::is_same_v<T, StackTraceRefTriple>;
 
-static constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
+constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
 {
     return std::tuple{left.pointers, left.size, left.offset} < std::tuple{right.pointers, right.size, right.offset};
 }
@@ -542,7 +542,7 @@ static StackTraceCache cache;
 
 static DB::SharedMutex stacktrace_cache_mutex;
 
-static String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
+String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
     const StackTraceRefTriple key{pointers, offset, size};
 

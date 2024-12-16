@@ -217,7 +217,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.finalize();
+        compressed_backup_buf.next();
+        backup_buf->next();
         backup_buf->finalize();
 
         std::vector<std::string> files;
@@ -229,11 +230,6 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         }
 
         disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
-    }
-    else
-    {
-        compressed_backup_buf.cancel();
-        backup_buf->cancel();
     }
 }
 

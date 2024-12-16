@@ -78,7 +78,7 @@ TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
 
         ++right;
 
-        if (right < partition.size() && partition[right].level < partition[left].level)
+        if (partition[right].level < partition[left].level)
             left = right;
     }
 

@@ -78,9 +78,13 @@ RUN arch=${TARGETARCH:-amd64} \
     && curl -L "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o ./mc \
     && chmod +x ./mc ./minio
 
+RUN curl -L --no-verbose -O 'https://archive.apache.org/dist/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.gz' \
+    && tar -xvf hadoop-3.3.1.tar.gz \
+    && rm -rf hadoop-3.3.1.tar.gz
+
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-RUN npm install -g azurite@3.33.0 \
+RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node

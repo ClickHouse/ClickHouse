@@ -42,7 +42,6 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -54,7 +53,6 @@ namespace Setting
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -73,6 +71,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_STATISTICS;
 }
 
@@ -602,6 +601,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                 if (available_columns_set.emplace(name).second)
                     available_columns.push_back(name);
             }
+            else if (!available_columns_set.contains(name))
+            {
+                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Column {} is updated but not requested to read", name);
+            }
 
             updated_columns.insert(name);
         }
@@ -1102,21 +1105,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         }
     }
 
-    auto storage_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
-
-    /// Add persistent virtual columns if the whole part is rewritten,
-    /// because we should preserve them in parts after mutation.
-    if (prepared_stages.back().isAffectingAllColumns(storage_columns))
-    {
-        for (const auto & column_name : available_columns)
-        {
-            if (column_name == RowExistsColumn::name && has_filters && !deleted_mask_updated)
-                continue;
-
-            prepared_stages.back().output_columns.insert(column_name);
-        }
-    }
-
     /// Now, calculate `expressions_chain` for each stage except the first.
     /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
     for (int64_t i = prepared_stages.size() - 1; i >= 0; --i)
@@ -1392,18 +1380,6 @@ void MutationsInterpreter::validate()
                                 "Cannot update column {} with type {}: updates of columns with dynamic subcolumns are not supported",
                                 backQuote(column_name), storage_columns.getColumn(GetColumnsOptions::Ordinary, column_name).type->getName());
             }
-        }
-    }
-
-    // Make sure the mutation query is valid
-    if (context->getSettingsRef()[Setting::validate_mutation_query])
-    {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
-        else
-        {
-            ASTPtr select_query = prepareQueryAffectedAST(commands, source.getStorage(), context);
-            InterpreterSelectQuery(select_query, context, source.getStorage(), metadata_snapshot);
         }
     }
 

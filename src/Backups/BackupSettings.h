@@ -101,8 +101,6 @@ struct BackupSettings
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
 
-    static bool isAsync(const ASTBackupQuery & query);
-
     struct Util
     {
         static std::vector<Strings> clusterHostIDsFromAST(const IAST & ast);

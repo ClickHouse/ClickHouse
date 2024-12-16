@@ -655,12 +655,13 @@ class ClickhouseIntegrationTestsRunner:
 
             log_basename = test_group_str + "_" + str(i) + ".log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
-            logging.info("Executing cmd: %s", cmd)
-            # ignore retcode, since it meaningful due to pipe to tee
-            with TeePopen(cmd, log_path) as proc:
-                global runner_subprocess  # pylint:disable=global-statement
-                runner_subprocess = proc
-                proc.wait()
+            with open(log_path, "w", encoding="utf-8") as log:
+                logging.info("Executing cmd: %s", cmd)
+                # ignore retcode, since it meaningful due to pipe to tee
+                with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as proc:
+                    global runner_subprocess  # pylint:disable=global-statement
+                    runner_subprocess = proc
+                    proc.wait()
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -1088,7 +1089,7 @@ def run():
 
 
 timeout_expired = False
-runner_subprocess = None  # type:Optional[TeePopen]
+runner_subprocess = None  # type:Optional[subprocess.Popen]
 
 
 def handle_sigterm(signum, _frame):
@@ -1097,7 +1098,7 @@ def handle_sigterm(signum, _frame):
     global timeout_expired  # pylint:disable=global-statement
     timeout_expired = True
     if runner_subprocess:
-        runner_subprocess.terminate()
+        runner_subprocess.send_signal(signal.SIGTERM)
 
 
 if __name__ == "__main__":

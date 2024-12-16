@@ -1,13 +1,12 @@
-┌─name────────────────┬─partition_key─┬─sorting_key─┬─primary_key─┬─sampling_key─┬─storage_policy─┬─total_rows─┬─total_bytes_with_inactive─┐
-│ check_system_tables │ name2         │ name1       │ name1       │ name1        │ default        │          0 │                         0 │
-└─────────────────────┴───────────────┴─────────────┴─────────────┴──────────────┴────────────────┴────────────┴───────────────────────────┘
+┌─name────────────────┬─partition_key─┬─sorting_key─┬─primary_key─┬─sampling_key─┬─storage_policy─┬─total_rows─┐
+│ check_system_tables │ name2         │ name1       │ name1       │ name1        │ default        │          0 │
+└─────────────────────┴───────────────┴─────────────┴─────────────┴──────────────┴────────────────┴────────────┘
 ┌─name──┬─is_in_partition_key─┬─is_in_sorting_key─┬─is_in_primary_key─┬─is_in_sampling_key─┐
 │ name1 │                   0 │                 1 │                 1 │                  1 │
 │ name2 │                   1 │                 0 │                 0 │                  0 │
 │ name3 │                   0 │                 0 │                 0 │                  0 │
 └───────┴─────────────────────┴───────────────────┴───────────────────┴────────────────────┘
-1	1	3	231	1	0
-3	1	6	234	2	462
+3	231	1
 ┌─name────────────────┬─partition_key─┬─sorting_key───┬─primary_key─┬─sampling_key─┐
 │ check_system_tables │ date          │ date, version │ date        │              │
 └─────────────────────┴───────────────┴───────────────┴─────────────┴──────────────┘

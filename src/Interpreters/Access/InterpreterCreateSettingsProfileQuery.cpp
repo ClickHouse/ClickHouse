@@ -25,7 +25,7 @@ namespace
         SettingsProfile & profile,
         const ASTCreateSettingsProfileQuery & query,
         const String & override_name,
-        const std::optional<AlterSettingsProfileElements> & override_settings,
+        const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_to_roles)
     {
         if (!override_name.empty())
@@ -36,11 +36,9 @@ namespace
             profile.setName(query.names.front());
 
         if (override_settings)
-            profile.elements.applyChanges(*override_settings);
-        else if (query.alter_settings)
-            profile.elements.applyChanges(AlterSettingsProfileElements{*query.alter_settings});
+            profile.elements = *override_settings;
         else if (query.settings)
-            profile.elements.applyChanges(AlterSettingsProfileElements{*query.settings});
+            profile.elements = *query.settings;
 
         if (override_to_roles)
             profile.to_roles = *override_to_roles;
@@ -61,14 +59,14 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
     else
         getContext()->checkAccess(AccessType::CREATE_SETTINGS_PROFILE);
 
-    std::optional<AlterSettingsProfileElements> settings_from_query;
-    if (query.alter_settings)
-        settings_from_query = AlterSettingsProfileElements{*query.alter_settings, access_control};
-    else if (query.settings)
-        settings_from_query = AlterSettingsProfileElements{SettingsProfileElements(*query.settings, access_control)};
+    std::optional<SettingsProfileElements> settings_from_query;
+    if (query.settings)
+    {
+        settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
-    if (settings_from_query && !query.attach)
-        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::PROFILE);
+        if (!query.attach)
+            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::PROFILE);
+    }
 
     if (!query.cluster.empty())
     {
