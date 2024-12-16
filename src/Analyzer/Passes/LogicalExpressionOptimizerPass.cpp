@@ -953,6 +953,9 @@ private:
 
     void tryOptimizeAndCompareChain(QueryTreeNodePtr & node)
     {
+        if (node->getNodeType() != QueryTreeNodeType::FUNCTION)
+            return;
+
         auto & function_node = node->as<FunctionNode &>();
         assert(function_node.getFunctionName() == "and");
 
@@ -978,20 +981,20 @@ private:
             const auto & lhs = function_arguments[0];
             const auto & rhs = function_arguments[1];
 
-            if (const auto * rhs_literal = rhs->as<ConstantNode>())
+            if (rhs->as<ConstantNode>())
                 constants.push_back(rhs);
 
             greater_pairs[rhs].push_back(lhs);
         }
 
-        for (const auto & con : constants)
-            std::cout<<con->dumpTree()<<std::endl;
+        // for (const auto & con : constants)
+        //     std::cout<<con->dumpTree()<<std::endl;
 
-        for (const auto & p : greater_pairs)
-            for (const auto & v : p.second)
-                std::cout<<v->dumpTree()<<" < "<<p.first->dumpTree()<<std::endl;
+        // for (const auto & p : greater_pairs)
+        //     for (const auto & v : p.second)
+        //         std::cout<<v->dumpTree()<<" < "<<p.first->dumpTree()<<std::endl;
 
-        std::cout<<"step2"<<std::endl;
+        // std::cout<<"step2"<<std::endl;
 
         auto & args = function_node.getArguments().getNodes();
 
@@ -1004,7 +1007,7 @@ private:
                 {
                     if (constant)
                     {
-                        std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<" "<<constant->dumpTree()<<std::endl;
+                        // std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<" "<<constant->dumpTree()<<std::endl;
                         auto arg = args[0]->clone();
                         arg->as<FunctionNode>()->getArguments().getNodes().clear();
                         arg->as<FunctionNode>()->getArguments().getNodes().push_back(left->clone());
@@ -1012,13 +1015,13 @@ private:
                         auto less_function_resolver = FunctionFactory::instance().get("less", getContext());
                         arg->as<FunctionNode>()->resolveAsFunction(less_function_resolver);
                         function_node.getArguments().getNodes().push_back(arg);
-                        for (const auto & argument : function_node.getArguments())
-                        {
-                            std::cout<<argument->dumpTree()<<std::endl;
-                        }
+                        // for (const auto & argument : function_node.getArguments())
+                        // {
+                        //     std::cout<<argument->dumpTree()<<std::endl;
+                        // }
                     }
-                    else
-                        std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<std::endl;
+                    // else
+                    //     std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<std::endl;
 
                     findPairs(left, constant ? constant : current->as<ConstantNode>());
                 }
@@ -1033,22 +1036,22 @@ private:
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.resolveAsFunction(and_function_resolver);
 
-        std::cout<<std::endl;
-        for (const auto & argument : function_node.getArguments())
-        {
-            std::cout<<argument->dumpTree()<<std::endl;
-        }
+        // std::cout<<std::endl;
+        // for (const auto & argument : function_node.getArguments())
+        // {
+        //     std::cout<<argument->dumpTree()<<std::endl;
+        // }
 
-        const auto & expected_argument_types = function_node.getArgumentTypes();
-        size_t expected_argument_types_size = expected_argument_types.size();
-        auto actual_argument_columns = function_node.getArgumentColumns();
+        // const auto & expected_argument_types = function_node.getArgumentTypes();
+        // size_t expected_argument_types_size = expected_argument_types.size();
+        // auto actual_argument_columns = function_node.getArgumentColumns();
 
-        if (expected_argument_types_size != actual_argument_columns.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Function {} expects {} arguments but has {}",
-                function_node.toAST()->formatForErrorMessage(),
-                expected_argument_types_size,
-                actual_argument_columns.size());
+        // if (expected_argument_types_size != actual_argument_columns.size())
+        //     throw Exception(ErrorCodes::LOGICAL_ERROR,
+        //         "Function {} expects {} arguments but has {}",
+        //         function_node.toAST()->formatForErrorMessage(),
+        //         expected_argument_types_size,
+        //         actual_argument_columns.size());
 
         /// Step 3: remove some loose comparing pairs
     }

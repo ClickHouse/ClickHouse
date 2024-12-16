@@ -14,3 +14,8 @@ EXPLAIN QUERY TREE
 SELECT pk
 FROM test
 WHERE (a < b) AND (b < c) AND (c < 5);
+
+-- test where condition is constant false
+SELECT pk
+FROM test
+WHERE (a = 3) AND (a = 5);
