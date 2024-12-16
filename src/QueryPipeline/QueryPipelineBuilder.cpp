@@ -387,7 +387,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     JoinPtr join,
     const Block & output_header,
     size_t max_block_size,
-    size_t,
+    size_t min_block_size_bytes,
     size_t max_streams,
     bool keep_left_read_in_order,
     Processors * collected_processors)
@@ -446,11 +446,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             Processors processors;
             for (auto & outport : outports)
             {
-                // auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), 0, min_block_size_bytes);
-                // connect(*outport, squashing->getInputs().front());
-                // processors.emplace_back(squashing);
+                auto squashing = std::make_shared<SimpleSquashingChunksTransform>(right->getHeader(), 0, min_block_size_bytes);
+                connect(*outport, squashing->getInputs().front());
+                processors.emplace_back(squashing);
                 auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join, filling_finish_counter);
-                connect(*outport, adding_joined->getInputs().front());
+                connect(squashing->getOutputPort(), adding_joined->getInputs().front());
                 processors.emplace_back(std::move(adding_joined));
             }
             return processors;
@@ -505,13 +505,13 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     Block left_header = left->getHeader();
     for (size_t i = 0; i < num_streams; ++i)
     {
-        // auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
-        // connect(**lit, squashing->getInputs().front());
+        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
+        connect(**lit, squashing->getInputs().front());
 
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, join, max_block_size, false, default_totals, joining_finish_counter);
 
-        connect(**lit, joining->getInputs().front());
+        connect(squashing->getOutputPort(), joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
         {
@@ -543,7 +543,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
-        // left->pipe.processors->emplace_back(std::move(squashing));
+        left->pipe.processors->emplace_back(std::move(squashing));
         left->pipe.processors->emplace_back(std::move(joining));
     }
 
