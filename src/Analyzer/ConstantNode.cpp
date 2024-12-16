@@ -104,33 +104,7 @@ bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr 
 
 bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type)
 {
-    bool need_to_add_cast_function = false;
-    WhichDataType constant_value_literal_type(field_type);
-    WhichDataType constant_value_type(data_type);
-
-    switch (constant_value_literal_type.idx)
-    {
-        case TypeIndex::String:
-        {
-            need_to_add_cast_function = !constant_value_type.isString();
-            break;
-        }
-        case TypeIndex::UInt64:
-        case TypeIndex::Int64:
-        case TypeIndex::Float64:
-        {
-            WhichDataType constant_value_field_type(field_type);
-            need_to_add_cast_function = constant_value_field_type.idx != constant_value_type.idx;
-            break;
-        }
-        default:
-        {
-            need_to_add_cast_function = true;
-            break;
-        }
-    }
-
-    return need_to_add_cast_function;
+    return field_type->getTypeId() != data_type->getTypeId();
 }
 
 bool ConstantNode::receivedFromInitiatorServer() const
