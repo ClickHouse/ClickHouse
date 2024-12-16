@@ -60,7 +60,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-                {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
+            {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
+            {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"}
         }
     },
     {"24.12",
@@ -145,7 +146,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_throw_on_error", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_log_mode", "on_error", "on_error", "A setting for ClickHouse Cloud"},
             {"distributed_cache_fetch_metrics_only_from_current_az", 1, 1, "A setting for ClickHouse Cloud"},
-            {"distributed_cache_connect_max_tries", 100, 100, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_connect_max_tries", 20, 20, "A setting for ClickHouse Cloud"},
             {"distributed_cache_receive_response_wait_milliseconds", 60000, 60000, "A setting for ClickHouse Cloud"},
             {"distributed_cache_receive_timeout_milliseconds", 10000, 10000, "A setting for ClickHouse Cloud"},
             {"distributed_cache_wait_connection_from_pool_milliseconds", 100, 100, "A setting for ClickHouse Cloud"},
