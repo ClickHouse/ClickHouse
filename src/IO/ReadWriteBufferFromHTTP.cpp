@@ -238,7 +238,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 
     if (iter == http_header_entries.end())
     {
-        http_header_entries.emplace_back(user_agent, fmt::format("ClickHouse/{}{}", VERSION_STRING, VERSION_OFFICIAL));
+        http_header_entries.emplace_back(user_agent, fmt::format("ClickHouse/{}", VERSION_STRING));
     }
 
     if (!delay_initialization && use_external_buffer)
@@ -423,17 +423,18 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                     current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
-                    reason);
+                    reason,
+                    "");
             }
-            throw Exception(
-                ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
-                *read_range.begin,
-                read_range.end ? toString(*read_range.end) : "-",
-                toString(response.getStatus()),
-                response.getReason());
+            else
+                throw Exception(
+                    ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                    "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
+                    *read_range.begin,
+                    read_range.end ? toString(*read_range.end) : "-",
+                    toString(response.getStatus()), response.getReason());
         }
-        if (read_range.end)
+        else if (read_range.end)
         {
             /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
             /// will affect only performance, so a warning is enough.
@@ -442,7 +443,6 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
     }
 
     response.getCookies(cookies);
-    response.getHeaders(response_headers);
     content_encoding = response.get("Content-Encoding", "");
 
     // Remember file size. It'll be used to report eof in next nextImpl() call.
@@ -548,7 +548,8 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                     current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
-                    reason);
+                    reason,
+                    "");
             }
 
             copyFromIStreamWithProgressCallback(*result.response_stream, to, n, progress_callback, &bytes_copied, &is_canceled);
@@ -677,19 +678,6 @@ std::string ReadWriteBufferFromHTTP::getResponseCookie(const std::string & name,
         if (cookie.getName() == name)
             return cookie.getValue();
     return def;
-}
-
-Map ReadWriteBufferFromHTTP::getResponseHeaders() const
-{
-    Map map;
-    for (const auto & header : response_headers)
-    {
-        Tuple elem;
-        elem.emplace_back(header.first);
-        elem.emplace_back(header.second);
-        map.emplace_back(elem);
-    }
-    return map;
 }
 
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)

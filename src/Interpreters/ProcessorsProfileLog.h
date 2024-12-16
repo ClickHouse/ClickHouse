@@ -19,8 +19,6 @@ struct ProcessorProfileLogElement
 
     UInt64 plan_step{};
     UInt64 plan_group{};
-    String plan_step_name;
-    String plan_step_description;
 
     String initial_query_id;
     String query_id;

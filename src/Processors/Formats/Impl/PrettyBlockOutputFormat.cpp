@@ -10,8 +10,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
-#include <algorithm>
-
 
 namespace DB
 {
@@ -79,9 +77,9 @@ void PrettyBlockOutputFormat::calculateWidths(
             }
 
             widths[i][j] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
-            max_padded_widths[i] = std::max<UInt64>(
-                max_padded_widths[i],
-                std::min<UInt64>({format_settings.pretty.max_column_pad_width, format_settings.pretty.max_value_width, widths[i][j]}));
+            max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i],
+                std::min<UInt64>(format_settings.pretty.max_column_pad_width,
+                    std::min<UInt64>(format_settings.pretty.max_value_width, widths[i][j])));
         }
 
         /// And also calculate widths for names of columns.
@@ -555,7 +553,7 @@ void PrettyBlockOutputFormat::writeSuffix()
 
 void PrettyBlockOutputFormat::writeReadableNumberTip(const Chunk & chunk)
 {
-    const auto & columns = chunk.getColumns();
+    auto columns = chunk.getColumns();
     auto is_single_number = readable_number_tip && chunk.getNumRows() == 1 && chunk.getNumColumns() == 1;
     if (!is_single_number)
         return;

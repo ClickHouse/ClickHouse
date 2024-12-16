@@ -48,8 +48,6 @@ private:
     ColumnUnique(const ColumnUnique & other);
 
 public:
-    std::string getName() const override { return "Unique(" + getNestedColumn()->getName() + ")"; }
-
     MutableColumnPtr cloneEmpty() const override;
 
     const ColumnPtr & getNestedColumn() const override;
@@ -510,7 +508,8 @@ int ColumnUnique<ColumnType>::doCompareAt(size_t n, size_t m, const IColumn & rh
         {
             if (lval_is_null && rval_is_null)
                 return 0;
-            return lval_is_null ? nan_direction_hint : -nan_direction_hint;
+            else
+                return lval_is_null ? nan_direction_hint : -nan_direction_hint;
         }
     }
 

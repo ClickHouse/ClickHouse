@@ -21,11 +21,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -57,7 +52,6 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
         rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
-    , block_missing_values(getPort().getHeader().columns())
 {
 }
 
@@ -201,10 +195,7 @@ void ValuesBlockInputFormat::readUntilTheEndOfRowAndReTokenize(size_t current_co
     auto * row_end = buf->position();
     buf->rollbackToCheckpoint();
     tokens.emplace(buf->position(), row_end);
-    token_iterator.emplace(
-        *tokens,
-        static_cast<unsigned>(context->getSettingsRef()[Setting::max_parser_depth]),
-        static_cast<unsigned>(context->getSettingsRef()[Setting::max_parser_backtracks]));
+    token_iterator.emplace(*tokens, static_cast<unsigned>(context->getSettingsRef().max_parser_depth), static_cast<unsigned>(context->getSettingsRef().max_parser_backtracks));
     auto const & first = (*token_iterator).get();
     if (first.isError() || first.isEnd())
     {
@@ -428,8 +419,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     {
         Expected expected;
         /// Keep a copy to the start of the column tokens to use if later if necessary
-        ti_start = IParser::Pos(
-            *token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
+        ti_start = IParser::Pos(*token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
 
         parsed = parser.parse(*token_iterator, ast, expected);
 
@@ -475,7 +465,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             parser_type_for_column[column_idx] = ParserType::Streaming;
             return true;
         }
-        if (rollback_on_exception)
+        else if (rollback_on_exception)
             column.popBack(1);
     }
 
@@ -552,7 +542,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
+    Field value = convertFieldToType(expression_value, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
@@ -586,11 +576,13 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
     {
         return checkChar(',', *buf);
     }
-
-    /// Optional trailing comma.
-    if (checkChar(',', *buf))
-        skipWhitespaceIfAny(*buf);
-    return checkChar(')', *buf);
+    else
+    {
+        /// Optional trailing comma.
+        if (checkChar(',', *buf))
+            skipWhitespaceIfAny(*buf);
+        return checkChar(')', *buf);
+    }
 }
 
 bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)
@@ -669,16 +661,6 @@ void ValuesBlockInputFormat::resetReadBuffer()
 {
     buf.reset();
     IInputFormat::resetReadBuffer();
-}
-
-void ValuesBlockInputFormat::setQueryParameters(const NameToNameMap & parameters)
-{
-    if (parameters == context->getQueryParameters())
-        return;
-
-    auto context_copy = Context::createCopy(context);
-    context_copy->setQueryParameters(parameters);
-    context = std::move(context_copy);
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

@@ -169,7 +169,8 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         {
             if (!line.empty() && !multiline && !hasInputData())
                 break;
-            continue;
+            else
+                continue;
         }
 
         const char * has_extender = nullptr;

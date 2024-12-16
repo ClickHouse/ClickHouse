@@ -1167,8 +1167,10 @@ public:
                 this->clearHasZero();
                 return true;
             }
-
-            return false;
+            else
+            {
+                return false;
+            }
         }
 
         size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));

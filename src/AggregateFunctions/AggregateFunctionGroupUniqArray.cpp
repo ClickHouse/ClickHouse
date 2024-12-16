@@ -276,15 +276,16 @@ IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, TAr
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate<HasLimit>(argument_type, args...);
-    if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionGroupUniqArrayDateTime<HasLimit>(argument_type, args...);
-    if (which.idx == TypeIndex::IPv4)
-        return new AggregateFunctionGroupUniqArrayIPv4<HasLimit>(argument_type, args...);
-
-    /// Check that we can use plain version of AggregateFunctionGroupUniqArrayGeneric
-    if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-        return new AggregateFunctionGroupUniqArrayGeneric<true, HasLimit>(argument_type, args...);
-    return new AggregateFunctionGroupUniqArrayGeneric<false, HasLimit>(argument_type, args...);
+    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime<HasLimit>(argument_type, args...);
+    else if (which.idx == TypeIndex::IPv4) return new AggregateFunctionGroupUniqArrayIPv4<HasLimit>(argument_type, args...);
+    else
+    {
+        /// Check that we can use plain version of AggregateFunctionGroupUniqArrayGeneric
+        if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            return new AggregateFunctionGroupUniqArrayGeneric<true, HasLimit>(argument_type, args...);
+        else
+            return new AggregateFunctionGroupUniqArrayGeneric<false, HasLimit>(argument_type, args...);
+    }
 }
 
 template <typename HasLimit, typename ... TArgs>
@@ -335,7 +336,8 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
 
     if (!limit_size)
         return createAggregateFunctionGroupUniqArrayImpl<std::false_type>(name, argument_types[0], parameters);
-    return createAggregateFunctionGroupUniqArrayImpl<std::true_type>(name, argument_types[0], parameters, max_elems);
+    else
+        return createAggregateFunctionGroupUniqArrayImpl<std::true_type>(name, argument_types[0], parameters, max_elems);
 }
 
 }

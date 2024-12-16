@@ -108,7 +108,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     auto format_element = [&](const String & elem_name)
     {
         settings.ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(elem_name, /*ambiguous=*/false);
+        settings.writeIdentifier(elem_name);
         settings.ostr << (settings.hilite ? hilite_none : "");
     };
 
@@ -198,13 +198,13 @@ ASTPtr ASTTableIdentifier::clone() const
 StorageID ASTTableIdentifier::getTableId() const
 {
     if (name_parts.size() == 2) return {name_parts[0], name_parts[1], uuid};
-    return {{}, name_parts[0], uuid};
+    else return {{}, name_parts[0], uuid};
 }
 
 String ASTTableIdentifier::getDatabaseName() const
 {
     if (name_parts.size() == 2) return name_parts[0];
-    return {};
+    else return {};
 }
 
 ASTPtr ASTTableIdentifier::getTable() const
@@ -216,15 +216,17 @@ ASTPtr ASTTableIdentifier::getTable() const
 
         if (name_parts[0].empty())
             return std::make_shared<ASTIdentifier>("", children[1]->clone());
-        return std::make_shared<ASTIdentifier>("", children[0]->clone());
+        else
+            return std::make_shared<ASTIdentifier>("", children[0]->clone());
     }
-    if (name_parts.size() == 1)
+    else if (name_parts.size() == 1)
     {
         if (name_parts[0].empty())
             return std::make_shared<ASTIdentifier>("", children[0]->clone());
-        return std::make_shared<ASTIdentifier>(name_parts[0]);
+        else
+            return std::make_shared<ASTIdentifier>(name_parts[0]);
     }
-    return {};
+    else return {};
 }
 
 ASTPtr ASTTableIdentifier::getDatabase() const
@@ -233,9 +235,10 @@ ASTPtr ASTTableIdentifier::getDatabase() const
     {
         if (name_parts[0].empty())
             return std::make_shared<ASTIdentifier>("", children[0]->clone());
-        return std::make_shared<ASTIdentifier>(name_parts[0]);
+        else
+            return std::make_shared<ASTIdentifier>(name_parts[0]);
     }
-    return {};
+    else return {};
 }
 
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)

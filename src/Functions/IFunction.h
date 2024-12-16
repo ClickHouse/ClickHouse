@@ -324,7 +324,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
   */
-class IFunctionOverloadResolver : public std::enable_shared_from_this<IFunctionOverloadResolver>
+class IFunctionOverloadResolver
 {
 public:
     virtual ~IFunctionOverloadResolver() = default;
@@ -346,8 +346,6 @@ public:
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
-    virtual bool isServerConstant() const { return false; }
-    virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const { return false; }
@@ -370,10 +368,6 @@ public:
     /// Returns indexes if arguments, that can be Nullable without making result of function Nullable
     /// (for functions like isNull(x))
     virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments [[maybe_unused]]) const { return {}; }
-
-    /// Returns type that should be used as the result type in default implementation for Dynamic.
-    /// Function should implement this method if its result type doesn't depend on the arguments types.
-    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
 protected:
 
@@ -428,17 +422,6 @@ protected:
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
-
-    /** If useDefaultImplementationForDynamic() is true, then special FunctionBaseDynamicAdaptor will be used
-     *  if function arguments has Dynamic column. This adaptor will build and execute this function for all
-     *  internal types inside Dynamic column separately and construct result based on results for these types.
-     *  If getReturnTypeForDefaultImplementationForDynamic() returns T, then result of such function
-     *  will be Nullable(T), otherwise the result will be Dynamic.
-     *
-     *  We cannot use default implementation for Dynamic if function doesn't use default implementation for NULLs,
-     *  because Dynamic column can contain NULLs and we should know how to process them.
-      */
-    virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
 private:
 
@@ -504,9 +487,6 @@ public:
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
-
-    virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
-    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
     /** True if function can be called on default arguments (include Nullable's) and won't throw.
       * Counterexample: modulo(0, 0)

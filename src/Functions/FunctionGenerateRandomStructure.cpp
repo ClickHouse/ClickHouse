@@ -16,10 +16,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_suspicious_low_cardinality_types;
-}
 
 namespace ErrorCodes
 {
@@ -361,7 +357,7 @@ namespace
 
     FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
     {
-        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
+        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef().allow_suspicious_low_cardinality_types.value);
     }
 
 DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
@@ -428,7 +424,7 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
     pcg64 rng(seed);
     size_t number_of_columns = generateNumberOfColumns(rng);
     WriteBufferFromOwnString buf;
-    writeRandomStructure(rng, number_of_columns, buf, context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types]);
+    writeRandomStructure(rng, number_of_columns, buf, context->getSettingsRef().allow_suspicious_low_cardinality_types);
     return buf.str();
 }
 

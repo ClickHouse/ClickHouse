@@ -82,7 +82,8 @@ struct PerformanceStatistics
 
             if (adjustedCount() < 2)
                 return adjustedCount() - 1;
-            return std::normal_distribution<>(mean(), sigma())(stat_rng);
+            else
+                return std::normal_distribution<>(mean(), sigma())(stat_rng);
         }
     };
 
@@ -117,7 +118,8 @@ struct PerformanceStatistics
 
             return std::min_element(samples, samples + max_method) - samples;
         }
-        return choose_method;
+        else
+            return choose_method;
     }
 
     PerformanceStatistics() = default;

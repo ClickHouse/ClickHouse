@@ -161,10 +161,6 @@ public:
 
     ColumnPtr compress() const override;
 
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(offsets);

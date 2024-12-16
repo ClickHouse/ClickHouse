@@ -8,7 +8,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
-#include <Storages/MarkCache.h>
 
 namespace DB
 {
@@ -123,6 +122,8 @@ public:
         written_offset_columns = written_offset_columns_;
     }
 
+    const Block & getColumnsSample() const override { return block_sample; }
+
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
@@ -188,6 +189,8 @@ protected:
     size_t current_mark = 0;
 
     GinIndexStoreFactory::GinIndexStores gin_index_stores;
+
+    Block block_sample;
 private:
     void initSkipIndices();
     void initPrimaryIndex();

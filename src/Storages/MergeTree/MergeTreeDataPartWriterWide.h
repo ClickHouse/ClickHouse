@@ -43,8 +43,6 @@ public:
 
     void finish(bool sync) final;
 
-    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
-
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
@@ -138,14 +136,9 @@ private:
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
     MarksForColumns last_non_written_marks;
 
-    /// Set of columns to put marks in cache during write.
-    NameSet columns_to_load_marks;
-
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
-
-    Block block_sample;
 
     bool is_dynamic_streams_initialized = false;
 };

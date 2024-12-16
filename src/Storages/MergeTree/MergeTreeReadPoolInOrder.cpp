@@ -12,7 +12,6 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     bool has_limit_below_one_block_,
     MergeTreeReadType read_type_,
     RangesInDataParts parts_,
-    MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -20,11 +19,9 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
-    const MergeTreeReadTask::BlockSizeParams & params_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
-        std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
         storage_snapshot_,
         prewhere_info_,
@@ -32,7 +29,6 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
         reader_settings_,
         column_names_,
         settings_,
-        params_,
         context_)
     , has_limit_below_one_block(has_limit_below_one_block_)
     , read_type(read_type_)

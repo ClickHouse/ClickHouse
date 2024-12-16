@@ -141,7 +141,7 @@ void StorageSystemParts::processNextStorage(
         auto part_state = all_parts_state[part_number];
 
         ColumnSize columns_size = part->getTotalColumnsSize();
-        ColumnSize secondary_indexes_size = part->getTotalSecondaryIndicesSize();
+        ColumnSize secondary_indexes_size = part->getTotalSeconaryIndicesSize();
 
         size_t src_index = 0, res_index = 0;
         if (columns_mask[src_index++])

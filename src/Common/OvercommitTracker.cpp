@@ -45,7 +45,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     // method OvercommitTracker::onQueryStop(MemoryTracker *) is
     // always called with already acquired global mutex in
     // ProcessListEntry::~ProcessListEntry().
-    DB::ProcessList::Lock global_lock(process_list->getMutex());
+    auto global_lock = process_list->unsafeLock();
     std::unique_lock<std::mutex> lk(overcommit_m);
 
     size_t id = next_id++;
@@ -105,7 +105,8 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
         return OvercommitResult::TIMEOUTED;
     if (still_need)
         return OvercommitResult::NOT_ENOUGH_FREED;
-    return OvercommitResult::MEMORY_FREED;
+    else
+        return OvercommitResult::MEMORY_FREED;
 }
 
 void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)

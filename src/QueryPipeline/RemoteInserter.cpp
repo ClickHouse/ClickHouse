@@ -13,11 +13,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsLogsLevel send_logs_level;
-}
-
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
@@ -52,7 +47,7 @@ RemoteInserter::RemoteInserter(
     /// and will not consume Log packets.
     ///
     /// So that is why send_logs_level had been disabled here.
-    settings[Setting::send_logs_level] = "none";
+    settings.send_logs_level = "none";
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
@@ -68,12 +63,12 @@ RemoteInserter::RemoteInserter(
             header = packet.block;
             break;
         }
-        if (Protocol::Server::Exception == packet.type)
+        else if (Protocol::Server::Exception == packet.type)
         {
             packet.exception->rethrow();
             break;
         }
-        if (Protocol::Server::Log == packet.type)
+        else if (Protocol::Server::Log == packet.type)
         {
             /// Pass logs from remote server to client
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
@@ -133,7 +128,7 @@ void RemoteInserter::onFinish()
 
         if (Protocol::Server::EndOfStream == packet.type)
             break;
-        if (Protocol::Server::Exception == packet.type)
+        else if (Protocol::Server::Exception == packet.type)
             packet.exception->rethrow();
         else if (Protocol::Server::Log == packet.type || Protocol::Server::TimezoneUpdate == packet.type)
         {

@@ -459,8 +459,6 @@ public:
 
     bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 
-    constexpr static bool parallelizeMergeWithKey() { return true; }
-
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
         if constexpr (is_parallelize_merge_prepare_needed)

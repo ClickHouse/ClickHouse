@@ -172,7 +172,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
-            max_size_per_row_fixed = std::max<double>(max_size_per_row_fixed, size_of_value);
+            max_size_per_row_fixed = std::max<size_t>(max_size_per_row_fixed, size_of_value);
         }
         else
         {

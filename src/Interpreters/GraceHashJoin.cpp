@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 
 #include <numeric>
+#include <shared_mutex>
 #include <fmt/format.h>
 
 
@@ -23,11 +24,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 grace_hash_join_initial_buckets;
-    extern const SettingsUInt64 grace_hash_join_max_buckets;
-}
 
 namespace ErrorCodes
 {
@@ -259,8 +255,7 @@ void flushBlocksToBuckets(Blocks & blocks, const GraceHashJoin::Buckets & bucket
 }
 
 GraceHashJoin::GraceHashJoin(
-    ContextPtr context_,
-    std::shared_ptr<TableJoin> table_join_,
+    ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
     const Block & left_sample_block_,
     const Block & right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
@@ -271,7 +266,8 @@ GraceHashJoin::GraceHashJoin(
     , left_sample_block{left_sample_block_}
     , right_sample_block{right_sample_block_}
     , any_take_last_row{any_take_last_row_}
-    , max_num_buckets{context->getSettingsRef()[Setting::grace_hash_join_max_buckets]}
+    , max_num_buckets{context->getSettingsRef().grace_hash_join_max_buckets}
+    , max_block_size{context->getSettingsRef().max_block_size}
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(std::make_unique<TemporaryDataOnDisk>(tmp_data_, CurrentMetrics::TemporaryFilesForJoin))
@@ -289,8 +285,7 @@ void GraceHashJoin::initBuckets()
 
     const auto & settings = context->getSettingsRef();
 
-    size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(
-        std::clamp<size_t>(settings[Setting::grace_hash_join_initial_buckets], 1, settings[Setting::grace_hash_join_max_buckets]));
+    size_t initial_num_buckets = roundUpToPowerOfTwoOrZero(std::clamp<size_t>(settings.grace_hash_join_initial_buckets, 1, settings.grace_hash_join_max_buckets));
 
     addBuckets(initial_num_buckets);
 
@@ -533,6 +528,7 @@ public:
     Block nextImpl() override
     {
         ExtraBlockPtr not_processed = nullptr;
+        std::shared_lock shared(eof_mutex);
 
         {
             std::lock_guard lock(extra_block_mutex);
@@ -566,7 +562,24 @@ public:
             block = left_reader.read();
             if (!block)
             {
-                return {};
+                shared.unlock();
+                bool there_are_still_might_be_rows_to_process = false;
+                {
+                    /// The following race condition could happen without this mutex:
+                    /// * we're called from `IBlocksStream::next()`
+                    /// * another thread just read the last block from `left_reader` and now is in the process of or about to call `joinBlock()`
+                    /// * it might be that `joinBlock()` will leave some rows in the `not_processed`
+                    /// * but if the current thread will return now an empty block `finished` will be set to true in `IBlocksStream::next()` and
+                    ///   these not processed rows will be lost
+                    /// So we shouldn't finish execution while there is at least one in-flight `joinBlock()` call. Let's wait until we're alone
+                    /// and double check if there are any not processed rows left.
+                    std::unique_lock exclusive(eof_mutex);
+
+                    std::lock_guard lock(extra_block_mutex);
+                    if (!not_processed_blocks.empty())
+                        there_are_still_might_be_rows_to_process = true;
+                }
+                return there_are_still_might_be_rows_to_process ? nextImpl() : Block();
             }
 
             // block comes from left_reader, need to join with right table to get the result.
@@ -601,7 +614,7 @@ public:
         return block;
     }
 
-    size_t current_bucket;
+    const size_t current_bucket;
     Buckets buckets;
     InMemoryJoinPtr hash_join;
 
@@ -612,6 +625,8 @@ public:
 
     std::mutex extra_block_mutex;
     std::list<ExtraBlockPtr> not_processed_blocks TSA_GUARDED_BY(extra_block_mutex);
+
+    std::shared_mutex eof_mutex;
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()

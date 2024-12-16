@@ -304,20 +304,13 @@ public:
         variant_column_ptr->protect();
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override
-    {
-        return variant_column_ptr->getCheckpoint();
-    }
-
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
+
+    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
 
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
@@ -438,9 +431,6 @@ public:
     }
 
     const SerializationPtr & getVariantSerialization(const DataTypePtr & variant_type) { return getVariantSerialization(variant_type, variant_type->getName()); }
-
-    String getTypeNameAt(size_t row_num) const;
-    void getAllTypeNamesInto(std::unordered_set<String> & names) const;
 
 private:
     void createVariantInfo(const DataTypePtr & variant_type);

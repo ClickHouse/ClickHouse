@@ -7,7 +7,6 @@
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
-#include <Server/HTTPHandler.h>
 #include "config.h"
 
 #include <Access/Credentials.h>
@@ -53,7 +52,7 @@ protected:
     const PrometheusRequestHandlerConfig & config() { return parent().config; }
     PrometheusMetricsWriter & metrics_writer() { return *parent().metrics_writer; }
     LoggerPtr log() { return parent().log; }
-    WriteBuffer & getOutputHeader(HTTPServerResponse & response) { return parent().getOutputHeader(response); }
+    WriteBuffer & getOutputStream(HTTPServerResponse & response) { return parent().getOutputStream(response); }
 
 private:
     PrometheusRequestHandler & parent_ref;
@@ -75,7 +74,7 @@ public:
     void handleRequest(HTTPServerRequest & /* request */, HTTPServerResponse & response) override
     {
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
-        auto & out = getOutputHeader(response);
+        auto & out = getOutputStream(response);
 
         if (config().expose_events)
             metrics_writer().writeEvents(out);
@@ -138,7 +137,7 @@ protected:
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
     {
-        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, HTTPHandlerConnectionConfig{}, server().context(), log());
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, server().context(), log());
     }
 
     void makeContext(HTTPServerRequest & request)
@@ -289,7 +288,7 @@ public:
         response.setContentType("application/x-protobuf");
         response.set("Content-Encoding", "snappy");
 
-        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputHeader(response))};
+        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
         read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
         zero_copy_output_stream.finalize();
 
@@ -373,7 +372,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     }
 }
 
-WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputHeader(HTTPServerResponse & response)
+WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)
 {
     if (response_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PrometheusRequestHandler: Response already sent");
@@ -412,7 +411,7 @@ void PrometheusRequestHandler::trySendExceptionToClient(const String & exception
 
     try
     {
-        sendExceptionToHTTPClient(exception_message, exception_code, request, response, &getOutputHeader(response), log);
+        sendExceptionToHTTPClient(exception_message, exception_code, request, response, &getOutputStream(response), log);
     }
     catch (...)
     {

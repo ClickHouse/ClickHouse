@@ -5,8 +5,6 @@
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Common/Base64.h>
-#include <Common/HTTPHeaderFilter.h>
-#include <Server/HTTPHandler.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
@@ -55,13 +53,11 @@ bool authenticateUserByHTTP(
     HTTPServerResponse & response,
     Session & session,
     std::unique_ptr<Credentials> & request_credentials,
-    const HTTPHandlerConnectionConfig & connection_config,
     ContextPtr global_context,
     LoggerPtr log)
 {
     /// Get the credentials created by the previous call of authenticateUserByHTTP() while handling the previous HTTP request.
     auto current_credentials = std::move(request_credentials);
-    const auto & config_credentials = connection_config.credentials;
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
@@ -73,7 +69,6 @@ bool authenticateUserByHTTP(
     /// The header 'X-ClickHouse-SSL-Certificate-Auth: on' enables checking the common name
     /// extracted from the SSL certificate used for this connection instead of checking password.
     bool has_ssl_certificate_auth = (request.get("X-ClickHouse-SSL-Certificate-Auth", "") == "on");
-    bool has_config_credentials = config_credentials.has_value();
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
@@ -83,10 +78,6 @@ bool authenticateUserByHTTP(
     std::string spnego_challenge;
     SSLCertificateSubjects certificate_subjects;
 
-    if (config_credentials)
-    {
-        checkUserNameNotEmpty(config_credentials->getUserName(), "config authentication");
-    }
     if (has_ssl_certificate_auth)
     {
 #if USE_SSL
@@ -94,8 +85,6 @@ bool authenticateUserByHTTP(
         checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
 
         /// It is prohibited to mix different authorization schemes.
-        if (has_config_credentials)
-            throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication set in config");
         if (!password.empty())
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via password");
         if (has_http_credentials)
@@ -119,8 +108,6 @@ bool authenticateUserByHTTP(
         checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
 
         /// It is prohibited to mix different authorization schemes.
-        if (has_config_credentials)
-            throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication set in config");
         if (has_http_credentials)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "Authorization HTTP header");
         if (has_credentials_in_query_params)
@@ -129,8 +116,6 @@ bool authenticateUserByHTTP(
     else if (has_http_credentials)
     {
         /// It is prohibited to mix different authorization schemes.
-        if (has_config_credentials)
-            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
         if (has_credentials_in_query_params)
             throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication via parameters");
 
@@ -203,10 +188,6 @@ bool authenticateUserByHTTP(
             request_credentials = std::move(current_credentials);
             return false;
         }
-    }
-    else if (has_config_credentials)
-    {
-        current_credentials = std::make_unique<BasicCredentials>(*config_credentials);
     }
     else // I.e., now using user name and password strings ("Basic").
     {

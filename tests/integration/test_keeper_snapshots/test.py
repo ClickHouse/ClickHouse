@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
-import os
+import pytest
+from helpers.cluster import ClickHouseCluster
+import helpers.keeper_utils as keeper_utils
 import random
 import string
-
-import pytest
+import os
 from kazoo.client import KazooClient
 
-import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

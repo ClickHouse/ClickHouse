@@ -1,23 +1,24 @@
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Dict, Optional, Any, Union, Sequence, List, Set
 
 from ci_config import CI
-from ci_utils import GH, Utils
+
+from ci_utils import Utils, GH
 from commit_status_helper import CommitStatusData
-from digest_helper import JobDigester
 from env_helper import (
+    TEMP_PATH,
     CI_CONFIG_PATH,
+    S3_BUILDS_BUCKET,
     GITHUB_RUN_URL,
     REPORT_PATH,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
 )
 from report import BuildResult
 from s3_helper import S3Helper
+from digest_helper import JobDigester
 
 
 @dataclass
@@ -386,7 +387,8 @@ class CiCache:
         res = record_key in self.records[record_type]
         if release_branch:
             return res and self.records[record_type][record_key].release_branch
-        return res
+        else:
+            return res
 
     def push(
         self,

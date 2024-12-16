@@ -9,10 +9,6 @@
 
 namespace DB
 {
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
-}
 
 namespace ErrorCodes
 {
@@ -123,7 +119,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
                     if (result_data_version == it->first)
-                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, (*storage.getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
+                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, storage.getSettings()->max_postpone_time_for_failed_mutations_ms);
                 }
             }
         }

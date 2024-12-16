@@ -14,7 +14,6 @@
 #include <unordered_set>
 #include <Poco/Timestamp.h>
 
-
 namespace DB
 {
 
@@ -61,9 +60,11 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Plain; }
 
-    bool existsFile(const std::string & path) const override;
-    bool existsDirectory(const std::string & path) const override;
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool exists(const std::string & path) const override;
+
+    bool isFile(const std::string & path) const override;
+
+    bool isDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
     std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
@@ -75,7 +76,6 @@ public:
     DiskPtr getDisk() const { return {}; }
 
     StoredObjects getStorageObjects(const std::string & path) const override;
-    std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
     Poco::Timestamp getLastModified(const std::string & path) const override;
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;

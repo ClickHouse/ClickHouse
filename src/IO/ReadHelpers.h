@@ -258,20 +258,6 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     char tmp = '0';
     readChar(tmp, buf);
     x = tmp != '0';
-
-    if (!buf.eof() && isAlphaASCII(tmp))
-    {
-        if (tmp == 't' || tmp == 'T')
-        {
-            assertStringCaseInsensitive("rue", buf);
-            x = true;
-        }
-        else if (tmp == 'f' || tmp == 'F')
-        {
-            assertStringCaseInsensitive("alse", buf);
-            x = false;
-        }
-    }
 }
 
 template <typename ReturnType = void>
@@ -314,7 +300,8 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
                 x = true;
                 break;
             }
-            [[fallthrough]];
+            else
+                [[fallthrough]];
         }
         case 'F':
         {
@@ -327,7 +314,8 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
                 x = false;
                 break;
             }
-            [[fallthrough]];
+            else
+                [[fallthrough]];
         }
         default:
         {
@@ -820,7 +808,8 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
         date = LocalDate(year, month, day);
         return ReturnType(true);
     }
-    return readDateTextFallback<ReturnType>(date, buf, allowed_delimiters);
+    else
+        return readDateTextFallback<ReturnType>(date, buf, allowed_delimiters);
 }
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
@@ -932,16 +921,18 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
         uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
         return ReturnType(true);
     }
-
-    s[size] = 0;
-
-    if constexpr (throw_exception)
-    {
-        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
-    }
     else
     {
-        return ReturnType(false);
+        s[size] = 0;
+
+        if constexpr (throw_exception)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
+        }
+        else
+        {
+            return ReturnType(false);
+        }
     }
 }
 
@@ -1093,10 +1084,12 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+        else
+            /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
+            return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    else
+        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
 template <typename ReturnType>
@@ -1747,7 +1740,6 @@ inline T parse(const char * data, size_t size)
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
-    assertEOF(buf);
     return res;
 }
 
@@ -1755,9 +1747,7 @@ template <typename T>
 inline bool tryParse(T & res, const char * data, size_t size)
 {
     ReadBufferFromMemory buf(data, size);
-    if (!tryReadText(res, buf))
-        return false;
-    return buf.eof();
+    return tryReadText(res, buf);
 }
 
 template <typename T>

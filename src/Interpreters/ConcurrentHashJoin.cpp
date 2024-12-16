@@ -85,9 +85,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
           CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
-          /*max_threads_*/ slots,
-          /*max_free_threads_*/ 0,
-          /*queue_size_*/ slots))
+          slots))
     , stats_collecting_params(stats_collecting_params_)
 {
     hash_joins.resize(slots);

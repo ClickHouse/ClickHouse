@@ -88,7 +88,7 @@ bool isChineseNewYearMode(const String & local_tz)
         /// Let's celebrate until Lantern Festival
         if (d <= days && d + 25 >= days)
             return true;
-        if (d > days)
+        else if (d > days)
             return false;
     }
     return false;
