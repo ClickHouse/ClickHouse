@@ -61,7 +61,7 @@ Reference documentation is available per setting category at the pages below:
 
 ## Working with Settings
 
-The following pages cover various aspect of working with settings in ClickHouse:
+The following pages cover various aspects of working with settings in ClickHouse:
 
 | Topic                                                                               | Description                                                                                                                                                                 |
 |-------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
