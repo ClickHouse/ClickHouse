@@ -56,7 +56,7 @@ public:
         const RowGroupContext & context,
         const std::unordered_map<String, ColumnFilterPtr> & inplaceFilterMapping,
         const std::unordered_set<String> & predicateColumns);
-    SelectiveColumnReaderPtr buildReader(parquet::schema::NodePtr node, const DataTypePtr & target_type, int def_level = 0, int rep_level = 0);
+    SelectiveColumnReaderPtr buildReader(parquet::schema::NodePtr node, const DataTypePtr & target_type, int def_level = 0, int rep_level = 0, bool is_key = false);
 private:
     const Block& required_columns;
     const RowGroupContext& context;

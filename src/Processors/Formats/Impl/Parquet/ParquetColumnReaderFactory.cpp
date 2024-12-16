@@ -666,7 +666,7 @@ std::shared_ptr<parquet::schema::GroupNode> checkAndGetGroupNode(parquet::schema
     return std::static_pointer_cast<parquet::schema::GroupNode>(node);
 }
 
-SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePtr & target_type, int def_level, int rep_level)
+SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePtr & target_type, int def_level, int rep_level, bool is_key)
 {
     if (node->repetition() == parquet::Repetition::UNDEFINED)
         throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Undefined repetition level");
@@ -701,7 +701,7 @@ SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodeP
         const auto * column_desc = context.parquet_reader->metaData().schema()->Column(column_idx);
 
         auto leaf_reader = ParquetColumnReaderFactory::builder()
-            .nullable(node->is_optional())
+            .nullable(!is_key && (target_type->isNullable() || node->is_optional() || column_desc->max_definition_level() > 0))
             .dictionary(context.row_group_meta->ColumnChunk(column_idx)->has_dictionary_page())
             .columnDescriptor(column_desc)
             .pageReader(creator)
@@ -743,7 +743,7 @@ SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodeP
 
         const auto& map_type = checkAndGetDataType<DataTypeMap>(*target_type);
         auto key_value_types = checkAndGetDataType<DataTypeTuple>(*checkAndGetDataType<DataTypeArray>(*map_type.getNestedType()).getNestedType()).getElements();
-        auto key_reader = buildReader(key_value_node->field(0), key_value_types.front(), def_level+1, rep_level+1);
+        auto key_reader = buildReader(key_value_node->field(0), key_value_types.front(), def_level+1, rep_level+1, true);
         auto value_reader = buildReader(key_value_node->field(1), key_value_types.back(), def_level+1, rep_level+1);
         return std::make_shared<MapColumnReader>(rep_level, def_level, key_reader, value_reader);
     }

@@ -78,6 +78,8 @@ void SelectiveColumnReader::readPageIfNeeded()
 
 bool SelectiveColumnReader::readPage()
 {
+    state.rep_levels.resize(0);
+    state.def_levels.resize(0);
     if (!page_reader->hasNext())
         return false;
     auto page_header = page_reader->peekNextPageHeader();
@@ -94,7 +96,7 @@ bool SelectiveColumnReader::readPage()
     }
     else if (page_type == parquet::format::PageType::DATA_PAGE)
     {
-        state.offsets.remain_rows = page_header.data_page_header.num_values;
+        state.offsets.reset(page_header.data_page_header.num_values);
         state.page.reset();
         skipPageIfNeed();
     }
@@ -109,7 +111,7 @@ void SelectiveColumnReader::readDataPageV1(const parquet::DataPageV1 & page)
 {
     parquet::LevelDecoder decoder;
     auto max_size = page.size();
-    state.offsets.remain_rows = page.num_values();
+//    state.offsets.remain_rows = page.num_values();
     state.data.buffer = page.data();
     auto max_rep_level = scan_spec.column_desc->max_repetition_level();
     auto max_def_level = scan_spec.column_desc->max_definition_level();
@@ -181,6 +183,7 @@ void SelectiveColumnReader::skip(size_t rows)
 }
 void SelectiveColumnReader::skipNulls(size_t rows_to_skip)
 {
+    if (!rows_to_skip) return;
     auto skipped = std::min(rows_to_skip, state.offsets.remain_rows);
     state.offsets.consume(skipped);
     state.lazy_skip_rows += (rows_to_skip - skipped);
@@ -444,6 +447,7 @@ template <typename DataType, typename SerializedType>
 void NumberDictionaryReader<DataType, SerializedType>::readSpace(
     MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
 {
+    // TODO 处理nullmap的offset
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
@@ -665,7 +669,8 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::nextIdxBatchIfE
         return;
     state.idx_buffer.resize(rows_to_read);
     if (!rows_to_read) return;
-    idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(rows_to_read));
+    size_t count = idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(rows_to_read));
+    chassert(count == rows_to_read);
 }
 
 template <typename DataType, typename DictValueType>
@@ -785,15 +790,30 @@ void OptionalColumnReader::nextBatchNullMapIfNeeded(size_t rows_to_read)
     std::fill(cur_null_map.begin(), cur_null_map.end(), 0);
     cur_null_count = 0;
     const auto & def_levels = child->getDefinitionLevels();
-    size_t start = def_levels.size() - child->availableRows();
+    const auto & rep_levels = child->getRepetitionLevels();
+
+    if (def_levels.empty())
+        return;
+    size_t start = child->levelsOffset();
     int16_t max_def_level = maxDefinitionLevel();
-    for (size_t i = 0; i < rows_to_read; i++)
+    auto max_rep_level = maxRepetitionLevel();
+    size_t read = 0;
+    size_t count = 0;
+    while (read < rows_to_read)
     {
-        if (def_levels[start + i] < max_def_level)
+        auto idx = start + count;
+        if (rep_levels[idx] < max_rep_level && def_levels[idx] < max_def_level)
         {
-            cur_null_map[i] = 1;
+            count++;
+            continue;
+        }
+        if (def_levels[idx] < max_def_level)
+        {
+            cur_null_map[read] = 1;
             cur_null_count++;
         }
+        count++;
+        read++;
     }
 }
 
@@ -1004,9 +1024,10 @@ void StringDictionaryReader::nextIdxBatchIfEmpty(size_t rows_to_read)
 {
     if (!state.idx_buffer.empty() || plain)
         return;
-    state.idx_buffer.resize(rows_to_read);
     if (!rows_to_read) return;
-    idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(rows_to_read));
+    state.idx_buffer.resize(rows_to_read);
+    size_t count = idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(rows_to_read));
+    chassert(count == rows_to_read);
 }
 
 void StringDictionaryReader::initIndexDecoderIfNeeded()
@@ -1809,7 +1830,17 @@ static void insertManyToFilter(PaddedPODArray<bool> &filter, bool value, size_t 
     std::fill(filter.end() - count, filter.end(), value);
 }
 
+size_t countEmpty(IColumn::Offsets & offsets, size_t start)
+{
+    size_t count = 0;
+    for (size_t i = start; i < offsets.size(); i++)
+    {
+        count += (offsets[i] == offsets[i - 1]);
+    }
+    return count;
+}
 
+// must read full
 void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read)
 {
     // support list inside nullable ?
@@ -1835,10 +1866,22 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
 
     size_t rows_read = 0;
     // read data from multiple pages
-    while (rows_read < rows_to_read)
+    bool finished = true;
+    auto appendRecord = [&](size_t count)
+    {
+        if (!finished) [[unlikely]]
+        {
+            offsets.back() += count;
+            finished = true;
+        }
+        else
+            offsets.push_back(offsets.back() + count);
+    };
+    while (rows_read < rows_to_read || !finished)
     {
         int array_size = 0;
         size_t old_max_offset = offsets.back();
+//        size_t old_offset_size = offsets.size();
         const auto & def_levels = child->getDefinitionLevels();
         bool has_def_level = !def_levels.empty();
         const auto & rep_levels = child->getRepetitionLevels();
@@ -1855,7 +1898,8 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
         while (true)
         {
             size_t idx = start + count;
-            if (idx >= levels_size || rows_read >= rows_to_read)
+            // levels out of range or rows out of range
+            if (idx >= levels_size || (rows_read >= rows_to_read && finished))
                 break;
             auto rl = rep_levels[idx];
             int16_t dl = 0;
@@ -1863,33 +1907,45 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                 dl = def_levels[idx];
             if (rl <= rep_level)
             {
-                if (count)
+                if (count) [[likely]]
                 {
-                    rows_read++;
-                    if (has_filter)
+                    if (!(!array_size && def_levels[idx-1] < def_level && rep_levels[idx-1] < rep_level && rep_levels[idx] < rep_level))
                     {
-                        auto valid = row_set->get(rows_read - 1);
-                        if (valid)
+                        rows_read+=finished;
+                        if (has_filter)
                         {
-                            insertManyToFilter(child_filter, true, array_size);
-                            offsets.push_back(offsets.back() + array_size);
+                            auto valid = row_set->get(rows_read - 1);
+                            if (valid)
+                            {
+                                insertManyToFilter(child_filter, true, array_size);
+                                appendRecord(array_size);
+                            }
+                            else
+                                insertManyToFilter(child_filter, false, array_size);
                         }
                         else
-                            insertManyToFilter(child_filter, false, array_size);
+                            appendRecord(array_size);
+                        array_size = 0;
                     }
-                    else
-                        offsets.push_back(offsets.back() + array_size);
-                    array_size = 0;
                 }
                 if (has_def_level && dl < def_level)
                 {
+                    if (rl != rep_level)
+                    {
+                        count++;
+                        continue;
+                    }
                     // value is null
                     if (null_map)
                     {
                         null_map->data()[offsets.size()] = 1;
                     }
                     else
-                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "null value is not supported");
+                    {
+                        offsets.push_back(offsets.back());
+                        chassert(array_size == 0);
+                    }
+//                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "null value is not supported");
                 }
                 else
                 {
@@ -1898,7 +1954,7 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
             }
             else
             {
-                array_size += (rl == rep_level+1);
+                array_size += (rl == rep_level + 1);
             }
             count++;
         }
@@ -1912,22 +1968,35 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                 if (valid)
                 {
                     insertManyToFilter(child_filter, true, array_size);
-                    offsets.push_back(offsets.back() + array_size);
+                    appendRecord(array_size);
                 }
                 else
                     insertManyToFilter(child_filter, false, array_size);
             }
             else
             {
-                offsets.push_back(offsets.back() + array_size);
+                appendRecord(array_size);
             }
-            rows_read ++;
+            rows_read++;
         }
+        else
+            count -= array_size;
         auto data_column = array_column->getDataPtr()->assumeMutable();
         OptionalRowSet filter;
         if (has_filter)
             filter = RowSet(child_filter);
-        child->read(data_column, filter, has_filter ? filter->totalRows() : offsets.back() - old_max_offset);
+        auto need_read = has_filter ? filter->totalRows() : offsets.back() - old_max_offset;
+        child->read(data_column, filter, need_read);
+        if (child->isLeafReader())
+            child->advance(count - need_read);
+//        chassert(data_column->size() == offsets.back());
+
+        // check last row finished
+         auto& next_rep_levels = child->getRepetitionLevels();
+        if (start + count<levels_size || next_rep_levels.empty() || next_rep_levels[child->levelsOffset()] <= rep_level) [[likely]]
+            finished = true;
+        else
+            finished = false;
     }
 }
 void ListColumnReader::computeRowSet(std::optional<RowSet> & , size_t )
@@ -2000,9 +2069,12 @@ void MapColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, 
     {
         int array_size = 0;
         size_t old_max_offset = offsets.back();
+        size_t old_offset_size = offsets.size();
         const auto & def_levels = key_reader->getDefinitionLevels();
         bool has_def_level = !def_levels.empty();
         const auto & rep_levels = key_reader->getRepetitionLevels();
+        const auto & value_rep_levels = value_reader->getRepetitionLevels();
+        size_t min_count = std::min((rep_levels.size() - key_reader->levelsOffset()), (value_rep_levels.size() - value_reader->levelsOffset()));
         size_t start = key_reader->levelsOffset();
         size_t levels_size = rep_levels.size();
         if (levels_size == 0)
@@ -2015,7 +2087,7 @@ void MapColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, 
         while (true)
         {
             size_t idx = start + count;
-            if (idx >= levels_size || rows_read >= rows_to_read)
+            if (count >= min_count || rows_read >= rows_to_read)
                 break;
             auto rl = rep_levels[idx];
             int16_t dl = 0;
@@ -2085,7 +2157,11 @@ void MapColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, 
         if (has_filter)
             filter = RowSet(child_filter);
         key_reader->read(key_column, filter, has_filter ? filter->totalRows() : offsets.back() - old_max_offset);
+        if (filter)
+            filter->setOffset(0);
         value_reader->read(value_column, filter, has_filter ? filter->totalRows() : offsets.back() - old_max_offset);
+        key_reader->advance(countEmpty(offsets, old_offset_size));
+        value_reader->advance(countEmpty(offsets, old_offset_size));
     }
 }
 void MapColumnReader::computeRowSet(std::optional<RowSet> & , size_t )
@@ -2126,6 +2202,11 @@ DataTypePtr MapColumnReader::getResultType()
     DataTypes types = {key_reader->getResultType(), value_reader->getResultType()};
     return std::make_shared<DataTypeMap>(std::move(types));
 }
+void MapColumnReader::advance(size_t rows)
+{
+    key_reader->advance(rows);
+    value_reader->advance(rows);
+}
 
 void StructColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read)
 {
@@ -2149,7 +2230,14 @@ void StructColumnReader::computeRowSet(std::optional<RowSet> & , size_t )
 
 MutableColumnPtr StructColumnReader::createColumn()
 {
-    return structType->createColumn();
+    MutableColumns columns;
+    const auto *tuple_type = checkAndGetDataType<DataTypeTuple>(structType.get());
+    for (const auto& name : tuple_type->getElementNames())
+    {
+        auto & nested_reader = children.at(name);
+        columns.push_back(nested_reader->createColumn());
+    }
+    return ColumnTuple::create(std::move(columns));
 }
 
 const PaddedPODArray<Int16> & StructColumnReader::getDefinitionLevels()
@@ -2190,6 +2278,13 @@ size_t StructColumnReader::levelsOffset() const
 DataTypePtr StructColumnReader::getResultType()
 {
     return structType;
+}
+void StructColumnReader::advance(size_t rows)
+{
+    for (auto & child : children)
+    {
+        child.second->advance(rows);
+    }
 }
 
 BooleanColumnReader::BooleanColumnReader(

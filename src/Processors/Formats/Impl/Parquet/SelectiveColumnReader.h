@@ -110,12 +110,19 @@ struct PageOffsets
 
     void consume(size_t rows)
     {
+        if (!rows) return;
         if (rows > remain_rows)
         {
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "read too many rows: {} > {}", rows, remain_rows);
         }
         remain_rows -= rows;
         levels_offset += rows;
+    }
+
+    void reset(size_t rows)
+    {
+        remain_rows = rows;
+        levels_offset = 0;
     }
 };
 
@@ -342,6 +349,8 @@ private:
 class SelectiveColumnReader
 {
     friend class OptionalColumnReader;
+    friend class ListColumnReader;
+    friend class MapColumnReader;
 
 public:
     SelectiveColumnReader(PageReaderCreator page_reader_creator_, const ScanSpec & scan_spec_)
@@ -411,6 +420,9 @@ public:
 
     /// skip n rows null value
     void skipNulls(size_t rows_to_skip);
+
+    /// ignore n rows, for nested type. for example, an empty list will take up one row.
+    virtual void advance(size_t rows) { state.offsets.consume(rows); }
     /// skip n rows
     void skip(size_t rows);
 
@@ -420,6 +432,8 @@ public:
     virtual int16_t maxDefinitionLevel() const { return scan_spec.column_desc->max_definition_level(); }
 
     virtual int16_t maxRepetitionLevel() const { return scan_spec.column_desc->max_repetition_level(); }
+
+    virtual bool isLeafReader() const { return true; }
 
 protected:
     void decodePage();
@@ -672,6 +686,7 @@ public:
     int16_t maxRepetitionLevel() const override { return child->maxRepetitionLevel(); }
     size_t availableRows() const override;
     size_t levelsOffset() const override;
+    void advance(size_t rows) override { child->advance(rows); }
 
 private:
     void applyLazySkip();
@@ -716,11 +731,16 @@ public:
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
     size_t availableRows() const override;
     size_t levelsOffset() const override;
+    void advance(size_t rows) override {
+        levels_should_ignore += rows;
+    }
+    bool isLeafReader() const override  { return false; }
 
 private:
     SelectiveColumnReaderPtr child;
     int16_t def_level = 0;
     int16_t rep_level = 0;
+    size_t levels_should_ignore = 0;
 };
 
 class MapColumnReader : public SelectiveColumnReader
@@ -745,6 +765,9 @@ public:
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
     size_t availableRows() const override;
     size_t levelsOffset() const override;
+    void advance(size_t rows) override;
+    bool isLeafReader() const override  { return false; }
+
 
 private:
     SelectiveColumnReaderPtr key_reader;
@@ -769,6 +792,8 @@ public:
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
     size_t availableRows() const override;
     size_t levelsOffset() const override;
+    void advance(size_t rows) override;
+    bool isLeafReader() const override  { return false; }
 
     const PaddedPODArray<Int16> & getDefinitionLevels() override;
     const PaddedPODArray<Int16> & getRepetitionLevels() override;
