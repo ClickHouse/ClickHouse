@@ -49,6 +49,7 @@ AutoML
 Autocompletion
 AvroConfluent
 AzureQueue
+Azurite
 BFloat
 BIGINT
 BIGSERIAL
