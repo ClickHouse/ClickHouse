@@ -5811,6 +5811,9 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
+    DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
+Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
+)", 0) \
     \
     DECLARE(Bool, allow_experimental_variant_type, false, R"(
 Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.

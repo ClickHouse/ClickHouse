@@ -67,6 +67,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
         {
             /// Release closed. Please use 25.1
             {"allow_experimental_database_iceberg", false, false, "New setting."},
+            {"shared_merge_tree_sync_parts_on_partition_operations", 1, 1, "New setting. By default parts are always synchronized"},
             {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
