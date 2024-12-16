@@ -30,7 +30,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = AggregatingMergeTree()
+) ENGINE = AggregatingMergeTree([default_aggregate_function])
 [PARTITION BY expr]
 [ORDER BY expr]
 [SAMPLE BY expr]
@@ -39,6 +39,20 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 For a description of request parameters, see [request description](../../../sql-reference/statements/create/table.md).
+
+### Parameters of AggregatingMergeTree
+
+#### default_aggregate_function
+
+`default_aggregate_function` - a name of a [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) to be applied to all columns whose type is different from [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) or [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md). Optional parameter.
+The function is not applied to columns that are in primary key.
+
+If `default_aggregate_function` is not specified for a column and the column's type is not SimpleAggregateFunction or AggregateFunction, then any of values in the column within the same primary key is taken. This value can be NULL.
+
+:::warning
+When using this parameter, no check is performed on table creation to verify whether the specified function accepts the data types represented in the columns.
+If the function is unable to work with the data type, an exception will be thrown only during data insertion or the next merge.
+:::
 
 **Query clauses**
 
