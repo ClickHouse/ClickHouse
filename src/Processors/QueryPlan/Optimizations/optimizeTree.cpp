@@ -20,9 +20,9 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    if (!settings.optimize_plan)
+    if (!optimization_settings.optimize_plan)
         return;
 
     const auto & optimizations = getOptimizations();
@@ -42,7 +42,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     std::stack<Frame> stack;
     stack.push({.node = &root});
 
-    const size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
@@ -72,7 +72,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
         /// Apply all optimizations.
         for (const auto & optimization : optimizations)
         {
-            if (!(settings.*(optimization.is_enabled)))
+            if (!(optimization_settings.*(optimization.is_enabled)))
                 continue;
 
             /// Just in case, skip optimization if it is not initialized.
