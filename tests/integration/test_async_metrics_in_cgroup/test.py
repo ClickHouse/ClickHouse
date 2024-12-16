@@ -54,6 +54,10 @@ def test_user_cpu_accounting(start_cluster):
     # this check is really weak, but CI is tough place and we cannot guarantee that test process will get many cpu time
     assert float(node2_cpu_time) > 2
 
+    # OSIdleTime is not available for cgroups, so it shouldn't be present
+    for node in [node1, node2]:
+        assert get_async_metric(node, "OSIdleTime") == "0"
+
 
 def test_normalized_user_cpu(start_cluster):
     if node1.is_built_with_sanitizer():
@@ -67,3 +71,18 @@ def test_normalized_user_cpu(start_cluster):
 
     node2_cpu_time = get_async_metric(node2, "OSUserTimeNormalized")
     assert float(node2_cpu_time) < 1.01
+
+
+def test_system_wide_metrics(start_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    run_cpu_intensive_task(node1)
+
+    # /proc/loadavg - LoadAverage1
+    # /proc/uptime - OSUptime
+    # /proc/stat - OSProcessesRunning, OSInterrupts
+    # /proc/meminfo - OSMemoryTotal
+    for metric in ["LoadAverage1", "OSUptime", "OSProcessesRunning", "OSInterrupts", "OSMemoryTotal"]:
+        node1_value = get_async_metric(node1, metric)
+        assert float(node1_value) > 0
