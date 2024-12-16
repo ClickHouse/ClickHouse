@@ -50,6 +50,7 @@ Autocompletion
 AvroConfluent
 AzureQueue
 arrayNormalizedGini
+BFloat
 BIGINT
 BIGSERIAL
 BORO
@@ -245,10 +246,8 @@ Deduplication
 DefaultTableEngine
 DelayedInserts
 DeliveryTag
-Deltalake
 DeltaLake
-deltalakeCluster
-deltaLakeCluster
+Deltalake
 Denormalize
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
@@ -382,15 +381,11 @@ Homebrew's
 HorizontalDivide
 Hostname
 HouseOps
-hudi
 Hudi
-hudiCluster
 HudiCluster
 HyperLogLog
 Hypot
 IANA
-icebergCluster
-IcebergCluster
 IDE
 IDEs
 IDNA
@@ -411,6 +406,7 @@ IPTrie
 IProcessor
 IPv
 ITION
+IcebergCluster
 Identifiant
 IdentifierQuotingRule
 IdentifierQuotingStyle
@@ -1235,6 +1231,7 @@ argMin
 argmax
 argmin
 arrayAUC
+arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -1274,10 +1271,10 @@ arrayPartialShuffle
 arrayPartialSort
 arrayPopBack
 arrayPopFront
-arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
@@ -1619,9 +1616,11 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
 deltaLake
+deltaLakeCluster
 deltaSum
 deltaSumTimestamp
 deltalake
+deltalakeCluster
 deltasum
 deltasumtimestamp
 demangle
@@ -1941,10 +1940,13 @@ html
 http
 https
 hudi
+hudi
+hudiCluster
 hyperscan
 hypot
 hyvor
 iTerm
+icebergCluster
 icosahedron
 icudata
 idempotency
@@ -3169,4 +3171,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-BFloat
