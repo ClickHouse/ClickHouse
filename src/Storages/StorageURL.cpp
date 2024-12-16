@@ -38,6 +38,8 @@
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
 
+#include <TableFunctions/TableFunctionURL.h>
+
 #include <Formats/SchemaInferenceUtils.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/ServerSettings.h>
@@ -1486,7 +1488,7 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
 }
 
 size_t StorageURL::evalArgsAndCollectHeaders(
-    ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context)
+    ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments)
 {
     ASTs::iterator headers_it = url_function_args.end();
 
@@ -1540,7 +1542,8 @@ size_t StorageURL::evalArgsAndCollectHeaders(
         if (headers_ast_function && headers_ast_function->name == "equals")
             continue;
 
-        (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
+        if (evaluate_arguments)
+            (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
     }
 
     if (headers_it == url_function_args.end())
@@ -1570,6 +1573,11 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 }
 
+void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
+}
+
 StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context)
 {
     StorageURL::Configuration configuration;
@@ -1577,7 +1585,7 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
-        evalArgsAndCollectHeaders(args, configuration.headers, local_context);
+        evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
     }
     else
     {
