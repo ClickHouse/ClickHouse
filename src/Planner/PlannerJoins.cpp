@@ -526,9 +526,21 @@ JoinClauses buildJoinClauses(
         return result;
     }
 
-    std::unordered_map<IQueryTreeNode *, JoinClauses> built_clauses;
+    std::unordered_map<const IQueryTreeNode *, JoinClauses> built_clauses;
     std::stack<QueryTreeNodePtr> nodes_to_process;
     nodes_to_process.push(join_expression);
+
+    auto get_and_check_built_clause = [&built_clauses](const IQueryTreeNode* node) -> JoinClauses &
+    {
+        auto it = built_clauses.find(node);
+        if (it == built_clauses.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join clauses are not built for node: {}", node->formatASTForErrorMessage());
+
+        if (it->second.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join clauses are already used for node: {}", node->formatASTForErrorMessage());
+
+        return it->second;
+    };
 
     while (!nodes_to_process.empty())
     {
@@ -556,8 +568,9 @@ JoinClauses buildJoinClauses(
             {
                 for (auto & argument : arguments)
                 {
-                    auto & child_res = built_clauses.at(argument.get());
+                    auto & child_res = get_and_check_built_clause(argument.get());
                     result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    child_res.clear();
                 }
 
                 // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
@@ -585,15 +598,18 @@ JoinClauses buildJoinClauses(
             {
                 auto it = arguments.begin();
                 {
-                    auto & child_res = built_clauses.at(it->get());
+                    auto & child_res = get_and_check_built_clause(it->get());
+
                     result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    child_res.clear();
                 }
                 it++;
 
                 for (; it != arguments.end(); it++)
                 {
-                    auto & child_res = built_clauses.at(it->get());
+                    auto & child_res = get_and_check_built_clause(it->get());
                     result = makeCrossProduct(result, child_res);
+                    child_res.clear();
                 }
             }
 
