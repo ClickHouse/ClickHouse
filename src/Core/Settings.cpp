@@ -3105,16 +3105,19 @@ Possible values:
 Allow execute multiIf function columnar
 )", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
-Formatter '%f' in function 'formatDateTime()' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
+Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
     DECLARE(Bool, formatdatetime_parsedatetime_m_is_month_name, true, R"(
-Formatter '%M' in functions 'formatDateTime()' and 'parseDateTime()' print/parse the month name instead of minutes.
+Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the month name instead of minutes.
 )", 0) \
     DECLARE(Bool, parsedatetime_parse_without_leading_zeros, true, R"(
-Formatters '%c', '%l' and '%k' in function 'parseDateTime()' parse months and hours without leading zeros.
+Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hours without leading zeros.
 )", 0) \
     DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
-Formatters '%c', '%l' and '%k' in function 'formatDateTime()' print months and hours without leading zeros.
+Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
+)", 0) \
+    DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
+If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
     \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
