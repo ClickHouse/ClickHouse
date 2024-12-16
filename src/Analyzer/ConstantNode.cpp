@@ -5,13 +5,13 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
-#include <DataTypes/DataTypeDateTime64.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>

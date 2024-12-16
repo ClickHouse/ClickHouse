@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/max
-sidebar_position: 162
+sidebar_position: 3
 title: max
 ---
 

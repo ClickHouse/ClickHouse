@@ -9,4 +9,3 @@ FROM
 )
 WHERE number = 1
 LIMIT 1
-SETTINGS max_rows_to_read = 0;

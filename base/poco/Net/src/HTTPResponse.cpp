@@ -209,15 +209,6 @@ void HTTPResponse::getCookies(std::vector<HTTPCookie>& cookies) const
 	}
 }
 
-void HTTPResponse::getHeaders(std::map<std::string, std::string> & headers) const
-{
-    headers.clear();
-    for (const auto & it : *this)
-    {
-        headers.emplace(it.first, it.second);
-    }
-}
-
 
 void HTTPResponse::write(std::ostream& ostr) const
 {

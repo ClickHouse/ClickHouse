@@ -2,6 +2,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <string>
 
 
 namespace ProfileEvents

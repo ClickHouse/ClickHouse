@@ -1,7 +1,7 @@
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -39,12 +39,8 @@ node6 = cluster.add_instance(
 node7 = cluster.add_instance(
     "node7",
     user_configs=[
-        "configs/000-users_with_env_subst.xml",
+        "configs/000-config_with_env_subst.xml",
         "configs/010-env_subst_override.xml",
-    ],
-    main_configs=[
-        "configs/000-server_overrides.xml",
-        "configs/010-server_with_env_subst.xml",
     ],
     env_variables={
         # overridden with 424242
@@ -52,11 +48,6 @@ node7 = cluster.add_instance(
         "MAX_THREADS": "2",
     },
     instance_env_variables=True,
-)
-node8 = cluster.add_instance(
-    "node8",
-    user_configs=["configs/config_include_from_yml.xml"],
-    main_configs=["configs/include_from_source.yml"],
 )
 
 
@@ -124,15 +115,11 @@ def test_config(start_cluster):
         node7.query("select value from system.settings where name = 'max_threads'")
         == "2\n"
     )
-    assert (
-        node8.query("select value from system.settings where name = 'max_query_size'")
-        == "88888\n"
-    )
 
 
-def test_config_from_env_overrides(start_cluster):
+def test_config_invalid_overrides(start_cluster):
     node7.replace_config(
-        "/etc/clickhouse-server/users.d/000-users_with_env_subst.xml",
+        "/etc/clickhouse-server/users.d/000-config_with_env_subst.xml",
         """
 <clickhouse>
   <profiles>
@@ -160,7 +147,7 @@ def test_config_from_env_overrides(start_cluster):
     ):
         node7.query("SYSTEM RELOAD CONFIG")
     node7.replace_config(
-        "/etc/clickhouse-server/users.d/000-users_with_env_subst.xml",
+        "/etc/clickhouse-server/users.d/000-config_with_env_subst.xml",
         """
 <clickhouse>
   <profiles>
@@ -185,24 +172,6 @@ def test_config_from_env_overrides(start_cluster):
     node7.query("SYSTEM RELOAD CONFIG")
 
 
-def test_config_merge_from_env_overrides(start_cluster):
-    assert (
-        node7.query(
-            "SELECT value FROM system.server_settings WHERE name='max_thread_pool_size'"
-        )
-        == "10000\n"
-    )
-    node7.replace_config(
-        "/etc/clickhouse-server/config.d/010-server_with_env_subst.xml",
-        """
-<clickhouse>
-    <max_thread_pool_size from_env="CH_THREADS" replace="1">9000</max_thread_pool_size>
-</clickhouse>
-""",
-    )
-    node7.query("SYSTEM RELOAD CONFIG")
-
-
 def test_include_config(start_cluster):
     # <include incl="source tag" />
     assert node4.query("select 1")
@@ -213,11 +182,6 @@ def test_include_config(start_cluster):
     assert node3.query("select 1")
     assert node3.query("select 1", user="user_1")
     assert node3.query("select 1", user="user_2")
-
-    # <include incl="source tag" /> from .yml source
-    assert node8.query("select 1")
-    assert node8.query("select 1", user="user_1")
-    assert node8.query("select 1", user="user_2")
 
 
 def test_allow_databases(start_cluster):

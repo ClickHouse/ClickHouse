@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#include <Disks/DiskFactory.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
 #include <Common/randomSeed.h>
@@ -148,7 +149,8 @@ public:
     {
         if (entry->is_directory())
             return dir_path / entry->path().filename() / "";
-        return dir_path / entry->path().filename();
+        else
+            return dir_path / entry->path().filename();
     }
 
     String name() const override { return entry->path().filename(); }
@@ -210,9 +212,10 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
         reserved_bytes += bytes;
         return {unreserved_space - bytes};
     }
-
-    LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
-
+    else
+    {
+        LOG_TRACE(logger, "Could not reserve {} on local disk {}. Not enough unreserved space", ReadableSize(bytes), backQuote(name));
+    }
 
     return {};
 }
@@ -221,7 +224,7 @@ static UInt64 getTotalSpaceByName(const String & name, const String & disk_path,
 {
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+        fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_frsize;
@@ -245,7 +248,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
     /// available for superuser only and for system purposes
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+        fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_frsize;
@@ -262,17 +265,17 @@ std::optional<UInt64> DiskLocal::getUnreservedSpace() const
     return available_space;
 }
 
-bool DiskLocal::existsFileOrDirectory(const String & path) const
+bool DiskLocal::exists(const String & path) const
 {
     return fs::exists(fs::path(disk_path) / path);
 }
 
-bool DiskLocal::existsFile(const String & path) const
+bool DiskLocal::isFile(const String & path) const
 {
     return fs::is_regular_file(fs::path(disk_path) / path);
 }
 
-bool DiskLocal::existsDirectory(const String & path) const
+bool DiskLocal::isDirectory(const String & path) const
 {
     return fs::is_directory(fs::path(disk_path) / path);
 }
@@ -295,7 +298,7 @@ void DiskLocal::createDirectories(const String & path)
 void DiskLocal::clearDirectory(const String & path)
 {
     for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
-        (void)fs::remove(entry.path());
+        fs::remove(entry.path());
 }
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
@@ -308,7 +311,8 @@ DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
     fs::path meta_path = fs::path(disk_path) / path;
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
         return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
-    return std::make_unique<DiskLocalDirectoryIterator>();
+    else
+        return std::make_unique<DiskLocalDirectoryIterator>();
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
@@ -336,15 +340,7 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(
-        fs::path(disk_path) / path,
-        buf_size,
-        flags,
-        settings.local_throttler,
-        0666,
-        nullptr,
-        0,
-        settings.use_adaptive_write_buffer,
-        settings.adaptive_write_buffer_initial_size);
+        fs::path(disk_path) / path, buf_size, flags, settings.local_throttler);
 }
 
 std::vector<String> DiskLocal::getBlobPath(const String & path) const
@@ -369,11 +365,8 @@ void DiskLocal::removeFile(const String & path)
 void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(fs_path.c_str()))
-    {
-        if (errno != ENOENT)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
-    }
+    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
 }
 
 void DiskLocal::removeDirectory(const String & path)
@@ -385,7 +378,7 @@ void DiskLocal::removeDirectory(const String & path)
 
 void DiskLocal::removeRecursive(const String & path)
 {
-    (void)fs::remove_all(fs::path(disk_path) / path);
+    fs::remove_all(fs::path(disk_path) / path);
 }
 
 void DiskLocal::listFiles(const String & path, std::vector<String> & file_names) const
@@ -588,7 +581,7 @@ try
         auto disk_ptr = std::static_pointer_cast<DiskLocal>(shared_from_this());
         auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk_ptr);
         auto buf = std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
-        buf->write(data.data, DiskWriteCheckData::PAGE_SIZE_IN_BYTES);
+        buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->finalize();
         buf->sync();
     }
@@ -641,7 +634,7 @@ void DiskLocal::setup()
 
     try
     {
-        if (existsFile(disk_checker_path))
+        if (exists(disk_checker_path))
         {
             auto magic_number = readDiskCheckerMagicNumber();
             if (magic_number)

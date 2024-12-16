@@ -7,13 +7,15 @@
 #include <boost/geometry/geometries/polygon.hpp>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
-#include <Core/Settings.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
@@ -33,14 +35,9 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool validate_polygons;
-}
-
 namespace ErrorCodes
 {
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
@@ -65,7 +62,8 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(context->getSettingsRef()[Setting::validate_polygons]);
+        return std::make_shared<FunctionPointInPolygon<PointInConstPolygonImpl>>(
+            context->getSettingsRef().validate_polygons);
     }
 
     String getName() const override
@@ -89,7 +87,7 @@ public:
     {
         if (arguments.size() < 2)
         {
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires at least 2 arguments", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least 2 arguments", getName());
         }
 
         /** We allow function invocation in one of the following forms:
@@ -153,11 +151,6 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * point_col = arguments[0].column.get();
@@ -213,56 +206,72 @@ public:
                 bool is_in = impl->contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
                 return result_type->createColumnConst(input_rows_count, is_in);
             }
-
-            return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
-        }
-
-        if (arguments.size() != 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const polygon", getName());
-
-        auto res_column = ColumnVector<UInt8>::create(input_rows_count);
-        auto & data = res_column->getData();
-
-        /// A polygon, possibly with holes, is represented by 2d array:
-        /// [[(outer_x_1, outer_y_1, ...)], [(hole1_x_1, hole1_y_1), ...], ...]
-        ///
-        /// Or, a polygon without holes can be represented by 1d array:
-        /// [(outer_x_1, outer_y_1, ...)]
-
-        if (isTwoDimensionalArray(*arguments[1].type))
-        {
-            /// We cast everything to Float64 in advance (in batch fashion)
-            ///  to avoid casting with virtual calls in a loop.
-            /// Note that if the type is already Float64, the operation in noop.
-
-            ColumnPtr polygon_column_float64 = castColumn(
-                arguments[1],
-                std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(
-                    std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()}))));
-
-            for (size_t i = 0; i < input_rows_count; ++i)
+            else
             {
-                size_t point_index = point_is_const ? 0 : i;
-                data[i] = isInsidePolygonWithHoles(
-                    tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), *polygon_column_float64, i);
+                return pointInPolygon(*tuple_columns[0], *tuple_columns[1], *impl);
             }
         }
         else
         {
-            ColumnPtr polygon_column_float64 = castColumn(
-                arguments[1],
-                std::make_shared<DataTypeArray>(
-                    std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()})));
+            if (arguments.size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multi-argument version of function {} works only with const polygon",
+                    getName());
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            auto res_column = ColumnVector<UInt8>::create(input_rows_count);
+            auto & data = res_column->getData();
+
+            /// A polygon, possibly with holes, is represented by 2d array:
+            /// [[(outer_x_1, outer_y_1, ...)], [(hole1_x_1, hole1_y_1), ...], ...]
+            ///
+            /// Or, a polygon without holes can be represented by 1d array:
+            /// [(outer_x_1, outer_y_1, ...)]
+
+            if (isTwoDimensionalArray(*arguments[1].type))
             {
-                size_t point_index = point_is_const ? 0 : i;
-                data[i] = isInsidePolygonWithoutHoles(
-                    tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), *polygon_column_float64, i);
-            }
-        }
+                /// We cast everything to Float64 in advance (in batch fashion)
+                ///  to avoid casting with virtual calls in a loop.
+                /// Note that if the type is already Float64, the operation in noop.
 
-        return res_column;
+                ColumnPtr polygon_column_float64 = castColumn(
+                    arguments[1],
+                    std::make_shared<DataTypeArray>(
+                        std::make_shared<DataTypeArray>(
+                            std::make_shared<DataTypeTuple>(DataTypes{
+                                std::make_shared<DataTypeFloat64>(),
+                                std::make_shared<DataTypeFloat64>()}))));
+
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    size_t point_index = point_is_const ? 0 : i;
+                    data[i] = isInsidePolygonWithHoles(
+                        tuple_columns[0]->getFloat64(point_index),
+                        tuple_columns[1]->getFloat64(point_index),
+                        *polygon_column_float64,
+                        i);
+                }
+            }
+            else
+            {
+                ColumnPtr polygon_column_float64 = castColumn(
+                    arguments[1],
+                    std::make_shared<DataTypeArray>(
+                        std::make_shared<DataTypeTuple>(DataTypes{
+                            std::make_shared<DataTypeFloat64>(),
+                            std::make_shared<DataTypeFloat64>()})));
+
+                for (size_t i = 0; i < input_rows_count; ++i)
+                {
+                    size_t point_index = point_is_const ? 0 : i;
+                    data[i] = isInsidePolygonWithoutHoles(
+                        tuple_columns[0]->getFloat64(point_index),
+                        tuple_columns[1]->getFloat64(point_index),
+                        *polygon_column_float64,
+                        i);
+                }
+            }
+
+            return res_column;
+        }
     }
 
 private:

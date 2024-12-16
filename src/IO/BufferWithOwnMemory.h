@@ -4,14 +4,11 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/Allocator.h>
-#include <Common/GWPAsan.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
 #include <base/arithmeticOverflow.h>
-
-#include "config.h"
 
 
 namespace ProfileEvents
@@ -47,7 +44,10 @@ struct Memory : boost::noncopyable, Allocator
     Memory() = default;
 
     /// If alignment != 0, then allocate memory aligned to specified value.
-    explicit Memory(size_t size_, size_t alignment_ = 0) : alignment(alignment_) { alloc(size_); }
+    explicit Memory(size_t size_, size_t alignment_ = 0) : alignment(alignment_)
+    {
+        alloc(size_);
+    }
 
     ~Memory()
     {

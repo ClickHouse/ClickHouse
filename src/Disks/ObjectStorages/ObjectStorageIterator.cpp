@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-RelativePathWithMetadataPtr ObjectStorageIteratorFromList::current()
+RelativePathWithMetadata ObjectStorageIteratorFromList::current()
 {
     if (!isValid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to access invalid iterator");

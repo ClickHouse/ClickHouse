@@ -48,7 +48,7 @@ struct MaxIntersectionsData
     Array value;
 };
 
-enum class AggregateFunctionIntersectionsKind : uint8_t
+enum class AggregateFunctionIntersectionsKind
 {
     Count,
     Position
@@ -87,7 +87,8 @@ public:
     {
         if (kind_ == AggregateFunctionIntersectionsKind::Count)
             return std::make_shared<DataTypeUInt64>();
-        return std::make_shared<DataTypeNumber<PointType>>();
+        else
+            return std::make_shared<DataTypeNumber<PointType>>();
     }
 
     /// MaxIntersectionsData::Allocator uses the arena

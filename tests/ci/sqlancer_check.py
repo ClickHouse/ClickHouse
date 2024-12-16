@@ -6,8 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from build_download_helper import read_build_urls
-from ci_config import CI
+from build_download_helper import get_build_name_for_check, read_build_urls
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
@@ -44,7 +43,7 @@ def main():
 
     docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
-    build_name = CI.get_required_build_name(check_name)
+    build_name = get_build_name_for_check(check_name)
     urls = read_build_urls(build_name, reports_path)
     if not urls:
         raise ValueError("No build URLs found")

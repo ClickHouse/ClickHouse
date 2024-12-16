@@ -10,7 +10,6 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int NOT_IMPLEMENTED;
 }
 
 SerializationInfoTuple::SerializationInfoTuple(
@@ -69,30 +68,15 @@ void SerializationInfoTuple::add(const SerializationInfo & other)
     }
 }
 
-void SerializationInfoTuple::remove(const SerializationInfo & other)
-{
-    if (!structureEquals(other))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot remove from serialization info different structure");
-
-    SerializationInfo::remove(other);
-    const auto & other_elems = assert_cast<const SerializationInfoTuple &>(other).elems;
-    chassert(elems.size() == other_elems.size());
-
-    for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->remove(*other_elems[i]);
-}
-
 void SerializationInfoTuple::addDefaults(size_t length)
 {
-    SerializationInfo::addDefaults(length);
-
     for (const auto & elem : elems)
         elem->addDefaults(length);
 }
 
 void SerializationInfoTuple::replaceData(const SerializationInfo & other)
 {
-    SerializationInfo::replaceData(other);
+    SerializationInfo::add(other);
 
     const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
     for (const auto & [name, elem] : name_to_elem)
@@ -110,9 +94,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     for (const auto & elem : elems)
         elems_cloned.push_back(elem->clone());
 
-    auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
-    ret->data = data;
-    return ret;
+    return std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
 }
 
 MutableSerializationInfoPtr SerializationInfoTuple::createWithType(

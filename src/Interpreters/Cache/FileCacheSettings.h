@@ -32,22 +32,14 @@ struct FileCacheSettings
     size_t background_download_queue_size_limit = FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_QUEUE_SIZE_LIMIT;
 
     size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
-    bool load_metadata_asynchronously = false;
 
     bool write_cache_per_user_id_directory = false;
 
     std::string cache_policy = "LRU";
     double slru_size_ratio = 0.5;
 
-    double keep_free_space_size_ratio = FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO;
-    double keep_free_space_elements_ratio = FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO;
-    size_t keep_free_space_remove_batch = FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH;
-
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
     void loadFromCollection(const NamedCollection & collection);
-
-    std::string toString() const;
-    std::vector<std::string> getSettingsDiff(const FileCacheSettings & other) const;
 
     bool operator ==(const FileCacheSettings &) const = default;
 

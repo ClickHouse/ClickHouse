@@ -23,13 +23,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-template <is_decimal T>
-T DecimalField<T>::getScaleMultiplier() const
-{
-    return DecimalUtils::scaleMultiplier<T>(scale);
-}
-
-Field getBinaryValue(UInt8 type, ReadBuffer & buf)
+inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (static_cast<Field::Types::Which>(type))
     {
@@ -106,7 +100,7 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::Array:
         {
             Array value;
-            readBinaryArray(value, buf);
+            readBinary(value, buf);
             return value;
         }
         case Field::Types::Tuple:
@@ -150,22 +144,28 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field type {}", std::to_string(type));
 }
 
-void readBinaryArray(Array & x, ReadBuffer & buf)
+void readBinary(Array & x, ReadBuffer & buf)
 {
     size_t size;
+    UInt8 type;
+    readBinary(type, buf);
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
-        x.push_back(readFieldBinary(buf));
+        x.push_back(getBinaryValue(type, buf));
 }
 
-void writeBinaryArray(const Array & x, WriteBuffer & buf)
+void writeBinary(const Array & x, WriteBuffer & buf)
 {
+    UInt8 type = Field::Types::Null;
     size_t size = x.size();
+    if (size)
+        type = x.front().getType();
+    writeBinary(type, buf);
     writeBinary(size, buf);
 
     for (const auto & elem : x)
-        writeFieldBinary(elem, buf);
+        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
 }
 
 void writeText(const Array & x, WriteBuffer & buf)
@@ -180,7 +180,11 @@ void readBinary(Tuple & x, ReadBuffer & buf)
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
-        x.push_back(readFieldBinary(buf));
+    {
+        UInt8 type;
+        readBinary(type, buf);
+        x.push_back(getBinaryValue(type, buf));
+    }
 }
 
 void writeBinary(const Tuple & x, WriteBuffer & buf)
@@ -189,7 +193,11 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
     writeBinary(size, buf);
 
     for (const auto & elem : x)
-        writeFieldBinary(elem, buf);
+    {
+        const UInt8 type = elem.getType();
+        writeBinary(type, buf);
+        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
+    }
 }
 
 void writeText(const Tuple & x, WriteBuffer & buf)
@@ -203,7 +211,11 @@ void readBinary(Map & x, ReadBuffer & buf)
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
-        x.push_back(readFieldBinary(buf));
+    {
+        UInt8 type;
+        readBinary(type, buf);
+        x.push_back(getBinaryValue(type, buf));
+    }
 }
 
 void writeBinary(const Map & x, WriteBuffer & buf)
@@ -212,7 +224,11 @@ void writeBinary(const Map & x, WriteBuffer & buf)
     writeBinary(size, buf);
 
     for (const auto & elem : x)
-        writeFieldBinary(elem, buf);
+    {
+        const UInt8 type = elem.getType();
+        writeBinary(type, buf);
+        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
+    }
 }
 
 void writeText(const Map & x, WriteBuffer & buf)
@@ -297,19 +313,6 @@ void writeFieldText(const Field & x, WriteBuffer & buf)
     buf.write(res.data(), res.size());
 }
 
-void writeFieldBinary(const Field & x, WriteBuffer & buf)
-{
-    const UInt8 type = x.getType();
-    writeBinary(type, buf);
-    Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, x);
-}
-
-Field readFieldBinary(ReadBuffer & buf)
-{
-    UInt8 type;
-    readBinary(type, buf);
-    return getBinaryValue(type, buf);
-}
 
 String Field::dump() const
 {
@@ -567,7 +570,7 @@ template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 
 
-void writeText(const Null & x, WriteBuffer & buf)
+inline void writeText(const Null & x, WriteBuffer & buf)
 {
     if (x.isNegativeInfinity())
         writeText("-Inf", buf);
@@ -625,9 +628,5 @@ std::string_view Field::getTypeName() const
     return fieldTypeToString(which);
 }
 
-template class DecimalField<Decimal32>;
-template class DecimalField<Decimal64>;
-template class DecimalField<Decimal128>;
-template class DecimalField<Decimal256>;
-template class DecimalField<DateTime64>;
+
 }

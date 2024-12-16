@@ -1,10 +1,13 @@
 #pragma once
 
+#include "config.h"
+
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/ITableFunction.h>
-#include <TableFunctions/TableFunctionObjectStorage.h>
+#include <TableFunctions/TableFunctionAzureBlobStorage.h>
+#include <TableFunctions/TableFunctionS3.h>
 
 
 namespace DB
@@ -23,6 +26,7 @@ class ITableFunctionCluster : public Base
 {
 public:
     String getName() const override = 0;
+    String getSignature() const override = 0;
 
     static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context)
     {
@@ -45,11 +49,7 @@ protected:
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override
     {
         if (args.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "The function {} should have arguments. The first argument must be the cluster name and the rest are the arguments of "
-                "corresponding table function",
-                getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
         /// Evaluate only first argument, everything else will be done Base class
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);

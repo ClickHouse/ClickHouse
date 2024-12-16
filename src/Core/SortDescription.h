@@ -1,15 +1,14 @@
 #pragma once
 
-
+#include <vector>
+#include <memory>
+#include <cstddef>
+#include <string>
 #include <Core/Field.h>
+#include <Core/SettingsEnums.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/Collator.h>
-
-#include <cstddef>
-#include <string>
-#include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -33,12 +32,9 @@ struct FillColumnDescription
     DataTypePtr fill_to_type;
     Field fill_step;        /// Default = +1 or -1 according to direction
     std::optional<IntervalKind> step_kind;
-    Field fill_staleness;   /// Default = Null - should not be considered
-    std::optional<IntervalKind> staleness_kind;
 
-    using StepFunction = std::function<void(Field &, Int32 jumps_count)>;
+    using StepFunction = std::function<void(Field &)>;
     StepFunction step_func;
-    StepFunction staleness_step_func;
 };
 
 /// Description of the sorting rule by one column.

@@ -9,16 +9,9 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/Utils.h>
-
-#include <Core/Settings.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool count_distinct_optimization;
-}
 
 namespace
 {
@@ -31,7 +24,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::count_distinct_optimization])
+        if (!getSettings().count_distinct_optimization)
             return;
 
         auto * query_node = node->as<QueryNode>();
@@ -84,9 +77,11 @@ public:
 
         /// Replace `countDistinct` of initial query into `count`
         auto result_type = function_node->getResultType();
-
+        AggregateFunctionProperties properties;
+        auto action = NullsAction::EMPTY;
+        auto aggregate_function = AggregateFunctionFactory::instance().get("count", action, {}, {}, properties);
+        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         function_node->getArguments().getNodes().clear();
-        resolveAggregateFunctionNodeByName(*function_node, "count");
     }
 };
 

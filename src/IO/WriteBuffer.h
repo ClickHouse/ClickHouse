@@ -41,7 +41,7 @@ public:
       * If direct write is performed into [position(), buffer().end()) and its length is not enough,
       * you need to fill it first (i.g with write call), after it the capacity is regained.
       */
-    void next()
+    inline void next()
     {
         if (!offset())
             return;
@@ -59,23 +59,22 @@ public:
               */
             pos = working_buffer.begin();
             bytes += bytes_in_buffer;
-
             throw;
         }
 
         bytes += bytes_in_buffer;
-        pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-        nextimpl_working_buffer_offset = 0;
+        pos = working_buffer.begin();
     }
 
     /// Calling finalize() in the destructor of derived classes is a bad practice.
     virtual ~WriteBuffer();
 
-    void nextIfAtEnd()
+    inline void nextIfAtEnd()
     {
         if (!hasPendingData())
             next();
     }
+
 
     void write(const char * from, size_t n)
     {
@@ -97,7 +96,7 @@ public:
         }
     }
 
-    void write(char x)
+    inline void write(char x)
     {
         if (finalized)
             throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
@@ -122,9 +121,6 @@ public:
         if (finalized)
             return;
 
-        if (canceled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize buffer after cancellation.");
-
         LockMemoryExceptionInThread lock(VariableContext::Global);
         try
         {
@@ -134,14 +130,10 @@ public:
         catch (...)
         {
             pos = working_buffer.begin();
-
-            cancel();
-
+            finalized = true;
             throw;
         }
     }
-
-    void cancel() noexcept;
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
@@ -158,17 +150,7 @@ protected:
         next();
     }
 
-    virtual void cancelImpl() noexcept
-    {
-    }
-
     bool finalized = false;
-    bool canceled = false;
-
-    /// The number of bytes to preserve from the initial position of `working_buffer`
-    /// buffer. Apparently this is an additional out-parameter for nextImpl(),
-    /// not a real field.
-    size_t nextimpl_working_buffer_offset = 0;
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

@@ -106,9 +106,11 @@ protected:
                 setResult(result, location, frames);
                 return result;
             }
-            return {object->name};
+            else
+                return {object->name};
         }
-        return {};
+        else
+            return {};
     }
 
     ResultT implCached(uintptr_t addr) const

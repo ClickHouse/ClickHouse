@@ -30,7 +30,7 @@ namespace ProfileEvents
     class Timer
     {
     public:
-        enum class Resolution : UInt32
+        enum class Resolution : UInt64
         {
             Nanoseconds = 1,
             Microseconds = 1000,
@@ -38,12 +38,8 @@ namespace ProfileEvents
         };
         Timer(Counters & counters_, Event timer_event_, Resolution resolution_);
         Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_);
-        Timer(Timer && other) noexcept
-            : counters(other.counters), timer_event(std::move(other.timer_event)), watch(std::move(other.watch)), resolution(std::move(other.resolution))
-            {}
         ~Timer() { end(); }
         void cancel() { watch.reset(); }
-        void restart() { watch.restart(); }
         void end();
         UInt64 get();
 
@@ -152,15 +148,6 @@ namespace ProfileEvents
         static const Event num_counters;
     };
 
-    enum class ValueType : uint8_t
-    {
-        Number,
-        Bytes,
-        Milliseconds,
-        Microseconds,
-        Nanoseconds,
-    };
-
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
 
@@ -176,9 +163,6 @@ namespace ProfileEvents
 
     /// Get description of event by identifier. Returns statically allocated string.
     const char * getDocumentation(Event event);
-
-    /// Get value type of event by identifier. Returns enum value.
-    ValueType getValueType(Event event);
 
     /// Get index just after last event identifier.
     Event end();

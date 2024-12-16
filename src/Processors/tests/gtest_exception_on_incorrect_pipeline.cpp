@@ -50,7 +50,7 @@ TEST(Processors, PortsNotConnected)
     processors->emplace_back(std::move(source));
     processors->emplace_back(std::move(sink));
 
-#ifndef DEBUG_OR_SANITIZER_BUILD
+#ifndef ABORT_ON_LOGICAL_ERROR
     try
     {
         QueryStatusPtr element;

@@ -8,16 +8,11 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 
 #include <numeric>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool dictionary_use_async_executor;
-}
 
 namespace ErrorCodes
 {
@@ -171,6 +166,7 @@ DictionaryPtr createLayout(const std::string & ,
                            ContextPtr global_context,
                            bool /*created_from_ddl*/)
 {
+    const String database = config.getString(config_prefix + ".database", "");
     const String name = config.getString(config_prefix + ".name");
 
     if (!dict_struct.key)
@@ -227,7 +223,7 @@ DictionaryPtr createLayout(const std::string & ,
 
     ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
     const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
+    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
 
     IPolygonDictionary::Configuration configuration
     {

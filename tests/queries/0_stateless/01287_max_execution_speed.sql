@@ -1,12 +1,12 @@
--- Tags: no-fasttest, no-debug, no-tsan, no-msan, no-asan
+-- Tags: no-fasttest
 
 SET min_execution_speed = 100000000000, timeout_before_checking_execution_speed = 0;
-SELECT count() FROM system.numbers; -- { serverError TOO_SLOW }
+SELECT count() FROM system.numbers; -- { serverError 160 }
 SET min_execution_speed = 0;
 SELECT 'Ok (1)';
 
 SET min_execution_speed_bytes = 800000000000, timeout_before_checking_execution_speed = 0;
-SELECT count() FROM system.numbers; -- { serverError TOO_SLOW }
+SELECT count() FROM system.numbers; -- { serverError 160 }
 SET min_execution_speed_bytes = 0;
 SELECT 'Ok (2)';
 

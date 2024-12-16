@@ -27,9 +27,9 @@ public:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status_,
         const std::string & reason,
-        size_t body_length = 0
+        const std::string & body
     )
-        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body_length))
+        : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
         , http_status(http_status_)
     {}
 
@@ -46,7 +46,7 @@ private:
         const std::string & uri,
         Poco::Net::HTTPResponse::HTTPStatus http_status,
         const std::string & reason,
-        size_t body_length);
+        const std::string & body);
 
     const char * name() const noexcept override { return "DB::HTTPException"; }
     const char * className() const noexcept override { return "DB::HTTPException"; }
@@ -54,14 +54,14 @@ private:
 
 using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
-void setResponseDefaultHeaders(HTTPServerResponse & response);
+void setResponseDefaultHeaders(HTTPServerResponse & response, size_t keep_alive_timeout);
 
 /// Create session object to perform requests and set required parameters.
 HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    const ProxyConfiguration & proxy_config = {}
+    ProxyConfiguration proxy_config = {}
 );
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);

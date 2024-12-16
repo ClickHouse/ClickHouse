@@ -1,5 +1,5 @@
 #include <base/map.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeMap.h>
@@ -66,8 +66,11 @@ DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & valu
 
 void DataTypeMap::assertKeyType() const
 {
-    if (!isValidKeyType(key_type))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Map cannot have a key of type {}", key_type->getName());
+    if (!checkKeyType(key_type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Type of Map key must be a type, that can be represented by integer "
+                        "or String or FixedString (possibly LowCardinality) or UUID or IPv6,"
+                        " but {} given", key_type->getName());
 }
 
 
@@ -113,9 +116,24 @@ bool DataTypeMap::equals(const IDataType & rhs) const
     return nested->equals(*rhs_map.nested);
 }
 
-bool DataTypeMap::isValidKeyType(DataTypePtr key_type)
+bool DataTypeMap::checkKeyType(DataTypePtr key_type)
 {
-    return !isNullableOrLowCardinalityNullable(key_type);
+    if (key_type->getTypeId() == TypeIndex::LowCardinality)
+    {
+        const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*key_type);
+        if (!isStringOrFixedString(*(low_cardinality_data_type.getDictionaryType())))
+            return false;
+    }
+    else if (!key_type->isValueRepresentedByInteger()
+             && !isStringOrFixedString(*key_type)
+             && !WhichDataType(key_type).isNothing()
+             && !WhichDataType(key_type).isIPv6()
+             && !WhichDataType(key_type).isUUID())
+    {
+        return false;
+    }
+
+    return true;
 }
 
 DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const

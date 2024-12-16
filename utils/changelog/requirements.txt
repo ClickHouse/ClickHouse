@@ -1,2 +1,3 @@
-thefuzz
+fuzzywuzzy
 PyGitHub
+python-Levenshtein

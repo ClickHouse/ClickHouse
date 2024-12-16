@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
+    extern const int BAD_FILE_TYPE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int LOGICAL_ERROR;
 }
@@ -125,13 +126,16 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr tx) override
     {
-        if (!metadata_storage.existsFile(path))
+        if (!metadata_storage.exists(path))
         {
             if (if_exists)
                 return;
 
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist or isn't a regular file", path);
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
         }
+
+        if (!metadata_storage.isFile(path))
+            throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
         try
         {
@@ -207,13 +211,16 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     {
         for (const auto & [path, if_exists] : remove_paths)
         {
-            if (!metadata_storage.existsFile(path))
+            if (!metadata_storage.exists(path))
             {
                 if (if_exists)
                     continue;
 
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist or isn't a regular file", path);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
             }
+
+            if (!metadata_storage.isFile(path))
+                throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
             try
             {
@@ -311,7 +318,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     {
         checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-        if (metadata_storage.existsFile(path_to_remove))
+        if (metadata_storage.isFile(path_to_remove))
         {
             try
             {
@@ -360,7 +367,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     void execute(MetadataTransactionPtr tx) override
     {
         /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
-        if (metadata_storage.existsFileOrDirectory(path))
+        if (metadata_storage.exists(path))
             removeMetadataRecursive(tx, path);
     }
 
@@ -426,7 +433,7 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
     void execute(MetadataTransactionPtr tx) override
     {
-        if (metadata_storage.existsFile(path_to))
+        if (metadata_storage.exists(path_to))
         {
             objects_to_remove = metadata_storage.getStorageObjects(path_to);
             tx->replaceFile(path_from, path_to);
@@ -500,7 +507,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     std::string to_path;
 
     StoredObjects created_objects;
-    IObjectStorage & destination_object_storage;
+    IObjectStorage& destination_object_storage;
 
     CopyFileObjectStorageOperation(
         IObjectStorage & object_storage_,
@@ -530,7 +537,7 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
         for (const auto & object_from : source_blobs)
         {
-            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, std::nullopt /* key_prefix */);
+            auto object_key = destination_object_storage.generateObjectKeyForPath(to_path);
             auto object_to = StoredObject(object_key.serialize());
 
             object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
@@ -549,49 +556,6 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize() override
     {
-    }
-};
-
-struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOperation
-{
-    std::string path;
-    size_t size;
-
-    TruncateFileOperationOutcomePtr truncate_outcome;
-
-    TruncateFileObjectStorageOperation(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        const std::string & path_,
-        size_t size_)
-        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
-        , path(path_)
-        , size(size_)
-    {}
-
-    std::string getInfoForLog() const override
-    {
-        return fmt::format("TruncateFileObjectStorageOperation (path: {}, size: {})", path, size);
-    }
-
-    void execute(MetadataTransactionPtr tx) override
-    {
-        if (metadata_storage.existsFile(path))
-            truncate_outcome = tx->truncateFile(path, size);
-    }
-
-    void undo() override
-    {
-
-    }
-
-    void finalize() override
-    {
-        if (!truncate_outcome)
-            return;
-
-        if (!truncate_outcome->objects_to_remove.empty())
-            object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
     }
 };
 
@@ -634,13 +598,6 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
         }));
 }
 
-void DiskObjectStorageTransaction::truncateFile(const String & path, size_t size)
-{
-    operations_to_execute.emplace_back(
-        std::make_unique<TruncateFileObjectStorageOperation>(object_storage, metadata_storage, path, size)
-    );
-}
-
 void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, const std::string & to_path)
 {
     auto operation = std::make_unique<ReplaceFileObjectStorageOperation>(object_storage, metadata_storage, from_path, to_path);
@@ -651,7 +608,7 @@ void DiskObjectStorageTransaction::clearDirectory(const std::string & path)
 {
     for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
     {
-        if (metadata_storage.existsFile(it->path()))
+        if (metadata_storage.isFile(it->path()))
             removeFile(it->path());
     }
 }
@@ -726,7 +683,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     const WriteSettings & settings,
     bool autocommit)
 {
-    auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    auto object_key = object_storage.generateObjectKeyForPath(path);
     std::optional<ObjectAttributes> object_attributes;
 
     if (metadata_helper)
@@ -757,7 +714,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             {
                 /// Otherwise we will produce lost blobs which nobody points to
                 /// WriteOnce storages are not affected by the issue
-                if (!tx->object_storage.isPlain() && tx->metadata_storage.existsFile(path))
+                if (!tx->object_storage.isWriteOnce() && tx->metadata_storage.exists(path))
                     tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
 
                 tx->metadata_transaction->createMetadataFile(path, key_, count);
@@ -790,9 +747,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 {
                     /// Otherwise we will produce lost blobs which nobody points to
                     /// WriteOnce storages are not affected by the issue
-                    if (!object_storage_tx->object_storage.isPlain() && object_storage_tx->metadata_storage.existsFile(path))
+                    if (!object_storage_tx->object_storage.isWriteOnce() && object_storage_tx->metadata_storage.exists(path))
                     {
-                        object_storage_tx->object_storage.removeObjectsIfExist(object_storage_tx->metadata_storage.getStorageObjects(path));
+                        object_storage_tx->object_storage.removeObjectsIfExist(
+                            object_storage_tx->metadata_storage.getStorageObjects(path));
                     }
 
                     tx->createMetadataFile(path, key_, count);
@@ -823,7 +781,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
-    auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    auto object_key = object_storage.generateObjectKeyForPath(path);
     std::optional<ObjectAttributes> object_attributes;
 
     if (metadata_helper)
@@ -862,9 +820,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
     if (mode == WriteMode::Rewrite)
     {
-        /// Otherwise we will produce lost blobs which nobody points to
-        /// WriteOnce storages are not affected by the issue
-        if (!object_storage.isPlain() && metadata_storage.existsFile(path))
+        if (!object_storage.isWriteOnce() && metadata_storage.exists(path))
             object_storage.removeObjectsIfExist(metadata_storage.getStorageObjects(path));
 
         metadata_transaction->createMetadataFile(path, std::move(object_key), object_size);
@@ -921,14 +877,14 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
 
 void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
-    operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageOperation>(
-        object_storage, metadata_storage, object_storage, read_settings, write_settings, from_file_path, to_file_path));
+    operations_to_execute.emplace_back(
+        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 
 void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
-    operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageOperation>(
-        object_storage, metadata_storage, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
+    operations_to_execute.emplace_back(
+        std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, destination_object_storage, read_settings, write_settings, from_file_path, to_file_path));
 }
 
 void DiskObjectStorageTransaction::commit()

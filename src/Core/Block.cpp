@@ -1,17 +1,19 @@
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
+
+#include <Core/Block.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+
+#include <Common/assert_cast.h>
+
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
-#include <Core/Block.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <base/sort.h>
-#include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/assert_cast.h>
 
 #include <iterator>
-
+#include <base/sort.h>
 #include <boost/algorithm/string.hpp>
 
 
@@ -603,24 +605,6 @@ Block Block::shrinkToFit() const
     return cloneWithColumns(new_columns);
 }
 
-Block Block::compress() const
-{
-    size_t num_columns = data.size();
-    Columns new_columns(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        new_columns[i] = data[i].column->compress();
-    return cloneWithColumns(new_columns);
-}
-
-Block Block::decompress() const
-{
-    size_t num_columns = data.size();
-    Columns new_columns(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        new_columns[i] = data[i].column->decompress();
-    return cloneWithColumns(new_columns);
-}
-
 
 const ColumnsWithTypeAndName & Block::getColumnsWithTypeAndName() const
 {
@@ -814,23 +798,6 @@ Serializations Block::getSerializations() const
 
     for (const auto & column : data)
         res.push_back(column.type->getDefaultSerialization());
-
-    return res;
-}
-
-Serializations Block::getSerializations(const SerializationInfoByName & hints) const
-{
-    Serializations res;
-    res.reserve(data.size());
-
-    for (const auto & column : data)
-    {
-        auto it = hints.find(column.name);
-        if (it == hints.end())
-            res.push_back(column.type->getDefaultSerialization());
-        else
-            res.push_back(column.type->getSerialization(*it->second));
-    }
 
     return res;
 }

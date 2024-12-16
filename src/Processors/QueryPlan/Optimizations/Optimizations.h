@@ -46,16 +46,9 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
 
-/// Replace chain `FilterStep -> FilterStep` to single FilterStep
-/// Note: this breaks short-circuit logic, so it is disabled for now.
-size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
-
 /// Move FilterStep down if possible.
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
-
-/// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
-size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 /// Move ExpressionStep after SortingStep if possible.
 /// May split ExpressionStep and lift up only a part of it.
@@ -64,6 +57,9 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 /// Utilize storage sorting when sorting for window functions.
 /// Update information about prefix sort description in SortingStep.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
+/// Reading in order from MergeTree table if DISTINCT columns match or form a prefix of MergeTree sorting key
+size_t tryDistinctReadInOrder(QueryPlan::Node * node);
 
 /// Remove redundant sorting
 void tryRemoveRedundantSorting(QueryPlan::Node * root);
@@ -82,14 +78,12 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 12> optimizations = {{
+    static const std::array<Optimization, 10> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
-        {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
-        {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
@@ -109,24 +103,17 @@ struct Frame
 using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
-void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+void optimizePrimaryKeyCondition(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-
-/// A separate tree traverse to apply sorting properties after *InOrder optimizations.
-void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
-
-/// Returns the name of used projection or nullopt if no projection is used.
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
-std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
-
+bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
+bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
 bool addPlansForSets(QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan
-void enableMemoryBoundMerging(QueryPlan::Node & node);
+void enableMemoryBoundMerging(QueryPlan::Node & node, QueryPlan::Nodes &);
 
 }
 

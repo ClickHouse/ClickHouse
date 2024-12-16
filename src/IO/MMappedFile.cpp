@@ -69,10 +69,7 @@ void MMappedFile::close()
     finish();
 
     if (0 != ::close(fd))
-    {
-        fd = -1;
         throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
-    }
 
     fd = -1;
     metric_increment.destroy();

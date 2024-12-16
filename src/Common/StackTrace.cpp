@@ -8,7 +8,6 @@
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/MemorySanitizer.h>
-#include <Common/SharedMutex.h>
 #include <Common/SymbolIndex.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -19,9 +18,12 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
+#include <sstream>
 #include <unordered_map>
 #include <fmt/format.h>
 #include <libunwind.h>
+
+#include "config.h"
 
 #include <boost/algorithm/string/split.hpp>
 
@@ -67,18 +69,10 @@ std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const uc
         = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
 
     const std::string_view access =
-#if defined(__arm__)
-        "<not available on ARM>";
-#elif defined(__powerpc__)
-        "<not available on PowerPC>";
-#elif defined(OS_DARWIN)
-        "<not available on Darwin>";
-#elif defined(OS_FREEBSD)
-        "<not available on FreeBSD>";
-#elif !defined(__x86_64__)
-        "<not available>";
-#else
+#if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
         (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#else
+        "";
 #endif
 
     std::string_view message;
@@ -218,8 +212,6 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
 #elif defined(__s390x__)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
-#elif defined(__loongarch64)
-    return reinterpret_cast<void *>(context.uc_mcontext.__pc);
 #else
     return nullptr;
 #endif
@@ -256,31 +248,8 @@ void StackTrace::forEachFrame(
                 auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                uintptr_t adjusted_addr = uintptr_t(current_frame.physical_addr);
-                if (i > 0)
-                {
-                    /// For non-innermost stack frames, the address points to the *next* instruction
-                    /// after the `call` instruction. But we want the line number and inline function
-                    /// information for the `call` instruction. So subtract 1 from the address.
-                    /// Caveats:
-                    ///  * The `call` instruction can be longer than 1 byte, so addr-1 is in the middle
-                    ///    of the instruction. That's ok for debug info lookup: address ranges in debug
-                    ///    info cover the whole instruction.
-                    ///  * If the stack trace unwound out of a signal handler, the stack frame just
-                    ///    outside the signal didn't do a function call. It was interrupted by signal.
-                    ///    There's no `call` instruction, and decrementing the address is incorrect.
-                    ///    We may get incorrect line number and inlined functions in this case.
-                    ///    Unfortunate.
-                    ///    Note that libunwind, when producing this stack trace, knows whether this
-                    ///    frame is interrupted by signal or not. We could propagate this information
-                    ///    from libunwind to here and avoid subtracting 1 in this case, but currently
-                    ///    we don't do this.
-                    ///    But we don't do the decrement for findSymbol below (because `call` is
-                    ///    ~never the last instruction of a function), so the function name should be
-                    ///    correct for both pre-signal frames and regular frames.
-                    adjusted_addr -= 1;
-                }
-                if (dwarf_it->second.findAddress(adjusted_addr, location, mode, inline_frames))
+                if (dwarf_it->second.findAddress(
+                        uintptr_t(current_frame.physical_addr), location, mode, inline_frames))
                 {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
@@ -397,7 +366,7 @@ String demangleAndCollapseNames(std::optional<std::string_view> file, const char
     if (file.has_value())
     {
         std::string_view file_copy = file.value();
-        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != file_copy.npos)
             file_copy.remove_suffix(file_copy.size() - trim_pos);
         if (file_copy.ends_with("functional"))
             return "?";
@@ -512,81 +481,35 @@ void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, si
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
-struct CacheEntry
+using StackTraceCache = std::map<StackTraceTriple, String, std::less<>>;
+
+static StackTraceCache & cacheInstance()
 {
-    std::mutex mutex;
-    std::optional<String> stacktrace_string;
-};
+    static StackTraceCache cache;
+    return cache;
+}
 
-using CacheEntryPtr = std::shared_ptr<CacheEntry>;
-
-static constinit bool can_use_cache = false;
-
-using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
-
-struct StackTraceCache : public StackTraceCacheBase
-{
-    StackTraceCache()
-        : StackTraceCacheBase()
-    {
-        can_use_cache = true;
-    }
-
-    ~StackTraceCache()
-    {
-        can_use_cache = false;
-    }
-};
-
-static StackTraceCache cache;
-
-static DB::SharedMutex stacktrace_cache_mutex;
+static std::mutex stacktrace_cache_mutex;
 
 String toStringCached(const StackTrace::FramePointers & pointers, size_t offset, size_t size)
 {
+    /// Calculation of stack trace text is extremely slow.
+    /// We use simple cache because otherwise the server could be overloaded by trash queries.
+    /// Note that this cache can grow unconditionally, but practically it should be small.
+    std::lock_guard lock{stacktrace_cache_mutex};
+
+    StackTraceCache & cache = cacheInstance();
     const StackTraceRefTriple key{pointers, offset, size};
 
-    if (!can_use_cache)
+    if (auto it = cache.find(key); it != cache.end())
+        return it->second;
+    else
     {
         DB::WriteBufferFromOwnString out;
         toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
-        return out.str();
+
+        return cache.emplace(StackTraceTriple{pointers, offset, size}, out.str()).first->second;
     }
-
-    /// Calculation of stack trace text is extremely slow.
-    /// We use cache because otherwise the server could be overloaded by trash queries.
-    /// Note that this cache can grow unconditionally, but practically it should be small.
-    CacheEntryPtr cache_entry;
-
-    // Optimistic try for cache hit to avoid any contention whatsoever, should be the main hot code route
-    {
-        std::shared_lock read_lock{stacktrace_cache_mutex};
-        if (auto it = cache.find(key); it != cache.end())
-            cache_entry = it->second;
-    }
-
-    // Create a new entry in case of a cache miss
-    if (!cache_entry)
-    {
-        std::unique_lock write_lock{stacktrace_cache_mutex};
-
-        // We should recheck because `shared_lock` was released before we acquired `write_lock`
-        if (auto it = cache.find(key); it != cache.end())
-            cache_entry = it->second; // Another thread managed to created this entry before us
-        else
-            cache_entry = cache.emplace(StackTraceTriple{pointers, offset, size}, std::make_shared<CacheEntry>()).first->second;
-    }
-
-    // Do not hold `stacktrace_cache_mutex` while running possibly slow calculation of stack trace text
-    std::scoped_lock lock(cache_entry->mutex);
-    if (!cache_entry->stacktrace_string.has_value())
-    {
-        DB::WriteBufferFromOwnString out;
-        toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
-        cache_entry->stacktrace_string = out.str();
-    }
-
-    return *cache_entry->stacktrace_string;
 }
 
 std::string StackTrace::toString() const
@@ -594,7 +517,7 @@ std::string StackTrace::toString() const
     return toStringCached(frame_pointers, offset, size);
 }
 
-std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offset, size_t size)
+std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size_t size)
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
@@ -607,9 +530,5 @@ std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offse
 void StackTrace::dropCache()
 {
     std::lock_guard lock{stacktrace_cache_mutex};
-    cache.clear();
+    cacheInstance().clear();
 }
-
-
-thread_local bool asynchronous_stack_unwinding = false;
-thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;

@@ -48,18 +48,18 @@ public:
       * If use_actions_nodes_as_output_columns = true output columns are initialized using actions dag nodes.
       * If additional output columns are specified they are added to output columns.
       */
-    explicit ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
+    explicit ActionsChainStep(ActionsDAGPtr actions_,
         bool use_actions_nodes_as_output_columns = true,
         ColumnsWithTypeAndName additional_output_columns_ = {});
 
     /// Get actions
-    ActionsAndProjectInputsFlagPtr & getActions()
+    ActionsDAGPtr & getActions()
     {
         return actions;
     }
 
     /// Get actions
-    const ActionsAndProjectInputsFlagPtr & getActions() const
+    const ActionsDAGPtr & getActions() const
     {
         return actions;
     }
@@ -98,7 +98,7 @@ public:
 private:
     void initialize();
 
-    ActionsAndProjectInputsFlagPtr actions;
+    ActionsDAGPtr actions;
 
     bool use_actions_nodes_as_output_columns = true;
 

@@ -31,7 +31,7 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
 
     if (!table_join.getClauses().empty())
-        description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
+        description.emplace_back("Clauses", table_join.formatClauses(table_join.getClauses(), true /*short_format*/));
 
     return description;
 }
@@ -39,15 +39,15 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
 }
 
 JoinStep::JoinStep(
-    const Header & left_header_,
-    const Header & right_header_,
+    const DataStream & left_stream_,
+    const DataStream & right_stream_,
     JoinPtr join_,
     size_t max_block_size_,
     size_t max_streams_,
     bool keep_left_read_in_order_)
     : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
 {
-    updateInputHeaders({left_header_, right_header_});
+    updateInputStreams(DataStreams{left_stream_, right_stream_});
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -58,7 +58,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
         auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-            std::move(pipelines[0]), std::move(pipelines[1]), join, *output_header, max_block_size, &processors);
+            std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
         joined_pipeline->resize(max_streams);
         return joined_pipeline;
     }
@@ -67,7 +67,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::move(pipelines[0]),
         std::move(pipelines[1]),
         join,
-        *output_header,
+        output_stream->header,
         max_block_size,
         max_streams,
         keep_left_read_in_order,
@@ -98,9 +98,12 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
 }
 
-void JoinStep::updateOutputHeader()
+void JoinStep::updateOutputStream()
 {
-    output_header = JoiningTransform::transformHeader(input_headers.front(), join);
+    output_stream = DataStream
+    {
+        .header = JoiningTransform::transformHeader(input_streams[0].header, join),
+    };
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
@@ -118,10 +121,10 @@ static ITransformingStep::Traits getStorageJoinTraits()
     };
 }
 
-FilledJoinStep::FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_)
+FilledJoinStep::FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_)
     : ITransformingStep(
-        input_header_,
-        JoiningTransform::transformHeader(input_header_, join_),
+        input_stream_,
+        JoiningTransform::transformHeader(input_stream_.header, join_),
         getStorageJoinTraits())
     , join(std::move(join_))
     , max_block_size(max_block_size_)
@@ -145,13 +148,14 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
-        return std::make_shared<JoiningTransform>(header, *output_header, join, max_block_size, on_totals, default_totals, counter);
+        return std::make_shared<JoiningTransform>(header, output_stream->header, join, max_block_size, on_totals, default_totals, counter);
     });
 }
 
-void FilledJoinStep::updateOutputHeader()
+void FilledJoinStep::updateOutputStream()
 {
-    output_header = JoiningTransform::transformHeader(input_headers.front(), join);
+    output_stream = createOutputStream(
+        input_streams.front(), JoiningTransform::transformHeader(input_streams.front().header, join), getDataStreamTraits());
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const

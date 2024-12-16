@@ -31,14 +31,8 @@ struct QueryPlanOptimizationSettings
     /// If merge-expressions optimization is enabled.
     bool merge_expressions = true;
 
-    /// If merge-filters optimization is enabled.
-    bool merge_filters = false;
-
     /// If filter push down optimization is enabled.
     bool filter_push_down = true;
-
-    /// If convert OUTER JOIN to INNER JOIN optimization is enabled.
-    bool convert_outer_join_to_inner_join = true;
 
     /// If reorder-functions-after-sorting optimization is enabled.
     bool execute_functions_after_sorting = true;
@@ -60,9 +54,6 @@ struct QueryPlanOptimizationSettings
 
     /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
     bool remove_redundant_sorting = true;
-
-    /// Convert Sorting to FinishSorting based on plan's sorting properties.
-    bool optimize_sorting_by_input_stream_properties = true;
 
     /// If aggregate-partitions-independently optimization is enabled.
     bool aggregate_partitions_independently = false;

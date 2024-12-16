@@ -59,7 +59,13 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid);
 
             if (!result)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group {} is not found in the system", arg_gid);
+            {
+                if (0 != getgrgid_r(gid, &entry, buf.get(), buf_size, &result))
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid);
+
+                if (!result)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group {} is not found in the system", arg_gid);
+            }
 
             gid = entry.gr_gid;
         }
@@ -84,7 +90,13 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid);
 
             if (!result)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "User {} is not found in the system", arg_uid);
+            {
+                if (0 != getpwuid_r(uid, &entry, buf.get(), buf_size, &result))
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwuid_r' to obtain uid from user name ({})", uid);
+
+                if (!result)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "User {} is not found in the system", arg_uid);
+            }
 
             uid = entry.pw_uid;
         }
