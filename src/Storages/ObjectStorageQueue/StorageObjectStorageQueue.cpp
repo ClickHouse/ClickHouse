@@ -214,9 +214,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms], (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
+        zk_path,
+        std::move(table_metadata),
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
 
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata), table_id_);
 
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
@@ -248,7 +251,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
 void StorageObjectStorageQueue::drop()
 {
-    ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
+    ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const

@@ -60,6 +60,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/UseSSL.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -1391,6 +1392,23 @@ try
     if (oom_score)
         setOOMScore(oom_score, log);
 #endif
+
+    std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
+
+    SCOPE_EXIT({
+        if (cancellation_task)
+            CancellationChecker::getInstance().terminateThread();
+    });
+
+    if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
+    {
+        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
+            "CancellationChecker",
+            [] { CancellationChecker::getInstance().workerFunction(); }
+        );
+        cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
+        (*cancellation_task)->activateAndSchedule();
+    }
 
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());

@@ -354,7 +354,8 @@ void ContextAccess::setUser(const UserPtr & user_) const
     user_name = user->getName();
     trace_log = getLogger("ContextAccess (" + user_name + ")");
 
-    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    std::vector<UUID> current_roles;
+    std::vector<UUID> current_roles_with_admin_option;
     if (params.use_default_roles)
     {
         current_roles = user->granted_roles.findGranted(user->default_roles);

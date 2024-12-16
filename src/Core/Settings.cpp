@@ -2277,6 +2277,48 @@ Result:
 ```
 )", 0) \
     \
+    DECLARE(Bool, skip_redundant_aliases_in_udf, false, R"(
+Redundant aliases are not used (substituted) in user-defined functions in order to simplify it's usage.
+
+Possible values:
+
+- 1 — The aliases are skipped (substituted) in UDFs.
+- 0 — The aliases are not skipped (substituted) in UDFs.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET skip_redundant_aliases_in_udf = 0;
+CREATE FUNCTION IF NOT EXISTS test_03274 AS ( x ) -> ((x + 1 as y, y + 2));
+
+EXPLAIN SYNTAX SELECT test_03274(4 + 2);
+```
+
+Result:
+
+```text
+SELECT ((4 + 2) + 1 AS y, y + 2)
+```
+
+Query:
+
+```sql
+SET skip_redundant_aliases_in_udf = 1;
+CREATE FUNCTION IF NOT EXISTS test_03274 AS ( x ) -> ((x + 1 as y, y + 2));
+
+EXPLAIN SYNTAX SELECT test_03274(4 + 2);
+```
+
+Result:
+
+```text
+SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
+```
+)", 0) \
     DECLARE(Bool, prefer_global_in_and_join, false, R"(
 Enables the replacement of `IN`/`JOIN` operators with `GLOBAL IN`/`GLOBAL JOIN`.
 
@@ -2490,7 +2532,7 @@ Possible values:
 
 - default
 
- This is the equivalent of `hash`, `parallel_hash` or `direct`, if possible (same as `direct,parallel_hash,hash`)
+ Same as `direct,parallel_hash,hash`, i.e. try to use direct join, parallel hash join, and hash join join (in this order).
 
 - grace_hash
 
@@ -5658,9 +5700,6 @@ Cluster for a shard in which current server is located
     DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(
 If true, subquery for IN will be executed on every follower replica.
 )", BETA) \
-    DECLARE(Float, parallel_replicas_single_task_marks_count_multiplier, 2, R"(
-A multiplier which will be added during calculation for minimal number of marks to retrieve from coordinator. This will be applied only for remote replicas.
-)", BETA) \
     DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
 If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
 )", BETA) \
@@ -5760,6 +5799,11 @@ If enabled, MongoDB tables will return an error when a MongoDB query cannot be b
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
 
 In `clickhouse-local` it is enabled by default and can be explicitly disabled.
+)", 0) \
+    DECLARE(Bool, optimize_extract_common_expressions, false, R"(
+Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
+- indices in simple filtering expressions
+- cross to inner join optimization
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
@@ -5915,6 +5959,9 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
+Allow experimental database engine Iceberg
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
@@ -5994,6 +6041,7 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
     MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
+    MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
@@ -6213,6 +6261,8 @@ Settings::~Settings() = default;
 
 Settings & Settings::operator=(const Settings & other)
 {
+    if (&other == this)
+        return *this;
     *impl = *other.impl;
     return *this;
 }
@@ -6328,7 +6378,8 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         res_columns[3]->insert(doc);
 
-        Field min, max;
+        Field min;
+        Field max;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         params.constraints.get(*this, setting_name, min, max, writability);
 
