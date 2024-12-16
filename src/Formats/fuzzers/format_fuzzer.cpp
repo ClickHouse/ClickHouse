@@ -1,5 +1,7 @@
 #include <base/types.h>
 
+#include <Common/tests/gtest_global_register.h>
+
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
@@ -29,7 +31,11 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     if (context)
         return true;
 
-    SharedContextHolder shared_context = Context::createShared();
+    /// The SharedContext depends on the Logger which is being destroyed by AutoLoggerShutdown (global variable)
+    /// And the GlobalContext depends on the SharedContext. So, this the SharedContext has to be static in order
+    /// to be destroyed last.
+    /// Addditionally, without it being static the shared context is destroyed on this function exit.
+    static SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 
