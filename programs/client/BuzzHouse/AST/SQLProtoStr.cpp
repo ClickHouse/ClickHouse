@@ -2512,11 +2512,24 @@ CONV_FN(TableEngineParam, tep)
     }
 }
 
+CONV_FN(TTLDelete, del)
+{
+    ret += "DELETE";
+    if (del.has_where())
+    {
+        ret += " WHERE ";
+        WhereStatementToString(ret, del.where());
+    }
+}
+
 CONV_FN(TTLUpdate, upt)
 {
     using TTLUpdateType = TTLUpdate::TtlupdateOneofCase;
     switch (upt.ttlupdate_oneof_case())
     {
+        case TTLUpdateType::kDel:
+            TTLDeleteToString(ret, upt.del());
+            break;
         case TTLUpdateType::kCodecs:
             ret += "RECOMPRESS ";
             CodecListToString(ret, upt.codecs());
@@ -2527,11 +2540,6 @@ CONV_FN(TTLUpdate, upt)
             break;
         default:
             ret += "DELETE";
-    }
-    if (upt.has_where())
-    {
-        ret += " WHERE ";
-        WhereStatementToString(ret, upt.where());
     }
 }
 

@@ -9,7 +9,7 @@
 namespace BuzzHouse
 {
 
-int StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store)
+int StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) const
 {
     store->set_storage(static_cast<Storage_DataStorage>((rg.nextRandomUInt32() % static_cast<uint32_t>(Storage::DataStorage_MAX)) + 1));
     store->set_storage_name(rg.pickRandomlyFromVector(fc.disks));
@@ -430,7 +430,8 @@ int StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable 
 int StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable * dt)
 {
     ExprSchemaTable * est = dt->mutable_est();
-    const bool has_tables = collectionHas<SQLTable>(attached_tables), has_views = collectionHas<SQLView>(attached_views);
+    const bool has_tables = collectionHas<SQLTable>(attached_tables);
+    const bool has_views = collectionHas<SQLView>(attached_views);
 
     if (has_views && (!has_tables || rg.nextBool()))
     {

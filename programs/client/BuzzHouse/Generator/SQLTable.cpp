@@ -215,17 +215,18 @@ int StatementGenerator::generateNextTTL(
             }
             else
             {
-                tupt->set_delete_(true);
-            }
-            if (rg.nextSmallNumber() < 4)
-            {
-                if (t.has_value())
+                TTLDelete * tdel = tupt->mutable_del();
+
+                if (rg.nextSmallNumber() < 4)
                 {
-                    addTableRelation(rg, true, "", t.value());
+                    if (t.has_value())
+                    {
+                        addTableRelation(rg, true, "", t.value());
+                    }
+                    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+                    generateWherePredicate(rg, tdel->mutable_where()->mutable_expr()->mutable_expr());
+                    this->levels.clear();
                 }
-                this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
-                generateWherePredicate(rg, tupt->mutable_where()->mutable_expr()->mutable_expr());
-                this->levels.clear();
             }
         }
         else if (
@@ -258,7 +259,7 @@ int StatementGenerator::generateNextTTL(
             {
                 TTLSet * tset = j == 0 ? gb->mutable_ttl_set() : gb->add_other_ttl_set();
 
-                insertEntryRefCP(ientries[i], tset->mutable_col());
+                insertEntryRefCP(ientries[j], tset->mutable_col());
                 generateExpression(rg, tset->mutable_expr());
             }
             this->levels.clear();

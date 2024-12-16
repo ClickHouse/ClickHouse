@@ -218,7 +218,7 @@ private:
     void strAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, const SQLType * tp);
     void strAppendAnyValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
 
-    int generateStorage(RandomGenerator & rg, Storage * store);
+    int generateStorage(RandomGenerator & rg, Storage * store) const;
     int generateNextCodecs(RandomGenerator & rg, CodecList * cl);
     int
     generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, std::vector<InsertEntry> & ientries, Expr * ttl_expr);

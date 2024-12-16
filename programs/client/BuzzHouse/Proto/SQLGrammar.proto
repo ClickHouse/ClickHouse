@@ -2913,9 +2913,13 @@ message TableEngineParam {
     }
 }
 
+message TTLDelete {
+    optional WhereStatement where = 1;
+}
+
 message TTLUpdate {
     oneof ttlupdate_oneof {
-        bool delete = 1;
+        TTLDelete del = 1;
         CodecList codecs = 2;
         Storage storage = 3;
     }
