@@ -1,4 +1,5 @@
 ---
+title: error_log
 slug: /en/operations/system-tables/error_log
 ---
 # error_log

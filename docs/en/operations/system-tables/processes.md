@@ -1,4 +1,5 @@
 ---
+title: processes
 slug: /en/operations/system-tables/processes
 ---
 # processes

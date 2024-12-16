@@ -1,4 +1,5 @@
 ---
+title: text_log
 slug: /en/operations/system-tables/text_log
 ---
 # text_log

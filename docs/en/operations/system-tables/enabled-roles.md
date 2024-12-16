@@ -1,4 +1,5 @@
 ---
+title: enabled_roles
 slug: /en/operations/system-tables/enabled-roles
 ---
 # enabled_roles

@@ -1,4 +1,5 @@
 ---
+title: asynchronous_insert_log
 slug: /en/operations/system-tables/asynchronous_insert_log
 ---
 # asynchronous_insert_log

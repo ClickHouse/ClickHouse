@@ -1,4 +1,5 @@
 ---
+title: view_refreshes
 slug: /en/operations/system-tables/view_refreshes
 ---
 # view_refreshes

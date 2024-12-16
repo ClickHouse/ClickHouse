@@ -1,4 +1,5 @@
 ---
+title: schema_inference_cache
 slug: /en/operations/system-tables/schema_inference_cache
 ---
 # schema_inference_cache

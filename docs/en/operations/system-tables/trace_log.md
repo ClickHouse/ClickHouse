@@ -1,4 +1,5 @@
 ---
+title: trace_log
 slug: /en/operations/system-tables/trace_log
 ---
 # trace_log

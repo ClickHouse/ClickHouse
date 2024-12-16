@@ -1,4 +1,5 @@
 ---
+title: blob_storage_log
 slug: /en/operations/system-tables/blob_storage_log
 ---
 # blob_storage_log

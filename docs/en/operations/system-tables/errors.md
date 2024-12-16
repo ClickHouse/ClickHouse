@@ -1,4 +1,5 @@
 ---
+title: errors
 slug: /en/operations/system-tables/errors
 ---
 # errors

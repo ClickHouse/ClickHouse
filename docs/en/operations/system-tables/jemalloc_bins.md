@@ -1,4 +1,5 @@
 ---
+title: jemalloc_bins
 slug: /en/operations/system-tables/jemalloc_bins
 ---
 # jemalloc_bins

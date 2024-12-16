@@ -1,7 +1,8 @@
 ---
+title: zookeeper_connection
 slug: /en/operations/system-tables/zookeeper_connection
 ---
-#zookeeper_connection
+# zookeeper_connection
 
 This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_connection' table shows current connections to ZooKeeper (including auxiliary ZooKeepers). Each row shows information about one connection.
 

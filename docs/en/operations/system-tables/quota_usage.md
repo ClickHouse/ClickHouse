@@ -1,4 +1,5 @@
 ---
+title: quota_usage
 slug: /en/operations/system-tables/quota_usage
 ---
 # quota_usage

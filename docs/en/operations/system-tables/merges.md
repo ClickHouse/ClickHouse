@@ -1,4 +1,5 @@
 ---
+title: merges
 slug: /en/operations/system-tables/merges
 ---
 # merges

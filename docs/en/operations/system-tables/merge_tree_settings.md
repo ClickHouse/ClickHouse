@@ -1,6 +1,6 @@
 ---
-slug: /en/operations/system-tables/merge_tree_settings
 title: merge_tree_settings
+slug: /en/operations/system-tables/merge_tree_settings
 ---
 
 Contains information about settings for `MergeTree` tables.

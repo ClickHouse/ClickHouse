@@ -1,4 +1,5 @@
 ---
+title: query_cache
 slug: /en/operations/system-tables/query_cache
 ---
 # query_cache

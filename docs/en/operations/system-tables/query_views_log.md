@@ -1,4 +1,5 @@
 ---
+title: query_views_log
 slug: /en/operations/system-tables/query_views_log
 ---
 # query_views_log

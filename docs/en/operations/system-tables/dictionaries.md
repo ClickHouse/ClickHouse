@@ -1,4 +1,5 @@
 ---
+title: dictionaries
 slug: /en/operations/system-tables/dictionaries
 ---
 # dictionaries

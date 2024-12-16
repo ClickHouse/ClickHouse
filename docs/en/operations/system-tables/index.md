@@ -5,6 +5,9 @@ sidebar_label: Overview
 pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
 ---
 
+import TableOfContentsJSON from './table_of_contents.json'
+import { TableOfContents } from '/src/components/TableOfContents'
+
 # System Tables
 
 ## Introduction {#system-tables-introduction}
@@ -82,6 +85,10 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 `OSIOWaitMicroseconds` is disabled by default in Linux kernels starting from 5.14.x.
 You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `.conf` file in `/etc/sysctl.d/` with `kernel.task_delayacct = 1`
 :::
+
+## List of System Tables
+
+<TableOfContents items={TableOfContentsJSON} />
 
 ## Related content
 

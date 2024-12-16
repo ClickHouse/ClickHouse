@@ -1,4 +1,5 @@
 ---
+title: build_options
 slug: /en/operations/system-tables/build_options
 ---
 # build_options

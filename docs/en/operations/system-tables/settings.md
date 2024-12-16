@@ -1,4 +1,5 @@
 ---
+title: settings
 slug: /en/operations/system-tables/settings
 ---
 # settings

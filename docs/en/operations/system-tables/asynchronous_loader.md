@@ -1,4 +1,5 @@
 ---
+title: asynchronous_loader
 slug: /en/operations/system-tables/asynchronous_loader
 ---
 # asynchronous_loader
