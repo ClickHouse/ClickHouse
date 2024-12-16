@@ -3136,14 +3136,6 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
                     t.constrs.erase(pname);
                 }
-                else if (
-                    success && ati.has_column_remove_property()
-                    && ati.column_remove_property().property() <= RemoveColumnProperty_ColumnProperties_MATERIALIZED)
-                {
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.column_remove_property().col().column().substr(1)));
-
-                    t.cols[cname].dmod = std::nullopt;
-                }
                 else if (ati.has_freeze_partition() && success)
                 {
                     const FreezePartition & fp = ati.freeze_partition();
