@@ -60,7 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-
+            {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
         }
     },
     {"24.12",
