@@ -16,56 +16,56 @@
 
     <query>
         <!-- query_plan_merge_filters=false, disable spilit and condition into and atoms -->
-        select * from test_adaptive_short_circuit_1 where less(b, 10) and JSON_VALUE(a, '$.a') = '1' Format null short_circuit_function_evaluation='force_enable',query_plan_merge_filters=false;
+        select * from test_adaptive_short_circuit_1 where less(b, 10) and JSON_VALUE(a, '$.a') = '1' Format null settings short_circuit_function_evaluation='force_enable',query_plan_merge_filters=false;
     </query>
     <query>
         <!-- query_plan_merge_filters=false, disable spilit and condition into and atoms -->
-        select * from test_adaptive_short_circuit_1 where JSON_VALUE(a, '$.a') = '1' and less(b,10) Format null short_circuit_function_evaluation='force_enable',query_plan_merge_filters=false;
+        select * from test_adaptive_short_circuit_1 where JSON_VALUE(a, '$.a') = '1' and less(b,10) Format null settings short_circuit_function_evaluation='force_enable',query_plan_merge_filters=false;
     </query>
     <query>
-        select (JSON_VALUE(a, '$.a') = '1' and less(b, 10)) as x  from test_adaptive_short_circuit_1 where Format null short_circuit_function_evaluation='force_enable';
+        select (JSON_VALUE(a, '$.a') = '1' and less(b, 10)) as x  from test_adaptive_short_circuit_1 where Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select (less(b, 10) and JSON_VALUE(a, '$.a') = '1') as x  from test_adaptive_short_circuit_1 where Format null short_circuit_function_evaluation='force_enable';
+        select (less(b, 10) and JSON_VALUE(a, '$.a') = '1') as x  from test_adaptive_short_circuit_1 where Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select * from test_adaptive_short_circuit_1 where greater(b, 10) or JSON_VALUE(a, '$.a') != '1' Format null short_circuit_function_evaluation='force_enable';
+        select * from test_adaptive_short_circuit_1 where greater(b, 10) or JSON_VALUE(a, '$.a') != '1' Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select * from test_adaptive_short_circuit_1 where JSON_VALUE(a, '$.a') != '1' or greater(b, 10) Format null short_circuit_function_evaluation='force_enable';
+        select * from test_adaptive_short_circuit_1 where JSON_VALUE(a, '$.a') != '1' or greater(b, 10) Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select (JSON_VALUE(a, '$.a') != '1' or greater(b, 10)) as x  from test_adaptive_short_circuit_1  where Format null short_circuit_function_evaluation='force_enable';
+        select (JSON_VALUE(a, '$.a') != '1' or greater(b, 10)) as x  from test_adaptive_short_circuit_1  where Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select (greater(b,10) or JSON_VALUE(a, '$.a') != '1') as x  from test_adaptive_short_circuit_1 where Format null short_circuit_function_evaluation='force_enable';
+        select (greater(b,10) or JSON_VALUE(a, '$.a') != '1') as x  from test_adaptive_short_circuit_1 where Format null settings short_circuit_function_evaluation='force_enable';
     </query>
 
     <query>
         <!-- query_plan_merge_filters=false, disable spilit and condition into and atoms -->
-        select * from test_adaptive_short_circuit_2 where less(b, 10) and JSON_VALUE(a, '$.a') = '1' Format null short_circuit_function_evaluation='force_enable',query_plan_merge_filters=false;
+        select * from test_adaptive_short_circuit_2 where less(b, 10) and JSON_VALUE(a, '$.a') = '1' Format null settings short_circuit_function_evaluation='force_enable',query_plan_merge_filters=false;
     </query>
     <query>
         <!-- query_plan_merge_filters=false, disable spilit and condition into and atoms -->
-        select * from test_adaptive_short_circuit_2 where JSON_VALUE(a, '$.a') = '1' and less(b,10) Format null short_circuit_function_evaluation='force_enable',query_plan_merge_filters=false;
+        select * from test_adaptive_short_circuit_2 where JSON_VALUE(a, '$.a') = '1' and less(b,10) Format null settings short_circuit_function_evaluation='force_enable',query_plan_merge_filters=false;
     </query>
     <query>
-        select (JSON_VALUE(a, '$.a') = '1' and less(b, 10)) as x  from test_adaptive_short_circuit_2 where Format null short_circuit_function_evaluation='force_enable';
+        select (JSON_VALUE(a, '$.a') = '1' and less(b, 10)) as x  from test_adaptive_short_circuit_2 where Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select (less(b, 10) and JSON_VALUE(a, '$.a') = '1') as x  from test_adaptive_short_circuit_2 where Format null short_circuit_function_evaluation='force_enable';
+        select (less(b, 10) and JSON_VALUE(a, '$.a') = '1') as x  from test_adaptive_short_circuit_2 where Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select * from test_adaptive_short_circuit_2 where greater(b, 10) or JSON_VALUE(a, '$.a') != '1' Format null short_circuit_function_evaluation='force_enable';
+        select * from test_adaptive_short_circuit_2 where greater(b, 10) or JSON_VALUE(a, '$.a') != '1' Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select * from test_adaptive_short_circuit_2 where JSON_VALUE(a, '$.a') != '1' or greater(b, 10) Format null short_circuit_function_evaluation='force_enable';
+        select * from test_adaptive_short_circuit_2 where JSON_VALUE(a, '$.a') != '1' or greater(b, 10) Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select (JSON_VALUE(a, '$.a') != '1' or greater(b, 10)) as x from test_adaptive_short_circuit_2  where Format null short_circuit_function_evaluation='force_enable';
+        select (JSON_VALUE(a, '$.a') != '1' or greater(b, 10)) as x from test_adaptive_short_circuit_2  where Format null settings short_circuit_function_evaluation='force_enable';
     </query>
     <query>
-        select (greater(b,10) or JSON_VALUE(a, '$.a') != '1') as x from test_adaptive_short_circuit_2 where Format null short_circuit_function_evaluation='force_enable';
+        select (greater(b,10) or JSON_VALUE(a, '$.a') != '1') as x from test_adaptive_short_circuit_2 where Format null settings short_circuit_function_evaluation='force_enable';
     </query>
 </test>
 

@@ -94,8 +94,10 @@ public:
             input_rows = b.input_rows;
             short_circuit_selected_rows = b.short_circuit_selected_rows;
         }
-        Action & operator=(const Action &b)
+        Action & operator=(const Action & b)
         {
+            if (this == &b)
+                return *this;
             std::unique_lock this_lock(mutex);
             node = b.node;
             {

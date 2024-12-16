@@ -12,7 +12,7 @@ Block ExpressionTransform::transformHeader(const Block & header, const ActionsDA
 
 ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionActionsPtr expression_)
     : ISimpleTransform(header_, transformHeader(header_, expression_->getActionsDAG()), false)
-    , expression(expression_->clone()) // We make a copy of expression_ here, eliminate lock contention between threads.
+    , expression(expression_ ? expression_->clone() : nullptr) // We make a copy of expression_ here, eliminate lock contention between threads.
 {
 }
 

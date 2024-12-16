@@ -209,6 +209,7 @@ public:
 
     virtual bool isStateful() const { return false; }
 
+    // Whether `execute` throws exception on invalid input. For example, a/b throws exception when b is zero.
     virtual bool isNoExcept() const { return false; }
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
