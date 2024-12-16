@@ -104,17 +104,18 @@ namespace
                 writability = SettingConstraintWritability::CONST;
                 return true;
             }
-            if (ParserKeyword{Keyword::WRITABLE}.ignore(pos, expected))
+            else if (ParserKeyword{Keyword::WRITABLE}.ignore(pos, expected))
             {
                 writability = SettingConstraintWritability::WRITABLE;
                 return true;
             }
-            if (ParserKeyword{Keyword::CHANGEABLE_IN_READONLY}.ignore(pos, expected))
+            else if (ParserKeyword{Keyword::CHANGEABLE_IN_READONLY}.ignore(pos, expected))
             {
                 writability = SettingConstraintWritability::CHANGEABLE_IN_READONLY;
                 return true;
             }
-            return false;
+            else
+                return false;
         });
     }
 

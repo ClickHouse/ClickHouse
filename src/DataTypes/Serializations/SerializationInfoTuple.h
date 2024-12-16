@@ -15,7 +15,6 @@ public:
 
     void add(const IColumn & column) override;
     void add(const SerializationInfo & other) override;
-    void remove(const SerializationInfo & other) override;
     void addDefaults(size_t length) override;
     void replaceData(const SerializationInfo & other) override;
 

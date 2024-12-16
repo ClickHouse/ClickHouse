@@ -217,8 +217,10 @@ private:
 
             return static_cast<char *>(result);
         }
-
-        return nullptr;
+        else
+        {
+            return nullptr;
+        }
     }
 
     void allocateNextPageBlock(size_t size)
@@ -285,7 +287,8 @@ public:
     {
         if (is_read_only)
             return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
-        return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+        else
+            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
     }
 
     bool finalizeMemory(std::string *) override

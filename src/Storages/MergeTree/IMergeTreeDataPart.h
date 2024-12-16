@@ -105,10 +105,10 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
     virtual bool isStoredOnDisk() const = 0;
-    virtual bool isStoredOnReadonlyDisk() const = 0;
-    virtual bool isStoredOnRemoteDisk() const = 0;
-    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
+    virtual bool isStoredOnRemoteDisk() const = 0;
+
+    virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
@@ -127,7 +127,7 @@ public:
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
 
     /// Return information about secondary indexes size on disk for all indexes in part
-    IndexSize getTotalSecondaryIndicesSize() const { return total_secondary_indices_size; }
+    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -179,9 +179,6 @@ public:
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
     void loadRowsCountFileForUnexpectedPart();
-
-    /// Loads marks and saves them into mark cache for specified columns.
-    virtual void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const = 0;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -321,7 +318,7 @@ public:
 
     /// Amount of rows between marks
     /// As index always loaded into memory
-    MergeTreeIndexGranularityPtr index_granularity;
+    MergeTreeIndexGranularity index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
@@ -380,8 +377,6 @@ public:
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
-    UInt64 getIndexGranularityBytes() const;
-    UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
     UInt64 getIndexSizeFromFile() const;
 
@@ -632,7 +627,7 @@ protected:
 
     mutable PartMetadataManagerPtr metadata_manager;
 
-    void removeIfNeeded() noexcept;
+    void removeIfNeeded();
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -759,6 +754,7 @@ bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
+std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;

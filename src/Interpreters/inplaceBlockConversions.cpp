@@ -145,7 +145,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
         if (!block.has(required_column.name))
             continue;
 
-        const auto & column_in_block = block.getByName(required_column.name);
+        auto column_in_block = block.getByName(required_column.name);
         if (column_in_block.type->equals(*required_column.type))
             continue;
 

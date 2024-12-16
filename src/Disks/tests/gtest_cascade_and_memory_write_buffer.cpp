@@ -4,7 +4,6 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
 #include <Common/typeid_cast.h>
@@ -56,8 +55,9 @@ static void testCascadeBufferRedability(
     cascade.write(data.data(), data.size());
     EXPECT_EQ(cascade.count(), data.size());
 
+    std::vector<WriteBufferPtr> write_buffers;
     ConcatReadBuffer concat;
-    auto write_buffers = cascade.getResultBuffers();
+    cascade.getResultBuffers(write_buffers);
 
     for (WriteBufferPtr & wbuf : write_buffers)
     {
@@ -69,7 +69,7 @@ static void testCascadeBufferRedability(
         auto rbuf = wbuf_readable.tryGetReadBuffer();
         ASSERT_FALSE(!rbuf);
 
-        concat.appendBuffer(std::move(rbuf));
+        concat.appendBuffer(wrapReadBufferPointer(std::move(rbuf)));
     }
 
     std::string decoded_data;
@@ -222,7 +222,7 @@ TEST(MemoryWriteBuffer, WriteAndReread)
         if (s > 1)
         {
             MemoryWriteBuffer buf(s - 1);
-            EXPECT_THROW(buf.write(data.data(), data.size()), WriteBuffer::CurrentBufferExhausted);
+            EXPECT_THROW(buf.write(data.data(), data.size()), MemoryWriteBuffer::CurrentBufferExhausted);
             buf.finalize();
         }
     }

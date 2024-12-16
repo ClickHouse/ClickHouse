@@ -5,19 +5,19 @@
 # If you want really small size of the resulted binary, just link with fuzz_compression and clickhouse_common_io
 
 clickhouse_add_executable (compressed_buffer_fuzzer compressed_buffer_fuzzer.cpp)
-target_link_libraries (compressed_buffer_fuzzer PRIVATE dbms)
+target_link_libraries (compressed_buffer_fuzzer PRIVATE dbms clickhouse_functions)
 
 clickhouse_add_executable (lz4_decompress_fuzzer lz4_decompress_fuzzer.cpp)
-target_link_libraries (lz4_decompress_fuzzer PUBLIC dbms ch_contrib::lz4)
+target_link_libraries (lz4_decompress_fuzzer PUBLIC dbms ch_contrib::lz4 clickhouse_functions)
 
 clickhouse_add_executable (delta_decompress_fuzzer delta_decompress_fuzzer.cpp)
-target_link_libraries (delta_decompress_fuzzer PRIVATE dbms)
+target_link_libraries (delta_decompress_fuzzer PRIVATE dbms clickhouse_functions)
 
 clickhouse_add_executable (double_delta_decompress_fuzzer double_delta_decompress_fuzzer.cpp)
-target_link_libraries (double_delta_decompress_fuzzer PRIVATE dbms)
+target_link_libraries (double_delta_decompress_fuzzer PRIVATE dbms clickhouse_functions)
 
 clickhouse_add_executable (encrypted_decompress_fuzzer encrypted_decompress_fuzzer.cpp)
-target_link_libraries (encrypted_decompress_fuzzer PRIVATE dbms)
+target_link_libraries (encrypted_decompress_fuzzer PRIVATE dbms clickhouse_functions)
 
 clickhouse_add_executable (gcd_decompress_fuzzer gcd_decompress_fuzzer.cpp)
-target_link_libraries (gcd_decompress_fuzzer PRIVATE dbms)
+target_link_libraries (gcd_decompress_fuzzer PRIVATE dbms clickhouse_functions)

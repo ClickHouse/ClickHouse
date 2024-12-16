@@ -15,19 +15,6 @@
 namespace DB
 {
 
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsBool async_replication;
-    extern const CoordinationSettingsUInt64 commit_logs_cache_size_threshold;
-    extern const CoordinationSettingsBool compress_logs;
-    extern const CoordinationSettingsBool force_sync;
-    extern const CoordinationSettingsUInt64 latest_logs_cache_size_threshold;
-    extern const CoordinationSettingsUInt64 log_file_overallocate_size;
-    extern const CoordinationSettingsUInt64 max_flush_batch_size;
-    extern const CoordinationSettingsUInt64 max_log_file_size;
-    extern const CoordinationSettingsUInt64 rotate_log_storage_interval;
-}
-
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
@@ -170,21 +157,22 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
                 check_duplicated_hostnames[endpoint],
                 new_server_id);
         }
-
-        /// Fullscan to check duplicated ids
-        for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
+        else
         {
-            if (new_server_id == id)
-                throw Exception(
-                    ErrorCodes::RAFT_ERROR,
-                    "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
-                    "but going to add it one more time with endpoint {}",
-                    id,
-                    id_endpoint,
-                    endpoint);
+            /// Fullscan to check duplicated ids
+            for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
+            {
+                if (new_server_id == id)
+                    throw Exception(
+                        ErrorCodes::RAFT_ERROR,
+                        "Raft config contains duplicate ids: id {} has been already added with endpoint {}, "
+                        "but going to add it one more time with endpoint {}",
+                        id,
+                        id_endpoint,
+                        endpoint);
+            }
+            check_duplicated_hostnames.emplace(endpoint, new_server_id);
         }
-        check_duplicated_hostnames.emplace(endpoint, new_server_id);
-
 
         auto peer_config = nuraft::cs_new<nuraft::srv_config>(new_server_id, 0, endpoint, "", !can_become_leader, priority);
         if (my_server_id == new_server_id)
@@ -257,21 +245,21 @@ KeeperStateManager::KeeperStateManager(
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
-    , configuration_wrapper(parseServersConfiguration(config, false, keeper_context_->getCoordinationSettings()[CoordinationSetting::async_replication]))
+    , configuration_wrapper(parseServersConfiguration(config, false, keeper_context_->getCoordinationSettings()->async_replication))
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings
           {
-              .force_sync = keeper_context_->getCoordinationSettings()[CoordinationSetting::force_sync],
-              .compress_logs = keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_logs],
-              .rotate_interval = keeper_context_->getCoordinationSettings()[CoordinationSetting::rotate_log_storage_interval],
-              .max_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_log_file_size],
-              .overallocate_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_file_overallocate_size],
-              .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_size_threshold],
-              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_size_threshold]
+              .force_sync = keeper_context_->getCoordinationSettings()->force_sync,
+              .compress_logs = keeper_context_->getCoordinationSettings()->compress_logs,
+              .rotate_interval = keeper_context_->getCoordinationSettings()->rotate_log_storage_interval,
+              .max_size = keeper_context_->getCoordinationSettings()->max_log_file_size,
+              .overallocate_size = keeper_context_->getCoordinationSettings()->log_file_overallocate_size,
+              .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()->latest_logs_cache_size_threshold,
+              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()->commit_logs_cache_size_threshold
           },
           FlushSettings
           {
-              .max_flush_batch_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_flush_batch_size],
+              .max_flush_batch_size = keeper_context_->getCoordinationSettings()->max_flush_batch_size,
           },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
@@ -347,11 +335,11 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
     auto disk = getStateFileDisk();
 
-    if (disk->existsFile(server_state_file_name))
+    if (disk->exists(server_state_file_name))
     {
         auto buf = disk->writeFile(copy_lock_file);
         buf->finalize();
-        disk->copyFile(server_state_file_name, *disk, old_path, ReadSettings{});
+        disk->copyFile(server_state_file_name, *disk, old_path);
         disk->removeFile(copy_lock_file);
         disk->removeFile(old_path);
     }
@@ -386,7 +374,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
     {
         try
         {
-            auto read_buf = disk->readFile(path, getReadSettings());
+            auto read_buf = disk->readFile(path);
             auto content_size = read_buf->getFileSize();
 
             if (content_size == 0)
@@ -435,7 +423,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         }
     };
 
-    if (disk->existsFile(server_state_file_name))
+    if (disk->exists(server_state_file_name))
     {
         auto state = try_read_file(server_state_file_name);
 
@@ -448,9 +436,9 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         disk->removeFile(server_state_file_name);
     }
 
-    if (disk->existsFile(old_path))
+    if (disk->exists(old_path))
     {
-        if (disk->existsFile(copy_lock_file))
+        if (disk->exists(copy_lock_file))
         {
             disk->removeFile(old_path);
             disk->removeFile(copy_lock_file);
@@ -466,7 +454,7 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             disk->removeFile(old_path);
         }
     }
-    else if (disk->existsFile(copy_lock_file))
+    else if (disk->exists(copy_lock_file))
     {
         disk->removeFile(copy_lock_file);
     }
@@ -481,9 +469,9 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 }
 
 ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
-    const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const
+    const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const
 {
-    auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]);
+    auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings->async_replication);
 
     std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
     for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())

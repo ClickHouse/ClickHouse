@@ -63,7 +63,7 @@ protected:
             marks_loader = createMarksLoader(part, MergeTreeDataPartCompact::DATA_FILE_NAME, part->getColumns().size());
 
         size_t num_columns = header.columns();
-        size_t num_rows = index_granularity->getMarksCount();
+        size_t num_rows = index_granularity.getMarksCount();
 
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
@@ -115,7 +115,7 @@ protected:
 
                 data.resize(num_rows);
                 for (size_t i = 0; i < num_rows; ++i)
-                    data[i] = index_granularity->getMarkRows(i);
+                    data[i] = index_granularity.getMarkRows(i);
 
                 result_columns[pos] = std::move(column);
             }
@@ -159,11 +159,11 @@ private:
     {
         size_t col_idx = 0;
         bool has_marks_in_part = false;
-        size_t num_rows = part->index_granularity->getMarksCount();
+        size_t num_rows = part->index_granularity.getMarksCount();
 
         if (isWidePart(part))
         {
-            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, part->checksums))
+            if (auto stream_name = part->getStreamNameOrHash(column_name, part->checksums))
             {
                 col_idx = 0;
                 has_marks_in_part = true;
@@ -260,7 +260,7 @@ public:
         Block sample_block,
         std::shared_ptr<StorageMergeTreeIndex> storage_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -351,7 +351,7 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
         filtered_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
-    pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputHeader(), storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
+    pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(getOutputStream().header, storage->key_sample_block, std::move(filtered_parts), context, storage->with_marks)));
 }
 
 MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(const ExpressionActionsPtr & virtual_columns_filter) const

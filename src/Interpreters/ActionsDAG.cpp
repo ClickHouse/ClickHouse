@@ -396,7 +396,7 @@ const ActionsDAG::Node * ActionsDAG::tryFindInOutputs(const std::string & name) 
     return nullptr;
 }
 
-ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) const
+ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutpus(const Names & names) const
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(names.size());
@@ -524,7 +524,7 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
 
 void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
-    auto required_nodes = findInOutputs(required_names);
+    auto required_nodes = findInOutpus(required_names);
     outputs.swap(required_nodes);
     removeUnusedActions(allow_remove_inputs, allow_constant_folding);
 }
@@ -1433,21 +1433,16 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
-void ActionsDAG::addMaterializingOutputActions(bool materialize_sparse)
+void ActionsDAG::addMaterializingOutputActions()
 {
     for (auto & output_node : outputs)
-        output_node = &materializeNode(*output_node, materialize_sparse);
+        output_node = &materializeNode(*output_node);
 }
 
-const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool materialize_sparse)
+const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
 {
-    FunctionPtr func_materialize;
-    if (materialize_sparse)
-        func_materialize = std::make_shared<FunctionMaterialize<true>>();
-    else
-        func_materialize = std::make_shared<FunctionMaterialize<false>>();
-
-    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(func_materialize));
+    FunctionOverloadResolverPtr func_builder_materialize
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     const auto & name = node.result_name;
     const auto * func = &addFunction(func_builder_materialize, {&node}, {});
@@ -1459,7 +1454,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     const ColumnsWithTypeAndName & result,
     MatchColumnsMode mode,
     bool ignore_constant_values,
-    bool add_cast_columns,
+    bool add_casted_columns,
     NameToNameMap * new_names)
 {
     size_t num_input_columns = source.size();
@@ -1468,13 +1463,13 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
         throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match (source: {} and result: {})", num_input_columns, num_result_columns);
 
-    if (add_cast_columns && mode != MatchColumnsMode::Name)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_cast_columns supported only for MatchColumnsMode::Name");
+    if (add_casted_columns && mode != MatchColumnsMode::Name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");
 
     ActionsDAG actions_dag(source);
     NodeRawConstPtrs projection(num_result_columns);
 
-    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize<false>>());
+    FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     std::unordered_map<std::string_view, std::list<size_t>> inputs;
     if (mode == MatchColumnsMode::Name)
@@ -1567,7 +1562,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
 
         if (dst_node->result_name != res_elem.name)
         {
-            if (add_cast_columns)
+            if (add_casted_columns)
             {
                 if (inputs.contains(dst_node->result_name))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column `{}` to `{}` because other column have same name",
@@ -1601,7 +1596,7 @@ ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 {
     ActionsDAG adding_column_action;
     FunctionOverloadResolverPtr func_builder_materialize
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize<true>>());
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMaterialize>());
 
     auto column_name = column.name;
     const auto * column_node = &adding_column_action.addColumn(std::move(column));
@@ -2033,9 +2028,8 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
-ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & array_joined_columns) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const
 {
-    std::unordered_set<std::string_view> array_joined_columns_set(array_joined_columns.begin(), array_joined_columns.end());
     struct Frame
     {
         const Node * node = nullptr;
@@ -2078,7 +2072,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
             if (cur.next_child_to_visit == cur.node->children.size())
             {
                 bool depend_on_array_join = false;
-                if (cur.node->type == ActionType::INPUT && array_joined_columns_set.contains(cur.node->result_name))
+                if (cur.node->type == ActionType::INPUT && array_joined_columns.contains(cur.node->result_name))
                     depend_on_array_join = true;
 
                 for (const auto * child : cur.node->children)
@@ -3189,6 +3183,34 @@ FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAG & 
 const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
 {
     const auto it = index.find(output_name);
+    if (it == index.end())
+        return nullptr;
+
+    return it->second;
+}
+
+FindAliasForInputName::FindAliasForInputName(const ActionsDAG & actions_)
+{
+    const auto & actions_outputs = actions_.getOutputs();
+    for (const auto * output_node : actions_outputs)
+    {
+        /// find input node which corresponds to alias
+        const auto * node = output_node;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            /// alias has only one child
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node && node->type == ActionsDAG::ActionType::INPUT)
+            /// node can have several aliases but we consider only the first one
+            index.emplace(node->result_name, output_node);
+    }
+}
+
+const ActionsDAG::Node * FindAliasForInputName::find(const String & name)
+{
+    const auto it = index.find(name);
     if (it == index.end())
         return nullptr;
 

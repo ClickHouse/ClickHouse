@@ -10,7 +10,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Disks/DiskLocal.h>
 #include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadBuffer.h>
@@ -35,11 +34,6 @@ namespace CurrentMetrics
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
     extern const Metric LocalThreadScheduled;
-}
-
-namespace DB::Setting
-{
-    extern const SettingsUInt64 max_block_size;
 }
 
 namespace DB::ErrorCodes
@@ -186,9 +180,6 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
 
         if (config.has(key + ".use_compression"))
             connection_info.use_compression = config.getBool(key + ".use_compression");
-
-        if (config.has(key + ".use_xid_64"))
-            connection_info.use_xid_64 = config.getBool(key + ".use_xid_64");
     };
 
     fill_connection_details("connections", default_connection_info);
@@ -572,7 +563,7 @@ struct ZooKeeperRequestFromLogReader
             *file_read_buf,
             header_block,
             context,
-            context->getSettingsRef()[DB::Setting::max_block_size],
+            context->getSettingsRef().max_block_size,
             format_settings,
             1,
             std::nullopt,
@@ -1123,7 +1114,6 @@ void Runner::runBenchmarkFromLog()
         else
         {
             request_from_log->connection = get_zookeeper_connection(request_from_log->session_id);
-            request_from_log->executor_id %= concurrency;
             push_request(std::move(*request_from_log));
         }
 
@@ -1261,7 +1251,6 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     args.connection_timeout_ms = connection_info.connection_timeout_ms;
     args.operation_timeout_ms = connection_info.operation_timeout_ms;
     args.use_compression = connection_info.use_compression;
-    args.use_xid_64 = connection_info.use_xid_64;
     return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
 }
 

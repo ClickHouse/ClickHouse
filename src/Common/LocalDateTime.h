@@ -9,7 +9,7 @@
 
 /** Stores calendar date and time in broken-down form.
   * Could be initialized from date and time in text form like '2011-01-01 00:00:00' or from time_t.
-  * Could be implicitly cast to time_t.
+  * Could be implicitly casted to time_t.
   * NOTE: Transforming between time_t and LocalDate is done in local time zone!
   *
   * When local time was shifted backwards (due to daylight saving time or whatever reason)

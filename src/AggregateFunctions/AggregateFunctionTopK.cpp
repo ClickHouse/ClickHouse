@@ -79,7 +79,8 @@ public:
     {
         if (is_approx_top_k)
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
-        return is_weighted ? "topKWeighted" : "topK";
+        else
+            return  is_weighted ? "topKWeighted" : "topK";
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool include_counts_)
@@ -105,7 +106,8 @@ public:
                 std::move(names)
             ));
         }
-        return std::make_shared<DataTypeArray>(argument_types_[0]);
+        else
+            return std::make_shared<DataTypeArray>(argument_types_[0]);
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -224,7 +226,8 @@ public:
     {
         if (is_approx_top_k)
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
-        return is_weighted ? "topKWeighted" : "topK";
+        else
+            return  is_weighted ? "topKWeighted" : "topK";
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool include_counts_)
@@ -250,8 +253,10 @@ public:
                 std::move(names)
             ));
 
+        } else
+        {
+            return std::make_shared<DataTypeArray>(argument_types_[0]);
         }
-        return std::make_shared<DataTypeArray>(argument_types_[0]);
     }
 
     bool allocatesMemoryInArena() const override
@@ -435,8 +440,8 @@ IAggregateFunction * createWithExtraTypes(const DataTypes & argument_types, UInt
     /// Check that we can use plain version of AggregateFunctionTopKGeneric
     if (argument_types[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         return new AggregateFunctionTopKGeneric<true, is_weighted>(threshold, reserved, include_counts, is_approx_top_k, argument_types, params);
-    return new AggregateFunctionTopKGeneric<false, is_weighted>(
-        threshold, reserved, include_counts, is_approx_top_k, argument_types, params);
+    else
+        return new AggregateFunctionTopKGeneric<false, is_weighted>(threshold, reserved, include_counts, is_approx_top_k, argument_types, params);
 }
 
 

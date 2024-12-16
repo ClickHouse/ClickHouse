@@ -19,10 +19,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSetOperationMode union_default_mode;
-}
 
 namespace ErrorCodes
 {
@@ -93,7 +89,7 @@ namespace
         res.if_not_exists = false;
         res.or_replace = false;
         FunctionNameNormalizer::visit(res.function_core.get());
-        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
         return ptr;
     }
