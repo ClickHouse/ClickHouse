@@ -68,7 +68,7 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
     if (requires_cast_call)
         buffer << "_CAST(";
 
-    buffer << name;
+    buffer << name << "_" << constant_node.getResultType()->getName();
 
     if (requires_cast_call)
     {
