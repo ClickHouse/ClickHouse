@@ -27,15 +27,15 @@ private:
 
 namespace SettingsChangesHistory
 {
-    struct SettingChange
-    {
-        String name;
-        Field previous_value;
-        Field new_value;
-        String reason;
-    };
+struct SettingChange
+{
+    String name;
+    Field previous_value;
+    Field new_value;
+    String reason;
+};
 
-    using SettingsChanges = std::vector<SettingChange>;
+using SettingsChanges = std::vector<SettingChange>;
 }
 
 const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory();

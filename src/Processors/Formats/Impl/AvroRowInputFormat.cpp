@@ -31,6 +31,9 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -358,16 +361,19 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     ColumnArray & column_array = assert_cast<ColumnArray &>(column);
                     ColumnArray::Offsets & offsets = column_array.getOffsets();
                     IColumn & nested_column = column_array.getData();
-                    size_t total = 0;
-                    for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
+                    auto read_array = [&]()
                     {
-                        total += n;
-                        for (size_t i = 0; i < n; ++i)
+                        size_t total = 0;
+                        for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
                         {
-                            nested_deserialize(nested_column, decoder);
+                            total += n;
+                            for (size_t i = 0; i < n; ++i)
+                                nested_deserialize(nested_column, decoder);
                         }
-                    }
-                    offsets.push_back(offsets.back() + total);
+                        offsets.push_back(offsets.back() + total);
+                    };
+
+                    SerializationArray::readArraySafe(column, read_array);
                     return true;
                 };
             }
@@ -453,7 +459,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         union_index_to_global_discriminator.insert_or_assign(i, ColumnVariant::NULL_DISCRIMINATOR);
                         continue;
                     }
-                    const auto variant = AvroSchemaReader::avroNodeToDataType(avro_node);
+                    const auto variant = AvroSchemaReader::avroNodeToDataType(avro_node, false);
                     nested_deserializers.emplace_back(createDeserializeFn(avro_node, variant));
 
                     auto corresponding_discriminator = variant_type.tryGetVariantDiscriminator(variant->getName());
@@ -616,25 +622,53 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             {
                 const DataTypeTuple & tuple_type = assert_cast<const DataTypeTuple &>(*target_type);
                 const auto & nested_types = tuple_type.getElements();
-                std::vector<std::pair<DeserializeFn, size_t>> nested_deserializers;
+                std::vector<std::tuple<DeserializeFn, SkipFn, std::optional<size_t>>> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
-                if (root_node->leaves() != nested_types.size())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "The number of leaves in record doesn't match the number of elements in tuple");
+                std::vector<SkipFn> skip_fns;
+                skip_fns.reserve(root_node->leaves());
 
                 for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
                 {
                     const auto & name = root_node->nameAt(i);
-                    size_t pos = tuple_type.getPositionByName(name);
-                    auto nested_deserializer = createDeserializeFn(root_node->leafAt(i), nested_types[pos]);
-                    nested_deserializers.emplace_back(nested_deserializer, pos);
+                    auto pos = tuple_type.tryGetPositionByName(name);
+                    if (pos)
+                    {
+                        auto nested_deserializer = createDeserializeFn(root_node->leafAt(i), nested_types[*pos]);
+                        nested_deserializers.emplace_back(nested_deserializer, SkipFn{}, pos);
+                    }
+                    else
+                    {
+                        auto skip_fn = createSkipFn(root_node->leafAt(i));
+                        nested_deserializers.emplace_back(DeserializeFn{}, skip_fn, pos);
+                    }
                 }
 
                 return [nested_deserializers](IColumn & column, avro::Decoder & decoder)
                 {
-                    ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(column);
-                    auto nested_columns = column_tuple.getColumns();
-                    for (const auto & [nested_deserializer, pos] : nested_deserializers)
-                        nested_deserializer(*nested_columns[pos], decoder);
+                    auto read_tuple=[&]()
+                    {
+                        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(column);
+                        std::vector<bool> seen_columns(column_tuple.tupleSize(), false);
+                        for (const auto & [nested_deserializer, skip_fn, pos] : nested_deserializers)
+                        {
+                            if (pos)
+                            {
+                                nested_deserializer(column_tuple.getColumn(*pos), decoder);
+                                seen_columns[*pos] = true;
+                            }
+                            else
+                            {
+                                skip_fn(decoder);
+                            }
+                        }
+
+                        for (size_t i = 0; i != seen_columns.size(); ++i)
+                        {
+                            if (!seen_columns[i])
+                                column_tuple.getColumn(i).insertDefault();
+                        }
+                    };
+                    SerializationTuple::readElementsSafe(column, read_tuple);
                     return true;
                 };
             }
@@ -667,16 +701,21 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     IColumn & keys_column = nested_columns.getColumn(0);
                     IColumn & values_column = nested_columns.getColumn(1);
                     size_t total = 0;
-                    for (size_t n = decoder.mapStart(); n != 0; n = decoder.mapNext())
+                    auto read_map=[&]()
                     {
-                        total += n;
-                        for (size_t i = 0; i < n; ++i)
+                        for (size_t n = decoder.mapStart(); n != 0; n = decoder.mapNext())
                         {
-                            keys_deserializer(keys_column, decoder);
-                            values_deserializer(values_column, decoder);
+                            total += n;
+                            for (size_t i = 0; i < n; ++i)
+                            {
+                                keys_deserializer(keys_column, decoder);
+                                values_deserializer(values_column, decoder);
+                            }
                         }
-                    }
-                    offsets.push_back(offsets.back() + total);
+                        offsets.push_back(offsets.back() + total);
+                    };
+
+                    SerializationMap::readMapSafe(column, read_map);
                     return true;
                 };
             }
@@ -1236,12 +1275,16 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
     NamesAndTypesList names_and_types;
     for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
-        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i)));
+    {
+        auto type = avroNodeToDataType(root_node->leafAt(i), format_settings.avro.skip_columns_with_unsupported_types_in_schema_inference);
+        if (type)
+            names_and_types.emplace_back(root_node->nameAt(i), type);
+    }
 
     return names_and_types;
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
+DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool skip_unsupported_types)
 {
     switch (node->type())
     {
@@ -1297,6 +1340,8 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
                 return std::make_shared<DataTypeEnum16>(std::move(values));
             }
 
+            if (skip_unsupported_types)
+                return nullptr;
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ClickHouse supports only 8 and 16-bit Enum.");
         }
         case avro::Type::AVRO_FIXED:
@@ -1311,7 +1356,12 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             return std::make_shared<DataTypeFixedString>(node->fixedSize());
         }
         case avro::Type::AVRO_ARRAY:
-            return std::make_shared<DataTypeArray>(avroNodeToDataType(node->leafAt(0)));
+        {
+            auto nested_type = avroNodeToDataType(node->leafAt(0), skip_unsupported_types);
+            if (!nested_type)
+                return nullptr;
+            return std::make_shared<DataTypeArray>(nested_type);
+        }
         case avro::Type::AVRO_NULL:
             return std::make_shared<DataTypeNothing>();
         case avro::Type::AVRO_UNION:
@@ -1319,7 +1369,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             // Treat union[T] as just T
             if (node->leaves() == 1)
             {
-                return avroNodeToDataType(node->leafAt(0));
+                return avroNodeToDataType(node->leafAt(0), skip_unsupported_types);
             }
 
             // Treat union[T, NULL] and union[NULL, T] as Nullable(T)
@@ -1328,7 +1378,9 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
                 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
-                auto nested_type = avroNodeToDataType(node->leafAt(nested_leaf_index));
+                auto nested_type = avroNodeToDataType(node->leafAt(nested_leaf_index), skip_unsupported_types);
+                if (!nested_type)
+                    return nullptr;
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
 
@@ -1344,12 +1396,12 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(avroNodeToDataType(avro_node));
+                nested_types.push_back(avroNodeToDataType(avro_node, skip_unsupported_types));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
         case avro::Type::AVRO_SYMBOLIC:
-            return avroNodeToDataType(avro::resolveSymbol(node));
+            return avroNodeToDataType(avro::resolveSymbol(node), skip_unsupported_types);
         case avro::Type::AVRO_RECORD:
         {
             DataTypes nested_types;
@@ -1358,15 +1410,38 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             nested_names.reserve(node->leaves());
             for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
             {
-                nested_types.push_back(avroNodeToDataType(node->leafAt(i)));
-                nested_names.push_back(node->nameAt(i));
+                auto nested_type = avroNodeToDataType(node->leafAt(i), skip_unsupported_types);
+                if (nested_type)
+                {
+                    nested_types.push_back(nested_type);
+                    nested_names.push_back(node->nameAt(i));
+                }
             }
+
+            if (nested_types.empty())
+            {
+                if (skip_unsupported_types)
+                    return nullptr;
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert Avro record {} to ClickHouse Tuple: record has no leaves", nodeName(node));
+            }
+
             return std::make_shared<DataTypeTuple>(nested_types, nested_names);
         }
         case avro::Type::AVRO_MAP:
-            return std::make_shared<DataTypeMap>(avroNodeToDataType(node->leafAt(0)), avroNodeToDataType(node->leafAt(1)));
+        {
+            auto key_type = avroNodeToDataType(node->leafAt(0), skip_unsupported_types);
+            auto value_type = avroNodeToDataType(node->leafAt(1), skip_unsupported_types);
+            if (!key_type || !value_type)
+                return nullptr;
+            return std::make_shared<DataTypeMap>(key_type, value_type);
+        }
         default:
+        {
+            if (skip_unsupported_types)
+                return nullptr;
+
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
+        }
     }
 }
 

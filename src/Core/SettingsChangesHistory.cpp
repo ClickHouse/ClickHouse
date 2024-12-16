@@ -60,7 +60,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-
+            {"input_format_avro_skip_columns_with_unsupported_types_in_schema_inference", false, false, "Allow to ignore nodes with unsupported types in Avro schema inference"},
         }
     },
     {"24.12",
