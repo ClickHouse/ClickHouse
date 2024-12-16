@@ -94,7 +94,7 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         frame.expression_list_prepend_whitespace = false;
 
         ostr << (s.hilite ? hilite_none : "") << indent_str << " (";
-        aliases()->formatImpl(ostr, s, state, frame);
+        aliases()->format(ostr, s, state, frame);
         ostr << (s.hilite ? hilite_none : "") << indent_str << ")";
 
         frame.expression_list_prepend_whitespace = prep_whitespace;
