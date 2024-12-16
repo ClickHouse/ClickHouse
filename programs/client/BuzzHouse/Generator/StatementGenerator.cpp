@@ -3080,6 +3080,14 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                     }
                     t.staged_cols.erase(cname);
                 }
+                else if (
+                    ati.has_column_remove_property() && success
+                    && ati.column_remove_property().property() < RemoveColumnProperty_ColumnProperties_CODEC)
+                {
+                    const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.column_remove_property().col().column().substr(1)));
+
+                    t.cols.at(cname).dmod = std::nullopt;
+                }
                 else if (ati.has_add_index())
                 {
                     const uint32_t iname = static_cast<uint32_t>(std::stoul(ati.add_index().new_idx().idx().index().substr(1)));

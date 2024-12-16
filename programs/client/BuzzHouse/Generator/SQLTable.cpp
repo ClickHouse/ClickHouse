@@ -235,9 +235,10 @@ int StatementGenerator::generateNextTTL(
 
         for (uint32_t i = 0; i < ttl_group_size; i++)
         {
+            const TableKeyExpr & tke = tk.exprs(i);
             Expr * expr = i == 0 ? el->mutable_expr() : el->add_extra_exprs();
 
-            expr->CopyFrom(tk.exprs(i));
+            expr->CopyFrom(tke.expr());
         }
 
         if (t.has_value())
