@@ -5100,19 +5100,6 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             for (auto & array_join_subexpression : columns_list->getNodes())
                 process_array_join_expression(array_join_subexpression);
         }
-        else if (auto * function_node = array_join_expression->as<FunctionNode>();
-            function_node != nullptr && function_node->getFunctionName() == "nested")
-        {
-            const auto & nested_arguments = function_node->getArguments().getNodes();
-            for (size_t i = 1; i < nested_arguments.size(); ++i)
-            {
-                auto * nested_column = nested_arguments[i]->as<ColumnNode>();
-                chassert(nested_column);
-
-                auto new_column = std::make_shared<ColumnNode>(nested_column->getColumn(), nested_arguments[i], array_join_node);
-                process_array_join_expression(new_column);
-            }
-        }
         else
         {
             process_array_join_expression(array_join_expression);
