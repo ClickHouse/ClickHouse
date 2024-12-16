@@ -287,7 +287,7 @@ Number of threads in the HashedDictionary thread pool running a task.
 
 ### IOPrefetchThreads
 
-Number of threads in the IO prefertch thread pool.
+Number of threads in the IO prefetch thread pool.
 
 ### IOPrefetchThreadsActive
 
@@ -357,7 +357,7 @@ Number of currently running inserts to Kafka
 
 Number of alive connections
 
-### KeeperOutstandingRequets
+### KeeperOutstandingRequests
 
 Number of outstanding requests
 
@@ -512,10 +512,6 @@ Part was moved to another disk and should be deleted in own destructor.
 ### PartsDeleting
 
 Not active data part with identity refcounter, it is deleting right now by a cleaner.
-
-### PartsInMemory
-
-In-memory parts.
 
 ### PartsOutdated
 
@@ -740,6 +736,14 @@ Number of sessions (connections) to ZooKeeper. Should be no more than one, becau
 ### ZooKeeperWatch
 
 Number of watches (event subscriptions) in ZooKeeper.
+
+### ConcurrencyControlAcquired
+
+Total number of acquired CPU slots.
+
+### ConcurrencyControlSoftLimit
+
+Value of soft limit on number of CPU slots.
 
 **See Also**
 

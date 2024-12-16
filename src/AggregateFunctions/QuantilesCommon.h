@@ -6,6 +6,7 @@
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/NaNUtils.h>
+#include <Common/iota.h>
 
 
 namespace DB
@@ -63,10 +64,9 @@ struct QuantileLevels
 
             if (isNaN(levels[i]) || levels[i] < 0 || levels[i] > 1)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Quantile level is out of range [0..1]");
-
-            permutation[i] = i;
         }
 
+        iota(permutation.data(), size, Permutation::value_type(0));
         ::sort(permutation.begin(), permutation.end(), [this] (size_t a, size_t b) { return levels[a] < levels[b]; });
     }
 };

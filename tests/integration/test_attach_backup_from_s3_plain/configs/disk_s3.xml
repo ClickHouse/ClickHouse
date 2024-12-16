@@ -8,9 +8,16 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </backup_disk_s3_plain>
+            <backup_disk_local_plain>
+                <type>object_storage</type>
+                <object_storage_type>local_blob_storage</object_storage_type>
+                <metadata_type>plain</metadata_type>
+                <path>/local_plain/</path>
+            </backup_disk_local_plain>
         </disks>
     </storage_configuration>
     <backups>
         <allowed_disk>backup_disk_s3_plain</allowed_disk>
+        <allowed_disk>backup_disk_local_plain</allowed_disk>
     </backups>
 </clickhouse>

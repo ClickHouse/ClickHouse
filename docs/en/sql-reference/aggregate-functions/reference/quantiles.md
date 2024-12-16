@@ -1,15 +1,15 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/quantiles
-sidebar_position: 201
+sidebar_position: 177
 ---
 
 # quantiles Functions
 
 ## quantiles
 
-Syntax: `quantiles(level1, level2, …)(x)`
+Syntax: `quantiles(level1, level2, ...)(x)`
 
-All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantileInterpolatedWeighted`, `quantilesTDigest`, `quantilesBFloat16`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
+All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantileExactWeightedInterpolated`, `quantileInterpolatedWeighted`, `quantilesTDigest`, `quantilesBFloat16`, `quantilesDD`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
 
 ## quantilesExactExclusive
 

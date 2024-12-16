@@ -33,7 +33,7 @@ public:
     const String & getCurrentRecord() const { return current[-1].data; }
 
 private:
-    enum class BufferStatus
+    enum class BufferStatus : uint8_t
     {
         INIT,
         NO_RECORD_RETURNED,
@@ -42,7 +42,7 @@ private:
 
     BufferStatus buffer_status = BufferStatus::INIT;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     StorageFileLog & storage;
 

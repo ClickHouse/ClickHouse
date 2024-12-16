@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} -n --query "
+${CLICKHOUSE_CLIENT} --query "
 DROP TABLE IF EXISTS t_mt_async_insert;
 DROP TABLE IF EXISTS t_mt_sync_insert;
 
@@ -19,7 +19,7 @@ url="${CLICKHOUSE_URL}&async_insert=0&wait_for_async_insert=1"
 ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO t_mt_async_insert VALUES (1, 'aa'), (2, 'bb')"
 ${CLICKHOUSE_CURL} -sS "$url" -d "INSERT INTO t_mt_sync_insert VALUES (1, 'aa'), (2, 'bb')"
 
-${CLICKHOUSE_CLIENT} -n --query "
+${CLICKHOUSE_CLIENT} --query "
 SELECT count() FROM t_mt_async_insert;
 SELECT count() FROM t_mt_sync_insert;
 

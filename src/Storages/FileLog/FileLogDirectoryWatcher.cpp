@@ -6,7 +6,7 @@ namespace DB
 FileLogDirectoryWatcher::FileLogDirectoryWatcher(const std::string & path_, StorageFileLog & storage_, ContextPtr context_)
     : path(path_)
     , storage(storage_)
-    , log(&Poco::Logger::get("FileLogDirectoryWatcher(" + path + ")"))
+    , log(getLogger("FileLogDirectoryWatcher(" + path + ")"))
     , dw(std::make_unique<DirectoryWatcherBase>(*this, path, context_))
 {
 }
@@ -84,11 +84,9 @@ void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEven
         /// Already have MODIFY event for this file
         if (it->second.received_modification_event)
             return;
-        else
-        {
-            it->second.received_modification_event = true;
-            it->second.file_events.emplace_back(info);
-        }
+
+        it->second.received_modification_event = true;
+        it->second.file_events.emplace_back(info);
     }
     else
     {

@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS table_function_dictionary_source_table;
 CREATE TABLE table_function_dictionary_source_table
 (
@@ -18,10 +16,10 @@ CREATE DICTIONARY table_function_dictionary_test_dictionary
    value UInt64 DEFAULT 0
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_function_dictionary_source_table'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' DATABASE currentDatabase() TABLE 'table_function_dictionary_source_table'))
 LAYOUT(DIRECT());
 
 SELECT * FROM dictionary('table_function_dictionary_test_dictionary');
 
-DROP TABLE table_function_dictionary_source_table;
 DROP DICTIONARY table_function_dictionary_test_dictionary;
+DROP TABLE table_function_dictionary_source_table;

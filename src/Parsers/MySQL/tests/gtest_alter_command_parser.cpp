@@ -11,7 +11,7 @@ using namespace DB::MySQLParser;
 
 static inline ASTPtr tryParserQuery(IParser & parser, const String & query)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0, 0);
 }
 
 TEST(ParserAlterCommand, AddAlterCommand)

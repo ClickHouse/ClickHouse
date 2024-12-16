@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/Logger.h>
+
 #include <list>
 #include <memory>
 #include <mutex>
@@ -11,9 +13,11 @@
 #include <mysqlxx/Connection.h>
 
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_POOL_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL 1
+/// NOLINTEND(modernize-macro-to-enum)
 
 
 namespace mysqlxx
@@ -62,17 +66,6 @@ public:
             decrementRefCount();
         }
 
-        Entry & operator= (const Entry & src) /// NOLINT
-        {
-            pool = src.pool;
-            if (data)
-                decrementRefCount();
-            data = src.data;
-            if (data)
-                incrementRefCount();
-            return * this;
-        }
-
         bool isNull() const
         {
             return data == nullptr;
@@ -112,8 +105,7 @@ public:
         {
             if (pool)
                 return pool->getDescription();
-            else
-                return "pool is null";
+            return "pool is null";
         }
 
         void disconnect();
@@ -200,13 +192,19 @@ public:
     /// Get description of database.
     std::string getDescription() const
     {
-        return description;
+        std::lock_guard lock(mutex);
+        return getDescriptionImpl();
     }
 
     void removeConnection(Connection * connection);
 
+    bool isOnline()
+    {
+        return online;
+    }
+
 protected:
-    Poco::Logger * log = &Poco::Logger::get("mysqlxx::Pool");
+    LoggerPtr log = getLogger("mysqlxx::Pool");
 
     /// Number of MySQL connections which are created at launch.
     unsigned default_connections;
@@ -221,7 +219,7 @@ private:
     /// List of connections.
     Connections connections;
     /// Lock for connections list access
-    std::mutex mutex;
+    mutable std::mutex mutex;
     /// Description of connection.
     std::string description;
 
@@ -246,8 +244,16 @@ private:
     /// Initialises class if it wasn't.
     void initialize();
 
+    /// Pool is online.
+    std::atomic<bool> online{true};
+
     /** Create new connection. */
     Connection * allocConnection(bool dont_throw_if_failed_first_time = false);
+
+    std::string getDescriptionImpl() const
+    {
+        return description;
+    }
 };
 
 }

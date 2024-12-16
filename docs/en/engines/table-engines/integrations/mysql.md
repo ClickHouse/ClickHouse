@@ -4,7 +4,7 @@ sidebar_position: 138
 sidebar_label: MySQL
 ---
 
-# MySQL
+# MySQL Table Engine
 
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
@@ -16,7 +16,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause'])
+) ENGINE = MySQL({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 SETTINGS
     [ connection_pool_size=16, ]
     [ connection_max_tries=3, ]
@@ -42,22 +42,16 @@ The MySQL Table Engine is currently not available on the ClickHouse builds for M
 **Engine Parameters**
 
 - `host:port` — MySQL server address.
-
 - `database` — Remote database name.
-
 - `table` — Remote table name.
-
 - `user` — MySQL user.
-
 - `password` — User password.
-
 - `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
-
 - `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
-
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
-
     To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
+
+Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
@@ -71,7 +65,7 @@ CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) EN
 
 ## Usage Example {#usage-example}
 
-Table in MySQL:
+Create table in MySQL:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (
@@ -94,7 +88,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Table in ClickHouse, retrieving data from the MySQL table created above:
+Create table in ClickHouse using plain arguments:
 
 ``` sql
 CREATE TABLE mysql_table
@@ -104,6 +98,25 @@ CREATE TABLE mysql_table
 )
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
+
+Or using [named collections](/docs/en/operations/named-collections.md):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = 'localhost',
+        port = 3306,
+        database = 'test',
+        user = 'bayonet',
+        password = '123';
+CREATE TABLE mysql_table
+(
+    `float_nullable` Nullable(Float32),
+    `int_id` Int32
+)
+ENGINE = MySQL(creds, table='test')
+```
+
+Retrieving data from MySQL table:
 
 ``` sql
 SELECT * FROM mysql_table

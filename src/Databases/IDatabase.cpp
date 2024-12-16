@@ -1,11 +1,12 @@
 #include <memory>
 #include <Databases/IDatabase.h>
-#include <Storages/IStorage.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Common/quoteString.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Common/NamePrompter.h>
+#include <Interpreters/TableNameHints.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamePrompter.h>
+#include <Common/quoteString.h>
 
 
 namespace CurrentMetrics
@@ -34,14 +35,13 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 
     if (hint.first.empty())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
-    else
-        throw Exception(
-            ErrorCodes::UNKNOWN_TABLE,
-            "Table {}.{} does not exist. Maybe you meant {}.{}?",
-            backQuoteIfNeed(getDatabaseName()),
-            backQuoteIfNeed(name),
-            backQuoteIfNeed(hint.first),
-            backQuoteIfNeed(hint.second));
+    throw Exception(
+        ErrorCodes::UNKNOWN_TABLE,
+        "Table {}.{} does not exist. Maybe you meant {}.{}?",
+        backQuoteIfNeed(getDatabaseName()),
+        backQuoteIfNeed(name),
+        backQuoteIfNeed(hint.first),
+        backQuoteIfNeed(hint.second));
 }
 
 IDatabase::IDatabase(String database_name_) : database_name(std::move(database_name_))

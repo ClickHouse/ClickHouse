@@ -1,9 +1,12 @@
+-- Tags: no-fasttest
+-- no-fasttest: Timeout for the first query (CANNOT_DETECT_FORMAT) is too slow: https://github.com/ClickHouse/ClickHouse/issues/67939
+
 drop table if exists test_table_url_syntax
 ;
 create table test_table_url_syntax (id UInt32) ENGINE = URL('')
-; -- { serverError 36 }
+; -- { serverError UNSUPPORTED_URI_SCHEME }
 create table test_table_url_syntax (id UInt32) ENGINE = URL('','','','')
-; -- { serverError 42 }
+; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 drop table if exists test_table_url_syntax
 ;
 
@@ -11,13 +14,13 @@ drop table if exists test_table_url
 ;
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint')
-; -- { serverError 36 }
+; -- { serverError CANNOT_DETECT_FORMAT }
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint.json');
 drop table test_table_url;
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint', 'ErrorFormat')
-; -- { serverError 73 }
+; -- { serverError UNKNOWN_FORMAT }
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint', 'JSONEachRow', 'gzip');
 drop table test_table_url;
@@ -62,5 +65,5 @@ create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint',
 drop table test_table_url;
 
 create table test_table_url(id UInt32) ENGINE = URL('http://localhost/endpoint', 'JSONEachRow', 'zip')
-; -- { serverError 48 }
+; -- { serverError NOT_IMPLEMENTED }
 

@@ -1,11 +1,15 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, no-ubsan, no-batch, no-flaky-check
 -- no-parallel because we want to run this test when most of the other tests already passed
+-- This is not a regular test. It is intended to run once after other tests to validate certain statistics about the whole test runs.
+-- TODO: I advise to put in inside clickhouse-test instead.
 
 -- If this test fails, see the "Top patterns of log messages" diagnostics in the end of run.log
 
 system flush logs;
 drop table if exists logs;
 create view logs as select * from system.text_log where now() - toIntervalMinute(120) < event_time;
+
+SET max_rows_to_read = 0; -- system.text_log can be really big
 
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
@@ -20,6 +24,8 @@ SELECT
                 length(message_format_string) = 0
               AND message not like '% Received from %clickhouse-staging.com:9440%'
               AND source_file not like '%/AWSLogger.cpp%'
+              AND source_file not like '%/BaseDaemon.cpp%'
+              AND logger_name not in ('RaftInstance')
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
@@ -56,43 +62,116 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
 WHERE
   (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%';
+  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%';
 
 
 -- FIXME some of the following messages are not informative and it has to be fixed
-create temporary table known_short_messages (s String) as select * from (select
-['', '{} ({})', '({}) Keys: {}', '({}) {}', 'Aggregating', 'Became leader', 'Cleaning queue',
-'Creating set.', 'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}',
-'Found part {}', 'Loaded queue', 'No sharding key', 'No tables', 'Query: {}', 'Removed',
-'Removed part {}', 'Removing parts.', 'Request URI: {}', 'Sending part {}',
-'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}', 'dropIfEmpty',
-'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', '{}%', 'Read object: {}',
-'New segment: {}', 'Convert overflow', 'Division by zero', 'Files set to {}',
-'Bytes set to {}', 'Numeric overflow', 'Invalid mode: {}',
-'Write file: {}', 'Unable to parse JSONPath', 'Host is empty in S3 URI.', 'Expected end of line',
-'inflate failed: {}{}', 'Center is not valid', 'Column ''{}'' is ambiguous', 'Cannot parse object', 'Invalid date: {}',
-'There is no cache by name: {}', 'No part {} in table', '`{}` should be a String', 'There are duplicate id {}',
-'Invalid replica name: {}', 'Unexpected value {} in enum', 'Unknown BSON type: {}', 'Point is not valid',
-'Invalid qualified name: {}', 'INTO OUTFILE is not allowed', 'Arguments must not be NaN', 'Cell is not valid',
-'brotli decode error{}', 'Invalid H3 index: {}', 'Too large node state size', 'No additional keys found.',
-'Attempt to read after EOF.', 'Replication was stopped', '{}	building file infos', 'Cannot parse uuid {}',
-'Query was cancelled', 'Cancelled merging parts', 'Cancelled mutating parts', 'Log pulling is cancelled',
-'Transaction was cancelled', 'Could not find table: {}', 'Table {} does not exist',
-'Database {} does not exist', 'Dictionary ({}) not found', 'Unknown table function {}',
-'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
-'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
-'Attempt to read after eof', 'String size is too big ({}), maximum: {}',
-'Processed: {}%', 'Creating {}: {}', 'Table {}.{} doesn''t exist', 'Invalid cache key hex: {}',
-'User has been dropped', 'Illegal type {} of argument of function {}. Should be DateTime or DateTime64',
-'Unknown statistic column: {}',
-'Bad SSH public key provided', 'Database {} does not exist', 'Substitution {} is not set', 'Invalid cache key hex: {}'
-] as arr) array join arr;
+create temporary table known_short_messages (s String) as select * from (select [
+    '',
+    '({}) Keys: {}',
+    '({}) {}',
+    'Aggregating',
+    'Attempt to read after EOF.',
+    'Attempt to read after eof',
+    'Bad SSH public key provided',
+    'Became leader',
+    'Bytes set to {}',
+    'Cancelled merging parts',
+    'Cancelled mutating parts',
+    'Cannot parse date here: {}',
+    'Cannot parse object',
+    'Cannot parse uuid {}',
+    'Cleaning queue',
+    'Column \'{}\' is ambiguous',
+    'Convert overflow',
+    'Could not find table: {}',
+    'Creating {}: {}',
+    'Cyclic aliases',
+    'Database {} does not exist',
+    'Detaching {}',
+    'Dictionary ({}) not found',
+    'Division by zero',
+    'Executing {}',
+    'Expected end of line',
+    'Expected function, got: {}',
+    'Files set to {}',
+    'Fire events: {}',
+    'Found part {}',
+    'Host is empty in S3 URI.',
+    'INTO OUTFILE is not allowed',
+    'Invalid cache key hex: {}',
+    'Invalid date: {}',
+    'Invalid mode: {}',
+    'Invalid qualified name: {}',
+    'Invalid replica name: {}',
+    'Loaded queue',
+    'Log pulling is cancelled',
+    'New segment: {}',
+    'No additional keys found.',
+    'No part {} in table',
+    'No sharding key',
+    'No tables',
+    'Numeric overflow',
+    'Path to archive is empty',
+    'Processed: {}%',
+    'Query was cancelled',
+    'Query: {}',
+    'Read object: {}',
+    'Removed part {}',
+    'Removing parts.',
+    'Replication was stopped',
+    'Request URI: {}',
+    'Sending part {}',
+    'Sent handshake',
+    'Starting {}',
+    'Substitution {} is not set',
+    'Table {} does not exist',
+    'Table {} doesn\'t exist',
+    'Table {}.{} doesn\'t exist',
+    'Table {} doesn\'t exist',
+    'Table {} is not empty',
+    'There are duplicate id {}',
+    'There is no cache by name: {}',
+    'Too large node state size',
+    'Transaction was cancelled',
+    'Unable to parse JSONPath',
+    'Unexpected value {} in enum',
+    'Unknown BSON type: {}',
+    'Unknown explain kind \'{}\'',
+    'Unknown format {}',
+    'Unknown geometry type {}',
+    'Unknown identifier: \'{}\'',
+    'Unknown input format {}',
+    'Unknown setting {}',
+    'Unknown setting \'{}\'',
+    'Unknown statistic column: {}',
+    'Unknown table function {}',
+    'User has been dropped',
+    'User name is empty',
+    'Will mimic {}',
+    'Write file: {}',
+    'Writing to {}',
+    '`{}` should be a String',
+    'brotli decode error{}',
+    'dropIfEmpty',
+    'inflate failed: {}{}',
+    'loadAll {}',
+    '{} ({})',
+    '{} ({}:{})',
+    '{} -> {}',
+    '{} {}',
+    '{}%',
+    '{}: {}',
+    'Unknown data type family: {}',
+    'Cannot load time zone {}',
+    'Unknown table engine {}'
+    ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
 WITH 1 AS max_messages
@@ -122,7 +201,7 @@ select 'exceptions shorter than 30',
     (uniqExact(message_format_string) as c) <= max_messages,
     c <= max_messages ? [] : groupUniqArray(message_format_string)
     from logs
-    where message ilike '%DB::Exception%' and if(length(extract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) < 30 + 26 and message_format_string not in known_short_messages;
+    where message ilike '%DB::Exception%' and if(length(extract(toValidUTF8(message), '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(toValidUTF8(message))) < 30 + 26 and message_format_string not in known_short_messages;
 
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
 WITH 0.30 as threshold
@@ -135,7 +214,7 @@ select
 with 0.16 as threshold
 select
     'noisy Trace messages',
-    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}')
+    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}', 'Query to stage {}{}', 'Query from stage {} to stage {}{}')
                         group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
     r <= threshold ? '' : top_message.1;
 
@@ -148,7 +227,10 @@ select 'noisy Debug messages',
 -- Same as above for Info
 WITH 0.05 as threshold
 select 'noisy Info messages',
-       greatest(coalesce(((select message_format_string, count() from logs where level = 'Information' group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+       greatest(coalesce(((select message_format_string, count() from logs
+            where level = 'Information'
+              and message_format_string not in ('Sorting and writing part of data into temporary file {}', 'Done writing part of data into temporary file {}, compressed {}, uncompressed {}')
+            group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
        r <= threshold ? '' : top_message.1;
 
 -- Same as above for Warning
@@ -177,7 +259,7 @@ select 'number of noisy messages',
 -- Each message matches its pattern (returns 0 rows)
 -- Note: maybe we should make it stricter ('Code:%Exception: '||s||'%'), but it's not easy because of addMessage
 select 'incorrect patterns', greatest(uniqExact(message_format_string), 15) from (
-    select message_format_string, any(message) as any_message from logs
+    select message_format_string, any(toValidUTF8(message)) as any_message from logs
     where ((rand() % 8) = 0)
     and message not like (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') as s)
     and message not like (s || ' (skipped % similar messages)')

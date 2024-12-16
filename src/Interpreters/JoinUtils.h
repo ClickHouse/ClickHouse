@@ -5,6 +5,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Core/Joins.h>
 
 namespace DB
 {
@@ -49,7 +50,7 @@ public:
         return nullptr;
     }
 
-    inline bool isRowFiltered(size_t row) const
+    bool isRowFiltered(size_t row) const
     {
         return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
     }

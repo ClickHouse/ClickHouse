@@ -26,7 +26,7 @@ QUERY id: 0
                           LIST id: 14, nodes: 1
                             CONSTANT id: 15, constant_value: UInt64_10, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 16, table_function_name: numbers
+    TABLE_FUNCTION id: 16, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 17, nodes: 1
           CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt8
@@ -58,7 +58,7 @@ QUERY id: 0
                           LIST id: 14, nodes: 1
                             CONSTANT id: 15, constant_value: UInt64_10, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 16, table_function_name: numbers
+    TABLE_FUNCTION id: 16, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 17, nodes: 1
           CONSTANT id: 18, constant_value: UInt64_10, constant_value_type: UInt8
@@ -81,7 +81,7 @@ QUERY id: 0
                             CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt8
             CONSTANT id: 10, constant_value: UInt64_5, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 11, table_function_name: numbers
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8
@@ -104,7 +104,7 @@ QUERY id: 0
                             CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt8
             CONSTANT id: 10, constant_value: UInt64_5, constant_value_type: UInt8
   JOIN TREE
-    TABLE_FUNCTION id: 11, table_function_name: numbers
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 12, nodes: 1
           CONSTANT id: 13, constant_value: UInt64_10, constant_value_type: UInt8

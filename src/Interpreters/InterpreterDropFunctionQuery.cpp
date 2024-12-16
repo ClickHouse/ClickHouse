@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
@@ -20,7 +21,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterDropFunctionQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
 
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     ASTDropFunctionQuery & drop_function_query = updated_query_ptr->as<ASTDropFunctionQuery &>();
@@ -47,6 +48,15 @@ BlockIO InterpreterDropFunctionQuery::execute()
     UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, throw_if_not_exists);
 
     return {};
+}
+
+void registerInterpreterDropFunctionQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropFunctionQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropFunctionQuery", create_fn);
 }
 
 }

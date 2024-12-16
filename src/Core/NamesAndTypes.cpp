@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <Core/NamesAndTypes.h>
 
 #include <base/sort.h>
@@ -12,6 +11,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <boost/algorithm/string.hpp>
+#include <cstddef>
 
 namespace DB
 {
@@ -150,6 +151,15 @@ Names NamesAndTypesList::getNames() const
     return res;
 }
 
+NameSet NamesAndTypesList::getNameSet() const
+{
+    NameSet res;
+    res.reserve(size());
+    for (const NameAndTypePair & column : *this)
+        res.insert(column.name);
+    return res;
+}
+
 DataTypes NamesAndTypesList::getTypes() const
 {
     DataTypes res;
@@ -187,6 +197,18 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
     return filter(NameSet(names.begin(), names.end()));
 }
 
+NamesAndTypesList NamesAndTypesList::eraseNames(const NameSet & names) const
+{
+    NamesAndTypesList res;
+    for (const auto & column : *this)
+    {
+        if (!names.contains(column.name))
+            res.push_back(column);
+    }
+    return res;
+}
+
+
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
@@ -213,6 +235,16 @@ bool NamesAndTypesList::contains(const String & name) const
     for (const NameAndTypePair & column : *this)
     {
         if (column.name == name)
+            return true;
+    }
+    return false;
+}
+
+bool NamesAndTypesList::containsCaseInsensitive(const String & name) const
+{
+    for (const NameAndTypePair & column : *this)
+    {
+        if (boost::iequals(column.name, name))
             return true;
     }
     return false;

@@ -86,7 +86,7 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
     auto prefix_str = cidr_str.substr(pos_slash+1);
 
     const auto * prefix_str_end = prefix_str.data() + prefix_str.size();
-    auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix);
+    auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     uint8_t max_prefix = (addr.asV6() ? IPV6_BINARY_LENGTH : IPV4_BINARY_LENGTH) * 8;
     bool has_error = parse_error != std::errc() || parse_end != prefix_str_end || prefix > max_prefix;
     if (has_error)
@@ -131,16 +131,12 @@ namespace DB
             {
                 if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
                     return executeImpl(*col_addr_const, *col_cidr_const, input_rows_count);
-                else
-                    return executeImpl(*col_addr_const, *col_cidr, input_rows_count);
+                return executeImpl(*col_addr_const, *col_cidr, input_rows_count);
             }
-            else
-            {
-                if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
-                    return executeImpl(*col_addr, *col_cidr_const, input_rows_count);
-                else
-                    return executeImpl(*col_addr, *col_cidr, input_rows_count);
-            }
+
+            if (const auto * col_cidr_const = checkAndGetAnyColumnConst(col_cidr))
+                return executeImpl(*col_addr, *col_cidr_const, input_rows_count);
+            return executeImpl(*col_addr, *col_cidr, input_rows_count);
         }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -156,6 +152,11 @@ namespace DB
             if (!isString(addr_type) || !isString(prefix_type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The arguments of function {} must be String", getName());
 
+            return std::make_shared<DataTypeUInt8>();
+        }
+
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
             return std::make_shared<DataTypeUInt8>();
         }
 

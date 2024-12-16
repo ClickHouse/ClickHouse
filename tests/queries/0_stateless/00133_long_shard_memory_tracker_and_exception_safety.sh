@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, shard, no-parallel
+# Tags: long, shard
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
     DROP TABLE IF EXISTS numbers_100k;
     CREATE VIEW numbers_100k AS SELECT * FROM system.numbers LIMIT 100000;
 ";

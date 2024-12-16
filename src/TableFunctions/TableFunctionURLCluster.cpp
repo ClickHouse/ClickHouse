@@ -40,8 +40,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
             StorageID(getDatabaseName(), table_name),
             getActualTableStructure(context, /* is_insert_query */ true),
             ConstraintsDescription{},
-            configuration,
-            structure != "auto");
+            configuration);
     }
     return storage;
 }

@@ -19,7 +19,7 @@ struct BitHammingDistanceImpl
     static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
+    static NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         /// Note: it's unspecified if signed integers should be promoted with sign-extension or with zero-fill.
         /// This behavior can change in the future.

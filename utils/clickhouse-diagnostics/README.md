@@ -318,7 +318,7 @@ SHOW ACCESS
 ```
 **result**
 ```
-CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE default
+CREATE USER default IDENTIFIED WITH plaintext_password SETTINGS PROFILE `default`
 CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = 'random'
 CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1
 CREATE QUOTA default KEYED BY user_name FOR INTERVAL 1 hour TRACKING ONLY TO default

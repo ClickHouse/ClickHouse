@@ -1,3 +1,5 @@
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+
 CREATE TABLE test (id UInt64, `amax` AggregateFunction(argMax, String, DateTime))
 ENGINE=MergeTree()
 ORDER BY id
@@ -42,12 +44,12 @@ ORDER BY event_time_microseconds;
 -- 1 * 8 + AggregateFunction(argMax, String, DateTime)
 --
 -- Size of AggregateFunction(argMax, String, DateTime):
--- SingleValueDataString() + SingleValueDataFixed(DateTime)
--- SingleValueDataString = 64B for small strings, 64B + string size + 1 for larger
--- SingleValueDataFixed(DateTime) = 1 + 4. With padding = 8
--- SingleValueDataString Total: 72B
+-- 1 Base class + 1 specific/value class:
+-- Base class: MAX(sizeOf(SingleValueDataFixed<T>), sizeOf(SingleValueDataString), sizeOf(SingleValueDataGeneric)) = 64
+-- Specific class: SingleValueDataFixed(DateTime) = 4 + 1. With padding = 8
+-- Total: 8 + 64 + 8 = 80
 --
--- ColumnAggregateFunction total: 8 + 72 = 80
+-- ColumnAggregateFunction total: 8 + 2 * 64 = 136
 SELECT 'AggregateFunction(argMax, String, DateTime)',
        read_rows,
        read_bytes

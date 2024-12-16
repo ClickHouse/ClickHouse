@@ -4,9 +4,8 @@
 
 #if USE_LIBPQXX
 #include "PostgreSQLReplicationHandler.h"
-#include "MaterializedPostgreSQLSettings.h"
 
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -17,6 +16,7 @@
 
 namespace DB
 {
+struct MaterializedPostgreSQLSettings;
 
 /** TODO list:
  * - Actually I think we can support ddl even though logical replication does not fully support it.
@@ -74,7 +74,7 @@ public:
 
     StorageMaterializedPostgreSQL(
         const StorageID & table_id_,
-        bool is_attach_,
+        LoadingStrictnessLevel mode,
         const String & remote_database_name,
         const String & remote_table_name,
         const postgres::ConnectionInfo & connection_info,
@@ -88,8 +88,6 @@ public:
 
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
-
-    NamesAndTypesList getVirtuals() const override;
 
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
@@ -138,11 +136,13 @@ private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
             String name, String type, UInt64 default_value);
 
+    static VirtualColumnsDescription createVirtuals();
+
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 
     String getNestedTableName() const;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Not nullptr only for single MaterializedPostgreSQL storage, because for MaterializedPostgreSQL
     /// database engine there is one replication handler for all tables.

@@ -1,7 +1,8 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Parsers/formatAST.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
@@ -123,6 +124,15 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
     return "SELECT " + expr + " from system." + origin +
             (filter.empty() ? "" : " WHERE " + filter) +
             (order.empty() ? "" : " ORDER BY " + order);
+}
+
+void registerInterpreterShowAccessEntitiesQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowAccessEntitiesQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowAccessEntitiesQuery", create_fn);
 }
 
 }

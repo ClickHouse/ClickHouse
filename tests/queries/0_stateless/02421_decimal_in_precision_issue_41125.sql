@@ -21,7 +21,7 @@ SELECT count() == 1 FROM dtest WHERE b IN toDecimal64('44.4000', 4);
 SELECT count() == 1 FROM dtest WHERE b IN toDecimal128('44.4000', 4);
 SELECT count() == 1 FROM dtest WHERE b IN toDecimal256('44.4000', 4);
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT count() == 0 FROM (SELECT '33.3' :: Decimal(9, 1) AS a WHERE a IN ('33.33' :: Decimal(9, 2)));
 

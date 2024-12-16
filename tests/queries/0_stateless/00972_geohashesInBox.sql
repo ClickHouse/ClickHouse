@@ -65,8 +65,8 @@ SELECT 'input values are clamped to -90..90, -180..180 range';
 SELECT length(geohashesInBox(-inf, -inf, inf, inf, 3));
 
 SELECT 'errors';
-SELECT geohashesInBox();  -- { serverError 42 } -- not enough arguments
-SELECT geohashesInBox(1, 2, 3, 4, 5);  -- { serverError 43 }  -- wrong types of arguments
-SELECT geohashesInBox(toFloat32(1.0), 2.0, 3.0, 4.0, 5);  -- { serverError 43 } -- all lats and longs should be of the same type
-SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 12); -- { serverError 128 } -- to many elements in array
+SELECT geohashesInBox();  -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH } -- not enough arguments
+SELECT geohashesInBox(1, 2, 3, 4, 5);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }  -- wrong types of arguments
+SELECT geohashesInBox(toFloat32(1.0), 2.0, 3.0, 4.0, 5);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT } -- all lats and longs should be of the same type
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 12); -- { serverError TOO_LARGE_ARRAY_SIZE } -- to many elements in array
 

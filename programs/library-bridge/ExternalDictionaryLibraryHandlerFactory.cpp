@@ -26,7 +26,7 @@ void ExternalDictionaryLibraryHandlerFactory::create(
 
     if (library_handlers.contains(dictionary_id))
     {
-        LOG_WARNING(&Poco::Logger::get("ExternalDictionaryLibraryHandlerFactory"), "Library handler with dictionary id {} already exists", dictionary_id);
+        LOG_WARNING(getLogger("ExternalDictionaryLibraryHandlerFactory"), "Library handler with dictionary id {} already exists", dictionary_id);
         return;
     }
 

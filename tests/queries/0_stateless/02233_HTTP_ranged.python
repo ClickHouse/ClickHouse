@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import socket
-import sys
-import re
-import threading
 import os
+import re
+import socket
+import subprocess
+import sys
+import threading
 import traceback
 import urllib.request
-import subprocess
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 
 
 def is_ipv6(host):
@@ -206,13 +207,22 @@ class HTTPServerV6(HTTPServer):
     address_family = socket.AF_INET6
 
 
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    pass
+
+
+class ThreadedHTTPServerV6(ThreadingMixIn, HTTPServerV6):
+    pass
+
+
 def start_server():
     if IS_IPV6:
-        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
+        httpd = ThreadedHTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
     else:
-        httpd = HTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
+        httpd = ThreadedHTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
 
     t = threading.Thread(target=httpd.serve_forever)
+    t.start()
     return t, httpd
 
 
@@ -235,8 +245,6 @@ def run_test(allow_range, settings, check_retries=False):
         HttpProcessor.responses_to_get = ["500", "200", "206"]
     retries_num = len(HttpProcessor.responses_to_get)
 
-    t, httpd = start_server()
-    t.start()
     test_select(settings)
 
     download_buffer_size = settings["max_download_buffer_size"]
@@ -261,12 +269,12 @@ def run_test(allow_range, settings, check_retries=False):
         if HttpProcessor.range_used:
             raise Exception("HTTP Range used while not supported")
 
-    httpd.shutdown()
-    t.join()
     print("PASSED")
 
 
 def main():
+    t, httpd = start_server()
+
     settings = {"max_download_buffer_size": 20}
 
     # Test Accept-Ranges=False
@@ -285,10 +293,15 @@ def main():
     settings["max_download_threads"] = 2
     run_test(allow_range=True, settings=settings, check_retries=True)
 
+    httpd.shutdown()
+    t.join()
+
 
 if __name__ == "__main__":
     try:
         main()
+        sys.stdout.flush()
+        os._exit(0)
     except Exception as ex:
         exc_type, exc_value, exc_traceback = sys.exc_info()
         traceback.print_tb(exc_traceback, file=sys.stderr)

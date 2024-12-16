@@ -28,7 +28,7 @@ enum FormatVersion : UInt8
     FORMAT_WITH_DEDUPLICATE_BY_COLUMNS = 6,
     FORMAT_WITH_LOG_ENTRY_ID = 7,
 
-    FORMAT_LAST
+    FORMAT_LAST = 8,
 };
 
 
@@ -95,6 +95,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                         out << ",";
                 }
             }
+
+            if (cleanup)
+                out << "\ncleanup: " << cleanup;
 
             break;
 
@@ -270,11 +273,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                     deduplicate_by_columns = std::move(new_deduplicate_by_columns);
                 }
                 else if (checkString("cleanup: ", in))
-                {
-                    /// Obsolete option, does nothing.
-                    bool cleanup = false;
                     in >> cleanup;
-                }
                 else
                     trailing_newline_found = true;
             }

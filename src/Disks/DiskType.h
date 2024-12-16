@@ -6,45 +6,43 @@
 namespace DB
 {
 
-enum class DataSourceType
+enum class DataSourceType : uint8_t
 {
     Local,
     RAM,
-    S3,
-    S3_Plain,
-    HDFS,
-    WebServer,
-    AzureBlobStorage,
-    LocalBlobStorage,
+    ObjectStorage,
 };
 
-inline String toString(DataSourceType data_source_type)
+enum class ObjectStorageType : uint8_t
 {
-    switch (data_source_type)
-    {
-        case DataSourceType::Local:
-            return "local";
-        case DataSourceType::RAM:
-            return "memory";
-        case DataSourceType::S3:
-            return "s3";
-        case DataSourceType::S3_Plain:
-            return "s3_plain";
-        case DataSourceType::HDFS:
-            return "hdfs";
-        case DataSourceType::WebServer:
-            return "web";
-        case DataSourceType::AzureBlobStorage:
-            return "azure_blob_storage";
-        case DataSourceType::LocalBlobStorage:
-            return "local_blob_storage";
-    }
-    UNREACHABLE();
-}
+    None,
+    S3,
+    Azure,
+    HDFS,
+    Web,
+    Local,
+};
+
+enum class MetadataStorageType : uint8_t
+{
+    None,
+    Local,
+    Keeper,
+    Plain,
+    PlainRewritable,
+    StaticWeb,
+    Memory,
+};
+
+MetadataStorageType metadataTypeFromString(const String & type);
+String toString(DataSourceType data_source_type);
 
 struct DataSourceDescription
 {
     DataSourceType type;
+    ObjectStorageType object_storage_type = ObjectStorageType::None;
+    MetadataStorageType metadata_type = MetadataStorageType::None;
+
     std::string description;
 
     bool is_encrypted = false;
@@ -52,6 +50,8 @@ struct DataSourceDescription
 
     bool operator==(const DataSourceDescription & other) const;
     bool sameKind(const DataSourceDescription & other) const;
+
+    std::string toString() const;
 };
 
 }

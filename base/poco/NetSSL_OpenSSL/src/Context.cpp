@@ -106,6 +106,11 @@ Context::Context(
 
 Context::~Context()
 {
+    if (_pSSLContext == nullptr)
+    {
+        return;
+    }
+
 	try
 	{
 		SSL_CTX_free(_pSSLContext);
@@ -592,6 +597,7 @@ void Context::createSSLContext()
 	SSL_CTX_set_default_passwd_cb(_pSSLContext, &SSLManager::privateKeyPassphraseCallback);
 	Utility::clearErrorStack();
 	SSL_CTX_set_options(_pSSLContext, SSL_OP_ALL);
+	SSL_CTX_set_options(_pSSLContext, SSL_OP_IGNORE_UNEXPECTED_EOF);
 }
 
 

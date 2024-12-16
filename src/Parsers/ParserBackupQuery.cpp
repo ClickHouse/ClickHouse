@@ -9,12 +9,18 @@
 #include <Parsers/ParserPartition.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
 
 namespace
 {
@@ -24,7 +30,7 @@ namespace
 
     bool parsePartitions(IParser::Pos & pos, Expected & expected, std::optional<ASTs> & partitions)
     {
-        if (!ParserKeyword{"PARTITION"}.ignore(pos, expected) && !ParserKeyword{"PARTITIONS"}.ignore(pos, expected))
+        if (!ParserKeyword(Keyword::PARTITION).ignore(pos, expected) && !ParserKeyword(Keyword::PARTITIONS).ignore(pos, expected))
             return false;
 
         ASTs result;
@@ -47,7 +53,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"EXCEPT DATABASE"}.ignore(pos, expected) && !ParserKeyword{"EXCEPT DATABASES"}.ignore(pos, expected))
+            if (!ParserKeyword(Keyword::EXCEPT_DATABASE).ignore(pos, expected) && !ParserKeyword(Keyword::EXCEPT_DATABASES).ignore(pos, expected))
                 return false;
 
             std::set<String> result;
@@ -71,26 +77,27 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"EXCEPT TABLE"}.ignore(pos, expected) && !ParserKeyword{"EXCEPT TABLES"}.ignore(pos, expected))
+            if (!ParserKeyword(Keyword::EXCEPT_TABLE).ignore(pos, expected) && !ParserKeyword(Keyword::EXCEPT_TABLES).ignore(pos, expected))
                 return false;
 
             std::set<DatabaseAndTableName> result;
             auto parse_list_element = [&]
             {
                 DatabaseAndTableName table_name;
-                if (database_name)
-                {
-                    ASTPtr ast;
-                    if (!ParserIdentifier{}.parse(pos, ast, expected))
-                        return false;
+
+                if (!parseDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
+                    return false;
+
+                if (database_name && table_name.first.empty())
                     table_name.first = *database_name;
-                    table_name.second = getIdentifierName(ast);
-                }
-                else
-                {
-                    if (!parseDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
-                        return false;
-                }
+
+                if (database_name && table_name.first != *database_name)
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "Database name in EXCEPT TABLES clause doesn't match the database name in DATABASE clause: {} != {}",
+                        table_name.first,
+                        *database_name
+                    );
 
                 result.emplace(std::move(table_name));
                 return true;
@@ -107,8 +114,8 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (ParserKeyword{"TABLE"}.ignore(pos, expected) || ParserKeyword{"DICTIONARY"}.ignore(pos, expected) ||
-                ParserKeyword{"VIEW"}.ignore(pos, expected))
+            if (ParserKeyword(Keyword::TABLE).ignore(pos, expected) || ParserKeyword(Keyword::DICTIONARY).ignore(pos, expected) ||
+                ParserKeyword(Keyword::VIEW).ignore(pos, expected))
             {
                 element.type = ElementType::TABLE;
                 if (!parseDatabaseAndTableName(pos, expected, element.database_name, element.table_name))
@@ -116,7 +123,7 @@ namespace
 
                 element.new_database_name = element.database_name;
                 element.new_table_name = element.table_name;
-                if (ParserKeyword("AS").ignore(pos, expected))
+                if (ParserKeyword(Keyword::AS).ignore(pos, expected))
                 {
                     if (!parseDatabaseAndTableName(pos, expected, element.new_database_name, element.new_table_name))
                         return false;
@@ -126,7 +133,7 @@ namespace
                 return true;
             }
 
-            if (ParserKeyword{"TEMPORARY TABLE"}.ignore(pos, expected))
+            if (ParserKeyword(Keyword::TEMPORARY_TABLE).ignore(pos, expected))
             {
                 element.type = ElementType::TEMPORARY_TABLE;
 
@@ -136,7 +143,7 @@ namespace
                 element.table_name = getIdentifierName(ast);
                 element.new_table_name = element.table_name;
 
-                if (ParserKeyword("AS").ignore(pos, expected))
+                if (ParserKeyword(Keyword::AS).ignore(pos, expected))
                 {
                     ast = nullptr;
                     if (!ParserIdentifier{}.parse(pos, ast, expected))
@@ -147,7 +154,7 @@ namespace
                 return true;
             }
 
-            if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
+            if (ParserKeyword(Keyword::DATABASE).ignore(pos, expected))
             {
                 element.type = ElementType::DATABASE;
 
@@ -157,7 +164,7 @@ namespace
                 element.database_name = getIdentifierName(ast);
                 element.new_database_name = element.database_name;
 
-                if (ParserKeyword("AS").ignore(pos, expected))
+                if (ParserKeyword(Keyword::AS).ignore(pos, expected))
                 {
                     ast = nullptr;
                     if (!ParserIdentifier{}.parse(pos, ast, expected))
@@ -169,7 +176,7 @@ namespace
                 return true;
             }
 
-            if (ParserKeyword{"ALL"}.ignore(pos, expected))
+            if (ParserKeyword(Keyword::ALL).ignore(pos, expected))
             {
                 element.type = ElementType::ALL;
                 parseExceptDatabases(pos, expected, element.except_databases);
@@ -219,7 +226,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"base_backup"}.ignore(pos, expected)
+            return ParserKeyword{Keyword::BASE_BACKUP}.ignore(pos, expected)
                 && ParserToken(TokenType::Equals).ignore(pos, expected)
                 && parseBackupName(pos, expected, base_backup_name);
         });
@@ -234,7 +241,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"cluster_host_ids"}.ignore(pos, expected)
+            return ParserKeyword{Keyword::CLUSTER_HOST_IDS}.ignore(pos, expected)
                 && ParserToken(TokenType::Equals).ignore(pos, expected)
                 && parseClusterHostIDs(pos, expected, cluster_host_ids);
         });
@@ -244,7 +251,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+            if (!ParserKeyword(Keyword::SETTINGS).ignore(pos, expected))
                 return false;
 
             SettingsChanges settings_changes;
@@ -291,9 +298,9 @@ namespace
     bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
     {
         bool async;
-        if (ParserKeyword{"ASYNC"}.ignore(pos, expected))
+        if (ParserKeyword(Keyword::ASYNC).ignore(pos, expected))
             async = true;
-        else if (ParserKeyword{"SYNC"}.ignore(pos, expected))
+        else if (ParserKeyword(Keyword::SYNC).ignore(pos, expected))
             async = false;
         else
             return false;
@@ -304,7 +311,7 @@ namespace
             changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
         }
 
-        boost::remove_erase_if(changes, [](const SettingChange & change) { return change.name == "async"; });
+        std::erase_if(changes, [](const SettingChange & change) { return change.name == "async"; }); // NOLINT
         changes.emplace_back("async", async);
 
         auto new_settings = std::make_shared<ASTSetQuery>();
@@ -318,7 +325,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword(Keyword::ON).ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -327,9 +334,9 @@ namespace
 bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Kind kind;
-    if (ParserKeyword{"BACKUP"}.ignore(pos, expected))
+    if (ParserKeyword(Keyword::BACKUP).ignore(pos, expected))
         kind = Kind::BACKUP;
-    else if (ParserKeyword{"RESTORE"}.ignore(pos, expected))
+    else if (ParserKeyword(Keyword::RESTORE).ignore(pos, expected))
         kind = Kind::RESTORE;
     else
         return false;
@@ -341,7 +348,7 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String cluster;
     parseOnCluster(pos, expected, cluster);
 
-    if (!ParserKeyword{(kind == Kind::BACKUP) ? "TO" : "FROM"}.ignore(pos, expected))
+    if (!ParserKeyword((kind == Kind::BACKUP) ? Keyword::TO : Keyword::FROM).ignore(pos, expected))
         return false;
 
     ASTPtr backup_name;

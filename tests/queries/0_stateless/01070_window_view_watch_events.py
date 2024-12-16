@@ -2,13 +2,13 @@
 # Tags: no-parallel
 
 import os
-import sys
 import signal
+import sys
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from client import client, prompt, end_of_block
+from client import client, end_of_block, prompt
 
 log = None
 # uncomment the line below for debugging
@@ -20,13 +20,15 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.expect(prompt)
 
-    client1.send("SET allow_experimental_analyzer = 0")
+    client1.send("SET enable_analyzer = 0")
     client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
     client1.send("SET window_view_heartbeat_interval = 1")
     client1.expect(prompt)
     client2.send("SET allow_experimental_window_view = 1")
+    client2.expect(prompt)
+    client2.send("SET enable_analyzer = 0")
     client2.expect(prompt)
 
     client1.send("CREATE DATABASE IF NOT EXISTS 01070_window_view_watch_events")
@@ -47,7 +49,7 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("WATCH 01070_window_view_watch_events.wv EVENTS")
     client1.expect("Query id" + end_of_block)
-    client1.expect("Progress: 0.00 rows.*\)")
+    client1.expect("Progress: 0.00 rows.*\\)")
     client2.send(
         "INSERT INTO 01070_window_view_watch_events.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )
@@ -57,11 +59,11 @@ with client(name="client1>", log=log) as client1, client(
     )
     client2.expect("Ok.")
     client1.expect("1990-01-01 12:00:05" + end_of_block)
-    client1.expect("Progress: 1.00 rows.*\)")
+    client1.expect("Progress: 1.00 rows.*\\)")
 
     # send Ctrl-C
     client1.send("\x03", eol="")
-    match = client1.expect("(%s)|([#\$] )" % prompt)
+    match = client1.expect("(%s)|([#\\$] )" % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)

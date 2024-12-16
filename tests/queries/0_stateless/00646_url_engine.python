@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
-import socket
 import csv
+import os
+import socket
+import subprocess
 import sys
 import tempfile
 import threading
-import os
 import traceback
-from urllib.parse import urljoin
 import urllib.request
-import subprocess
-from io import StringIO
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from io import StringIO
+from socketserver import ThreadingMixIn
+from urllib.parse import urljoin
 
 
 def is_ipv6(host):
@@ -145,11 +146,19 @@ class HTTPServerV6(HTTPServer):
     address_family = socket.AF_INET6
 
 
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    pass
+
+
+class ThreadedHTTPServerV6(ThreadingMixIn, HTTPServerV6):
+    pass
+
+
 def start_server():
     if IS_IPV6:
-        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, CSVHTTPServer)
+        httpd = ThreadedHTTPServerV6(HTTP_SERVER_ADDRESS, CSVHTTPServer)
     else:
-        httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
+        httpd = ThreadedHTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
 
     t = threading.Thread(target=httpd.serve_forever)
     return t, httpd

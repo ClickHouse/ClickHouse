@@ -12,7 +12,7 @@ private:
     int timer_fd;
 
 public:
-    explicit TimerDescriptor(int clockid = CLOCK_MONOTONIC, int flags = 0);
+    TimerDescriptor();
     ~TimerDescriptor();
 
     TimerDescriptor(const TimerDescriptor &) = delete;

@@ -139,6 +139,7 @@ public:
     void convertStructureTo(const ColumnsWithTypeAndName & columns);
 
     void reset();
+    void cancel() noexcept;
 
 private:
     QueryPlanResourceHolder resources;
@@ -167,6 +168,7 @@ private:
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
+    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

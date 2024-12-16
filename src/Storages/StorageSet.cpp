@@ -1,3 +1,4 @@
+#include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -8,7 +9,7 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
@@ -23,17 +24,17 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace ErrorCodes
+namespace SetSetting
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const SetSettingsString disk;
+    extern const SetSettingsBool persistent;
 }
-
 
 namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
 
 class SetOrJoinSink : public SinkToStorage, WithContext
 {
@@ -42,12 +43,15 @@ public:
         ContextPtr ctx, StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
+    ~SetOrJoinSink() override;
 
     String getName() const override { return "SetOrJoinSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
+    void cancelBuffers() noexcept;
+
     StorageSetOrJoinBase & table;
     StorageMetadataPtr metadata_snapshot;
     String backup_path;
@@ -82,9 +86,23 @@ SetOrJoinSink::SetOrJoinSink(
 {
 }
 
-void SetOrJoinSink::consume(Chunk chunk)
+SetOrJoinSink::~SetOrJoinSink()
 {
-    Block block = getHeader().cloneWithColumns(chunk.detachColumns());
+    if (isCancelled())
+        cancelBuffers();
+}
+
+void SetOrJoinSink::cancelBuffers() noexcept
+{
+    compressed_backup_buf.cancel();
+    if (backup_buf)
+        backup_buf->cancel();
+}
+
+
+void SetOrJoinSink::consume(Chunk & chunk)
+{
+    Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
     table.insertBlock(block, getContext());
     if (persistent)
@@ -97,11 +115,14 @@ void SetOrJoinSink::onFinish()
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.next();
-        backup_buf->next();
+        compressed_backup_buf.finalize();
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+    }
+    else
+    {
+        cancelBuffers();
     }
 }
 
@@ -129,7 +150,6 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
@@ -215,10 +235,10 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (disk->exists(path))
+    if (disk->existsDirectory(path))
         disk->removeRecursive(path);
     else
-        LOG_INFO(&Poco::Logger::get("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
+        LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
@@ -238,21 +258,23 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
 void StorageSetOrJoinBase::restore()
 {
-    if (!disk->exists(fs::path(path) / "tmp/"))
+    if (!disk->existsDirectory(fs::path(path) / "tmp"))
     {
-        disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(fs::path(path) / "tmp");
         return;
     }
 
     static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
 
+    using FilePriority = std::pair<UInt64, String>;
+    std::priority_queue<FilePriority, std::vector<FilePriority>, std::greater<>> backup_files;
     for (auto dir_it{disk->iterateDirectory(path)}; dir_it->isValid(); dir_it->next())
     {
         const auto & name = dir_it->name();
         const auto & file_path = dir_it->path();
 
-        if (disk->isFile(file_path)
+        if (disk->existsFile(file_path)
             && endsWith(name, file_suffix)
             && disk->getFileSize(file_path) > 0)
         {
@@ -261,8 +283,17 @@ void StorageSetOrJoinBase::restore()
             if (file_num > increment)
                 increment = file_num;
 
-            restoreFromFile(dir_it->path());
+            backup_files.push({file_num, file_path});
         }
+    }
+
+    /// Restore in the same order as blocks were written
+    /// It may be important for storage Join, user expect to get the first row (unless `join_any_take_last_row` setting is set)
+    /// but after restart we may have different order of blocks in memory.
+    while (!backup_files.empty())
+    {
+        restoreFromFile(backup_files.top().second);
+        backup_files.pop();
     }
 }
 
@@ -270,7 +301,7 @@ void StorageSetOrJoinBase::restore()
 void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
     ContextPtr ctx = nullptr;
-    auto backup_buf = disk->readFile(file_path);
+    auto backup_buf = disk->readFile(file_path, getReadSettings());
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
     NativeReader backup_stream(compressed_backup_buf, 0);
 
@@ -284,7 +315,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     finishInsert();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
-    LOG_INFO(&Poco::Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
+    LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
         file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
 }
 
@@ -312,9 +343,9 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
+        DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 

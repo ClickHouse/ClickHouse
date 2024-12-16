@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-s3-storage
+# Tags: no-fasttest, no-object-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 for DISK in s3_disk s3_cache
 do
-    ${CLICKHOUSE_CLIENT} -n --query "
+    ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS test;
     CREATE TABLE test (id Int32, empty Array(Int32))
         ENGINE=MergeTree ORDER BY id
@@ -17,13 +17,13 @@ do
     SELECT * FROM test;
     "
 
-    ${CLICKHOUSE_CLIENT} -n --query "
+    ${CLICKHOUSE_CLIENT} --query "
     BACKUP TABLE test TO Disk('backups', 'test_s3_backup');
     DROP TABLE test;
     RESTORE TABLE test FROM Disk('backups', 'test_s3_backup');
     " &>/dev/null
 
-    ${CLICKHOUSE_CLIENT} -n --query "
+    ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM test;
     SELECT empty FROM test;
     "

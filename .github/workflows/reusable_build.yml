@@ -26,14 +26,25 @@ name: Build ClickHouse
         description: json ci data
         type: string
         required: true
+      force:
+        description: disallow job skipping
+        type: boolean
+        default: false
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
+    secrets:
+      robot_git_token:
+        required: false
+      ci_db_url:
+        required: false
+      ci_db_password:
+        required: false
 
 jobs:
   Build:
     name: Build-${{inputs.build_name}}
-    if: contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name)
+    if: ${{ contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.build_name) || inputs.force }}
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
@@ -53,11 +64,21 @@ jobs:
           DOCKER_TAG<<DOCKER_JSON
           ${{ toJson(fromJson(inputs.data).docker_data.images) }}
           DOCKER_JSON
+          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+          ${{secrets.robot_git_token}}
+          RCSK
+          CI_DB_URL<<CIDBU
+          ${{ secrets.ci_db_url }}
+          CIDBU
+          CI_DB_PASSWORD<<CIDBP
+          ${{ secrets.ci_db_password }}
+          CIDBP
           EOF
           python3 "$GITHUB_WORKSPACE"/tests/ci/ci_config.py --build-name "${{inputs.build_name}}" >> "$GITHUB_ENV"
       - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
         # This step is done in GITHUB_WORKSPACE,
         # because it's broken in REPO_COPY for some reason
+        # See also update-submodules.sh
         if: ${{ env.BUILD_SPARSE_CHECKOUT == 'true' }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
@@ -72,15 +93,20 @@ jobs:
       - name: Pre
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.build_name}}'
-      - name: Build
+      - name: Run
         run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/build_check.py" "$BUILD_NAME"
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" \
+            --infile ${{ toJson(inputs.data) }} \
+            --job-name "$BUILD_NAME" \
+            --run \
+            ${{ inputs.force && '--force' || '' }}
       - name: Post
         # it still be build report to upload for failed build job
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.build_name}}'
       - name: Mark as done
+        if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.build_name}}'
       - name: Clean

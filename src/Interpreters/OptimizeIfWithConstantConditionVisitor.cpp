@@ -24,7 +24,12 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
         if (literal->value.getType() == Field::Types::Int64 ||
             literal->value.getType() == Field::Types::UInt64)
         {
-            value = literal->value.get<Int64>();
+            value = literal->value.safeGet<Int64>();
+            return true;
+        }
+        if (literal->value.getType() == Field::Types::Null)
+        {
+            value = false;
             return true;
         }
     }
@@ -46,14 +51,14 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
                 {
                     if (type_literal->value.getType() == Field::Types::String)
                     {
-                        const auto & type_str = type_literal->value.get<std::string>();
+                        const auto & type_str = type_literal->value.safeGet<std::string>();
                         if (type_str == "UInt8" || type_str == "Nullable(UInt8)")
                             return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
                     }
                 }
             }
         }
-        else if (function->name == "toUInt8" || function->name == "toInt8" || function->name == "identity")
+        else if (function->name == "toUInt8" || function->name == "toInt8" || function->name == "identity" || function->name == "__scalarSubqueryResult")
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {
@@ -68,66 +73,55 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
     return false;
 }
 
-void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
+void OptimizeIfWithConstantConditionVisitorData::visit(ASTFunction & function_node, ASTPtr & ast)
 {
-    if (!current_ast)
-        return;
-
     checkStackSize();
 
-    for (ASTPtr & child : current_ast->children)
+    if (function_node.name != "if")
+        return;
+
+    if (!function_node.arguments)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function 'if' (0 instead of 3)");
+
+    if (function_node.arguments->children.size() != 3)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Wrong number of arguments for function 'if' ({} instead of 3)",
+                function_node.arguments->children.size());
+
+    const auto * args = function_node.arguments->as<ASTExpressionList>();
+
+    ASTPtr condition_expr = args->children[0];
+    ASTPtr then_expr = args->children[1];
+    ASTPtr else_expr = args->children[2];
+
+    bool condition;
+    if (tryExtractConstValueFromCondition(condition_expr, condition))
     {
-        auto * function_node = child->as<ASTFunction>();
-        if (!function_node || function_node->name != "if")
+        ASTPtr replace_ast = condition ? then_expr : else_expr;
+        ASTPtr child_copy = ast;
+        String replace_alias = replace_ast->tryGetAlias();
+        String if_alias = ast->tryGetAlias();
+
+        if (replace_alias.empty())
         {
-            visit(child);
-            continue;
+            replace_ast->setAlias(if_alias);
+            ast = replace_ast;
+        }
+        else
+        {
+            /// Only copy of one node is required here.
+            /// But IAST has only method for deep copy of subtree.
+            /// This can be a reason of performance degradation in case of deep queries.
+            ASTPtr replace_ast_deep_copy = replace_ast->clone();
+            replace_ast_deep_copy->setAlias(if_alias);
+            ast = replace_ast_deep_copy;
         }
 
-        if (!function_node->arguments)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function 'if' (0 instead of 3)");
-
-        if (function_node->arguments->children.size() != 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Wrong number of arguments for function 'if' ({} instead of 3)",
-                function_node->arguments->children.size());
-
-        visit(function_node->arguments);
-        const auto * args = function_node->arguments->as<ASTExpressionList>();
-
-        ASTPtr condition_expr = args->children[0];
-        ASTPtr then_expr = args->children[1];
-        ASTPtr else_expr = args->children[2];
-
-        bool condition;
-        if (tryExtractConstValueFromCondition(condition_expr, condition))
+        if (!if_alias.empty())
         {
-            ASTPtr replace_ast = condition ? then_expr : else_expr;
-            ASTPtr child_copy = child;
-            String replace_alias = replace_ast->tryGetAlias();
-            String if_alias = child->tryGetAlias();
-
-            if (replace_alias.empty())
-            {
-                replace_ast->setAlias(if_alias);
-                child = replace_ast;
-            }
-            else
-            {
-                /// Only copy of one node is required here.
-                /// But IAST has only method for deep copy of subtree.
-                /// This can be a reason of performance degradation in case of deep queries.
-                ASTPtr replace_ast_deep_copy = replace_ast->clone();
-                replace_ast_deep_copy->setAlias(if_alias);
-                child = replace_ast_deep_copy;
-            }
-
-            if (!if_alias.empty())
-            {
-                auto alias_it = aliases.find(if_alias);
-                if (alias_it != aliases.end() && alias_it->second.get() == child_copy.get())
-                    alias_it->second = child;
-            }
+            auto alias_it = aliases.find(if_alias);
+            if (alias_it != aliases.end() && alias_it->second.get() == child_copy.get())
+                alias_it->second = ast;
         }
     }
 }

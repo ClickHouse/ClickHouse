@@ -26,7 +26,9 @@ priority:          0
 is_active:         0
 active_children:   0
 dequeued_requests: 67
+canceled_requests: 0
 dequeued_cost:     4692272
+canceled_cost:     0
 busy_periods:      63
 vruntime:          938454.1999999989
 system_vruntime:   ᴺᵁᴸᴸ
@@ -54,7 +56,9 @@ Columns:
 - `is_active` (`UInt8`) - Whether this node is currently active - has resource requests to be dequeued and constraints satisfied.
 - `active_children` (`UInt64`) - The number of children in active state.
 - `dequeued_requests` (`UInt64`) - The total number of resource requests dequeued from this node.
+- `canceled_requests` (`UInt64`) - The total number of resource requests canceled from this node.
 - `dequeued_cost` (`UInt64`) - The sum of costs (e.g. size in bytes) of all requests dequeued from this node.
+- `canceled_cost` (`UInt64`) - The sum of costs (e.g. size in bytes) of all requests canceled from this node.
 - `busy_periods` (`UInt64`) - The total number of deactivations of this node.
 - `vruntime` (`Nullable(Float64)`) - For children of `fair` nodes only. Virtual runtime of a node used by SFQ algorithm to select the next child to process in a max-min fair manner.
 - `system_vruntime` (`Nullable(Float64)`) - For `fair` nodes only. Virtual runtime showing `vruntime` of the last processed resource request. Used during child activation as the new value of `vruntime`.

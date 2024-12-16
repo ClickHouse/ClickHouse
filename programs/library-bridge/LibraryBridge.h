@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Bridge/IBridge.h>
 #include "LibraryBridgeHandlerFactory.h"
 

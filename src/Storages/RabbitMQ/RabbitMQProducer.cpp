@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <amqpcpp.h>
 #include <boost/algorithm/string/split.hpp>
@@ -27,11 +28,11 @@ RabbitMQProducer::RabbitMQProducer(
     const RabbitMQConfiguration & configuration_,
     const Names & routing_keys_,
     const String & exchange_name_,
-    const AMQP::ExchangeType exchange_type_,
-    const size_t channel_id_base_,
-    const bool persistent_,
+    AMQP::ExchangeType exchange_type_,
+    size_t channel_id_base_,
+    bool persistent_,
     std::atomic<bool> & shutdown_called_,
-    Poco::Logger * log_)
+    LoggerPtr log_)
     : AsynchronousMessageProducer(log_)
     , connection(configuration_, log_)
     , routing_keys(routing_keys_)
@@ -83,6 +84,18 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
     LOG_TEST(log, "Pushing message with id {}", payload.id);
     if (!payloads.push(std::move(payload)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
+}
+
+void RabbitMQProducer::cancel() noexcept
+{
+    try
+    {
+      finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void RabbitMQProducer::setupChannel()

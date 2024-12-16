@@ -39,7 +39,7 @@ public:
     void resetSequenceId();
 
     template<class T>
-    void sendPacket(const T & packet, bool flush = false)
+    void sendPacket(const T & packet, bool flush = true)
     {
         static_assert(std::is_base_of<IMySQLWritePacket, T>());
         packet.writePayload(*out, sequence_id);

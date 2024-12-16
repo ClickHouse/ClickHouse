@@ -5,7 +5,6 @@
 #if USE_LIBPQXX
 
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
-#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -18,6 +17,7 @@
 namespace DB
 {
 
+struct MaterializedPostgreSQLSettings;
 class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
@@ -41,10 +41,11 @@ public:
     String getMetadataPath() const override { return metadata_path; }
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
-    void waitDatabaseStarted(bool no_throw) const override;
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
 
     DatabaseTablesIteratorPtr
-    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
@@ -94,7 +95,7 @@ private:
     BackgroundSchedulePool::TaskHolder startup_task;
     bool shutdown_called = false;
 
-    LoadTaskPtr startup_postgresql_database_task;
+    LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);
 };
 
 }

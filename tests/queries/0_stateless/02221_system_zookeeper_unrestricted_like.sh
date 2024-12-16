@@ -8,15 +8,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS sample_table;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS sample_table_2;"
 
-${CLICKHOUSE_CLIENT} -n --query="CREATE TABLE sample_table (
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE sample_table (
     key UInt64
 )
 ENGINE ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_system_zookeeper_unrestricted_like', '1')
 ORDER BY tuple();
-DROP TABLE IF EXISTS sample_table;"
+DROP TABLE IF EXISTS sample_table SYNC;"
 
 
-${CLICKHOUSE_CLIENT} -n --query "CREATE TABLE sample_table_2 (
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE sample_table_2 (
     key UInt64
 )
 ENGINE ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_system_zookeeper_unrestricted_like_2', '1')

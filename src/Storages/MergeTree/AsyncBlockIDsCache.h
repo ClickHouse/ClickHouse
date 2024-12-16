@@ -2,8 +2,7 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
-
-#include <chrono>
+#include <Core/Types_fwd.h>
 
 namespace DB
 {
@@ -43,7 +42,7 @@ private:
     BackgroundSchedulePool::TaskHolder task;
 
     const String log_name;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

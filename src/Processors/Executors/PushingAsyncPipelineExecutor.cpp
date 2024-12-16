@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 class PushingAsyncSource : public ISource
@@ -90,11 +91,8 @@ struct PushingAsyncPipelineExecutor::Data
 
     void rethrowExceptionIfHas()
     {
-        if (has_exception)
-        {
-            has_exception = false;
+        if (has_exception.exchange(false))
             std::rethrow_exception(exception);
-        }
     }
 };
 
@@ -179,6 +177,16 @@ void PushingAsyncPipelineExecutor::start()
     data->thread = ThreadFromGlobalPool(std::move(func));
 }
 
+[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
+{
+    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+}
+
 void PushingAsyncPipelineExecutor::push(Chunk chunk)
 {
     if (!started)
@@ -188,8 +196,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
     data->rethrowExceptionIfHas();
 
     if (!is_pushed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingAsyncPipelineExecutor was finished before all data was inserted");
+        throwOnExecutionStatus(data->executor->getExecutionStatus());
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)

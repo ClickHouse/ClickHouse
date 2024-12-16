@@ -111,7 +111,8 @@ public:
 
     constexpr explicit operator bool() const noexcept;
 
-    template <typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>, T>>
+    template <typename T>
+    requires(std::is_arithmetic_v<T>)
     constexpr operator T() const noexcept;
 
     constexpr operator long double() const noexcept;
@@ -208,12 +209,14 @@ constexpr integer<Bits, Signed> operator<<(const integer<Bits, Signed> & lhs, in
 template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed> operator>>(const integer<Bits, Signed> & lhs, int n) noexcept;
 
-template <size_t Bits, typename Signed, typename Int, typename = std::enable_if_t<!std::is_same_v<Int, int>>>
+template <size_t Bits, typename Signed, typename Int>
+requires(!std::is_same_v<Int, int>)
 constexpr integer<Bits, Signed> operator<<(const integer<Bits, Signed> & lhs, Int n) noexcept
 {
     return lhs << int(n);
 }
-template <size_t Bits, typename Signed, typename Int, typename = std::enable_if_t<!std::is_same_v<Int, int>>>
+template <size_t Bits, typename Signed, typename Int>
+requires(!std::is_same_v<Int, int>)
 constexpr integer<Bits, Signed> operator>>(const integer<Bits, Signed> & lhs, Int n) noexcept
 {
     return lhs >> int(n);
@@ -262,4 +265,3 @@ struct hash<wide::integer<Bits, Signed>>;
 // NOLINTEND(*)
 
 #include "wide_integer_impl.h"
-

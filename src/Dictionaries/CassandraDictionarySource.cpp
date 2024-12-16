@@ -1,9 +1,10 @@
 #include "CassandraDictionarySource.h"
+#include <Interpreters/Context.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Common/RemoteHostFilter.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-#include <Interpreters/Context.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -105,7 +106,7 @@ CassandraDictionarySource::CassandraDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     const Block & sample_block_)
-    : log(&Poco::Logger::get("CassandraDictionarySource"))
+    : log(getLogger("CassandraDictionarySource"))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
     , sample_block(sample_block_)

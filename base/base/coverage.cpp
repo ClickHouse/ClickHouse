@@ -1,6 +1,7 @@
 #include "coverage.h"
+#include <sys/mman.h>
 
-#pragma GCC diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wreserved-identifier"
 
 
 /// WITH_COVERAGE enables the default implementation of code coverage,
@@ -12,11 +13,7 @@
 #include <unistd.h>
 
 
-#    if defined(__clang__)
 extern "C" void __llvm_profile_dump(); // NOLINT
-#    elif defined(__GNUC__) || defined(__GNUG__)
-extern "C" void __gcov_exit();
-#    endif
 
 #endif
 
@@ -27,12 +24,7 @@ void dumpCoverageReportIfPossible()
     static std::mutex mutex;
     std::lock_guard lock(mutex);
 
-#    if defined(__clang__)
     __llvm_profile_dump(); // NOLINT
-#    elif defined(__GNUC__) || defined(__GNUG__)
-    __gcov_exit();
-#    endif
-
 #endif
 }
 
@@ -52,11 +44,21 @@ namespace
     uint32_t * guards_start = nullptr;
     uint32_t * guards_end = nullptr;
 
-    uintptr_t * coverage_array = nullptr;
+    uintptr_t * current_coverage_array = nullptr;
+    uintptr_t * cumulative_coverage_array = nullptr;
     size_t coverage_array_size = 0;
 
     uintptr_t * all_addresses_array = nullptr;
     size_t all_addresses_array_size = 0;
+
+    uintptr_t * allocate(size_t size)
+    {
+        /// Note: mmap return zero-initialized memory, and we count on that.
+        void * map = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (MAP_FAILED == map)
+            return nullptr;
+        return static_cast<uintptr_t*>(map);
+    }
 }
 
 extern "C"
@@ -79,7 +81,8 @@ void __sanitizer_cov_trace_pc_guard_init(uint32_t * start, uint32_t * stop)
     coverage_array_size = stop - start;
 
     /// Note: we will leak this.
-    coverage_array = static_cast<uintptr_t*>(malloc(sizeof(uintptr_t) * coverage_array_size));
+    current_coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
+    cumulative_coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
 
     resetCoverage();
 }
@@ -92,8 +95,8 @@ void __sanitizer_cov_pcs_init(const uintptr_t * pcs_begin, const uintptr_t * pcs
         return;
     pc_table_initialized = true;
 
-    all_addresses_array = static_cast<uintptr_t*>(malloc(sizeof(uintptr_t) * coverage_array_size));
     all_addresses_array_size = pcs_end - pcs_begin;
+    all_addresses_array = allocate(sizeof(uintptr_t) * all_addresses_array_size);
 
     /// They are not a real pointers, but also contain a flag in the most significant bit,
     /// in which we are not interested for now. Reset it.
@@ -115,17 +118,24 @@ void __sanitizer_cov_trace_pc_guard(uint32_t * guard)
     /// The values of `*guard` are as you set them in
     /// __sanitizer_cov_trace_pc_guard_init and so you can make them consecutive
     /// and use them to dereference an array or a bit vector.
-    void * pc = __builtin_return_address(0);
+    intptr_t pc = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
 
-    coverage_array[guard - guards_start] = reinterpret_cast<uintptr_t>(pc);
+    current_coverage_array[guard - guards_start] = pc;
+    cumulative_coverage_array[guard - guards_start] = pc;
 }
 
 }
 
 __attribute__((no_sanitize("coverage")))
-std::span<const uintptr_t> getCoverage()
+std::span<const uintptr_t> getCurrentCoverage()
 {
-    return {coverage_array, coverage_array_size};
+    return {current_coverage_array, coverage_array_size};
+}
+
+__attribute__((no_sanitize("coverage")))
+std::span<const uintptr_t> getCumulativeCoverage()
+{
+    return {cumulative_coverage_array, coverage_array_size};
 }
 
 __attribute__((no_sanitize("coverage")))
@@ -137,7 +147,7 @@ std::span<const uintptr_t> getAllInstrumentedAddresses()
 __attribute__((no_sanitize("coverage")))
 void resetCoverage()
 {
-    memset(coverage_array, 0, coverage_array_size * sizeof(*coverage_array));
+    memset(current_coverage_array, 0, coverage_array_size * sizeof(*current_coverage_array));
 
     /// The guard defines whether the __sanitizer_cov_trace_pc_guard should be called.
     /// For example, you can unset it after first invocation to prevent excessive work.

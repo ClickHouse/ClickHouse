@@ -1,0 +1,43 @@
+{% for enable_vertical_merge_algorithm in [0, 1] -%}
+*** BEFORE MUTATION BEFORE MERGE ***
+1	1	1	0	all_1_1_0
+2	2	2	0	all_2_2_0
+3	3	1	1	all_1_1_0
+4	4	1	2	all_1_1_0
+5	5	2	1	all_2_2_0
+6	6	2	2	all_2_2_0
+*** AFTER MUTATION BEFORE MERGE ***
+1	0	1	0	all_1_1_0_3
+2	0	2	0	all_2_2_0_3
+3	0	1	1	all_1_1_0_3
+4	4	1	2	all_1_1_0_3
+5	5	2	1	all_2_2_0_3
+6	6	2	2	all_2_2_0_3
+*** AFTER MUTATION AFTER MERGE ***
+1	0	1	0	all_1_2_1_3
+2	0	2	0	all_1_2_1_3
+3	0	1	1	all_1_2_1_3
+4	4	1	2	all_1_2_1_3
+5	5	2	1	all_1_2_1_3
+6	6	2	2	all_1_2_1_3
+*** AFTER MUTATION AFTER MERGE , NEW BLOCK ***
+1	0	1	0	all_1_2_1_3
+2	0	2	0	all_1_2_1_3
+3	0	1	1	all_1_2_1_3
+4	4	1	2	all_1_2_1_3
+5	5	2	1	all_1_2_1_3
+6	6	2	2	all_1_2_1_3
+7	7	4	0	all_4_4_0
+8	8	4	1	all_4_4_0
+9	9	4	2	all_4_4_0
+*** AFTER MUTATION AFTER MERGE , NEW BLOCK MERGED ***
+1	0	1	0	all_1_4_2_3
+2	0	2	0	all_1_4_2_3
+3	0	1	1	all_1_4_2_3
+4	4	1	2	all_1_4_2_3
+5	5	2	1	all_1_4_2_3
+6	6	2	2	all_1_4_2_3
+7	7	4	0	all_1_4_2_3
+8	8	4	1	all_1_4_2_3
+9	9	4	2	all_1_4_2_3
+{% endfor -%}

@@ -1,5 +1,5 @@
 #include "divide.h"
-#include <Common/CpuId.h>
+#include <Common/CPUID.h>
 
 #if defined(__x86_64__)
 namespace SSE2
@@ -26,9 +26,9 @@ template <typename A, typename B, typename ResultType>
 void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
 {
 #if defined(__x86_64__)
-    if (DB::Cpu::CpuFlagsCache::have_AVX2)
+    if (DB::CPU::CPUFlagsCache::have_AVX2)
         AVX2::divideImpl(a_pos, b, c_pos, size);
-    else if (DB::Cpu::CpuFlagsCache::have_SSE2)
+    else if (DB::CPU::CPUFlagsCache::have_SSE2)
         SSE2::divideImpl(a_pos, b, c_pos, size);
 #else
     Generic::divideImpl(a_pos, b, c_pos, size);
@@ -49,9 +49,9 @@ template void divideImpl<uint32_t, char8_t, uint32_t>(const uint32_t * __restric
 template void divideImpl<int64_t, int64_t, int64_t>(const int64_t * __restrict, int64_t, int64_t * __restrict, size_t);
 template void divideImpl<int64_t, int32_t, int64_t>(const int64_t * __restrict, int32_t, int64_t * __restrict, size_t);
 template void divideImpl<int64_t, int16_t, int64_t>(const int64_t * __restrict, int16_t, int64_t * __restrict, size_t);
-template void divideImpl<int64_t, int8_t, int64_t>(const int64_t * __restrict, int8_t, int64_t * __restrict, size_t);
+template void divideImpl<int64_t, Int8, int64_t>(const int64_t * __restrict, Int8, int64_t * __restrict, size_t);
 
 template void divideImpl<int32_t, int64_t, int32_t>(const int32_t * __restrict, int64_t, int32_t * __restrict, size_t);
 template void divideImpl<int32_t, int32_t, int32_t>(const int32_t * __restrict, int32_t, int32_t * __restrict, size_t);
 template void divideImpl<int32_t, int16_t, int32_t>(const int32_t * __restrict, int16_t, int32_t * __restrict, size_t);
-template void divideImpl<int32_t, int8_t, int32_t>(const int32_t * __restrict, int8_t, int32_t * __restrict, size_t);
+template void divideImpl<int32_t, Int8, int32_t>(const int32_t * __restrict, Int8, int32_t * __restrict, size_t);

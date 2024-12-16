@@ -5,7 +5,7 @@ Row 1:
 statement: CREATE VIEW default.v1
 (
     `v` UInt64
-) AS
-SELECT v
+)
+AS SELECT v
 FROM default.t1
 SETTINGS additional_table_filters = {'default.t1':'s != \'s1%\''}

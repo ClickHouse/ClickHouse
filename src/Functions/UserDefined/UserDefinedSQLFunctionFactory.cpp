@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -9,6 +10,7 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectsBackup.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,6 +19,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSetOperationMode union_default_mode;
+}
 
 namespace ErrorCodes
 {
@@ -80,13 +86,15 @@ namespace
         validateFunctionRecursiveness(*function_body, name);
     }
 
-    ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query)
+    ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context)
     {
         auto ptr = create_function_query.clone();
         auto & res = typeid_cast<ASTCreateFunctionQuery &>(*ptr);
         res.if_not_exists = false;
         res.or_replace = false;
-        FunctionNameNormalizer().visit(res.function_core.get());
+        FunctionNameNormalizer::visit(res.function_core.get());
+        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(res.function_core);
         return ptr;
     }
 }
@@ -106,7 +114,7 @@ void UserDefinedSQLFunctionFactory::checkCanBeRegistered(const ContextPtr & cont
     if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context))
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
     validateFunction(assert_cast<const ASTCreateFunctionQuery &>(create_function_query).function_core, function_name);
@@ -118,14 +126,14 @@ void UserDefinedSQLFunctionFactory::checkCanBeUnregistered(const ContextPtr & co
         AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop system function '{}'", function_name);
 
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context))
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
 }
 
 bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
 {
     checkCanBeRegistered(context, function_name, *create_function_query);
-    create_function_query = normalizeCreateFunctionQuery(*create_function_query);
+    create_function_query = normalizeCreateFunctionQuery(*create_function_query, context);
 
     try
     {

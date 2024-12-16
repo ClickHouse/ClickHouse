@@ -5,6 +5,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
+#include <Processors/Chunk.h>
 
 namespace DB
 {
@@ -12,10 +13,12 @@ namespace DB
 struct InputOrderInfo;
 using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 
-struct ChunkInfoWithAllocatedBytes : public ChunkInfo
+struct ChunkInfoWithAllocatedBytes : public ChunkInfoCloneable<ChunkInfoWithAllocatedBytes>
 {
+    ChunkInfoWithAllocatedBytes(const ChunkInfoWithAllocatedBytes & other) = default;
     explicit ChunkInfoWithAllocatedBytes(Int64 allocated_bytes_)
         : allocated_bytes(allocated_bytes_) {}
+
     Int64 allocated_bytes;
 };
 
@@ -42,6 +45,7 @@ public:
     void work() override;
 
     void consume(Chunk chunk);
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 private:
     void generate();
@@ -83,7 +87,9 @@ private:
     Chunk current_chunk;
     Chunk to_push_chunk;
 
-    Poco::Logger * log = &Poco::Logger::get("AggregatingInOrderTransform");
+    RowsBeforeStepCounterPtr rows_before_aggregation;
+
+    LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };
 
 

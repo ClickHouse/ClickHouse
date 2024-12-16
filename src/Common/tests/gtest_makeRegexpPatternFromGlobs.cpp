@@ -1,14 +1,6 @@
 #include <Common/parseGlobs.h>
+#include <Common/re2.h>
 #include <gtest/gtest.h>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 using namespace DB;
 
@@ -20,6 +12,9 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("*"), "[^/]*");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/?"), "/[^/]");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/*"), "/[^/]*");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{123}"), "(123)");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{test}"), "(test)");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("{test.tar.gz}"), "(test\\.tar\\.gz)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("*_{{a,b,c,d}}/?.csv"), "[^/]*_\\{(a|b|c|d)\\}/[^/]\\.csv");
     /* Regex Parsing for {..} can have three possible cases
        1) The left range width == the right range width

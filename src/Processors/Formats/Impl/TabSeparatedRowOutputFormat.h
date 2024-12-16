@@ -34,14 +34,14 @@ public:
 
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
-    void writeFieldDelimiter() override final;
+    void writeFieldDelimiter() final;
     void writeRowEndDelimiter() override;
 
     bool supportTotals() const override { return true; }
     bool supportExtremes() const override { return true; }
 
-    void writeBeforeTotals() override final;
-    void writeBeforeExtremes() override final;
+    void writeBeforeTotals() final;
+    void writeBeforeExtremes() final;
 
     void writePrefix() override;
     void writeLine(const std::vector<String> & values);

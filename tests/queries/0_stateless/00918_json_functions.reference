@@ -44,10 +44,13 @@ hello
 (-100,200,300)
 [-100,0,0]
 [-100,NULL,NULL]
+[-100,NULL,NULL]
 [0,200,0]
+[NULL,200,NULL]
 [NULL,200,NULL]
 -100
 200
+\N
 \N
 1
 Thursday
@@ -69,8 +72,8 @@ hello
 123456.1234	Decimal(20, 4)
 123456.1234	Decimal(20, 4)
 123456789012345.12	Decimal(30, 4)
-(1234567890.1234567890123456789,'test')	Tuple(a Decimal(35, 20), b LowCardinality(String))
-(1234567890.12345678901234567890123456789,'test')	Tuple(a Decimal(45, 30), b LowCardinality(String))
+(1234567890.1234567890123456789,'test')	Tuple(\n    a Decimal(35, 20),\n    b LowCardinality(String))
+(1234567890.12345678901234567890123456789,'test')	Tuple(\n    a Decimal(45, 30),\n    b LowCardinality(String))
 123456789012345.1136	123456789012345.1136
 1234567890.12345677879616925706	(1234567890.12345677879616925706,'test')
 1234567890.123456695758468374595199311875	(1234567890.123456695758468374595199311875,'test')
@@ -209,10 +212,13 @@ hello
 (-100,200,300)
 [-100,0,0]
 [-100,NULL,NULL]
+[-100,NULL,NULL]
 [0,200,0]
+[NULL,200,NULL]
 [NULL,200,NULL]
 -100
 200
+\N
 \N
 1
 Thursday
@@ -280,3 +286,9 @@ v
 --show error: type should be const string
 --show error: index type should be integer
 --show error: key of map type should be String
+\N
+\N
+Hello
+Hello
+Hello
+Hello

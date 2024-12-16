@@ -1,0 +1,13 @@
+42	UInt64
+abc	String
+\N	None
+[1,2,3]	Array(UInt64)
+[1, 2, 3	String
+\N	None
+42	UInt64
+42	UInt64
+42	UInt64
+\N	None
+42	UInt64
+\N	None
+\N	None

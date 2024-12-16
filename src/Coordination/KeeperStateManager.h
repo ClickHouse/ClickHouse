@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <string>
 #include <Coordination/KeeperLogStore.h>
-#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperSnapshotManager.h>
+#include <Core/Types.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "Coordination/KeeperStateMachine.h"
 #include "Coordination/RaftServerConfig.h"
-#include <Coordination/KeeperSnapshotManager.h>
 
 namespace DB
 {
@@ -23,7 +22,6 @@ public:
         const std::string & config_prefix_,
         const std::string & server_state_file_name_,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings,
         KeeperContextPtr keeper_context_);
 
     /// Constructor for tests
@@ -93,7 +91,7 @@ public:
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
-    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const;
+    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const;
 
 private:
     const String & getOldServerStatePath();
@@ -128,7 +126,7 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    Poco::Logger * logger;
+    LoggerPtr logger;
 
 public:
     /// Parse configuration from xml config.

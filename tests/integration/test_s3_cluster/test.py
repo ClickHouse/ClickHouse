@@ -1,14 +1,15 @@
-from email.errors import HeaderParseError
+import csv
 import logging
 import os
-import csv
 import shutil
 import time
+from email.errors import HeaderParseError
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 from helpers.mock_servers import start_mock_servers
+from helpers.test_tools import TSV
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
@@ -35,7 +36,9 @@ def create_buckets_s3(cluster):
 
             # Make all files a bit different
             for number in range(100 + file_number):
-                data.append([str(number + file_number) * 10, number + file_number])
+                data.append(
+                    ["str_" + str(number + file_number) * 10, number + file_number]
+                )
 
             writer = csv.writer(f)
             writer.writerows(data)
@@ -427,3 +430,81 @@ def test_cluster_with_named_collection(started_cluster):
     )
 
     assert TSV(pure_s3) == TSV(s3_cluster)
+
+
+def test_cluster_format_detection(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    expected_desc_result = node.query(
+        "desc s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV')"
+    )
+
+    desc_result = node.query(
+        "desc s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123')"
+    )
+
+    assert expected_desc_result == desc_result
+
+    expected_result = node.query(
+        "SELECT * FROM s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV', 'a String, b UInt64') order by a, b"
+    )
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/generated/*', 'minio', 'minio123') order by c1, c2"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/generated/*', 'minio', 'minio123', auto, 'a String, b UInt64') order by a, b"
+    )
+
+    assert result == expected_result
+
+
+def test_cluster_default_expression(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+
+    node.query(
+        "insert into function s3('http://minio1:9001/root/data/data1', 'minio', 'minio123', JSONEachRow) select 1 as id settings s3_truncate_on_insert=1"
+    )
+    node.query(
+        "insert into function s3('http://minio1:9001/root/data/data2', 'minio', 'minio123', JSONEachRow) select * from numbers(0) settings s3_truncate_on_insert=1"
+    )
+    node.query(
+        "insert into function s3('http://minio1:9001/root/data/data3', 'minio', 'minio123', JSONEachRow) select 2 as id settings s3_truncate_on_insert=1"
+    )
+
+    expected_result = node.query(
+        "SELECT * FROM s3('http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
+    )
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'auto', 'id UInt32, date Date DEFAULT 18262') order by id"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'auto', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        "SELECT * FROM s3Cluster(cluster_simple, test_s3_with_default) order by id"
+    )
+
+    assert result == expected_result

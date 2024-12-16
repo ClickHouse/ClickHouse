@@ -49,6 +49,6 @@ Every job has a pool associated with it and is started in this pool. Each pool h
 
 Time instants during job lifetime:
 - `schedule_time` (`DateTime64`) - Time when job was created and scheduled to be executed (usually with all its dependencies).
-- `enqueue_time` (`Nullable(DateTime64)`) - Time when job became ready and was enqueued into a ready queue of it's pool. Null if the job is not ready yet.
+- `enqueue_time` (`Nullable(DateTime64)`) - Time when job became ready and was enqueued into a ready queue of its pool. Null if the job is not ready yet.
 - `start_time` (`Nullable(DateTime64)`) - Time when worker dequeues the job from ready queue and start its execution. Null if the job is not started yet.
 - `finish_time` (`Nullable(DateTime64)`) - Time when job execution is finished. Null if the job is not finished yet.

@@ -1,17 +1,21 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
-#include <Poco/Message.h>
 #include <chrono>
+#include <shared_mutex>
+
+#include <Poco/Message.h>
+
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/SystemLog.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
 
 struct BlobStorageLogElement
 {
-    enum class EventType : Int8
+    enum class EventType : int8_t
     {
         Upload = 1,
         Delete = 2,
@@ -42,16 +46,31 @@ struct BlobStorageLogElement
 
     static std::string name() { return "BlobStorageLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 
 class BlobStorageLog : public SystemLog<BlobStorageLogElement>
 {
+public:
     using SystemLog<BlobStorageLogElement>::SystemLog;
+
+    /// We should not log events for table itself to avoid infinite recursion
+    bool shouldIgnorePath(const String & path) const
+    {
+        std::shared_lock lock{prepare_mutex};
+        return !prefix_to_ignore.empty() && path.starts_with(prefix_to_ignore);
+    }
+
+protected:
+    void prepareTable() override;
+    void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const override;
+
+private:
+    mutable std::shared_mutex prepare_mutex;
+    String prefix_to_ignore;
 };
 
 }

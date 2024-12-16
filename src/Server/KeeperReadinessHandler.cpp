@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
@@ -19,7 +20,7 @@
 namespace DB
 {
 
-void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponse & response)
+void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
     try
     {
@@ -31,7 +32,8 @@ void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTP
 
         auto status = is_leader || is_follower || is_observer;
 
-        Poco::JSON::Object json, details;
+        Poco::JSON::Object json;
+        Poco::JSON::Object details;
 
         details.set("role", data.getRole());
         details.set("hasLeader", keeper_dispatcher->hasLeader());
@@ -58,12 +60,12 @@ void KeeperReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTP
             if (!response.sent())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                *response.send() << getCurrentExceptionMessage(false) << std::endl;
+                *response.send() << getCurrentExceptionMessage(false) << '\n';
             }
         }
         catch (...)
         {
-            LOG_ERROR((&Poco::Logger::get("KeeperReadinessHandler")), "Cannot send exception to client");
+            LOG_ERROR((getLogger("KeeperReadinessHandler")), "Cannot send exception to client");
         }
     }
 }

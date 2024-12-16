@@ -6,6 +6,7 @@
 
 #include <base/types.h>
 #include <Core/MySQL/MySQLReplication.h>
+#include <Core/Settings.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <Interpreters/Context.h>

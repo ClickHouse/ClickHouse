@@ -35,8 +35,9 @@ static constexpr std::string_view schemata = R"(
         `DEFAULT_CHARACTER_SET_SCHEMA` Nullable(String),
         `DEFAULT_CHARACTER_SET_NAME` Nullable(String),
         `SQL_PATH` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         name                          AS catalog_name,
         name                          AS schema_name,
         'default'                     AS schema_owner,
@@ -73,8 +74,9 @@ static constexpr std::string_view tables = R"(
         `DATA_LENGTH` Nullable(UInt64),
         `TABLE_COLLATION` Nullable(String),
         `TABLE_COMMENT` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database             AS table_catalog,
         database             AS table_schema,
         name                 AS table_name,
@@ -122,8 +124,9 @@ static constexpr std::string_view views = R"(
         `IS_TRIGGER_UPDATABLE` Enum8('NO' = 0, 'YES' = 1),
         `IS_TRIGGER_DELETABLE` Enum8('NO' = 0, 'YES' = 1),
         `IS_TRIGGER_INSERTABLE_INTO` Enum8('NO' = 0, 'YES' = 1)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database AS table_catalog,
         database AS table_schema,
         name AS table_name,
@@ -203,8 +206,9 @@ static constexpr std::string_view columns = R"(
         `EXTRA` Nullable(String),
         `COLUMN_COMMENT` String,
         `COLUMN_TYPE` String
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         database AS table_catalog,
         database AS table_schema,
         table AS table_name,
@@ -291,8 +295,9 @@ static constexpr std::string_view key_column_usage = R"(
          `REFERENCED_TABLE_SCHEMA` Nullable(String),
          `REFERENCED_TABLE_NAME` Nullable(String),
          `REFERENCED_COLUMN_NAME` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         'def'                         AS constraint_catalog,
         database                      AS constraint_schema,
         'PRIMARY'                     AS constraint_name,
@@ -346,8 +351,9 @@ static constexpr std::string_view referential_constraints = R"(
          `DELETE_RULE` String,
          `TABLE_NAME` String,
          `REFERENCED_TABLE_NAME` String
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         ''                        AS constraint_catalog,
         NULL                      AS constraint_name,
         ''                        AS constraint_schema,
@@ -412,8 +418,9 @@ static constexpr std::string_view statistics = R"(
         `INDEX_COMMENT` String,
         `IS_VISIBLE` String,
         `EXPRESSION` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         ''            AS table_catalog,
         ''            AS table_schema,
         ''            AS table_name,
@@ -471,7 +478,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ParserCreateQuery parser;
         ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(),
                                 "Attach query from embedded resource " + metadata_resource_name,
-                                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                                DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
         assert(view_name == ast_create.getTable());
@@ -479,13 +486,13 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
         ast_create.setDatabase(database.getDatabaseName());
 
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create), context, true).second;
+                                             database.getTableDataPath(ast_create), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
         database.createTable(context, ast_create.getTable(), view, ast);
         ASTPtr ast_upper = ast_create.clone();
         auto & ast_create_upper = ast_upper->as<ASTCreateQuery &>();
         ast_create_upper.setTable(Poco::toUpper(view_name));
         StoragePtr view_upper = createTableFromAST(ast_create_upper, database.getDatabaseName(),
-                                             database.getTableDataPath(ast_create_upper), context, true).second;
+                                             database.getTableDataPath(ast_create_upper), context, LoadingStrictnessLevel::FORCE_RESTORE).second;
 
         database.createTable(context, ast_create_upper.getTable(), view_upper, ast_upper);
 

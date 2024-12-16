@@ -49,17 +49,17 @@ namespace ErrorCodes
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
-    : settings(settings_)
+ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+    : actions_dag(std::move(actions_dag_))
+    , project_inputs(project_inputs_)
+    , settings(settings_)
 {
-    actions_dag = actions_dag_->clone();
-
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.short_circuit_function_evaluation);
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-        actions_dag->compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
 #endif
 
     linearizeActions(lazy_executed_nodes);
@@ -67,12 +67,32 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag->dumpNames(), settings.max_temporary_columns);
+                        actions_dag.dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
-    return std::make_shared<ExpressionActions>(*this);
+    auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
+
+    std::unordered_map<const Node *, Node *> copy_map;
+    copy->actions_dag = actions_dag.clone(copy_map);
+    copy->actions = actions;
+    for (auto & action : copy->actions)
+        action.node = copy_map[action.node];
+
+    for (const auto * input : copy->actions_dag.getInputs())
+        copy->input_positions.emplace(input->result_name, input_positions.at(input->result_name));
+
+    copy->num_columns = num_columns;
+
+    copy->required_columns = required_columns;
+    copy->result_positions = result_positions;
+    copy->sample_block = sample_block;
+
+    copy->project_inputs = project_inputs;
+    copy->settings = settings;
+
+    return copy;
 }
 
 namespace
@@ -180,14 +200,17 @@ static void setLazyExecutionInfo(
                     indexes.insert(i);
             }
 
-            if (!short_circuit_nodes.at(parent).enable_lazy_execution_for_first_argument && node == parent->children[0])
+            for (auto idx : short_circuit_nodes.at(parent).arguments_with_disabled_lazy_execution)
             {
-                /// We shouldn't add 0 index in node info in this case.
-                indexes.erase(0);
-                /// Disable lazy execution for current node only if it's disabled for short-circuit node,
-                /// because we can have nested short-circuit nodes.
-                if (!lazy_execution_infos[parent].can_be_lazy_executed)
-                    lazy_execution_info.can_be_lazy_executed = false;
+                if (idx < parent->children.size() && node == parent->children[idx])
+                {
+                    /// We shouldn't add this index in node info in this case.
+                    indexes.erase(idx);
+                    /// Disable lazy execution for current node only if it's disabled for short-circuit node,
+                    /// because we can have nested short-circuit nodes.
+                    if (!lazy_execution_infos[parent].can_be_lazy_executed)
+                        lazy_execution_info.can_be_lazy_executed = false;
+                }
             }
 
             lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
@@ -288,9 +311,9 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 
     /// Firstly, find all short-circuit functions and get their settings.
     std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> short_circuit_nodes;
-    IFunctionBase::ShortCircuitSettings short_circuit_settings;
     for (const auto & node : nodes)
     {
+        IFunctionBase::ShortCircuitSettings short_circuit_settings;
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()) && !node.children.empty())
             short_circuit_nodes[&node] = short_circuit_settings;
     }
@@ -333,8 +356,8 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & outputs = actions_dag->getOutputs();
-    const auto & inputs = actions_dag->getInputs();
+    const auto & outputs = actions_dag.getOutputs();
+    const auto & inputs = actions_dag.getInputs();
 
     auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
@@ -563,7 +586,7 @@ namespace
     };
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -611,6 +634,17 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+                if (res_column.column->getDataType() != res_column.type->getColumnType())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
+                        action.node->function->getName(),
+                        res_column.type->getName(),
+                        res_column.column->getName(),
+                        action.toString(),
+                        Block(arguments).dumpStructure());
+                }
             }
             break;
         }
@@ -687,14 +721,19 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                                     action.node->result_name);
             }
             else
-                columns[action.result_position] = std::move(inputs[pos]);
+            {
+                if (allow_duplicates_in_input)
+                    columns[action.result_position] = inputs[pos];
+                else
+                    columns[action.result_position] = std::move(inputs[pos]);
+            }
 
             break;
         }
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
 {
     ExecutionContext execution_context
     {
@@ -715,7 +754,8 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
                 if (execution_context.inputs_pos[input_pos] < 0)
                 {
                     execution_context.inputs_pos[input_pos] = pos;
-                    break;
+                    if (!allow_duplicates_in_input)
+                        break;
                 }
             }
         }
@@ -727,12 +767,8 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     {
         try
         {
-            executeAction(action, execution_context, dry_run);
+            executeAction(action, execution_context, dry_run, allow_duplicates_in_input);
             checkLimits(execution_context.columns);
-
-            //std::cerr << "Action: " << action.toString() << std::endl;
-            //for (const auto & col : execution_context.columns)
-            //    std::cerr << col.dumpStructure() << std::endl;
         }
         catch (Exception & e)
         {
@@ -741,8 +777,14 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         }
     }
 
-    if (actions_dag->isInputProjected())
+    if (project_inputs)
     {
+        block.clear();
+    }
+    else if (allow_duplicates_in_input)
+    {
+        /// This case is the same as when the input is projected
+        /// since we do not need any input columns.
         block.clear();
     }
     else
@@ -767,11 +809,11 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
 {
     size_t num_rows = block.rows();
 
-    execute(block, num_rows, dry_run);
+    execute(block, num_rows, dry_run, allow_duplicates_in_input);
 
     if (!block)
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
@@ -840,7 +882,7 @@ std::string ExpressionActions::dumpActions() const
     for (const auto & output_column : output_columns)
         ss << output_column.name << " " << output_column.type->getName() << "\n";
 
-    ss << "\nproject input: " << actions_dag->isInputProjected() << "\noutput positions:";
+    ss << "\noutput positions:";
     for (auto pos : result_positions)
         ss << " " << pos;
     ss << "\n";
@@ -904,7 +946,6 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
     map->add("Actions", std::move(actions_array));
     map->add("Outputs", std::move(outputs_array));
     map->add("Positions", std::move(positions_array));
-    map->add("Project Input", actions_dag->isInputProjected());
 
     return map;
 }
@@ -958,7 +999,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
+    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1018,16 +1059,16 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
+ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
     : Step({})
-    , array_join(std::move(array_join_))
+    , array_join_columns(array_join_columns_.begin(), array_join_columns_.end())
     , result_columns(std::move(required_columns_))
 {
     for (auto & column : result_columns)
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join->columns.contains(column.name))
+        if (array_join_columns.contains(column.name))
         {
             const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
@@ -1044,12 +1085,12 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join_columns.contains(column.name) || required_output_.contains(column.name))
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join_columns.contains(column.name) || required_output_.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
@@ -1107,14 +1148,14 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsDAGPtr & ExpressionActionsChain::Step::actions()
+ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions()
 {
-    return typeid_cast<ExpressionActionsStep &>(*this).actions_dag;
+    return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
-const ActionsDAGPtr & ExpressionActionsChain::Step::actions() const
+const ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions() const
 {
-    return typeid_cast<const ExpressionActionsStep &>(*this).actions_dag;
+    return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
 }

@@ -18,6 +18,37 @@
                 <type>dynamic_query_handler</type>
                 <query_param_name>get_dynamic_handler_query</query_param_name>
                 <content_type>application/whatever; charset=cp1337</content_type>
+                <http_response_headers>
+                  <X-Test-Http-Response-Headers-Works>it works</X-Test-Http-Response-Headers-Works>
+                  <X-Test-Http-Response-Headers-Even-Multiple>also works</X-Test-Http-Response-Headers-Even-Multiple>
+                </http_response_headers>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <url>/test_dynamic_handler_auth_with_password</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <user>with_password</user>
+                <password>password</password>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_dynamic_handler_auth_with_password_fail</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <user>with_password</user>
+                <!-- No password - authentication should fail -->
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_dynamic_handler_auth_without_password</url>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <user>without_password</user>
             </handler>
         </rule>
     </http_handlers>

@@ -20,9 +20,10 @@ public:
         const NATSConfiguration & configuration_,
         const String & subject_,
         std::atomic<bool> & shutdown_called_,
-        Poco::Logger * log_);
+        LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
+    void cancel() noexcept override;
 
 private:
     String getProducingTaskName() const override { return "NatsProducingTask"; }

@@ -16,11 +16,11 @@ class OwnFormattingChannel : public Poco::Channel, public ExtendedLogChannel
 public:
     explicit OwnFormattingChannel(
         Poco::AutoPtr<OwnPatternFormatter> pFormatter_ = nullptr, Poco::AutoPtr<Poco::Channel> pChannel_ = nullptr)
-        : pFormatter(std::move(pFormatter_)), pChannel(std::move(pChannel_)), priority(Poco::Message::PRIO_TRACE)
+        : pFormatter(pFormatter_), pChannel(pChannel_), priority(Poco::Message::PRIO_TRACE)
     {
     }
 
-    void setChannel(Poco::AutoPtr<Poco::Channel> pChannel_) { pChannel = std::move(pChannel_); }
+    void setChannel(Poco::AutoPtr<Poco::Channel> pChannel_) { pChannel = pChannel_; }
 
     void setLevel(Poco::Message::Priority priority_) { priority = priority_; }
 

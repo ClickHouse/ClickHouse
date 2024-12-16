@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 
 #include <Storages/IStorage.h>
@@ -10,12 +11,20 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/interpretSubquery.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool extremes;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -60,11 +69,11 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
       *  which are checked separately (in the Set, Join objects).
       */
     auto subquery_context = Context::createCopy(context);
-    Settings subquery_settings = context->getSettings();
-    subquery_settings.max_result_rows = 0;
-    subquery_settings.max_result_bytes = 0;
+    Settings subquery_settings = context->getSettingsCopy();
+    subquery_settings[Setting::max_result_rows] = 0;
+    subquery_settings[Setting::max_result_bytes] = 0;
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
-    subquery_settings.extremes = false;
+    subquery_settings[Setting::extremes] = false;
     subquery_context->setSettings(subquery_settings);
 
     auto subquery_options = options.subquery();

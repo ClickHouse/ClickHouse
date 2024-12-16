@@ -38,6 +38,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
+    [nats_credential_file = '/var/nats_credentials',]
     [nats_startup_connect_tries = '5']
     [nats_max_rows_per_message = 1,]
     [nats_handle_error_mode = 'default']
@@ -57,15 +58,16 @@ Optional parameters:
 - `nats_max_reconnect` – Maximum amount of reconnection attempts per try to connect to NATS. Default: `5`.
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
-- `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data).
+- `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
 - `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
+- `nats_credential_file` - Path to a NATS credentials file.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
-- `nats_handle_error_mode` — How to handle errors for RabbitMQ engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
+- `nats_handle_error_mode` — How to handle errors for NATS engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 
 SSL connection:
 
@@ -110,7 +112,7 @@ Example:
 ```
 
 The NATS server configuration can be added using the ClickHouse config file.
- More specifically you can add Redis password for NATS engine:
+More specifically you can add Redis password for NATS engine:
 
 ``` xml
 <nats>
@@ -165,7 +167,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 - `_subject` - NATS message subject. Data type: `String`.
 
-Additional virtual columns when `kafka_handle_error_mode='stream'`:
+Additional virtual columns when `nats_handle_error_mode='stream'`:
 
 - `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.

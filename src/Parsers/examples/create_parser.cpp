@@ -13,7 +13,7 @@ int main(int, char **)
 
     std::string input = "CREATE TABLE hits (URL String, UserAgentMinor2 FixedString(2), EventTime DateTime) ENGINE = Log";
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
 
     WriteBufferFromOStream out(std::cerr, 4096);
     formatAST(*ast, out);

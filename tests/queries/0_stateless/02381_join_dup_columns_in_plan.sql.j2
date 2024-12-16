@@ -1,0 +1,62 @@
+SET enable_analyzer = 1;
+
+-- { echoOn }
+
+{% for query_settings in ['join_algorithm = \'hash\'', 'join_algorithm = \'full_sorting_merge\', max_rows_in_set_to_optimize_join = 0'] -%}
+
+SET {{ query_settings }};
+
+EXPLAIN actions=0, description=0, header=1
+SELECT * FROM ( SELECT 'key2' AS key ) AS s1
+JOIN ( SELECT 'key1' AS key, '1' AS value UNION ALL SELECT 'key2' AS key, '1' AS value ) AS s2
+USING (key);
+
+SELECT * FROM ( SELECT 1 AS k ) as t1 FULL JOIN ( SELECT 1 AS k, k ) as t2 ON t1.k = t2.k ORDER BY 1;
+SELECT * FROM ( SELECT 1 AS k, 1 as n ) as t1 FULL JOIN ( SELECT 1 AS k, k, 1 as n ) as t2 ON t1.n = t2.n ORDER BY 1;
+
+SELECT *
+FROM ( SELECT number, number, number, number, number FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, FROM numbers(3, 8) ) as t2
+ON t1.number = t2.number
+ORDER BY t1.number, t2.number
+;
+
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+ON t1.number = t2.number
+ORDER BY t1.number, t2.number
+;
+
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+ON t1.k = t2.k
+ORDER BY t1.k, t2.k
+;
+
+SELECT * FROM ( SELECT 1 AS k ) as t1 FULL JOIN ( SELECT 1 AS k, k ) as t2 USING (k) ORDER BY 1;
+SELECT * FROM ( SELECT 1 AS k, 1 as n ) as t1 FULL JOIN ( SELECT 1 AS k, k, 1 as n ) as t2 USING (n) ORDER BY 1;
+
+SELECT *
+FROM ( SELECT number, number, number, number, number FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, FROM numbers(3, 8) ) as t2
+USING (number)
+ORDER BY number
+;
+
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+USING (number)
+ORDER BY number
+;
+
+SELECT *
+FROM ( SELECT number, number, number, number, number, number + 1 as k, k, k FROM numbers(5) ) as t1
+FULL JOIN ( SELECT number, number, number, number + 1 as k, k, k, k, k FROM numbers(3, 8) ) as t2
+USING (k)
+ORDER BY k
+;
+
+{% endfor -%}

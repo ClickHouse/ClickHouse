@@ -1,13 +1,16 @@
 import logging
+import os
+import pathlib
 import time
 from contextlib import contextmanager
-import pathlib
 
 import pytest
 
-from helpers.mock_servers import start_s3_mock
 from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_s3_mock
 from helpers.test_tools import assert_eq_with_retry
+
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 
 def args_to_dict(**kwargs):
@@ -20,9 +23,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
 
         kwargs = args_to_dict(
-            main_configs=[
-                "configs/config.d/storage_conf.xml",
-            ],
+            main_configs=[],
             user_configs=[
                 "configs/config.d/users.xml",
             ],
@@ -35,6 +36,17 @@ def cluster():
         cluster.add_instance("node2", **kwargs)
 
         cluster.start()
+
+        start_s3_mock(cluster, "broken_s3", "8083")
+
+        for _, node in cluster.instances.items():
+            node.stop_clickhouse()
+            node.copy_file_to_container(
+                os.path.join(CONFIG_DIR, "config.d", "storage_conf.xml"),
+                "/etc/clickhouse-server/config.d/storage_conf.xml",
+            )
+            node.start_clickhouse()
+
         yield cluster
 
     finally:
@@ -131,14 +143,13 @@ def test_all_projection_files_are_dropped_when_part_is_dropped(
             """
         )
 
-        objects_empty_table = list_objects(cluster)
-
         node.query(
             "ALTER TABLE test_all_projection_files_are_dropped ADD projection b_order (SELECT a, b ORDER BY b)"
         )
         node.query(
             "ALTER TABLE test_all_projection_files_are_dropped MATERIALIZE projection b_order"
         )
+        objects_empty_table = list_objects(cluster)
 
         node.query(
             """

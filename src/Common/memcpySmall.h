@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Common/MemorySanitizer.h>
+
 #include <cstring>
+#include <sys/types.h> /// ssize_t
 
 #ifdef __SSE2__
 #    include <emmintrin.h>
@@ -37,6 +40,7 @@ namespace detail
 {
     inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
     {
+        __msan_unpoison_overflow_15(src, n);
         while (n > 0)
         {
             _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
@@ -45,6 +49,9 @@ namespace detail
             dst += 16;
             src += 16;
             n -= 16;
+
+            /// Avoid clang loop-idiom optimization, which transforms _mm_storeu_si128 to built-in memcpy
+            __asm__ __volatile__("" : : : "memory");
         }
     }
 }
@@ -63,6 +70,7 @@ namespace detail
 {
 inline void memcpySmallAllowReadWriteOverflow15Impl(char * __restrict dst, const char * __restrict src, ssize_t n)
 {
+    __msan_unpoison_overflow_15(src, n);
     while (n > 0)
     {
         vst1q_s8(reinterpret_cast<signed char *>(dst), vld1q_s8(reinterpret_cast<const signed char *>(src)));

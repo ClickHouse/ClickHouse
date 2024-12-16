@@ -13,13 +13,13 @@ namespace DB
 
 bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_create("CREATE");
-    ParserKeyword s_function("FUNCTION");
-    ParserKeyword s_or_replace("OR REPLACE");
-    ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserKeyword s_on("ON");
+    ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_function(Keyword::FUNCTION);
+    ParserKeyword s_or_replace(Keyword::OR_REPLACE);
+    ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
+    ParserKeyword s_on(Keyword::ON);
     ParserIdentifier function_name_p;
-    ParserKeyword s_as("AS");
+    ParserKeyword s_as(Keyword::AS);
     ParserExpression lambda_p;
 
     ASTPtr function_name;

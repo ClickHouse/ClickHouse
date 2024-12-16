@@ -8,6 +8,7 @@
 #include <Common/Allocator.h>
 #include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
+#include <base/getPageSize.h>
 
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
@@ -46,11 +47,9 @@ private:
 
         std::unique_ptr<MemoryChunk> prev;
 
-        MemoryChunk()
-        {
-        }
+        MemoryChunk() = default;
 
-        void swap(MemoryChunk & other)
+        void swap(MemoryChunk & other) noexcept
         {
             std::swap(begin, other.begin);
             std::swap(pos, other.pos);
@@ -58,18 +57,18 @@ private:
             prev.swap(other.prev);
         }
 
-        MemoryChunk(MemoryChunk && other)
+        MemoryChunk(MemoryChunk && other) noexcept
         {
             *this = std::move(other);
         }
 
-        MemoryChunk & operator=(MemoryChunk && other)
+        MemoryChunk & operator=(MemoryChunk && other) noexcept
         {
             swap(other);
             return *this;
         }
 
-        MemoryChunk(size_t size_)
+        explicit MemoryChunk(size_t size_)
         {
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);

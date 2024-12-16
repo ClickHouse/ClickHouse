@@ -125,13 +125,13 @@ namespace
             check_current_key_found(current_key);
             return current_key;
         }
-        else if (config.has(key_hex_path))
+        if (config.has(key_hex_path))
         {
             String current_key = unhexKey(config.getString(key_hex_path));
             check_current_key_found(current_key);
             return current_key;
         }
-        else if (config.has(key_id_path))
+        if (config.has(key_id_path))
         {
             UInt64 current_key_id = config.getUInt64(key_id_path);
             auto it = keys_by_id.find(current_key_id);
@@ -139,15 +139,13 @@ namespace
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", current_key_id);
             return it->second;
         }
-        else if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
+        if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
         {
             /// There is only a single key defined with id=0, so we can choose it as current.
             return keys_by_id.begin()->second;
         }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
-        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
     }
 
     /// Reads the current encryption algorithm from the configuration.
@@ -392,7 +390,7 @@ size_t DiskEncrypted::getFileSize(const String & path) const
 UInt128 DiskEncrypted::getEncryptedFileIV(const String & path) const
 {
     auto wrapped_path = wrappedPath(path);
-    auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
+    auto read_buffer = delegate->readFile(wrapped_path, getReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
     if (read_buffer->eof())
         return 0;
     auto header = readHeader(*read_buffer);
@@ -455,7 +453,8 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map) -> DiskPtr
+        const DisksMap & map,
+        bool, bool) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);

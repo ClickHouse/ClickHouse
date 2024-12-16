@@ -6,6 +6,7 @@
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Core/BlockMissingValues.h>
 
 
 namespace DB
@@ -27,6 +28,11 @@ public:
     /// ReadBuffer can be nullptr for random-access formats.
     IInputFormat(Block header, ReadBuffer * in_);
 
+    Chunk generate() override;
+
+    /// All data reading from the read buffer must be performed by this method.
+    virtual Chunk read() = 0;
+
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of
@@ -36,21 +42,22 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
+    virtual void resetReadBuffer() { in = nullptr; }
 
-    virtual const BlockMissingValues & getMissingValues() const
-    {
-        static const BlockMissingValues none;
-        return none;
-    }
+    virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 
     /// Must be called from ParallelParsingInputFormat after readSuffix
     ColumnMappingPtr getColumnMapping() const { return column_mapping; }
     /// Must be called from ParallelParsingInputFormat before readPrefix
     void setColumnMapping(ColumnMappingPtr column_mapping_) { column_mapping = column_mapping_; }
 
-    size_t getCurrentUnitNumber() const { return current_unit_number; }
-    void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
+    /// Set the number of rows that was already read in
+    /// parallel parsing before creating this parser.
+    virtual void setRowsReadBefore(size_t /*rows*/) {}
+
+    /// Sets the serialization hints for the columns. It allows to create columns
+    /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
+    virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
@@ -61,6 +68,8 @@ public:
     void needOnlyCount() { need_only_count = true; }
 
 protected:
+    ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
+
     virtual Chunk getChunkForCount(size_t rows);
 
     ColumnMappingPtr column_mapping{};
@@ -70,9 +79,6 @@ protected:
     bool need_only_count = false;
 
 private:
-    /// Number of currently parsed chunk (if parallel parsing is enabled)
-    size_t current_unit_number = 0;
-
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 

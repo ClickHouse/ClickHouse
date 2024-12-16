@@ -23,7 +23,7 @@ try
         " FORMAT TabSeparated";
 
     ParserQueryWithOutput parser(input.data() + input.size());
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
 
     std::cout << "Success." << std::endl;
     WriteBufferFromOStream out(std::cerr, 4096);

@@ -65,6 +65,20 @@ With Cluster Discovery, rather than defining each node explicitly, you simply sp
     <cluster_name>
         <discovery>
             <path>/clickhouse/discovery/cluster_name</path>
+
+            <!-- # Optional configuration parameters: -->
+
+            <!-- ## Authentication credentials to access all other nodes in cluster: -->
+            <!-- <user>user1</user> -->
+            <!-- <password>pass123</password> -->
+            <!-- ### Alternatively to password, interserver secret may be used: -->
+            <!-- <secret>secret123</secret> -->
+
+            <!-- ## Shard for current node (see below): -->
+            <!-- <shard>1</shard> -->
+
+            <!-- ## Observer mode (see below): -->
+            <!-- <observer/> -->
         </discovery>
     </cluster_name>
 </remote_servers>

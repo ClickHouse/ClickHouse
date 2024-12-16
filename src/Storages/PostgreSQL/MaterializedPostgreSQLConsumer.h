@@ -32,7 +32,7 @@ class MaterializedPostgreSQLConsumer
 private:
     struct StorageData
     {
-        explicit StorageData(const StorageInfo & storage_info, Poco::Logger * log_);
+        explicit StorageData(const StorageInfo & storage_info, LoggerPtr log_);
 
         size_t getColumnsNum() const { return table_description.sample_block.columns(); }
 
@@ -110,7 +110,7 @@ private:
     static void insertDefaultValue(StorageData & storage_data, size_t column_idx);
     void insertValue(StorageData & storage_data, const std::string & value, size_t column_idx);
 
-    enum class PostgreSQLQuery
+    enum class PostgreSQLQuery : uint8_t
     {
         INSERT,
         UPDATE,
@@ -132,12 +132,13 @@ private:
     /// lsn - log sequence number, like wal offset (64 bit).
     static Int64 getLSNValue(const std::string & lsn)
     {
-        UInt32 upper_half, lower_half;
+        UInt32 upper_half;
+        UInt32 lower_half;
         std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half); /// NOLINT
         return (static_cast<Int64>(upper_half) << 32) + lower_half;
     }
 
-    Poco::Logger * log;
+    LoggerPtr log;
     ContextPtr context;
     const std::string replication_slot_name, publication_name;
 

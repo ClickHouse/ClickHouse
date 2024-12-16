@@ -13,8 +13,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
 )
-node_1 = cluster.add_instance("node_1", with_zookeeper=True)
-node_2 = cluster.add_instance("node_2", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -31,9 +29,6 @@ def started_cluster():
             """CREATE TABLE distributed2 (id UInt32) ENGINE =
             Distributed('test_cluster2', 'default', 'replicated')"""
         )
-
-        cluster.pause_container("node_1")
-        cluster.pause_container("node_2")
 
         yield cluster
 

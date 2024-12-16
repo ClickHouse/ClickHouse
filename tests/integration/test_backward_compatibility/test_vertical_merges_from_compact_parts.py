@@ -1,17 +1,16 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
 node_old = cluster.add_instance(
     "node1",
     image="clickhouse/clickhouse-server",
-    tag="22.8",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
     with_installed_binary=True,
     with_zookeeper=True,
-    allow_analyzer=False,
 )
 node_new = cluster.add_instance(
     "node2",
@@ -21,7 +20,7 @@ node_new = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    allow_analyzer=False,
+    use_old_analyzer=True,
 )
 
 

@@ -1,4 +1,4 @@
 <clickhouse>
-    <max_server_memory_usage>2000000000</max_server_memory_usage>
+    <max_server_memory_usage>1500000000</max_server_memory_usage>
     <allow_use_jemalloc_memory>false</allow_use_jemalloc_memory>
 </clickhouse>

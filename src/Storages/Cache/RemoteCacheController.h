@@ -45,41 +45,41 @@ public:
      */
     void waitMoreData(size_t start_offset_, size_t end_offset_);
 
-    inline size_t size() const { return current_offset; }
+    size_t size() const { return current_offset; }
 
-    inline const std::filesystem::path & getLocalPath() { return local_path; }
-    inline String getRemotePath() const { return file_metadata_ptr->remote_path; }
+    const std::filesystem::path & getLocalPath() { return local_path; }
+    String getRemotePath() const { return file_metadata_ptr->remote_path; }
 
-    inline UInt64 getLastModificationTimestamp() const { return file_metadata_ptr->last_modification_timestamp; }
+    UInt64 getLastModificationTimestamp() const { return file_metadata_ptr->last_modification_timestamp; }
     bool isModified(IRemoteFileMetadataPtr file_metadata_);
-    inline void markInvalid()
+    void markInvalid()
     {
         std::lock_guard lock(mutex);
         valid = false;
     }
-    inline bool isValid()
+    bool isValid()
     {
         std::lock_guard lock(mutex);
         return valid;
     }
-    inline bool isEnable()
+    bool isEnable()
     {
         std::lock_guard lock(mutex);
         return is_enable;
 
     }
-    inline void disable()
+    void disable()
     {
         std::lock_guard lock(mutex);
         is_enable = false;
     }
-    inline void enable()
+    void enable()
     {
         std::lock_guard lock(mutex);
         is_enable = true;
     }
     IRemoteFileMetadataPtr getFileMetadata() { return file_metadata_ptr; }
-    inline size_t getFileSize() const { return file_metadata_ptr->file_size; }
+    size_t getFileSize() const { return file_metadata_ptr->file_size; }
 
     void startBackgroundDownload(std::unique_ptr<ReadBuffer> in_readbuffer_, BackgroundSchedulePool & thread_pool);
 
@@ -116,7 +116,7 @@ private:
     //std::shared_ptr<ReadBuffer> remote_read_buffer;
     std::unique_ptr<WriteBufferFromFileBase> data_file_writer;
 
-    Poco::Logger * log = &Poco::Logger::get("RemoteCacheController");
+    LoggerPtr log = getLogger("RemoteCacheController");
 };
 using RemoteCacheControllerPtr = std::shared_ptr<RemoteCacheController>;
 

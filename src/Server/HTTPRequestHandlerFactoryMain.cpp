@@ -7,7 +7,7 @@ namespace DB
 {
 
 HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
-    : log(&Poco::Logger::get(name_)), name(name_)
+    : log(getLogger(name_)), name(name_)
 {
 }
 

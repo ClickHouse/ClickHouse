@@ -1,11 +1,9 @@
 #include <Analyzer/WindowNode.h>
-
-#include <Common/SipHash.h>
-
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -80,14 +78,14 @@ void WindowNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     }
 }
 
-bool WindowNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool WindowNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const WindowNode &>(rhs);
 
     return window_frame == rhs_typed.window_frame && parent_window_name == rhs_typed.parent_window_name;
 }
 
-void WindowNode::updateTreeHashImpl(HashState & hash_state) const
+void WindowNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 {
     hash_state.update(window_frame.is_default);
     hash_state.update(window_frame.type);

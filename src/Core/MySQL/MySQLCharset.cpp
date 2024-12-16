@@ -5,12 +5,15 @@
 
 #if USE_ICU
 #include <unicode/ucnv.h>
-#define CHUNK_SIZE 1024
-static const char * TARGET_CHARSET = "utf8";
 #endif
 
 namespace DB
 {
+
+#if USE_ICU
+static constexpr auto CHUNK_SIZE = 1024;
+static constexpr auto TARGET_CHARSET = "utf8";
+#endif
 
 namespace ErrorCodes
 {

@@ -6,8 +6,9 @@
 
 #include <Common/ErrorHandlers.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <Formats/registerFormats.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -17,8 +18,10 @@
 #include <base/range.h>
 #include <base/scope_guard.h>
 
-#include <sys/time.h>
+#include <iostream>
+#include <thread>
 #include <sys/resource.h>
+#include <sys/time.h>
 
 #include "config.h"
 
@@ -231,7 +234,7 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
     auto context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 
-    auto settings = context->getSettings();
+    auto settings = context->getSettingsCopy();
     settings.set("http_max_field_value_size", http_max_field_value_size);
     context->setSettings(settings);
 

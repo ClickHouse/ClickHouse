@@ -15,6 +15,7 @@ struct MergeTreeDataPartChecksums;
 struct MergeTreeIndexGranularityInfo;
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
+class SerializationInfoByName;
 
 /**
  * A class which contains all information about a data part that is required
@@ -34,8 +35,6 @@ public:
 
     virtual bool isWidePart() const = 0;
 
-    virtual bool isInMemoryPart() const = 0;
-
     virtual bool isProjectionPart() const = 0;
 
     virtual DataPartStoragePtr getDataPartStorage() const = 0;
@@ -48,7 +47,7 @@ public:
 
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
 
-    virtual String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const = 0;
+    virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;
 
     virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;
 

@@ -9,11 +9,11 @@ class ParserKQLBase : public IParserBase
 {
 public:
     static String getExprFromToken(Pos & pos);
-    static String getExprFromToken(const String & text, const uint32_t max_depth);
+    static String getExprFromToken(const String & text, uint32_t max_depth, uint32_t max_backtracks);
     static String getExprFromPipe(Pos & pos);
     static bool setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bool dest_is_subquery, bool src_is_subquery);
-    static bool parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, int32_t max_depth);
-    bool parseByString(const String expr, ASTPtr & node, const uint32_t max_depth);
+    static bool parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks);
+    bool parseByString(String expr, ASTPtr & node, uint32_t max_depth, uint32_t max_backtracks);
 };
 
 class ParserKQLQuery : public IParserBase
@@ -34,7 +34,7 @@ protected:
 class ParserSimpleCHSubquery : public ParserKQLBase
 {
 public:
-    ParserSimpleCHSubquery(ASTPtr parent_select_node_ = nullptr) { parent_select_node = parent_select_node_; }
+    explicit ParserSimpleCHSubquery(ASTPtr parent_select_node_ = nullptr) { parent_select_node = parent_select_node_; }
 
 protected:
     const char * getName() const override { return "Simple ClickHouse subquery"; }

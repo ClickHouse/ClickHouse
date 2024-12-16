@@ -11,8 +11,8 @@ sidebar_label: "Манипуляции с ограничениями"
 Добавить или удалить ограничение можно с помощью запросов
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT constraint_name CHECK expression;
-ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT constraint_name;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
 Запросы выполняют добавление или удаление метаданных об ограничениях таблицы `[db].name`, поэтому выполняются мгновенно.

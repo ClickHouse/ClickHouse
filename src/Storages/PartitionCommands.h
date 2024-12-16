@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <base/types.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
 #include <optional>
@@ -26,6 +26,7 @@ struct PartitionCommand
         MOVE_PARTITION,
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
+        FORGET_PARTITION,
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,

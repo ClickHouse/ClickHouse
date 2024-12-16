@@ -68,8 +68,6 @@ private:
     void refreshObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type);
     void syncObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type);
 
-    ContextPtr global_context;
-
     zkutil::ZooKeeperCachingGetter zookeeper_getter;
     String zookeeper_path;
     std::atomic<bool> objects_loaded = false;
@@ -80,7 +78,7 @@ private:
     using UserDefinedSQLObjectTypeAndName = std::pair<UserDefinedSQLObjectType, String>;
     std::shared_ptr<ConcurrentBoundedQueue<UserDefinedSQLObjectTypeAndName>> watch_queue;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

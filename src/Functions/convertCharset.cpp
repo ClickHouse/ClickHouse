@@ -88,7 +88,8 @@ private:
 
     static void convert(const String & from_charset, const String & to_charset,
         const ColumnString::Chars & from_chars, const ColumnString::Offsets & from_offsets,
-        ColumnString::Chars & to_chars, ColumnString::Offsets & to_offsets)
+        ColumnString::Chars & to_chars, ColumnString::Offsets & to_offsets,
+        size_t input_rows_count)
     {
         auto converter_from = getConverter(from_charset);
         auto converter_to = getConverter(to_charset);
@@ -96,12 +97,11 @@ private:
         ColumnString::Offset current_from_offset = 0;
         ColumnString::Offset current_to_offset = 0;
 
-        size_t size = from_offsets.size();
-        to_offsets.resize(size);
+        to_offsets.resize(input_rows_count);
 
         PODArray<UChar> uchars;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t from_string_size = from_offsets[i] - current_from_offset - 1;
 
@@ -181,10 +181,15 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnWithTypeAndName & arg_from = arguments[0];
         const ColumnWithTypeAndName & arg_charset_from = arguments[1];
@@ -204,11 +209,11 @@ public:
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arg_from.column.get()))
         {
             auto col_to = ColumnString::create();
-            convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
+            convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets(), input_rows_count);
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column passed as first argument of function {} (must be ColumnString).", getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column passed as first argument of function {} (must be ColumnString).", getName());
     }
 };
 

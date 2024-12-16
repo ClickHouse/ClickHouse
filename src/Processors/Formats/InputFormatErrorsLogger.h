@@ -3,6 +3,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Context.h>
 
+#include <Core/Block.h>
+
 
 namespace DB
 {
@@ -18,7 +20,7 @@ public:
         String raw_data;
     };
 
-    InputFormatErrorsLogger(const ContextPtr & context);
+    explicit InputFormatErrorsLogger(const ContextPtr & context);
 
     virtual ~InputFormatErrorsLogger();
 
@@ -45,7 +47,7 @@ using InputFormatErrorsLoggerPtr = std::shared_ptr<InputFormatErrorsLogger>;
 class ParallelInputFormatErrorsLogger : public InputFormatErrorsLogger
 {
 public:
-    ParallelInputFormatErrorsLogger(const ContextPtr & context) : InputFormatErrorsLogger(context) { }
+    explicit ParallelInputFormatErrorsLogger(const ContextPtr & context) : InputFormatErrorsLogger(context) { }
 
     ~ParallelInputFormatErrorsLogger() override;
 

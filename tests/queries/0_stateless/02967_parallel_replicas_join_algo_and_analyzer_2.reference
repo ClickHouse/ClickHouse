@@ -1,0 +1,54 @@
+
+simple (local) join with analyzer and parallel replicas
+4200000	4200000	4200000	-1400000
+4200006	4200006	4200006	-1400002
+4200012	4200012	4200012	-1400004
+4200018	4200018	4200018	-1400006
+4200024	4200024	4200024	-1400008
+4200030	4200030	4200030	-1400010
+4200036	4200036	4200036	-1400012
+4200042	4200042	4200042	-1400014
+4200048	4200048	4200048	-1400016
+4200054	4200054	4200054	-1400018
+SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value`, `__table3`.`key` AS `r.key`, `__table3`.`value` AS `r.value` FROM (SELECT `__table2`.`key` AS `key`, `__table2`.`value` AS `value` FROM `default`.`num_1` AS `__table2`) AS `__table1` ALL INNER JOIN (SELECT `__table4`.`key` AS `key`, `__table4`.`value` AS `value` FROM `default`.`num_2` AS `__table4`) AS `__table3` ON `__table1`.`key` = `__table3`.`key` ORDER BY `__table1`.`key` ASC LIMIT _CAST(700000, 'UInt64'), _CAST(10, 'UInt64') (stage: WithMergeableState)
+<Debug> DefaultCoordinator: Coordination done
+
+simple (local) join with analyzer and parallel replicas and full sorting merge join
+4200000	4200000	4200000	-1400000
+4200006	4200006	4200006	-1400002
+4200012	4200012	4200012	-1400004
+4200018	4200018	4200018	-1400006
+4200024	4200024	4200024	-1400008
+4200030	4200030	4200030	-1400010
+4200036	4200036	4200036	-1400012
+4200042	4200042	4200042	-1400014
+4200048	4200048	4200048	-1400016
+4200054	4200054	4200054	-1400018
+SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value`, `__table3`.`key` AS `r.key`, `__table3`.`value` AS `r.value` FROM (SELECT `__table2`.`key` AS `key`, `__table2`.`value` AS `value` FROM `default`.`num_1` AS `__table2`) AS `__table1` ALL INNER JOIN (SELECT `__table4`.`key` AS `key`, `__table4`.`value` AS `value` FROM `default`.`num_2` AS `__table4`) AS `__table3` ON `__table1`.`key` = `__table3`.`key` ORDER BY `__table1`.`key` ASC LIMIT _CAST(700000, 'UInt64'), _CAST(10, 'UInt64') (stage: WithMergeableState)
+<Debug> WithOrderCoordinator: Coordination done
+
+nested join with analyzer
+420000	420000	420000	-140000
+420042	420042	420042	-140014
+420084	420084	420084	-140028
+420126	420126	420126	-140042
+420168	420168	420168	-140056
+420210	420210	420210	-140070
+420252	420252	420252	-140084
+420294	420294	420294	-140098
+420336	420336	420336	-140112
+420378	420378	420378	-140126
+
+nested join with analyzer and parallel replicas, both local
+420000	420000	420000	-140000
+420042	420042	420042	-140014
+420084	420084	420084	-140028
+420126	420126	420126	-140042
+420168	420168	420168	-140056
+420210	420210	420210	-140070
+420252	420252	420252	-140084
+420294	420294	420294	-140098
+420336	420336	420336	-140112
+420378	420378	420378	-140126
+SELECT `__table1`.`key` AS `key`, `__table1`.`value` AS `value`, `__table3`.`key` AS `r.key`, `__table3`.`value` AS `r.value` FROM (SELECT `__table2`.`key` AS `key`, `__table2`.`value` AS `value` FROM `default`.`num_1` AS `__table2`) AS `__table1` ALL INNER JOIN (SELECT `__table4`.`key` AS `key`, `__table4`.`value` AS `value` FROM `default`.`num_2` AS `__table4` ALL INNER JOIN (SELECT `__table6`.`number` * 7 AS `key` FROM numbers(100000.) AS `__table6`) AS `__table5` ON `__table4`.`key` = `__table5`.`key` SETTINGS parallel_replicas_prefer_local_join = 1) AS `__table3` ON `__table1`.`key` = `__table3`.`key` ORDER BY `__table1`.`key` ASC LIMIT _CAST(10000, 'UInt64'), _CAST(10, 'UInt64') (stage: WithMergeableState)
+<Debug> WithOrderCoordinator: Coordination done

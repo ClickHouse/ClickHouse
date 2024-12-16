@@ -1,8 +1,10 @@
 #pragma once
 
-#include <base/types.h>
 #include <memory>
+#include <Access/Common/SSLCertificateSubjects.h>
+#include <base/types.h>
 
+#include "config.h"
 
 namespace DB
 {
@@ -12,6 +14,9 @@ class Credentials
 public:
     explicit Credentials() = default;
     explicit Credentials(const String & user_name_);
+
+    Credentials(const Credentials &) = default;
+    Credentials(Credentials &&) = default;
 
     virtual ~Credentials() = default;
 
@@ -41,11 +46,11 @@ class SSLCertificateCredentials
     : public Credentials
 {
 public:
-    explicit SSLCertificateCredentials(const String & user_name_, const String & common_name_);
-    const String & getCommonName() const;
+    explicit SSLCertificateCredentials(const String & user_name_, SSLCertificateSubjects && subjects_);
+    const SSLCertificateSubjects & getSSLCertificateSubjects() const;
 
 private:
-    String common_name;
+    SSLCertificateSubjects certificate_subjects;
 };
 
 class BasicCredentials
@@ -86,10 +91,11 @@ class MySQLNative41Credentials : public CredentialsWithScramble
     using CredentialsWithScramble::CredentialsWithScramble;
 };
 
+#if USE_SSH
 class SshCredentials : public Credentials
 {
 public:
-    explicit SshCredentials(const String& user_name_, const String& signature_, const String& original_)
+    SshCredentials(const String & user_name_, const String & signature_, const String & original_)
         : Credentials(user_name_), signature(signature_), original(original_)
     {
         is_ready = true;
@@ -117,5 +123,6 @@ private:
     String signature;
     String original;
 };
+#endif
 
 }

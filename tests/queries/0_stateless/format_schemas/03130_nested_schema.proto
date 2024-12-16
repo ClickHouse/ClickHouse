@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+message Duration {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+message Inner {
+    Duration a = 7;
+    Duration b = 8;
+    Duration c = 9;
+}
+
+message Outer {
+    Inner inner = 6;
+}

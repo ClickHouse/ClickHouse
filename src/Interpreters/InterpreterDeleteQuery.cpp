@@ -1,6 +1,9 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
+#include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -14,17 +17,34 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/LightweightDeleteDescription.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_lightweight_delete;
+    extern const SettingsUInt64 lightweight_deletes_sync;
+    extern const SettingsSeconds lock_acquire_timeout;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool disable_insertion_and_mutation;
+}
 
 namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -35,7 +55,7 @@ InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterDeleteQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    FunctionNameNormalizer::visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
     auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
 
@@ -49,6 +69,9 @@ BlockIO InterpreterDeleteQuery::execute()
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
+    if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
@@ -57,7 +80,7 @@ BlockIO InterpreterDeleteQuery::execute()
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     if (table->supportsDelete())
@@ -77,18 +100,30 @@ BlockIO InterpreterDeleteQuery::execute()
         table->mutate(mutation_commands, getContext());
         return {};
     }
-    else if (table->supportsLightweightDelete())
+    if (table->supportsLightweightDelete())
     {
-        if (!getContext()->getSettingsRef().enable_lightweight_delete)
+        if (!getContext()->getSettingsRef()[Setting::enable_lightweight_delete])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Lightweight delete mutate is disabled. "
                             "Set `enable_lightweight_delete` setting to enable it");
 
+        if (metadata_snapshot->hasProjections())
+        {
+            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
+                if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "DELETE query is not allowed for table {} because as it has projections and setting "
+                        "lightweight_mutation_projection_mode is set to THROW. "
+                        "User should change lightweight_mutation_projection_mode OR "
+                        "drop all the projections manually before running the query",
+                        table_id.getFullTableName());
+        }
+
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
-        String alter_query =
-            "ALTER TABLE " + table->getStorageID().getFullTableName()
-            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster))
-            + " UPDATE `_row_exists` = 0 WHERE " + serializeAST(*delete_query.predicate);
+        String alter_query = "ALTER TABLE " + table->getStorageID().getFullTableName()
+            + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster)) + " UPDATE `_row_exists` = 0"
+            + (delete_query.partition ? " IN PARTITION " + serializeAST(*delete_query.partition) : "") + " WHERE "
+            + serializeAST(*delete_query.predicate);
 
         ParserAlterQuery parser;
         ASTPtr alter_ast = parseQuery(
@@ -97,17 +132,25 @@ BlockIO InterpreterDeleteQuery::execute()
             alter_query.data() + alter_query.size(),
             "ALTER query",
             0,
-            DBMS_DEFAULT_MAX_PARSER_DEPTH);
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto context = Context::createCopy(getContext());
-        context->setSetting("mutations_sync", 2);   /// Lightweight delete is always synchronous
+        context->setSetting("mutations_sync", Field(context->getSettingsRef()[Setting::lightweight_deletes_sync]));
         InterpreterAlterQuery alter_interpreter(alter_ast, context);
         return alter_interpreter.execute();
     }
-    else
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
+}
+
+void registerInterpreterDeleteQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
-    }
+        return std::make_unique<InterpreterDeleteQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDeleteQuery", create_fn);
 }
 
 }

@@ -1,0 +1,117 @@
+3	another
+3	
+QUERY id: 0
+  PROJECTION COLUMNS
+    a Int32
+    b String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: b, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.02952_disjunction_optimization
+  WHERE
+    FUNCTION id: 5, function_name: notIn, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 6, nodes: 2
+          COLUMN id: 7, column_name: a, result_type: Int32, source_id: 3
+          CONSTANT id: 8, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_4), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+3	another
+3	
+QUERY id: 0
+  PROJECTION COLUMNS
+    a Int32
+    b String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: b, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.02952_disjunction_optimization
+  WHERE
+    FUNCTION id: 5, function_name: and, function_type: ordinary, result_type: Bool
+      ARGUMENTS
+        LIST id: 6, nodes: 2
+          CONSTANT id: 7, constant_value: Bool_1, constant_value_type: Bool
+          FUNCTION id: 8, function_name: notIn, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                COLUMN id: 10, column_name: a, result_type: Int32, source_id: 3
+                CONSTANT id: 11, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_4), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+3	another
+QUERY id: 0
+  PROJECTION COLUMNS
+    a Int32
+    b String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: b, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.02952_disjunction_optimization
+  WHERE
+    FUNCTION id: 5, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 6, nodes: 2
+          FUNCTION id: 7, function_name: notEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: b, result_type: String, source_id: 3
+                CONSTANT id: 10, constant_value: \'\', constant_value_type: String
+          FUNCTION id: 11, function_name: notIn, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: a, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_4), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+3	
+QUERY id: 0
+  PROJECTION COLUMNS
+    a Int32
+    b String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: b, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.02952_disjunction_optimization
+  WHERE
+    FUNCTION id: 5, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 6, nodes: 2
+          FUNCTION id: 7, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: b, result_type: String, source_id: 3
+                CONSTANT id: 10, constant_value: \'\', constant_value_type: String
+          FUNCTION id: 11, function_name: notIn, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: a, result_type: Int32, source_id: 3
+                CONSTANT id: 14, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_4), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+3	another
+3	
+4	
+QUERY id: 0
+  PROJECTION COLUMNS
+    a Int32
+    b String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
+      COLUMN id: 4, column_name: b, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.02952_disjunction_optimization
+  WHERE
+    FUNCTION id: 5, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 6, nodes: 2
+          FUNCTION id: 7, function_name: notIn, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: a, result_type: Int32, source_id: 3
+                CONSTANT id: 10, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_4), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                COLUMN id: 13, column_name: b, result_type: String, source_id: 3
+                CONSTANT id: 14, constant_value: \'\', constant_value_type: String

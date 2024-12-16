@@ -21,7 +21,7 @@ try
 
     {
         auto buf
-            = std::make_unique<DB::WriteBufferFromFile>("test_zstd_buffers.zst", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
+            = std::make_unique<DB::WriteBufferFromFile>("test_zstd_buffers.zst", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
         DB::ZstdDeflatingWriteBuffer zstd_buf(std::move(buf), /*compression level*/ 3);
 
         stopwatch.restart();

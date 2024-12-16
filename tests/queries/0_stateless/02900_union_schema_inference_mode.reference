@@ -1,5 +1,5 @@
 a	Nullable(Int64)					
-obj	Tuple(f1 Nullable(Int64), f2 Nullable(String), f3 Nullable(Int64))					
+obj	Tuple(\n    f1 Nullable(Int64),\n    f2 Nullable(String),\n    f3 Nullable(Int64))					
 b	Nullable(Int64)					
 c	Nullable(String)					
 {"a":"1","obj":{"f1":"1","f2":"2020-01-01","f3":null},"b":null,"c":null}
@@ -10,11 +10,11 @@ UNION	data2.jsonl	b Nullable(Int64), obj Tuple(f2 Nullable(String), f3 Nullable(
 UNION	data3.jsonl	c Nullable(String)
 c	Nullable(String)					
 a	Nullable(Int64)					
-obj	Tuple(f1 Nullable(Int64), f2 Nullable(String), f3 Nullable(Int64))					
+obj	Tuple(\n    f1 Nullable(Int64),\n    f2 Nullable(String),\n    f3 Nullable(Int64))					
 b	Nullable(Int64)					
 c	Nullable(String)					
 a	Nullable(Int64)					
-obj	Tuple(f1 Nullable(Int64), f2 Nullable(String), f3 Nullable(Int64))					
+obj	Tuple(\n    f1 Nullable(Int64),\n    f2 Nullable(String),\n    f3 Nullable(Int64))					
 b	Nullable(Int64)					
 c	Nullable(String)					
 {"a":"1","obj":{"f1":"1","f2":"2020-01-01","f3":null},"b":null,"c":null}
@@ -25,7 +25,7 @@ UNION	archive.tar::data2.jsonl	b Nullable(Int64), obj Tuple(f2 Nullable(String),
 UNION	archive.tar::data3.jsonl	c Nullable(String)
 c	Nullable(String)					
 a	Nullable(Int64)					
-obj	Tuple(f1 Nullable(Int64), f2 Nullable(String), f3 Nullable(Int64))					
+obj	Tuple(\n    f1 Nullable(Int64),\n    f2 Nullable(String),\n    f3 Nullable(Int64))					
 b	Nullable(Int64)					
 c	Nullable(String)					
 1

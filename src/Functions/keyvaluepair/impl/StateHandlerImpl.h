@@ -59,10 +59,8 @@ public:
                 // +1 to skip quoting character
                 return {character_position + 1u, State::READING_QUOTED_KEY};
             }
-            else
-            {
-                return {character_position, State::READING_KEY};
-            }
+
+            return {character_position, State::READING_KEY};
         }
 
         return {file.size(), State::END};
@@ -403,7 +401,7 @@ struct NoEscapingStateHandler : public StateHandlerImpl<false>
     };
 
     template <typename ... Args>
-    NoEscapingStateHandler(Args && ... args)
+    explicit NoEscapingStateHandler(Args && ... args)
     : StateHandlerImpl<false>(std::forward<Args>(args)...) {}
 };
 
@@ -465,7 +463,7 @@ struct InlineEscapingStateHandler : public StateHandlerImpl<true>
     };
 
     template <typename ... Args>
-    InlineEscapingStateHandler(Args && ... args)
+    explicit InlineEscapingStateHandler(Args && ... args)
         : StateHandlerImpl<true>(std::forward<Args>(args)...) {}
 };
 

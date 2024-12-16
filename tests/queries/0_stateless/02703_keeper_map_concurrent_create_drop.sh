@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, zookeeper, no-fasttest, no-parallel
+# Tags: no-ordinary-database, zookeeper, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,7 +37,7 @@ function create_drop_loop()
 export -f create_drop_loop;
 
 THREADS=10
-TIMEOUT=30
+TIMEOUT=20
 
 for i in `seq $THREADS`
 do

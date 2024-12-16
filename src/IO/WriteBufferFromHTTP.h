@@ -19,7 +19,8 @@ namespace DB
 class WriteBufferFromHTTP : public WriteBufferFromOStream
 {
 public:
-    explicit WriteBufferFromHTTP(const Poco::URI & uri,
+    explicit WriteBufferFromHTTP(const HTTPConnectionGroupType & connection_group,
+                                 const Poco::URI & uri,
                                  const std::string & method = Poco::Net::HTTPRequest::HTTP_POST, // POST or PUT only
                                  const std::string & content_type = "",
                                  const std::string & content_encoding = "",

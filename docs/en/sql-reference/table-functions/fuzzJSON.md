@@ -9,7 +9,7 @@ sidebar_label: fuzzJSON
 Perturbs a JSON string with random variations.
 
 ``` sql
-fuzzJSON({ named_collection [option=value [,..]] | json_str[, random_seed] })
+fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 ```
 
 **Arguments**

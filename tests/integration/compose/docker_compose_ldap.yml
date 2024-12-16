@@ -1,0 +1,26 @@
+services:
+    openldap:
+        image: bitnami/openldap:2.6.8
+        restart: always
+        environment:
+            LDAP_ROOT: dc=example,dc=org
+            LDAP_ADMIN_DN: cn=admin,dc=example,dc=org
+            LDAP_ADMIN_USERNAME: admin
+            LDAP_ADMIN_PASSWORD: clickhouse
+            LDAP_USER_DC: users
+            LDAP_USERS: janedoe,johndoe
+            LDAP_PASSWORDS: qwerty,qwertz
+            LDAP_PORT_NUMBER: ${LDAP_INTERNAL_PORT:-1389}
+        ports:
+            - ${LDAP_EXTERNAL_PORT:-1389}:${LDAP_INTERNAL_PORT:-1389}
+        volumes:
+            - /misc/openldap/initialized.sh:/docker-entrypoint-initdb.d/initialized.sh
+        healthcheck:
+            test: >
+                test -f /tmp/.openldap-initialized
+                && ldapsearch -x -H ldap://localhost:$$LDAP_PORT_NUMBER -D $$LDAP_ADMIN_DN -w $$LDAP_ADMIN_PASSWORD -b $$LDAP_ROOT
+                | grep -c -E "member: cn=j(ohn|ane)doe"
+                | grep 2 >> /dev/null
+            interval: 10s
+            retries: 10
+            timeout: 2s

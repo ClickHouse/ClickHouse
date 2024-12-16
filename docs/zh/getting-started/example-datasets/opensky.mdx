@@ -1,4 +1,4 @@
---- 
+---
 slug: /zh/getting-started/example-datasets/opensky
 sidebar_label: 空中交通数据
 description: 该数据集中的数据是从完整的 OpenSky 数据集中衍生而来的，对其中的数据进行了必要的清理，用以展示在 COVID-19 期间空中交通的发展。
@@ -53,12 +53,12 @@ CREATE TABLE opensky
 ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c 'gzip -c -d "{}" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"'
 ```
 
-- 这里我们将文件列表（`ls -1 flightlist_*.csv.gz`）传递给`xargs`以进行并行处理。 `xargs -P100` 指定最多使用 100 个并行工作程序，但由于我们只有 30 个文件，工作程序的数量将只有 30 个。 
-- 对于每个文件，`xargs` 将通过 `bash -c` 为每个文件运行一个脚本文件。该脚本通过使用 `{}` 表示文件名占位符，然后 `xargs` 由命令进行填充（使用 `-I{}`）。 
-- 该脚本会将文件 (`gzip -c -d "{}"`) 解压缩到标准输出（`-c` 参数），并将输出重定向到 `clickhouse-client`。 
-- 我们还要求使用扩展解析器解析 [DateTime](../../sql-reference/data-types/datetime.md) 字段 ([--date_time_input_format best_effort](../../operations/settings/ settings.md#settings-date_time_input_format)) 以识别具有时区偏移的 ISO-8601 格式。
+- 这里我们将文件列表（`ls -1 flightlist_*.csv.gz`）传递给`xargs`以进行并行处理。 `xargs -P100` 指定最多使用 100 个并行工作程序，但由于我们只有 30 个文件，工作程序的数量将只有 30 个。
+- 对于每个文件，`xargs` 将通过 `bash -c` 为每个文件运行一个脚本文件。该脚本通过使用 `{}` 表示文件名占位符，然后 `xargs` 由命令进行填充（使用 `-I{}`）。
+- 该脚本会将文件 (`gzip -c -d "{}"`) 解压缩到标准输出（`-c` 参数），并将输出重定向到 `clickhouse-client`。
+- 我们还要求使用扩展解析器解析 [DateTime](/docs/zh/sql-reference/data-types/datetime.md) 字段 ([--date_time_input_format best_effort](/docs/zh/operations/settings/settings.md#settings-date_time_input_format)) 以识别具有时区偏移的 ISO-8601 格式。
 
-最后，`clickhouse-client` 会以 [CSVWithNames](../../interfaces/formats.md#csvwithnames) 格式读取输入数据然后执行插入。 
+最后，`clickhouse-client` 会以 [CSVWithNames](/docs/zh/interfaces/formats.md#csvwithnames) 格式读取输入数据然后执行插入。
 
 并行导入需要 24 秒。
 
@@ -413,4 +413,4 @@ ORDER BY k ASC;
 
 ### 在线 Playground {#playground}
 
-你可以使用交互式资源 [Online Playground](https://play.clickhouse.com/play?user=play) 来尝试对此数据集的其他查询。 例如, [执行这个查询](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=). 但是，请注意无法在 Playground 中创建临时表。
+你可以使用交互式资源 [Online Playground](https://sql.clickhouse.com) 来尝试对此数据集的其他查询。 例如, [执行这个查询](https://sql.clickhouse.com?query_id=BIPDVQNIGVEZFQYFEFQB7O). 但是，请注意无法在 Playground 中创建临时表。

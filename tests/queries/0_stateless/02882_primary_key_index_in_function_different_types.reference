@@ -1,88 +1,96 @@
-CreatingSets (Create sets before main query execution)
-  Expression ((Projection + Before ORDER BY))
-    ReadFromMergeTree (default.test_table)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          id
-          value
-        Condition: and((id in (-Inf, 10]), (value in 1-element set))
-        Parts: 1/1
-        Granules: 1/1
-CreatingSets (Create sets before main query execution)
-  Expression ((Projection + Before ORDER BY))
-    ReadFromMergeTree (default.test_table)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          id
-          value
-        Condition: and((id in (-Inf, 10]), (value in 1-element set))
-        Parts: 1/1
-        Granules: 1/1
-CreatingSets (Create sets before main query execution)
-  Expression ((Projection + Before ORDER BY))
-    ReadFromMergeTree (default.test_table)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          id
-          value
-        Condition: and((id in (-Inf, 10]), (value in 5-element set))
-        Parts: 1/1
-        Granules: 1/1
-CreatingSets (Create sets before main query execution)
-  Expression ((Projection + Before ORDER BY))
-    ReadFromMergeTree (default.test_table)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          id
-          value
-        Condition: and((id in (-Inf, 10]), (value in 5-element set))
-        Parts: 1/1
-        Granules: 1/1
-CreatingSets (Create sets before main query execution)
-  Expression ((Project names + Projection))
-    ReadFromMergeTree (default.test_table)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          id
-          value
-        Condition: and((id in (-Inf, 10]), (value in 1-element set))
-        Parts: 1/1
-        Granules: 1/1
-CreatingSets (Create sets before main query execution)
-  Expression ((Project names + Projection))
-    ReadFromMergeTree (default.test_table)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          id
-          value
-        Condition: and((id in (-Inf, 10]), (value in 1-element set))
-        Parts: 1/1
-        Granules: 1/1
-CreatingSets (Create sets before main query execution)
-  Expression ((Project names + Projection))
-    ReadFromMergeTree (default.test_table)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          id
-          value
-        Condition: and((id in (-Inf, 10]), (value in 5-element set))
-        Parts: 1/1
-        Granules: 1/1
-CreatingSets (Create sets before main query execution)
-  Expression ((Project names + Projection))
-    ReadFromMergeTree (default.test_table)
-    Indexes:
-      PrimaryKey
-        Keys: 
-          id
-          value
-        Condition: and((id in (-Inf, 10]), (value in 5-element set))
-        Parts: 1/1
-        Granules: 1/1
+CreatingSets
+  Expression
+    Expression
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            id
+            value
+          Condition: and((value in 1-element set), (id in (-Inf, 10]))
+          Parts: 1/1
+          Granules: 1/1
+CreatingSets
+  Expression
+    Expression
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            id
+            value
+          Condition: and((value in 1-element set), (id in (-Inf, 10]))
+          Parts: 1/1
+          Granules: 1/1
+CreatingSets
+  Expression
+    Expression
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            id
+            value
+          Condition: and((value in 5-element set), (id in (-Inf, 10]))
+          Parts: 1/1
+          Granules: 1/1
+CreatingSets
+  Expression
+    Expression
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            id
+            value
+          Condition: and((value in 5-element set), (id in (-Inf, 10]))
+          Parts: 1/1
+          Granules: 1/1
+CreatingSets
+  Expression
+    Expression
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            id
+            value
+          Condition: and((value in 1-element set), (id in (-Inf, 10]))
+          Parts: 1/1
+          Granules: 1/1
+CreatingSets
+  Expression
+    Expression
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            id
+            value
+          Condition: and((value in 1-element set), (id in (-Inf, 10]))
+          Parts: 1/1
+          Granules: 1/1
+CreatingSets
+  Expression
+    Expression
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            id
+            value
+          Condition: and((value in 5-element set), (id in (-Inf, 10]))
+          Parts: 1/1
+          Granules: 1/1
+CreatingSets
+  Expression
+    Expression
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            id
+            value
+          Condition: and((value in 5-element set), (id in (-Inf, 10]))
+          Parts: 1/1
+          Granules: 1/1

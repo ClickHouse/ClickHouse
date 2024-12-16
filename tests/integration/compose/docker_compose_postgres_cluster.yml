@@ -1,0 +1,43 @@
+services:
+    postgres2:
+        image: postgres
+        command: ["postgres", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_filename=postgresql.log", "-c", "log_statement=all"]
+        restart: always
+        environment:
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+            POSTGRES_PASSWORD: mysecretpassword
+            PGDATA: /postgres/data
+        expose:
+            - ${POSTGRES_PORT:-5432}
+        volumes:
+            - type: ${POSTGRES_LOGS_FS:-tmpfs}
+              source: ${POSTGRES2_DIR:-}
+              target: /postgres/
+    postgres3:
+        image: postgres
+        command: ["postgres", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_filename=postgresql.log", "-c", "log_statement=all"]
+        restart: always
+        environment:
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+            POSTGRES_PASSWORD: mysecretpassword
+            PGDATA: /postgres/data
+        expose:
+            - ${POSTGRES_PORT:-5432}
+        volumes:
+            - type: ${POSTGRES_LOGS_FS:-tmpfs}
+              source: ${POSTGRES3_DIR:-}
+              target: /postgres/
+    postgres4:
+        image: postgres
+        command: ["postgres", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_filename=postgresql.log", "-c", "log_statement=all"]
+        restart: always
+        environment:
+            POSTGRES_HOST_AUTH_METHOD: "trust"
+            POSTGRES_PASSWORD: mysecretpassword
+            PGDATA: /postgres/data
+        expose:
+            - ${POSTGRES_PORT:-5432}
+        volumes:
+            - type: ${POSTGRES_LOGS_FS:-tmpfs}
+              source: ${POSTGRES4_DIR:-}
+              target: /postgres/

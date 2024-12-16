@@ -8,7 +8,7 @@ sidebar_label: PostgreSQL Interface
 
 ClickHouse supports the PostgreSQL wire protocol, which allows you to use Postgres clients to connect to ClickHouse. In a sense, ClickHouse can pretend to be a PostgreSQL instance - allowing you to connect a PostgreSQL client application to ClickHouse that is not already directly supported by ClickHouse (for example, Amazon Redshift).
 
-To enable the PostgreSQL wire protocol, add the [postgresql_port](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-postgresql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d` folder:
+To enable the PostgreSQL wire protocol, add the [postgresql_port](../operations/server-configuration-parameters/settings.md#postgresql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d` folder:
 
 ```xml
 <clickhouse>
@@ -69,5 +69,3 @@ psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certif
 ```
 
 View the [PostgreSQL docs](https://jdbc.postgresql.org/documentation/head/ssl-client.html) for more details on their SSL settings.
-
-[Original article](https://clickhouse.com/docs/en/interfaces/postgresql)
