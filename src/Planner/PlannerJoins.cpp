@@ -250,7 +250,7 @@ const ActionsDAG::Node * appendExpression(
     return join_expression_dag_node_raw_pointers[0];
 }
 
-void buildSimpleJoinClause(
+void buildJoinClauseImpl(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -259,6 +259,7 @@ void buildSimpleJoinClause(
     const TableExpressionSet & left_table_expressions,
     const TableExpressionSet & right_table_expressions,
     const JoinNode & join_node,
+    const bool is_simple,
     JoinClause & join_clause)
 {
     std::string function_name;
@@ -308,12 +309,11 @@ void buildSimpleJoinClause(
 
             if (left_expression_side != right_expression_side)
             {
-                if (function_name == "or" || function_name == "and")
+                if (is_simple && (function_name == "or" || function_name == "and"))
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot build simple join clause for '{}' expression containing expressions from both tables",
                         function_name);
-
                 auto left_key = left_child;
                 auto right_key = right_child;
 
@@ -369,9 +369,9 @@ void buildSimpleJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature "
-                    "by `SET allow_experimental_join_condition = 1`",
-                    join_node.formatASTForErrorMessage());
+                    "{} JOIN ON expression {} contains column from left and right table, which is not supported with `join_use_nulls`",
+                    toString(join_node.getKind()),
+                    join_expression->formatASTForErrorMessage());
             }
         }
     }
@@ -393,8 +393,8 @@ void buildSimpleJoinClause(
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not applicable.
             auto strictness = join_node.getStrictness();
             auto kind = join_node.getKind();
-            bool can_be_moved_out = strictness == JoinStrictness::All
-                && (kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma);
+            bool can_be_moved_out
+                = strictness == JoinStrictness::All && (kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma);
             if (can_be_moved_out || !join_use_nulls)
             {
                 const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
@@ -405,7 +405,8 @@ void buildSimpleJoinClause(
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                     "{} JOIN ON expression {} contains column from left and right table, which is not supported with `join_use_nulls`",
-                    toString(join_node.getKind()), join_expression->formatASTForErrorMessage());
+                    toString(join_node.getKind()),
+                    join_expression->formatASTForErrorMessage());
             }
         }
     }
@@ -423,6 +424,30 @@ JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
     }
 
     return result;
+}
+
+void buildSimpleJoinClause(
+    ActionsDAG & left_dag,
+    ActionsDAG & right_dag,
+    ActionsDAG & joined_dag,
+    const PlannerContextPtr & planner_context,
+    const QueryTreeNodePtr & join_expression,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node,
+    JoinClause & join_clause)
+{
+    buildJoinClauseImpl(
+        left_dag,
+        right_dag,
+        joined_dag,
+        planner_context,
+        join_expression,
+        left_table_expressions,
+        right_table_expressions,
+        join_node,
+        true,
+        join_clause);
 }
 
 void buildJoinClause(
@@ -461,143 +486,17 @@ void buildJoinClause(
         return;
     }
 
-    auto asof_inequality = getASOFJoinInequality(function_name);
-    bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
-
-    if (function_name == "equals" || function_name == "isNotDistinctFrom" || is_asof_join_inequality)
-    {
-        const auto left_child = function_node->getArguments().getNodes().at(0);
-        const auto right_child = function_node->getArguments().getNodes().at(1);
-
-        auto left_expression_sides
-            = extractJoinTableSidesFromExpression(left_child.get(), left_table_expressions, right_table_expressions, join_node);
-
-        auto right_expression_sides
-            = extractJoinTableSidesFromExpression(right_child.get(), left_table_expressions, right_table_expressions, join_node);
-
-        if (left_expression_sides.empty() && right_expression_sides.empty())
-        {
-            throw Exception(
-                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "JOIN {} ON expression expected non-empty left and right table expressions",
-                join_node.formatASTForErrorMessage());
-        }
-        if (left_expression_sides.size() == 1 && right_expression_sides.empty())
-        {
-            auto expression_side = *left_expression_sides.begin();
-            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
-            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
-            join_clause.addCondition(expression_side, node);
-        }
-        else if (left_expression_sides.empty() && right_expression_sides.size() == 1)
-        {
-            auto expression_side = *right_expression_sides.begin();
-            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
-            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
-            join_clause.addCondition(expression_side, node);
-        }
-        else if (left_expression_sides.size() == 1 && right_expression_sides.size() == 1)
-        {
-            auto left_expression_side = *left_expression_sides.begin();
-            auto right_expression_side = *right_expression_sides.begin();
-
-            if (left_expression_side != right_expression_side)
-            {
-                auto left_key = left_child;
-                auto right_key = right_child;
-
-                if (left_expression_side == JoinTableSide::Right)
-                {
-                    left_key = right_child;
-                    right_key = left_child;
-                    asof_inequality = reverseASOFJoinInequality(asof_inequality);
-                }
-
-                const auto * left_node = appendExpression(left_dag, left_key, planner_context, join_node);
-                const auto * right_node = appendExpression(right_dag, right_key, planner_context, join_node);
-
-                if (is_asof_join_inequality)
-                {
-                    if (join_clause.hasASOF())
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                            "JOIN {} ASOF JOIN expects exactly one inequality in ON section",
-                            join_node.formatASTForErrorMessage());
-                    }
-
-                    join_clause.addASOFKey(left_node, right_node, asof_inequality);
-                }
-                else
-                {
-                    bool null_safe_comparison = function_name == "isNotDistinctFrom";
-                    join_clause.addKey(left_node, right_node, null_safe_comparison);
-                }
-            }
-            else
-            {
-                auto & dag = left_expression_side == JoinTableSide::Left ? left_dag : right_dag;
-                const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
-                join_clause.addCondition(left_expression_side, node);
-            }
-        }
-        else
-        {
-            auto support_mixed_join_condition
-                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
-            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
-            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
-            if (support_mixed_join_condition && !join_use_nulls)
-            {
-                /// expression involves both tables.
-                /// `expr1(left.col1, right.col2) == expr2(left.col3, right.col4)`
-                const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
-                join_clause.addResidualCondition(node);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature "
-                    "by `SET allow_experimental_join_condition = 1`",
-                    join_node.formatASTForErrorMessage());
-            }
-        }
-    }
-    else
-    {
-        auto expression_sides
-            = extractJoinTableSidesFromExpression(join_expression.get(), left_table_expressions, right_table_expressions, join_node);
-        // expression_sides.empty() = true, the expression is constant
-        if (expression_sides.empty() || expression_sides.size() == 1)
-        {
-            auto expression_side = expression_sides.empty() ? JoinTableSide::Right : *expression_sides.begin();
-            auto & dag = expression_side == JoinTableSide::Left ? left_dag : right_dag;
-            const auto * node = appendExpression(dag, join_expression, planner_context, join_node);
-            join_clause.addCondition(expression_side, node);
-        }
-        else
-        {
-            auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
-            /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not applicable.
-            auto strictness = join_node.getStrictness();
-            auto kind = join_node.getKind();
-            bool can_be_moved_out = strictness == JoinStrictness::All
-                && (kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma);
-            if (can_be_moved_out || !join_use_nulls)
-            {
-                const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
-                join_clause.addResidualCondition(node);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "{} JOIN ON expression {} contains column from left and right table, which is not supported with `join_use_nulls`",
-                    toString(join_node.getKind()), join_expression->formatASTForErrorMessage());
-            }
-        }
-    }
+    buildJoinClauseImpl(
+        left_dag,
+        right_dag,
+        joined_dag,
+        planner_context,
+        join_expression,
+        left_table_expressions,
+        right_table_expressions,
+        join_node,
+        false,
+        join_clause);
 }
 
 JoinClauses buildJoinClauses(
