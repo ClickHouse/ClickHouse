@@ -44,7 +44,7 @@ public:
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls when the same data snapshot is relevant will return saved list of files (because it cannot be changed
     /// without changing metadata file). Drops on every snapshot update.
-    Strings getDataFiles() const override;
+    Strings getDataFiles() const override { return getDataFilesImpl(nullptr); }
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
@@ -100,7 +100,7 @@ public:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
         }
-        return getDataFiles(&filter_dag);
+        return getDataFilesImpl(&filter_dag);
     }
 
     bool supportsPartitionPruning() override { return true; }
@@ -137,6 +137,8 @@ private:
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
     Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
+
+    Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     //Fields are needed only for providing dynamic polymorphism
     std::unordered_map<String, String> column_name_to_physical_name;

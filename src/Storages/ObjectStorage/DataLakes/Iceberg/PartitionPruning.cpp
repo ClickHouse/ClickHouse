@@ -1,19 +1,23 @@
-#include "PartitionPruning.h"
+#include "Common/ErrorCodes.h"
 #include "Common/logger_useful.h"
 #include "Columns/ColumnNullable.h"
 #include "Columns/ColumnsDateTime.h"
 #include "DataTypes/DataTypeNullable.h"
 
-namespace Iceberg
-{
 
-using namespace DB;
+#include "Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h"
 
-namespace ErrorCodes
+
+namespace DB::ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 }
+
+using namespace DB;
+
+namespace Iceberg
+{
 
 Iceberg::PartitionTransform getTransform(const String & transform_name)
 {

@@ -24,6 +24,10 @@
 #    include <Common/ProfileEvents.h>
 
 
+namespace ProfileEvents
+{
+extern const Event IcebergPartitionPrunnedFiles;
+}
 namespace DB
 {
 namespace Setting
@@ -37,11 +41,6 @@ extern const int FILE_DOESNT_EXIST;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
-}
-
-namespace ProfileEvents
-{
-extern const Event IcebergPartitionPrunnedFiles;
 }
 
 using namespace Iceberg;
@@ -468,9 +467,9 @@ std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & mani
     if (!specific_info.partition_names_and_types.empty())
     {
         ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(specific_info.partition_names_and_types), ExpressionActionsSettings::fromContext(context));
+            ActionsDAG(specific_info.partition_names_and_types), ExpressionActionsSettings::fromContext(getContext()));
         const KeyCondition partition_key_condition(
-            filter_dag, context, specific_info.partition_names_and_types.getNames(), partition_minmax_idx_expr);
+            filter_dag, getContext(), specific_info.partition_names_and_types.getNames(), partition_minmax_idx_expr);
         for (size_t j = 0; j < specific_info.ranges.size(); ++j)
         {
             if (!partition_key_condition.checkInHyperrectangle(specific_info.ranges[j], specific_info.partition_names_and_types.getTypes())
@@ -490,7 +489,7 @@ std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & mani
                 LOG_DEBUG(
                     &Poco::Logger::get("Partition pruning"),
                     "Partition pruning in manifest {} failed for file number {}",
-                    manifest_file,
+                    manifest_file_entry.getName(),
                     j);
                 pruning_mask[j] = true;
             }
@@ -499,7 +498,7 @@ std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & mani
     return pruning_mask;
 }
 
-Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
+Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 {
     if (!current_snapshot)
     {
@@ -517,9 +516,9 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
             {
                 if (!filter_dag || pruning_mask.empty() || pruning_mask[i])
                 {
-                    if (data_file.status != ManifestEntryStatus::DELETED)
+                    if (data_files_in_manifest[i].status != ManifestEntryStatus::DELETED)
                     {
-                        data_files.push_back(data_file.data_file_name);
+                        data_files.push_back(data_files_in_manifest[i].data_file_name);
                     }
                 }
             }
@@ -543,12 +542,6 @@ Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
         return data_files_getter();
     }
 }
-
-Strings IcebergMetadata::getDataFiles() const
-{
-    return getDataFiles(nullptr);
-}
-
 }
 
 #endif
