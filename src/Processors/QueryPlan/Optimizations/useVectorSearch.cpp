@@ -30,7 +30,7 @@ namespace DB::QueryPlanOptimizations
 ///
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
 ///     function, we don't care. That check is left to query runtime, ReadFromMergeTree specifically.
-size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/)
+size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & /*settings*/)
 {
     QueryPlan::Node * node = parent_node;
 
