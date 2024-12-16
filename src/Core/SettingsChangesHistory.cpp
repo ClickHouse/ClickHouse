@@ -83,6 +83,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"skip_redundant_aliases_in_udf", false, false, "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
+            {"least_greatest_legacy_null_behavior", false, false, "New setting"},
+            {"enable_adaptive_short_circuit", true, true, "New setting. It will reorder the arguments of specific short circuit functions adaptively."},
             /// Release closed. Please use 25.1
         }
     },

@@ -175,7 +175,6 @@ public:
         size_t input_rows_count,
         bool dry_run,
         FunctionExecuteProfile * profile) const;
-    
 
     /// Get the main function name.
     virtual String getName() const = 0;

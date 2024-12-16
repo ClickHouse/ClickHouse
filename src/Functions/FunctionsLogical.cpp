@@ -695,7 +695,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());
-    
+
     ColumnPtr res = nullptr;
     if (result_type->isNullable())
         res = executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);

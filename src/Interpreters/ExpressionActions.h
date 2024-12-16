@@ -112,8 +112,8 @@ public:
             return *this;
         }
 
-        /// Followings are used for reordering arguments of short-circuit nodes
-        /// Rank value is caculated as elapsed_ns/input_rows/(1-short_circuit_selected_rows/input_rows)
+        /// Following is used for reordering arguments of short-circuit nodes
+        /// Rank value is calculated as elapsed_ns/input_rows/(1-short_circuit_selected_rows/input_rows)
         /// Smaller rank value is better
         size_t elapsed_ns = 0;
         size_t input_rows = 0;
