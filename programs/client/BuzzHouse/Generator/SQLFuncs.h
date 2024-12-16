@@ -278,6 +278,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCarrayShiftLeft, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCarrayShiftRight, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCarrayRandomSample, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCarrayPrAUC, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCindexOfAssumeSorted, 0, 0, 2, 2),
     //bit functions
     CHFunction(SQLFunc::FUNCbitAnd, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCbitOr, 0, 0, 2, 2),
@@ -1004,9 +1006,11 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCtoUnixTimestamp64Milli, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoUnixTimestamp64Micro, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoUnixTimestamp64Nano, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtoUnixTimestamp64Second, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCfromUnixTimestamp64Milli, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCfromUnixTimestamp64Micro, 0, 0, 1, 2),
     CHFunction(SQLFunc::FUNCfromUnixTimestamp64Nano, 0, 0, 1, 2),
+    CHFunction(SQLFunc::FUNCfromUnixTimestamp64Second, 0, 0, 1, 2),
     //ULID
     CHFunction(SQLFunc::FUNCULIDStringToDateTime, 0, 0, 1, 2),
     //UUID

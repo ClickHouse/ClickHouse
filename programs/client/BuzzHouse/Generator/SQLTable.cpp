@@ -381,7 +381,7 @@ void StatementGenerator::insertEntryRefCP(const InsertEntry & entry, ColumnPath 
     }
 }
 
-int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngineValues teng, TableKey * tkey)
+int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngineValues teng, const bool allow_asc_desc, TableKey * tkey)
 {
     if (!entries.empty() && rg.nextSmallNumber() < 7)
     {
@@ -392,24 +392,32 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
         {
             //Use a single expression for the entire table
             //See https://github.com/ClickHouse/ClickHouse/issues/72043 for SummingMergeTree exception
-            SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
+            TableKeyExpr * tke = tkey->add_exprs();
+            Expr * expr = tke->mutable_expr();
+            SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
             func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
             for (size_t i = 0; i < ocols; i++)
             {
                 insertEntryRef(this->entries[i], func_call->add_args()->mutable_expr());
             }
+            if (allow_asc_desc && rg.nextSmallNumber() < 3)
+            {
+                tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+            }
         }
         else
         {
             for (size_t i = 0; i < ocols; i++)
             {
+                TableKeyExpr * tke = tkey->add_exprs();
+                Expr * expr = tke->mutable_expr();
                 const InsertEntry & entry = this->entries[i];
 
                 if ((hasType<DateType, false, true>(entry.tp) || hasType<DateTimeType, false, true>(entry.tp)) && rg.nextBool())
                 {
                     //Use date functions for partitioning/keys
-                    SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
+                    SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
                     func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(dates_hash));
                     insertEntryRef(entry, func_call->add_args()->mutable_expr());
@@ -417,7 +425,7 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
                 else if (hasType<IntType, true, true>(entry.tp) && rg.nextBool())
                 {
                     //Use modulo function for partitioning/keys
-                    BinaryExpr * bexpr = tkey->add_exprs()->mutable_comp_expr()->mutable_binary_expr();
+                    BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 
                     insertEntryRef(entry, bexpr->mutable_lhs());
                     bexpr->set_op(BinaryOperator::BINOP_PERCENT);
@@ -427,14 +435,18 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
                 else if (teng != TableEngineValues::SummingMergeTree && rg.nextMediumNumber() < 6)
                 {
                     //Use hash
-                    SQLFuncCall * func_call = tkey->add_exprs()->mutable_comp_expr()->mutable_func_call();
+                    SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
                     func_call->mutable_func()->set_catalog_func(rg.pickRandomlyFromVector(multicol_hash));
                     insertEntryRef(entry, func_call->add_args()->mutable_expr());
                 }
                 else
                 {
-                    insertEntryRef(entry, tkey->add_exprs());
+                    insertEntryRef(entry, expr);
+                }
+                if (allow_asc_desc && rg.nextSmallNumber() < 3)
+                {
+                    tke->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
                 }
             }
         }
@@ -443,11 +455,11 @@ int StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngine
 }
 
 int StatementGenerator::generateMergeTreeEngineDetails(
-    RandomGenerator & rg, const TableEngineValues teng, const bool add_pkey, TableEngine * te)
+    RandomGenerator & rg, const TableEngineValues teng, const PeerTableDatabase peer, const bool add_pkey, TableEngine * te)
 {
     if (rg.nextSmallNumber() < 6)
     {
-        generateTableKey(rg, teng, te->mutable_order());
+        generateTableKey(rg, teng, peer != PeerTableDatabase::PeerClickHouse, te->mutable_order());
     }
     if (te->has_order() && add_pkey && rg.nextSmallNumber() < 5)
     {
@@ -461,17 +473,19 @@ int StatementGenerator::generateMergeTreeEngineDetails(
 
             for (uint32_t i = 0; i < pkey_size; i++)
             {
-                tkey->add_exprs()->CopyFrom(te->order().exprs(i));
+                const TableKeyExpr & tke = te->order().exprs(i);
+
+                tkey->add_exprs()->mutable_expr()->CopyFrom(tke.expr());
             }
         }
     }
     else if (!te->has_order() && add_pkey)
     {
-        generateTableKey(rg, teng, te->mutable_primary_key());
+        generateTableKey(rg, teng, false, te->mutable_primary_key());
     }
     if (rg.nextBool())
     {
-        generateTableKey(rg, teng, te->mutable_partition_by());
+        generateTableKey(rg, teng, false, te->mutable_partition_by());
     }
 
     const int npkey = te->primary_key().exprs_size();
@@ -490,9 +504,9 @@ int StatementGenerator::generateMergeTreeEngineDetails(
                 //must be in pkey
                 for (int j = 0; j < npkey; j++)
                 {
-                    if (tpk.exprs(j).has_comp_expr() && tpk.exprs(j).comp_expr().has_expr_stc())
+                    if (tpk.exprs(j).expr().has_comp_expr() && tpk.exprs(j).expr().comp_expr().has_expr_stc())
                     {
-                        const ExprColumn & oecol = tpk.exprs(j).comp_expr().expr_stc().col();
+                        const ExprColumn & oecol = tpk.exprs(j).expr().comp_expr().expr_stc().col();
 
                         if (!oecol.has_subcol() && static_cast<uint32_t>(std::stoul(oecol.col().column().substr(1))) == entry.cname1)
                         {
@@ -511,7 +525,7 @@ int StatementGenerator::generateMergeTreeEngineDetails(
             std::shuffle(ids.begin(), ids.end(), rg.generator);
             for (size_t i = 0; i < ncols; i++)
             {
-                ExprColumn * ecol = tkey->add_exprs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
+                ExprColumn * ecol = tkey->add_exprs()->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col();
 
                 ecol->mutable_col()->set_column("c" + std::to_string(ids[i]));
             }
@@ -555,7 +569,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             te->set_toption(b.toption.value());
             this->ids.clear();
         }
-        generateMergeTreeEngineDetails(rg, b.teng, add_pkey, te);
+        generateMergeTreeEngineDetails(rg, b.teng, b.peer_table, add_pkey, te);
     }
     else if (b.isFileEngine())
     {
@@ -564,7 +578,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
         if (rg.nextSmallNumber() < 5)
         {
-            generateTableKey(rg, b.teng, te->mutable_partition_by());
+            generateTableKey(rg, b.teng, false, te->mutable_partition_by());
         }
         if (noption < 9)
         {
@@ -710,13 +724,13 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
             }
             if (b.isAnyS3Engine() && rg.nextSmallNumber() < 5)
             {
-                generateTableKey(rg, b.teng, te->mutable_partition_by());
+                generateTableKey(rg, b.teng, false, te->mutable_partition_by());
             }
         }
     }
     if ((b.isRocksEngine() || b.isRedisEngine()) && add_pkey && !entries.empty())
     {
-        insertEntryRef(rg.pickRandomlyFromVector(entries), te->mutable_primary_key()->add_exprs());
+        insertEntryRef(rg.pickRandomlyFromVector(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
     }
     const auto & tsettings = allTableSettings.at(b.teng);
     if (!tsettings.empty() && rg.nextSmallNumber() < 5)
@@ -736,6 +750,14 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
 
             sv->set_property("allow_nullable_key");
             sv->set_value("1");
+
+            if (!b.hasClickHousePeer())
+            {
+                SetValue * sv2 = svs->add_other_values();
+
+                sv2->set_property("allow_experimental_reverse_key");
+                sv2->set_value("1");
+            }
         }
         else if (b.isAnyS3Engine())
         {

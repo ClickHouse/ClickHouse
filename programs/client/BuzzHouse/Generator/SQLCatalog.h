@@ -93,6 +93,7 @@ public:
     DetachStatus attached = ATTACHED;
     std::optional<TableEngineOption> toption = std::nullopt;
     TableEngineValues teng = TableEngineValues::Null;
+    PeerTableDatabase peer_table = PeerTableDatabase::PeerNone;
 
     bool isMergeTreeFamily() const
     {
@@ -145,13 +146,22 @@ public:
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
             || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine();
     }
+
+    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::PeerNone; }
+
+    bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::PeerMySQL; }
+
+    bool hasPostgreSQLPeer() const { return peer_table == PeerTableDatabase::PeerPostgreSQL; }
+
+    bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::PeerSQLite; }
+
+    bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::PeerClickHouse; }
 };
 
 struct SQLTable : SQLBase
 {
 public:
     bool is_temp = false;
-    PeerTableDatabase peer_table = PeerTableDatabase::PeerNone;
     uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
     std::map<uint32_t, SQLColumn> cols, staged_cols;
     std::map<uint32_t, SQLIndex> idxs, staged_idxs;
@@ -200,16 +210,6 @@ public:
     }
 
     bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
-
-    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::PeerNone; }
-
-    bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::PeerMySQL; }
-
-    bool hasPostgreSQLPeer() const { return peer_table == PeerTableDatabase::PeerPostgreSQL; }
-
-    bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::PeerSQLite; }
-
-    bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::PeerClickHouse; }
 };
 
 struct SQLView : SQLBase

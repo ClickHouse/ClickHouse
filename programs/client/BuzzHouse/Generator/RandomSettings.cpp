@@ -68,6 +68,13 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"compile_aggregate_expressions", trueOrFalse},
     {"compile_expressions", trueOrFalse},
     {"compile_sort_description", trueOrFalse},
+    {"composed_data_type_output_format_mode",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         ret += "'";
+         ret += rg.nextBool() ? "default" : "spark";
+         ret += "'";
+     }},
     {"convert_query_to_cnf", trueOrFalse},
     {"count_distinct_optimization", trueOrFalse},
     {"create_table_empty_primary_key_by_default", trueOrFalse},
@@ -531,6 +538,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"optimize_count_from_files", trueOrFalse},
     {"optimize_distinct_in_order", trueOrFalse},
     {"optimize_distributed_group_by_sharding_key", trueOrFalse},
+    {"optimize_extract_common_expressions", trueOrFalse},
     {"optimize_functions_to_subcolumns", trueOrFalse},
     {"optimize_group_by_constant_keys", trueOrFalse},
     {"optimize_group_by_function_keys", trueOrFalse},
@@ -958,6 +966,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mer
        {"primary_key_compress_block_size",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
        {"primary_key_lazy_load", trueOrFalse},
+       {"prewarm_primary_key_cache", trueOrFalse},
        {"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); }},
        {"ratio_of_defaults_for_sparse_serialization",
@@ -982,6 +991,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mer
        {"use_const_adaptive_granularity", trueOrFalse},
        {"use_index_for_in_with_subqueries", trueOrFalse},
        {"use_minimalistic_part_header_in_zookeeper", trueOrFalse},
+       {"use_primary_key_cache", trueOrFalse},
        {"vertical_merge_algorithm_min_bytes_to_activate",
         [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(rg.thresholdGenerator<uint32_t>(0.4, 0.4, 1, 10000)); }},
        {"vertical_merge_algorithm_min_columns_to_activate",

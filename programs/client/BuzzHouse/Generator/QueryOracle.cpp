@@ -127,9 +127,7 @@ int QueryOracle::dumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQ
             eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_col()->set_column(cname);
             if (rg.nextBool())
             {
-                eot->set_asc_desc(
-                    rg.nextBool() ? ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC
-                                  : ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
+                eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
             }
             if (rg.nextBool())
             {
@@ -379,6 +377,7 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("optimize_count_from_files", {"0", "1"}),
     TestSetting("optimize_distinct_in_order", {"0", "1"}),
     TestSetting("optimize_distributed_group_by_sharding_key", {"0", "1"}),
+    TestSetting("optimize_extract_common_expressions", {"0", "1"}),
     TestSetting("optimize_functions_to_subcolumns", {"0", "1"}),
     TestSetting("optimize_group_by_constant_keys", {"0", "1"}),
     TestSetting("optimize_group_by_function_keys", {"0", "1"}),
@@ -460,6 +459,7 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("throw_on_error_from_cache_on_write_operations", {"0", "1"}),
     TestSetting("transform_null_in", {"0", "1"}),
     TestSetting("update_insert_deduplication_token_in_dependent_materialized_views", {"0", "1"}),
+    TestSetting("use_async_executor_for_materialized_views", {"0", "1"}),
     TestSetting("use_cache_for_count_from_files", {"0", "1"}),
     TestSetting("use_concurrency_control", {"0", "1"}),
     TestSetting("use_index_for_in_with_subqueries", {"0", "1"}),

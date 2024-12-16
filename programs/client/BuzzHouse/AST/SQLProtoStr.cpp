@@ -1233,7 +1233,7 @@ CONV_FN(ExprOrderingTerm, eot)
     if (eot.has_asc_desc())
     {
         ret += " ";
-        ret += ExprOrderingTerm_AscDesc_Name(eot.asc_desc());
+        ret += AscDesc_Name(eot.asc_desc());
     }
     if (eot.has_nulls_order())
     {
@@ -2434,6 +2434,16 @@ CONV_FN(TableDef, ct)
     }
 }
 
+CONV_FN(TableKeyExpr, tke)
+{
+    ExprToString(ret, tke.expr());
+    if (tke.has_asc_desc())
+    {
+        ret += " ";
+        ret += AscDesc_Name(tke.asc_desc());
+    }
+}
+
 CONV_FN(TableKey, to)
 {
     if (to.exprs_size() == 0)
@@ -2449,7 +2459,7 @@ CONV_FN(TableKey, to)
             {
                 ret += ", ";
             }
-            ExprToString(ret, to.exprs(i));
+            TableKeyExprToString(ret, to.exprs(i));
         }
         ret += ")";
     }
@@ -3486,6 +3496,12 @@ CONV_FN(Attach, at)
     ret += SQLObject_Name(at.sobject());
     ret += " ";
     SQLObjectNameToString(ret, at.object());
+    if (at.has_as_replicated())
+    {
+        ret += " AS";
+        ret += at.as_replicated() ? "" : " NOT";
+        ret += " REPLICATED";
+    }
     if (at.has_setting_values())
     {
         ret += " SETTINGS ";
@@ -3748,6 +3764,43 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kPrewarmCache:
             ret += "PREWARM MARK CACHE ";
             ExprSchemaTableToString(ret, cmd.prewarm_cache());
+            break;
+        case CmdType::kPrewarmPrimaryIndexCache:
+            ret += "PREWARM PRIMARY INDEX CACHE ";
+            ExprSchemaTableToString(ret, cmd.prewarm_primary_index_cache());
+            break;
+        case CmdType::kDropConnectionsCache:
+            ret += "DROP CONNECTIONS CACHE";
+            break;
+        case CmdType::kDropPrimaryIndexCache:
+            ret += "DROP PRIMARY INDEX CACHE";
+            break;
+        case CmdType::kDropIndexMarkCache:
+            ret += "DROP INDEX MARK CACHE";
+            break;
+        case CmdType::kDropIndexUncompressedCache:
+            ret += "DROP INDEX UNCOMPRESSED CACHE";
+            break;
+        case CmdType::kDropMmapCache:
+            ret += "DROP MMAP CACHE";
+            break;
+        case CmdType::kDropPageCache:
+            ret += "DROP PAGE CACHE";
+            break;
+        case CmdType::kDropSchemaCache:
+            ret += "DROP SCHEMA CACHE";
+            break;
+        case CmdType::kDropS3ClientCache:
+            ret += "DROP S3 CLIENT CACHE";
+            break;
+        case CmdType::kFlushAsyncInsertQueue:
+            ret += "FLUSH ASYNC INSERT QUEUE";
+            break;
+        case CmdType::kSyncFilesystemCache:
+            ret += "SYNC FILESYSTEM CACHE";
+            break;
+        case CmdType::kDropCache:
+            ret += "DROP CACHE";
             break;
         default:
             ret += "REFRESH VIEW";

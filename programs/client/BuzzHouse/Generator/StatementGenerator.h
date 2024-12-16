@@ -234,8 +234,9 @@ private:
     int addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, IndexDef * idef);
     int addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     int addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
-    int generateTableKey(RandomGenerator & rg, TableEngineValues teng, TableKey * tkey);
-    int generateMergeTreeEngineDetails(RandomGenerator & rg, TableEngineValues teng, bool add_pkey, TableEngine * te);
+    int generateTableKey(RandomGenerator & rg, TableEngineValues teng, bool allow_asc_desc, TableKey * tkey);
+    int
+    generateMergeTreeEngineDetails(RandomGenerator & rg, TableEngineValues teng, PeerTableDatabase peer, bool add_pkey, TableEngine * te);
     int generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);

@@ -910,9 +910,7 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
             {
                 if (rg.nextSmallNumber() < 7)
                 {
-                    eot->set_asc_desc(
-                        rg.nextBool() ? ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_ASC
-                                      : ExprOrderingTerm_AscDesc::ExprOrderingTerm_AscDesc_DESC);
+                    eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
                 }
                 if (rg.nextSmallNumber() < 7)
                 {
