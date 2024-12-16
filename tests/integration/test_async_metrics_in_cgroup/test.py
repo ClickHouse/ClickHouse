@@ -92,4 +92,3 @@ def test_system_wide_metrics(start_cluster):
     ]:
         node2_value = get_async_metric(node2, metric)
         assert float(node2_value) > 0
-
