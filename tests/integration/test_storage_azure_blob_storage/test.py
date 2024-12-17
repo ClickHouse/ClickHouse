@@ -1582,7 +1582,8 @@ def test_insert_create_new_file(cluster):
     )
 
 
-def test_hive_partitioning_with_one_parameter(cluster):
+@pytest.mark.parametrize("use_hive_partitioning", [0, 1])
+def test_hive_partitioning_with_one_parameter(cluster, use_hive_partitioning):
     # type: (ClickHouseCluster) -> None
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 String, column2 String"
@@ -1593,7 +1594,7 @@ def test_hive_partitioning_with_one_parameter(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={"azure_truncate_on_insert": 1, "use_hive_partitioning": use_hive_partitioning},
     )
 
     query = (
@@ -1619,7 +1620,8 @@ def test_hive_partitioning_with_one_parameter(cluster):
     ).splitlines() == ["Gordon"]
 
 
-def test_hive_partitioning_with_all_parameters(cluster):
+@pytest.mark.parametrize("use_hive_partitioning", [0, 1])
+def test_hive_partitioning_with_all_parameters(cluster, use_hive_partitioning):
     # type: (ClickHouseCluster) -> None
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 String, column2 String"
@@ -1631,7 +1633,7 @@ def test_hive_partitioning_with_all_parameters(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={"azure_truncate_on_insert": 1, "use_hive_partitioning": use_hive_partitioning},
     )
 
     query = (
@@ -1645,7 +1647,8 @@ def test_hive_partitioning_with_all_parameters(cluster):
         azure_query(node, query, settings={"use_hive_partitioning": 1})
 
 
-def test_hive_partitioning_without_setting(cluster):
+@pytest.mark.parametrize("use_hive_partitioning", [0, 1])
+def test_hive_partitioning_without_setting(cluster, use_hive_partitioning):
     # type: (ClickHouseCluster) -> None
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 String, column2 String"
@@ -1657,7 +1660,7 @@ def test_hive_partitioning_without_setting(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={"azure_truncate_on_insert": 1, "use_hive_partitioning": use_hive_partitioning},
     )
 
     query = (
