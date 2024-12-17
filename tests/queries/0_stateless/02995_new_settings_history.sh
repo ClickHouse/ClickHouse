@@ -14,7 +14,7 @@ then
 fi
 
 IGNORE_SETTINGS_FOR_SANITIZERS="1=1"
-if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() != 0 FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize' IN value) = 1") -eq 1 ]];
+if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() != 0 FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize' IN value) != 0") -eq 1 ]];
 then
   IGNORE_SETTINGS_FOR_SANITIZERS="name NOT IN ('query_profiler_cpu_time_period_ns', 'query_profiler_real_time_period_ns')"
 fi
