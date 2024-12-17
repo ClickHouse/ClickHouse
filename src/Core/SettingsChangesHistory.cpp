@@ -61,7 +61,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"25.1",
         {
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
-
+            {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
+            {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
         }
     },
     {"24.12",
