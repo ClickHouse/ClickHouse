@@ -398,7 +398,7 @@ private:
 
 REGISTER_FUNCTION(NormalizedGini)
 {
-    FunctionDocumentation::Description doc_description = "Calculates the normalized Gini coefficient. For more details, see https://arxiv.org/abs/1912.07753.";
+    FunctionDocumentation::Description doc_description = "Calculates the normalized Gini coefficient.";
     FunctionDocumentation::Syntax doc_syntax = "arrayNormalizedGini(predicted, label)";
     FunctionDocumentation::Arguments doc_arguments = {{"predicted", "Predicted value (Array(T))."}, {"label", "Actual value (Array(T))."}};
     FunctionDocumentation::ReturnedValue doc_returned_value = "A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients).";

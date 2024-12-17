@@ -3225,7 +3225,6 @@ Result:
 ## arrayNormalizedGini
 
 Calculates the normalized Gini coefficient.
-For more details, see https://arxiv.org/abs/1912.07753.
 
 **Syntax**
 
