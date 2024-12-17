@@ -47,7 +47,7 @@ namespace
 
 /// Max array size that is allowed for any nested elements during data type decoding.
 /// It prevents from allocating too large arrays if the data is corrupted.
-static constexpr size_t MAX_ARRAY_SIZE = 1000000;
+constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 enum class BinaryTypeIndex : uint8_t
 {
