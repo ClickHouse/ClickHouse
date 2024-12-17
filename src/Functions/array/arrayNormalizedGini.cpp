@@ -267,11 +267,9 @@ public:
         const auto & array_col1 = arguments[0].column;
         const auto & array_col2 = arguments[1].column;
 
-        Columns tuple_columns(3);
+        Columns result(3);
         for (size_t i = 0; i < 3; ++i)
-        {
-            tuple_columns[i] = DataTypeFloat64{}.createColumn();
-        }
+            result[i] = DataTypeFloat64().createColumn();
 
         if (const ColumnArray * array_col = checkAndGetColumn<ColumnArray>(array_col1.get()))
         {
@@ -311,14 +309,14 @@ public:
                                 label_gini_col->getData(),
                                 norm_gini_col->getData());
 
-                            tuple_columns[0] = std::move(pred_gini_col);
-                            tuple_columns[1] = std::move(label_gini_col);
-                            tuple_columns[2] = std::move(norm_gini_col);
+                            result[0] = std::move(pred_gini_col);
+                            result[1] = std::move(label_gini_col);
+                            result[2] = std::move(norm_gini_col);
 
                             return true;
                         }))
                 {
-                    return ColumnTuple::create(tuple_columns);
+                    return ColumnTuple::create(result);
                 }
             }
             else
@@ -356,14 +354,14 @@ public:
                                 label_gini_col->getData(),
                                 norm_gini_col->getData());
 
-                            tuple_columns[0] = std::move(pred_gini_col);
-                            tuple_columns[1] = std::move(label_gini_col);
-                            tuple_columns[2] = std::move(norm_gini_col);
+                            result[0] = std::move(pred_gini_col);
+                            result[1] = std::move(label_gini_col);
+                            result[2] = std::move(norm_gini_col);
 
                             return true;
                         }))
                 {
-                    return ColumnTuple::create(tuple_columns);
+                    return ColumnTuple::create(result);
                 }
             }
         }
@@ -406,14 +404,14 @@ public:
                             label_gini_col->getData(),
                             norm_gini_col->getData());
 
-                        tuple_columns[0] = std::move(pred_gini_col);
-                        tuple_columns[1] = std::move(label_gini_col);
-                        tuple_columns[2] = std::move(norm_gini_col);
+                        result[0] = std::move(pred_gini_col);
+                        result[1] = std::move(label_gini_col);
+                        result[2] = std::move(norm_gini_col);
 
                         return true;
                     }))
             {
-                return ColumnTuple::create(tuple_columns);
+                return ColumnTuple::create(result);
             }
         }
 
