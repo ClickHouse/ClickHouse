@@ -16,9 +16,14 @@ std::optional<HashTablesStatistics::Entry> HashTablesStatistics::getSizeHint(con
     if (!params.isCollectionAndUseEnabled())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
 
-    std::lock_guard lock(mutex);
-    const auto cache = getHashTableStatsCache(params, lock);
-    if (const auto hint = cache->get(params.key))
+    Cache::MappedPtr hint;
+    {
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
+        hint = cache->get(params.key);
+    }
+
+    if (hint)
     {
         LOG_TRACE(
             getLogger("HashTablesStatistics"),
@@ -37,21 +42,27 @@ void HashTablesStatistics::update(size_t sum_of_sizes, size_t median_size, const
     if (!params.isCollectionAndUseEnabled())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Collection and use of the statistics should be enabled.");
 
-    std::lock_guard lock(mutex);
-    const auto cache = getHashTableStatsCache(params, lock);
-    const auto hint = cache->get(params.key);
-    // We'll maintain the maximum among all the observed values until another prediction is much lower (that should indicate some change)
-    if (!hint || sum_of_sizes < hint->sum_of_sizes / 2 || hint->sum_of_sizes < sum_of_sizes || median_size < hint->median_size / 2
-        || hint->median_size < median_size)
+    bool updated = false;
     {
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
+        const auto hint = cache->get(params.key);
+        // We'll maintain the maximum among all the observed values until another prediction is much lower (that should indicate some change)
+        if (!hint || sum_of_sizes < hint->sum_of_sizes / 2 || hint->sum_of_sizes < sum_of_sizes || median_size < hint->median_size / 2
+            || hint->median_size < median_size)
+        {
+            cache->set(params.key, std::make_shared<Entry>(Entry{.sum_of_sizes = sum_of_sizes, .median_size = median_size}));
+            updated = true;
+        }
+    }
+
+    if (updated)
         LOG_TRACE(
             getLogger("HashTablesStatistics"),
             "Statistics updated for key={}: new sum_of_sizes={}, median_size={}",
             params.key,
             sum_of_sizes,
             median_size);
-        cache->set(params.key, std::make_shared<Entry>(Entry{.sum_of_sizes = sum_of_sizes, .median_size = median_size}));
-    }
 }
 
 std::optional<HashTablesCacheStatistics> HashTablesStatistics::getCacheStats() const
