@@ -189,3 +189,34 @@ def test_parallel_replicas_custom_key_replicatedmergetree(
         )
         == expected_result
     )
+
+def test_no_parallel_replicas_for_non_replicated_merge_tree(start_cluster):
+    cluster = "test_single_shard_multiple_replicas"
+    row_num = 40
+    n1 = nodes[0]
+    n1.query(f"DROP TABLE IF EXISTS test_table_for_mt ON CLUSTER {cluster} SYNC")
+    n1.query(
+        f"CREATE TABLE test_table_for_mt ON CLUSTER {cluster} (key UInt32, value String) Engine=MergeTree ORDER BY (key, sipHash64(value))"
+    )
+
+    insert_data("test_table_for_mt", row_num, all_nodes=True)
+
+    expected_result = ""
+    for i in range(4):
+        expected_result += f"{i}\t10\n"
+
+    n1 = nodes[0]
+    assert (
+        # Check that parallel_replicas_for_non_replicated_merge_tree=0 worked and we didn't get
+        # 4 copies of the data from 4 replicas.
+        n1.query(
+            "SELECT key, count() FROM (SELECT * FROM test_table_for_mt) GROUP BY key ORDER BY key",
+            settings={
+                "max_parallel_replicas": 4,
+                "enable_parallel_replicas": 1,
+                "parallel_replicas_for_non_replicated_merge_tree": 0,
+                "cluster_for_parallel_replicas": cluster,
+            },
+        )
+        == expected_result
+    )

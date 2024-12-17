@@ -30,6 +30,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
 }
 
 namespace ErrorCodes
@@ -38,12 +39,31 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+static bool areParallelReplicasEnabledForTable(const TableNode & table_node, const ContextPtr & context)
+{
+    const auto * as_mat_view = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
+    const auto & storage = as_mat_view ? as_mat_view->getTargetTable() : table_node.getStorage();
+
+    /// Here we allow StorageDummy as well, to support a query tree with replaced storages.
+    if (!std::dynamic_pointer_cast<MergeTreeData>(storage) && !typeid_cast<const StorageDummy *>(storage.get()))
+        return false;
+
+    if (!storage->supportsReplication() && !context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree])
+        return false;
+
+    /// Parallel replicas not supported with FINAL.
+    if (table_node.getTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+        return false;
+
+    return true;
+}
+
 /// Returns a list of (sub)queries (candidates) which may support parallel replicas.
 /// The rule is :
 /// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
 ///
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
-std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node)
+std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::vector<const QueryNode *> res;
 
@@ -56,18 +76,11 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTr
             case QueryTreeNodeType::TABLE:
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
-                const auto & storage = table_node.getStorage();
-                /// Here we check StorageDummy as well, to support a query tree with replaced storages.
-                if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
-                {
-                    /// parallel replicas is not supported with FINAL
-                    if (table_node.getTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
-                        return {};
 
-                    return res;
-                }
+                if (!areParallelReplicasEnabledForTable(table_node, context))
+                    return {};
 
-                return {};
+                return res;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
@@ -180,7 +193,7 @@ static void dumpStack(const std::vector<const QueryNode *> & stack)
 
 /// Find the best candidate for parallel replicas execution by verifying query plan.
 /// If query plan has only Expression, Filter or Join steps, we can execute it fully remotely and check the next query.
-/// Otherwise we can execute current query up to WithMergableStage only.
+/// Otherwise we can execute current query up to WithMergeableState only.
 const QueryNode * findQueryForParallelReplicas(
     std::vector<const QueryNode *> stack,
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping,
@@ -300,7 +313,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
-    auto stack = getSupportingParallelReplicasQuery(query_tree_node.get());
+    auto stack = getSupportingParallelReplicasQuery(query_tree_node.get(), context);
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
         return nullptr;
@@ -325,7 +338,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// We updated a query_tree with dummy storages, and mapping is using updated_query_tree now.
     /// But QueryNode result should be taken from initial query tree.
     /// So that we build a list of candidates again, and call findQueryForParallelReplicas for it.
-    auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get());
+    auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get(), context);
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
     const auto * res = findQueryForParallelReplicas(new_stack, mapping, context->getSettingsRef());
 
@@ -347,7 +360,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     return res;
 }
 
-static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node)
+static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::stack<const IQueryTreeNode *> join_nodes;
     while (query_tree_node || !join_nodes.empty())
@@ -365,9 +378,8 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::TABLE:
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
-                const auto * as_mat_view = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
-                const auto & storage = as_mat_view ? as_mat_view->getTargetTable() : table_node.getStorage();
-                if (std::dynamic_pointer_cast<MergeTreeData>(storage) || typeid_cast<const StorageDummy *>(storage.get()))
+
+                if (areParallelReplicasEnabledForTable(table_node, context))
                     return &table_node;
 
                 query_tree_node = nullptr;
@@ -454,7 +466,7 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnFollower())
         return nullptr;
 
-    return findTableForParallelReplicas(query_tree_node.get());
+    return findTableForParallelReplicas(query_tree_node.get(), context);
 }
 
 JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
@@ -477,7 +489,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
-    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get());
+    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
     if (!table_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
 

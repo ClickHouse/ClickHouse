@@ -233,7 +233,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     /// So we should skip task if we cannot find current host in cluster hosts list.
     if (!task->findCurrentHostID(context, log, zookeeper, config_host_name))
     {
-        out_reason = "There is no a local address in host list";
+        out_reason = "There is no local address in host list";
         return add_to_skip_set();
     }
 
