@@ -78,7 +78,7 @@ public:
         data->get(0, res);
     }
 
-    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
     {
         return data->getValueNameAndType(0);
     }
