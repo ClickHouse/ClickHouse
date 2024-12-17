@@ -19,7 +19,7 @@
 
 #include <type_traits>
 
-constexpr size_t AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE = 0xFFFFFF;
+#define AGGREGATE_FUNCTION_MOVING_MAX_ARRAY_SIZE 0xFFFFFF
 
 
 namespace DB

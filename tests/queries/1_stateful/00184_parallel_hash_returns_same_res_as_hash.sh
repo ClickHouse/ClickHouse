@@ -37,7 +37,8 @@ ORDER BY
     EventDate DESC
 LIMIT $ROWS;
 
-set max_memory_usage = 0;
+SET allow_experimental_join_condition = 1;
+SET max_memory_usage = 0;
 
 CREATE TABLE res_hash
 ENGINE = MergeTree()

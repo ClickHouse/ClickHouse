@@ -335,7 +335,7 @@ public:
         return false;
     }
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
