@@ -18,7 +18,7 @@
 ### <a id="2412"></a> ClickHouse release 24.12, 2024-12-19
 
 #### Backward Incompatible Change
-* Functions `greatest` and `least` now ignore NULL input values, whereas they previously returned NULL if one of the arguments was NULL. For example, `SELECT greatest(1, 2, NULL)` now returns 2. This makes the behavior compatible with PostgreSQL, but at the same time it breaks the compatiability with MySQL, who returns NULL. [#65519](https://github.com/ClickHouse/ClickHouse/pull/65519) ([kevinyhzou](https://github.com/KevinyhZou)).
+* Functions `greatest` and `least` now ignore NULL input values, whereas they previously returned NULL if one of the arguments was NULL. For example, `SELECT greatest(1, 2, NULL)` now returns 2. This makes the behavior compatible with PostgreSQL, but at the same time it breaks the compatibility with MySQL which returns NULL. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. [#65519](https://github.com/ClickHouse/ClickHouse/pull/65519) ([kevinyhzou](https://github.com/KevinyhZou)).
 * The legacy MongoDB integration based on the Poco driver has been removed. Server setting `use_legacy_mongodb_integration` is obsolete and has no effect anymore. [#71997](https://github.com/ClickHouse/ClickHouse/pull/71997) ([Kirill Nikiforov](https://github.com/allmazz)). The new integration is strictly more capable and powerful.
 
 #### New Feature

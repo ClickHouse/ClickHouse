@@ -494,3 +494,19 @@ BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName
 RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
     'testcontainer', 'data_backup');
 ```
+
+## Backup up system tables
+
+System tables can also be included in your backup and restore workflows, but their inclusion depends on your specific use case.
+
+### Backing Up Log Tables
+
+System tables that store historic data, such as those with a _log suffix (e.g., `query_log`, `part_log`), can be backed up and restored like any other table. If your use case relies on analyzing historic data—for example, using query_log to track query performance or debug issues—it’s recommended to include these tables in your backup strategy. However, if historic data from these tables is not required, they can be excluded to save backup storage space.
+
+### Backing Up Access Management Tables
+
+System tables related to access management, such as users, roles, row_policies, settings_profiles, and quotas, receive special treatment during backup and restore operations. When these tables are included in a backup, their content is exported to a special `accessXX.txt` file, which encapsulates the equivalent SQL statements for creating and configuring the access entities. Upon restoration, the restore process interprets these files and re-applies the SQL commands to recreate the users, roles, and other configurations.
+
+This feature ensures that the access control configuration of a ClickHouse cluster can be backed up and restored as part of the cluster’s overall setup.
+
+Note: This functionality only works for configurations managed through SQL commands (referred to as ["SQL-driven Access Control and Account Management"](/docs/en/operations/access-rights#enabling-access-control)). Access configurations defined in ClickHouse server configuration files (e.g. `users.xml`) are not included in backups and cannot be restored through this method.
