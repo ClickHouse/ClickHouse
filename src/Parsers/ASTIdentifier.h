@@ -58,7 +58,7 @@ public:
 protected:
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
 private:

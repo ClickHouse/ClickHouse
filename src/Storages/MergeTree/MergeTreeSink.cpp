@@ -1,3 +1,4 @@
+#include <exception>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
@@ -44,7 +45,7 @@ MergeTreeSink::~MergeTreeSink()
     if (!delayed_chunk)
         return;
 
-    chassert(isCancelled());
+    chassert(isCancelled() || std::uncaught_exceptions());
 
     for (auto & partition : delayed_chunk->partitions)
     {
@@ -78,6 +79,7 @@ void MergeTreeSink::onStart()
 void MergeTreeSink::onFinish()
 {
     chassert(!isCancelled());
+
     finishDelayedChunk();
 }
 

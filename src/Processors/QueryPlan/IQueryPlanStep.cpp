@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IQueryPlanStep::IQueryPlanStep()
@@ -145,5 +146,12 @@ void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
 {
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
 }
+
+void IQueryPlanStep::serialize(Serialization & /*ctx*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serialize is not implemented for {}", getName());
+}
+
+void IQueryPlanStep::updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 
 }

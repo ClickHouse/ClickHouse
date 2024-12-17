@@ -204,7 +204,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.settings_changes = engine_args->settings->ptr();
+    if (engine_args->settings)
+        storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -214,9 +215,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms], (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
+        zk_path,
+        std::move(table_metadata),
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
 
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata), table_id_);
 
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
@@ -248,7 +252,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
 void StorageObjectStorageQueue::drop()
 {
-    ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
+    ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -651,6 +655,8 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
 
         StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        /// At the moment we cannot do ALTER MODIFY/RESET SETTING if there are no settings changes (exception will be thrown),
+        /// so we do not need to check if old_metadata.settings_changes == nullptr.
         const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -731,13 +737,20 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
+std::shared_ptr<StorageObjectStorageQueue::FileIterator>
+StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
     auto settings = configuration->getQuerySettings(local_context);
     auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
+        object_storage, configuration, predicate, getVirtualsList(), local_context,
+        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 
-    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
+    const auto & table_metadata = getTableMetadata();
+    bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
+        && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
+
+    return std::make_shared<FileIterator>(
+        files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const

@@ -103,7 +103,7 @@ void buildScatterSelector(
 
     for (size_t i = 0; i < num_rows; ++i)
     {
-        Data::key_type key = hash128(i, columns.size(), columns);
+        Data::key_type key = ColumnsHashing::hash128(i, columns.size(), columns);
         typename Data::LookupResult it;
         bool inserted;
         partitions_map.emplace(key, it, inserted);
@@ -225,12 +225,13 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
         projection->getDataPartStorage().precommitTransaction();
 }
 
+/// This method must be called after rename and commit of part
+/// because a correct path is required for the keys of caches.
 void MergeTreeDataWriter::TemporaryPart::prewarmCaches()
 {
-    /// This method must be called after rename and commit of part
-    /// because a correct path is required for the keys of caches.
+    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
 
-    if (auto mark_cache = part->storage.getMarkCacheToPrewarm())
+    if (auto mark_cache = part->storage.getMarkCacheToPrewarm(bytes_uncompressed))
     {
         for (const auto & stream : streams)
         {
@@ -239,7 +240,7 @@ void MergeTreeDataWriter::TemporaryPart::prewarmCaches()
         }
     }
 
-    if (auto index_cache = part->storage.getPrimaryIndexCacheToPrewarm())
+    if (auto index_cache = part->storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
     {
         /// Index was already set during writing. Now move it to cache.
         part->moveIndexToCache(*index_cache);
@@ -542,12 +543,18 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices)->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
     for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(sort_columns[i], 1, 1);
+    {
+        if (!reverse_flags.empty() && reverse_flags[i])
+            sort_description.emplace_back(sort_columns[i], -1, 1);
+        else
+            sort_description.emplace_back(sort_columns[i], 1, 1);
+    }
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
@@ -726,6 +733,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         compression_codec,
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         context->getWriteSettings());
@@ -818,12 +826,18 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {})->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
     for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(sort_columns[i], 1, 1);
+    {
+        if (!reverse_flags.empty() && reverse_flags[i])
+            sort_description.emplace_back(sort_columns[i], -1, 1);
+        else
+            sort_description.emplace_back(sort_columns[i], 1, 1);
+    }
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocks);
 
@@ -880,6 +894,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
+        block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings());

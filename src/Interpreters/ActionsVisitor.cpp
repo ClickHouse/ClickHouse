@@ -111,7 +111,7 @@ static size_t getTypeDepth(const DataTypePtr & type)
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
 /// We can not include values that don't represent any possible value from the type of filtered column to the set.
 template<typename Collection>
-static Block createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, bool transform_null_in)
+static ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, bool transform_null_in)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -169,9 +169,13 @@ static Block createBlockFromCollection(const Collection & collection, const Data
         }
     }
 
-    Block res;
+    ColumnsWithTypeAndName res(columns_num);
     for (size_t i = 0; i < columns_num; ++i)
-        res.insert(ColumnWithTypeAndName{std::move(columns[i]), types[i], "_" + toString(i)});
+    {
+        res[i].type = types[i];
+        res[i].column = std::move(columns[i]);
+    }
+
     return res;
 }
 
@@ -189,16 +193,14 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, C
     throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set. Must be literal or constant expression.");
 }
 
-static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, ContextPtr context)
+static ColumnsWithTypeAndName createBlockFromAST(const ASTPtr & node, const DataTypes & types, ContextPtr context)
 {
     /// Will form a block with values from the set.
 
-    Block header;
     size_t num_columns = types.size();
+    MutableColumns columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        header.insert(ColumnWithTypeAndName(types[i]->createColumn(), types[i], "_" + toString(i)));
-
-    MutableColumns columns = header.cloneEmptyColumns();
+        columns[i] = types[i]->createColumn();
 
     DataTypePtr tuple_type;
     Row tuple_values;
@@ -290,7 +292,14 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
             throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect element of set");
     }
 
-    return header.cloneWithColumns(std::move(columns));
+    ColumnsWithTypeAndName res(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        res[i].type = types[i];
+        res[i].column = std::move(columns[i]);
+    }
+
+    return res;
 }
 
 
@@ -304,7 +313,7 @@ namespace
   *  We need special implementation for ASTFunction, because in case, when we interpret
   *  large tuple or array as function, `evaluateConstantExpression` works extremely slow.
   */
-Block createBlockForSet(
+ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
     const DataTypes & set_element_types,
@@ -321,7 +330,7 @@ Block createBlockForSet(
             type->getName());
     };
 
-    Block block;
+    ColumnsWithTypeAndName block;
     bool tranform_null_in = context->getSettingsRef()[Setting::transform_null_in];
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
@@ -360,7 +369,7 @@ Block createBlockForSet(
   * 'set_element_types' - types of what are on the left hand side of IN.
   * 'right_arg' - Literal - Tuple or Array.
   */
-Block createBlockForSet(
+ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
     const std::shared_ptr<ASTFunction> & right_arg,
     const DataTypes & set_element_types,
@@ -442,14 +451,14 @@ FutureSetPtr makeExplicitSet(
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
             element_type = low_cardinality_type->getDictionaryType();
 
-    Block block;
+    ColumnsWithTypeAndName block;
     const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
     if (right_arg_func && (right_arg_func->name == "tuple" || right_arg_func->name == "array"))
         block = createBlockForSet(left_arg_type, right_arg_func, set_element_types, context);
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, block, context->getSettingsRef());
+    return prepared_sets.addFromTuple(set_key, std::move(block), context->getSettingsRef());
 }
 
 class ScopeStack::Index
@@ -1291,14 +1300,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     String result_name = lambda->arguments->children.at(1)->getColumnName();
                     lambda_dag.removeUnusedActions(Names(1, result_name));
 
-                    auto lambda_actions = std::make_shared<ExpressionActions>(
-                        std::move(lambda_dag),
-                        ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes));
-
-                    DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
+                    DataTypePtr result_type = lambda_dag.findInOutputs(result_name).result_type;
 
                     Names captured;
-                    Names required = lambda_actions->getRequiredColumns();
+                    Names required = lambda_dag.getRequiredColumnsNames();
                     for (const auto & required_arg : required)
                         if (findColumn(required_arg, lambda_arguments) == lambda_arguments.end())
                             captured.push_back(required_arg);
@@ -1307,8 +1312,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
                     String lambda_name = data.getUniqueName("__lambda");
 
+                    auto actions_settings = ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes);
                     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-                            lambda_actions, captured, lambda_arguments, result_type, result_name, false);
+                            std::move(lambda_dag), actions_settings, captured, lambda_arguments, result_type, result_name, false);
                     data.addFunction(function_capture, captured, lambda_name);
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
