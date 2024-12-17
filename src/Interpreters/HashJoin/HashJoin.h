@@ -240,6 +240,18 @@ public:
         #undef M
     };
 
+    bool isFixedSizeType(Type type) const
+    {
+        switch (type)
+        {
+            case Type::key8:
+            case Type::key16:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /** Different data structures, that are used to perform JOIN.
       */
     template <typename Mapped>
