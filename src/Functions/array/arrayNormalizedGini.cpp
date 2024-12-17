@@ -196,43 +196,13 @@ private:
  */
 class FunctionArrayNormalizedGini : public IFunction
 {
-    template <typename F>
-    static bool castType(const IDataType * type, F && f)
-    {
-        return castTypeToEither<
-            DataTypeInt8,
-            DataTypeInt16,
-            DataTypeInt32,
-            DataTypeInt64,
-            DataTypeUInt8,
-            DataTypeUInt16,
-            DataTypeUInt32,
-            DataTypeUInt64,
-            DataTypeFloat32,
-            DataTypeFloat64>(type, std::forward<F>(f));
-    }
-
-    template <typename F>
-    static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
-    {
-        return castType(left, [&](const auto & left_)
-        {
-            return castType(right, [&](const auto & right_)
-            {
-                return f(left_, right_);
-            });
-        });
-    }
-
 public:
     static constexpr auto name = "arrayNormalizedGini";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayNormalizedGini>(); }
 
     String getName() const override { return name; }
-
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -416,6 +386,35 @@ public:
         }
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column of argument of function {}", getName());
+    }
+
+private:
+    template <typename F>
+    static bool castType(const IDataType * type, F && f)
+    {
+        return castTypeToEither<
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeFloat32,
+            DataTypeFloat64>(type, std::forward<F>(f));
+    }
+
+    template <typename F>
+    static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
+    {
+        return castType(left, [&](const auto & left_)
+        {
+            return castType(right, [&](const auto & right_)
+            {
+                return f(left_, right_);
+            });
+        });
     }
 
 };
