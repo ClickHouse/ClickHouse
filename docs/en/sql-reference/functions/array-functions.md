@@ -3224,7 +3224,8 @@ Result:
 
 ## arrayNormalizedGini
 
-Function `arrayNormalizedGini` is used to calculate the normalized Gini coefficient.
+Calculates the normalized Gini coefficient.
+For more details, see https://arxiv.org/abs/1912.07753.
 
 **Syntax**
 
@@ -3239,7 +3240,7 @@ arrayNormalizedGini(predicted, label)
 
 **Returned Value**
 
-- A tuple contains Gini coefficient of predicted values, Gini coefficient of label values and the normalized Gini coefficient, which is the ratio between predicted Gini coefficient and label Gini coefficient.
+- A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients).
 
 **Examples**
 
@@ -3256,8 +3257,6 @@ Result:
 │ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
 └─────────────────────────────────────────────────────────────┘
 ```
-
-- For more details, check https://arxiv.org/abs/1912.07753
 
 ## Distance functions
 
