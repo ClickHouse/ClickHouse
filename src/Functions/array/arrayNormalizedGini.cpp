@@ -234,19 +234,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & array_col1 = arguments[0].column;
-        const auto & array_col2 = arguments[1].column;
+        const auto & col_predicted = arguments[0].column;
+        const auto & col_labels = arguments[1].column;
 
         Columns result(3);
         for (size_t i = 0; i < 3; ++i)
             result[i] = DataTypeFloat64().createColumn();
 
-        if (const ColumnArray * array_col = checkAndGetColumn<ColumnArray>(array_col1.get()))
+        if (const ColumnArray * array_col = checkAndGetColumn<ColumnArray>(col_predicted.get()))
         {
             const auto & offsets1 = array_col->getOffsets();
             const auto & array_arg_type1 = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
-            if (const ColumnConst * array_column_const = checkAndGetColumn<ColumnConst>(array_col2.get()))
+            if (const ColumnConst * array_column_const = checkAndGetColumn<ColumnConst>(col_labels.get()))
             {
                 const ColumnArray * column_array_const = checkAndGetColumn<ColumnArray>(array_column_const->getDataColumnPtr().get());
                 const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
@@ -291,7 +291,7 @@ public:
             }
             else
             {
-                const ColumnArray * column_array2 = checkAndGetColumn<ColumnArray>(array_col2.get());
+                const ColumnArray * column_array2 = checkAndGetColumn<ColumnArray>(col_labels.get());
                 const auto & offsets2 = column_array2->getOffsets();
                 const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
@@ -335,14 +335,14 @@ public:
                 }
             }
         }
-        else if (const ColumnConst * array_column_const = checkAndGetColumn<ColumnConst>(array_col1.get()))
+        else if (const ColumnConst * array_column_const = checkAndGetColumn<ColumnConst>(col_predicted.get()))
         {
             /// Note that const-const case is handled by useDefaultImplementationForConstants.
 
             const ColumnArray * column_array_const = checkAndGetColumn<ColumnArray>(array_column_const->getDataColumnPtr().get());
             const auto & array_arg_type1 = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
-            const ColumnArray * column_array2 = checkAndGetColumn<ColumnArray>(array_col2.get());
+            const ColumnArray * column_array2 = checkAndGetColumn<ColumnArray>(col_labels.get());
             const auto & offsets2 = column_array2->getOffsets();
             const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
