@@ -29,8 +29,8 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
+    extern const int REPLICA_STATUS_CHANGED;
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace FailPoints
@@ -217,10 +217,26 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         else
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "It seems you have upgraded from a version earlier than 20.4 straight to one later than 24.10. "
-                "ClickHouse does not support upgrades that span more than a year. "
-                "Please update gradually (through intermediate versions).");
+            /// Table was created before 20.4 and was never altered,
+            /// let's initialize replica metadata version from global metadata version.
+
+            const String & zookeeper_path = storage.zookeeper_path, & replica_path = storage.replica_path;
+
+            Coordination::Stat table_metadata_version_stat;
+            zookeeper->get(zookeeper_path + "/metadata", &table_metadata_version_stat);
+
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/metadata", table_metadata_version_stat.version));
+            ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(table_metadata_version_stat.version), zkutil::CreateMode::Persistent));
+
+            Coordination::Responses res;
+            auto code = zookeeper->tryMulti(ops, res);
+
+            if (code == Coordination::Error::ZBADVERSION)
+                throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Failed to initialize metadata_version "
+                                                                    "because table was concurrently altered, will retry");
+
+            zkutil::KeeperMultiException::check(code, ops, res);
         }
 
         storage.queue.removeCurrentPartsFromMutations();

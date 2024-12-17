@@ -143,13 +143,13 @@ try
         std::string key = line.substr(0, pos);
         std::string val = line.substr(pos + 1);
 
-        if (key.contains("physical id"))
+        if (key.find("physical id") != std::string::npos)
         {
             cur_core_entry.first = std::stoi(val);
             continue;
         }
 
-        if (key.contains("core id"))
+        if (key.find("core id") != std::string::npos)
         {
             cur_core_entry.second = std::stoi(val);
             core_entries.insert(cur_core_entry);

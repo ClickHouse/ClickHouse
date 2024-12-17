@@ -94,7 +94,8 @@ void LocalConnection::sendProfileEvents()
     Block profile_block;
     state->after_send_profile_events.restart();
     next_packet_type = Protocol::Server::ProfileEvents;
-    state->block.emplace(ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, last_sent_snapshots));
+    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, profile_block, last_sent_snapshots);
+    state->block.emplace(std::move(profile_block));
 }
 
 void LocalConnection::sendQuery(
@@ -106,7 +107,6 @@ void LocalConnection::sendQuery(
     const Settings *,
     const ClientInfo * client_info,
     bool,
-    const std::vector<String> & /*external_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
     /// Last query may not have been finished or cancelled due to exception on client side.
@@ -326,11 +326,6 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
     if (send_profile_events)
         sendProfileEvents();
-}
-
-bool LocalConnection::isSendDataNeeded() const
-{
-    return !state || state->input_pipeline == nullptr;
 }
 
 void LocalConnection::sendCancel()

@@ -268,19 +268,6 @@ inline double roundWithMode(double x, RoundingMode mode)
     std::unreachable();
 }
 
-inline BFloat16 roundWithMode(BFloat16 x, RoundingMode mode)
-{
-    switch (mode)
-    {
-        case RoundingMode::Round: return BFloat16(nearbyintf(Float32(x)));
-        case RoundingMode::Floor: return BFloat16(floorf(Float32(x)));
-        case RoundingMode::Ceil: return BFloat16(ceilf(Float32(x)));
-        case RoundingMode::Trunc: return BFloat16(truncf(Float32(x)));
-    }
-
-    std::unreachable();
-}
-
 template <typename T>
 class FloatRoundingComputationBase<T, Vectorize::No>
 {
@@ -298,13 +285,8 @@ public:
 
     static VectorType prepare(size_t scale)
     {
-        return load1(ScalarType(scale));
+        return load1(scale);
     }
-};
-
-template <>
-class FloatRoundingComputationBase<BFloat16, Vectorize::Yes> : public FloatRoundingComputationBase<BFloat16, Vectorize::No>
-{
 };
 
 
@@ -529,7 +511,7 @@ template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_m
 struct Dispatcher
 {
     template <ScaleMode scale_mode>
-    using FunctionRoundingImpl = std::conditional_t<is_floating_point<T>,
+    using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 
