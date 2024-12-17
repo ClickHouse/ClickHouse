@@ -789,10 +789,14 @@ def randomize_external_sort_group_by():
         return {
             "max_bytes_before_external_sort": generator,
             "max_bytes_before_external_group_by": generator,
+            "max_bytes_ratio_before_external_sort": lambda: 0,
+            "max_bytes_ratio_before_external_group_by": lambda: 0,
         }
 
     generator = threshold_generator(0.3, 0.5, 0.0, 1.0)
     return {
+        "max_bytes_before_external_sort": lambda: 0,
+        "max_bytes_before_external_group_by": lambda: 0,
         "max_bytes_ratio_before_external_sort": lambda: round(generator(), 2),
         "max_bytes_ratio_before_external_group_by": lambda: round(generator(), 2),
     }
