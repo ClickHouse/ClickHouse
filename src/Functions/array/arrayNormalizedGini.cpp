@@ -241,14 +241,14 @@ public:
         for (size_t i = 0; i < 3; ++i)
             result[i] = DataTypeFloat64().createColumn();
 
-        if (const ColumnArray * array_col = checkAndGetColumn<ColumnArray>(col_predicted.get()))
+        if (const ColumnArray * array_predicted = checkAndGetColumn<ColumnArray>(col_predicted.get()))
         {
-            const auto & offsets1 = array_col->getOffsets();
+            const auto & offsets1 = array_predicted->getOffsets();
             const auto & array_arg_type1 = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
-            if (const ColumnConst * array_column_const = checkAndGetColumn<ColumnConst>(col_labels.get()))
+            if (const ColumnConst * array_labels_const = checkAndGetColumn<ColumnConst>(col_labels.get()))
             {
-                const ColumnArray * column_array_const = checkAndGetColumn<ColumnArray>(array_column_const->getDataColumnPtr().get());
+                const ColumnArray * column_array_const = checkAndGetColumn<ColumnArray>(array_labels_const->getDataColumnPtr().get());
                 const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
                 if (castBothTypes(
@@ -259,7 +259,7 @@ public:
                             using ArrayDataType1 = std::decay_t<decltype(array_column_type1)>;
                             using T1 = typename ArrayDataType1::FieldType;
                             const ColumnVector<T1> * array_column_vector1
-                                = checkAndGetColumn<ColumnVector<T1>>(array_col->getDataPtr().get());
+                                = checkAndGetColumn<ColumnVector<T1>>(array_predicted->getDataPtr().get());
 
                             using ArrayDataType2 = std::decay_t<decltype(array_column_type2)>;
                             using T2 = typename ArrayDataType2::FieldType;
@@ -291,8 +291,8 @@ public:
             }
             else
             {
-                const ColumnArray * column_array2 = checkAndGetColumn<ColumnArray>(col_labels.get());
-                const auto & offsets2 = column_array2->getOffsets();
+                const ColumnArray * array_labels = checkAndGetColumn<ColumnArray>(col_labels.get());
+                const auto & offsets2 = array_labels->getOffsets();
                 const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
                 if (castBothTypes(
@@ -303,12 +303,12 @@ public:
                             using ArrayDataType1 = std::decay_t<decltype(array_column_type1)>;
                             using T1 = typename ArrayDataType1::FieldType;
                             const ColumnVector<T1> * array_column_vector1
-                                = checkAndGetColumn<ColumnVector<T1>>(array_col->getDataPtr().get());
+                                = checkAndGetColumn<ColumnVector<T1>>(array_predicted->getDataPtr().get());
 
                             using ArrayDataType2 = std::decay_t<decltype(array_column_type2)>;
                             using T2 = typename ArrayDataType2::FieldType;
                             const ColumnVector<T2> * array_column_vector2
-                                = checkAndGetColumn<ColumnVector<T2>>(column_array2->getDataPtr().get());
+                                = checkAndGetColumn<ColumnVector<T2>>(array_labels->getDataPtr().get());
 
                             auto pred_gini_col = ColumnFloat64::create(input_rows_count);
                             auto label_gini_col = ColumnFloat64::create(input_rows_count);
@@ -335,15 +335,15 @@ public:
                 }
             }
         }
-        else if (const ColumnConst * array_column_const = checkAndGetColumn<ColumnConst>(col_predicted.get()))
+        else if (const ColumnConst * array_predicted_const = checkAndGetColumn<ColumnConst>(col_predicted.get()))
         {
             /// Note that const-const case is handled by useDefaultImplementationForConstants.
 
-            const ColumnArray * column_array_const = checkAndGetColumn<ColumnArray>(array_column_const->getDataColumnPtr().get());
+            const ColumnArray * column_array_const = checkAndGetColumn<ColumnArray>(array_predicted_const->getDataColumnPtr().get());
             const auto & array_arg_type1 = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
-            const ColumnArray * column_array2 = checkAndGetColumn<ColumnArray>(col_labels.get());
-            const auto & offsets2 = column_array2->getOffsets();
+            const ColumnArray * array_labels = checkAndGetColumn<ColumnArray>(col_labels.get());
+            const auto & offsets2 = array_labels->getOffsets();
             const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
             if (castBothTypes(
@@ -359,7 +359,7 @@ public:
                         using ArrayDataType2 = std::decay_t<decltype(array_column_type2)>;
                         using T2 = typename ArrayDataType2::FieldType;
                         const ColumnVector<T2> * array_column_vector2
-                            = checkAndGetColumn<ColumnVector<T2>>(column_array2->getDataPtr().get());
+                            = checkAndGetColumn<ColumnVector<T2>>(array_labels->getDataPtr().get());
 
                         auto pred_gini_col = ColumnFloat64::create(input_rows_count);
                         auto label_gini_col = ColumnFloat64::create(input_rows_count);
