@@ -2570,6 +2570,7 @@ def test_upgrade_3(started_cluster):
     assert expected_rows == get_count()
 
     node.restart_with_latest_version()
+
     assert table_name in node.query("SHOW TABLES")
 
     node.query(
@@ -2593,6 +2594,18 @@ def test_upgrade_3(started_cluster):
             f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
         )
     )
+    assert 333 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
+        )
+    )
+
+    assert "polling_max_timeout_ms = 333" in node.query(f"SHOW CREATE TABLE {table_name}")
+
+    node.restart_clickhouse()
+
+    assert "polling_max_timeout_ms = 333" in node.query(f"SHOW CREATE TABLE {table_name}")
+
     assert 333 == int(
         node.query(
             f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"

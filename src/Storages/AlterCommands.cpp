@@ -838,6 +838,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_SETTING)
     {
+        if (!metadata.settings_changes)
+        {
+            auto changes = std::make_shared<ASTSetQuery>();
+            changes->is_standalone = false;
+            metadata.settings_changes = std::move(changes);
+        }
+
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {

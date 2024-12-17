@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -572,15 +573,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
-    /// For compatibility.
-    "s3queue_processing_threads_num",
-    "s3queue_loading_retries",
-    "s3queue_after_processing",
-    "s3queue_tracked_files_limit",
-    "s3queue_tracked_file_ttl_sec",
-    "s3queue_polling_min_timeout_ms",
-    "s3queue_polling_max_timeout_ms",
-    "s3queue_polling_backoff_ms",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -590,12 +582,6 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
-    /// For compatibility.
-    "s3queue_loading_retries",
-    "s3queue_after_processing",
-    "s3queue_polling_min_timeout_ms",
-    "s3queue_polling_max_timeout_ms",
-    "s3queue_polling_backoff_ms",
 };
 
 static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
@@ -642,7 +628,11 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
 
         if (setting_changed)
         {
-            if (!isSettingChangeable(changed_setting.name, mode))
+            SettingChange result_setting(changed_setting);
+            if (result_setting.name.starts_with("s3queue_"))
+                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
+
+            if (!isSettingChangeable(result_setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -706,7 +696,11 @@ void StorageObjectStorageQueue::alter(
             if (!setting_changed)
                 continue;
 
-            if (!isSettingChangeable(setting.name, mode))
+            SettingChange result_setting(setting);
+            if (result_setting.name.starts_with("s3queue_"))
+                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
+
+            if (!isSettingChangeable(result_setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -714,16 +708,14 @@ void StorageObjectStorageQueue::alter(
                     setting.name, magic_enum::enum_name(mode), getName());
             }
 
-            SettingChange result_setting(setting);
-            if (result_setting.name.starts_with("s3queue_"))
-                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
-
             changed_settings.push_back(result_setting);
 
             auto inserted = changed_settings_set.emplace(result_setting.name).second;
             if (!inserted)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", setting.name);
         }
+
+        LOG_TEST(log, "New settings: {}", serializeAST(*new_metadata.settings_changes));
 
         /// Alter settings which are stored in keeper.
         files_metadata->alterSettings(changed_settings);
