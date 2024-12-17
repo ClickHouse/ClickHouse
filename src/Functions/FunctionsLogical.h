@@ -248,6 +248,8 @@ public:
         return name;
     }
 
+    bool isNoExcept() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;

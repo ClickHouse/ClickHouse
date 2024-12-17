@@ -1550,7 +1550,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         auto drop_unused_columns_after_join_actions_dag = createStepToDropColumns(header_after_join, outer_scope_columns, planner_context);
         if (drop_unused_columns_after_join_actions_dag)
         {
-            auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(*drop_unused_columns_after_join_actions_dag), enable_adaptive_short_circuit);
+            auto drop_unused_columns_after_join_transform_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(*drop_unused_columns_after_join_actions_dag), settings[Setting::enable_adaptive_short_circuit]);
             drop_unused_columns_after_join_transform_step->setStepDescription("Drop unused columns after JOIN");
             result_plan.addStep(std::move(drop_unused_columns_after_join_transform_step));
         }

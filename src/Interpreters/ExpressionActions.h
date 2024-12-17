@@ -47,6 +47,7 @@ public:
         bool needed_later = false;
         // Position in ExpressionActions::actions
         size_t actions_pos = 0;
+        size_t reordered_arg_pos = 0;
     };
 
     using Arguments = std::vector<Argument>;
@@ -66,6 +67,7 @@ public:
         bool is_lazy_executed;
         bool is_short_circuit_node;
         bool could_reorder_arguments;
+        std::vector<size_t> reordered_arguments_original_pos;
         Action(const Node * node_,
             const Arguments & arguments_,
             size_t result_position_,
@@ -78,13 +80,17 @@ public:
             is_lazy_executed(is_lazy_executed_),
             is_short_circuit_node(is_short_circuit_node_),
             could_reorder_arguments(could_reorder_arguments_)
-        {}
+        {
+            for (size_t i = 0; i < arguments.size(); ++i)
+                reordered_arguments_original_pos.emplace_back(i);
+        }
         Action(const Action & b)
         {
             node = b.node;
             {
                 std::shared_lock lock(b.mutex);
                 arguments = b.arguments;
+                reordered_arguments_original_pos = b.reordered_arguments_original_pos;
             }
             result_position = b.result_position;
             is_lazy_executed = b.is_lazy_executed;
@@ -103,6 +109,7 @@ public:
             {
                 std::shared_lock lock(b.mutex);
                 arguments = b.arguments;
+                reordered_arguments_original_pos = b.reordered_arguments_original_pos;
             }
             result_position = b.result_position;
             is_lazy_executed = b.is_lazy_executed;
@@ -147,7 +154,7 @@ private:
 
     ExpressionActionsSettings settings;
 
-    static const size_t reorder_short_circuit_arguments_every_rows = 10000;
+    static const size_t reorder_short_circuit_arguments_every_rows;
     size_t current_profile_rows = 0;
 
 public:

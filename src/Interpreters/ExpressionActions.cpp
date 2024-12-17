@@ -227,7 +227,9 @@ static void setLazyExecutionInfo(
 
         /// Update info about short-circuit ancestors according to parent info.
         for (const auto & [short_circuit_node, indexes] : lazy_execution_infos[parent].short_circuit_ancestors_info)
+        {
             lazy_execution_info.short_circuit_ancestors_info[short_circuit_node].insert(indexes.begin(), indexes.end());
+        }
     }
 
     if (!lazy_execution_info.can_be_lazy_executed)
@@ -451,6 +453,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             if (!argument.needed_later)
                 free_positions.push(argument.pos);
 
+            argument.reordered_arg_pos = arguments.size();
             arguments.emplace_back(argument);
         }
 
@@ -609,25 +612,22 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
     }
 }
 
-//namespace
-//{
-    /// This struct stores context needed to execute actions.
-    ///
-    /// Execution model is following:
-    ///   * execution is performed over list of columns (with fixed size = ExpressionActions::num_columns)
-    ///   * every argument has fixed position in columns list, every action has fixed position for result
-    ///   * if argument is not needed anymore (Argument::needed_later == false), it is removed from list
-    ///   * argument for INPUT is in inputs[inputs_pos[argument.pos]]
-    ///
-    /// Columns on positions `ExpressionActions::result_positions` are inserted back into block.
-    struct ExecutionContext
-    {
-        ColumnsWithTypeAndName & inputs;
-        ColumnsWithTypeAndName columns = {};
-        std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows = 0;
-    };
-//}
+/// This struct stores context needed to execute actions.
+///
+/// Execution model is following:
+///   * execution is performed over list of columns (with fixed size = ExpressionActions::num_columns)
+///   * every argument has fixed position in columns list, every action has fixed position for result
+///   * if argument is not needed anymore (Argument::needed_later == false), it is removed from list
+///   * argument for INPUT is in inputs[inputs_pos[argument.pos]]
+///
+/// Columns on positions `ExpressionActions::result_positions` are inserted back into block.
+struct ExecutionContext
+{
+    ColumnsWithTypeAndName & inputs;
+    ColumnsWithTypeAndName columns = {};
+    std::vector<ssize_t> inputs_pos = {};
+    size_t num_rows = 0;
+};
 
 void ExpressionActions::executeAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
 {
@@ -641,7 +641,7 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
         {
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty. {}\n{}, {}", action.node->result_name, res_column.column->getName(), res_column.name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
 
             res_column.type = action.node->result_type;
             res_column.name = action.node->result_name;
@@ -665,10 +665,12 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
                 std::shared_lock lock(action.mutex);
                 for (size_t i = 0; i < arguments.size(); ++i)
                 {
-                    if (!action.arguments[i].needed_later)
-                        arguments[i] = std::move(columns[action.arguments[i].pos]);
+                    const auto & action_arg = action.arguments[i];
+                    size_t placed_pos = action_arg.reordered_arg_pos;
+                    if (!action_arg.needed_later)
+                        arguments[placed_pos] = std::move(columns[action_arg.pos]);
                     else
-                        arguments[i] = columns[action.arguments[i].pos];
+                        arguments[placed_pos] = columns[action_arg.pos];
                 }
             }
             else
@@ -682,7 +684,8 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
                 }
             }
 
-            if (action.is_lazy_executed)
+
+            if (action.is_lazy_executed && !action.has_high_short_circuit_selectivity)
             {
                 res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
             }
@@ -911,11 +914,13 @@ void ExpressionActions::updateActionsProfile(ExpressionActions::Action & action,
     action.short_circuit_selected_rows += profile.short_circuit_selected_rows;
     for (const auto & arg_profile : profile.arguments_profiles)
     {
-        auto & arg_action = actions[action.arguments[arg_profile.first].actions_pos];
+        size_t arg_pos = action.reordered_arguments_original_pos[arg_profile.first];
+        auto & arg_action = actions[action.arguments[arg_pos].actions_pos];
         updateActionsProfile(arg_action, arg_profile.second);
     }
 }
 
+const size_t ExpressionActions::reorder_short_circuit_arguments_every_rows = 20000;
 void ExpressionActions::tryReorderShortCircuitArguments(size_t current_bach_rows)
 {
     if (!enable_adaptive_short_circuit)
@@ -942,29 +947,20 @@ void ExpressionActions::tryReorderShortCircuitArguments(size_t current_bach_rows
             }
         }
         ::sort(rank_values.begin(), rank_values.end(), [](const auto & a, const auto & b) { return a.second < b.second; });
-        std::vector<std::pair<size_t, Argument>> reordered_args;
         LOG_TRACE(getLogger("ExpressionActions"), "try to reorder node's arguments: {}", action.node->result_name);
-        for (size_t i = 0; i < action.arguments.size(); ++i)
         {
-            const auto & rank_value = rank_values[i];
-
-            // position is not changed.
-            if (rank_value.first == i)
-                continue;
-            LOG_TRACE(getLogger("ExceptionActions"), "Move arg {} to {}", i, rank_value.first);
-            reordered_args.emplace_back(std::make_pair(i, action.arguments[rank_value.first]));
-        }
-
-        // This will reorder the execution of arguments. We don't need to topological sort the actions again
-        {
+            // We cannot replace Action::arguments directly, since `result_positions` will be overwritten once the column is no longer needed.
             std::unique_lock lock(action.mutex);
-            for (const auto & [pos, arg] : reordered_args)
+            action.reordered_arguments_original_pos.clear();
+            for (size_t i = 0; i < action.arguments.size(); ++i)
             {
-                action.arguments[pos] = std::move(arg);
+                const auto & rank_value = rank_values[i];
+                action.arguments[rank_value.first].reordered_arg_pos = i;
+                action.reordered_arguments_original_pos.emplace_back(rank_value.first);
+                LOG_TRACE(getLogger("ExceptionActions"), "Move arg {} to {}", rank_value.first, i);
             }
         }
     }
-
     current_profile_rows = 0;
 }
 

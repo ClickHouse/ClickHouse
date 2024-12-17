@@ -21,6 +21,8 @@
 
 #include <cstring>
 #include <algorithm>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
