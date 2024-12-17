@@ -5004,7 +5004,6 @@ Prefer prefetched threadpool if all parts are on remote filesystem
 Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
-    DECLARE(UInt64, object_storage_remove_recursive_file_limit, DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT, "Max number of files to store in memory during remove. Zero value means unlimited. Used to reduce memory usage.", 0) \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the prefetch buffer to read from the filesystem.
 )", 0) \
@@ -5226,7 +5225,7 @@ Only in ClickHouse Cloud. Wait time in milliseconds to receive connection from c
     DECLARE(Bool, distributed_cache_bypass_connection_pool, false, R"(
 Only in ClickHouse Cloud. Allow to bypass distributed cache connection pool
 )", 0) \
-    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL, R"(
+    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::WAIT, R"(
 Only in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
 )", 0) \
     DECLARE(UInt64, distributed_cache_read_alignment, 0, R"(
@@ -5240,6 +5239,9 @@ Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a 
 )", 0) \
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only in ClickHouse Cloud. Discard connection if some data is unread.
+)", 0) \
+    DECLARE(Bool, distributed_cache_min_bytes_for_seek, 0, R"(
+Only in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
