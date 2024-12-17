@@ -141,8 +141,7 @@ void WriteBufferValidUTF8::nextImpl()
 
 WriteBufferValidUTF8::~WriteBufferValidUTF8()
 {
-    if (!canceled)
-        finalize();
+    finalize();
 }
 
 void WriteBufferValidUTF8::finalizeImpl()

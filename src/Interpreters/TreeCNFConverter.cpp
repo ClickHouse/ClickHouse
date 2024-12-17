@@ -372,7 +372,8 @@ CNFQuery & CNFQuery::reduce()
             statements = filterCNFSubsets(statements);
             return *this;
         }
-        statements = new_statements;
+        else
+            statements = new_statements;
     }
 }
 

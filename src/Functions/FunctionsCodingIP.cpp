@@ -78,11 +78,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -164,11 +159,6 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 3 of function {}",
                             arguments[2]->getName(), getName());
 
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -385,8 +375,9 @@ private:
 
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 public:
     static constexpr auto name = Name::name;
@@ -411,11 +402,6 @@ public:
                 arguments[0]->getName(), getName()
             );
 
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -628,11 +614,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     static void formatMAC(UInt64 mac, UInt8 * out)
     {
         /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
@@ -680,8 +661,9 @@ public:
 
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 };
 
@@ -762,11 +744,6 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -799,8 +776,9 @@ public:
 
             return col_res;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 };
 
@@ -1133,11 +1111,6 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
         }
 
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeUInt8>();
     }
 

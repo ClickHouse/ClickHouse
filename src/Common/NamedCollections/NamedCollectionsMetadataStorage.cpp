@@ -11,7 +11,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <base/sort.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
@@ -541,11 +540,13 @@ void NamedCollectionsMetadataStorage::update(const ASTAlterNamedCollectionQuery 
                 "Cannot delete key `{}` because it does not exist in collection",
                 delete_key);
         }
-
-        result_changes_map.erase(it);
-        auto it_override = result_overridability_map.find(delete_key);
-        if (it_override != result_overridability_map.end())
-            result_overridability_map.erase(it_override);
+        else
+        {
+            result_changes_map.erase(it);
+            auto it_override = result_overridability_map.find(delete_key);
+            if (it_override != result_overridability_map.end())
+                result_overridability_map.erase(it_override);
+        }
     }
 
     create_query.changes.clear();

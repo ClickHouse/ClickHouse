@@ -10,7 +10,6 @@
 #include <base/defines.h>
 
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <boost/algorithm/string/join.hpp>
 
 namespace DB
@@ -23,6 +22,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_OPEN_FILE;
     extern const int FILE_DOESNT_EXIST;
+    extern const int BAD_FILE_TYPE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int LOGICAL_ERROR;
 }
@@ -126,13 +126,16 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr tx) override
     {
-        if (!metadata_storage.existsFile(path))
+        if (!metadata_storage.exists(path))
         {
             if (if_exists)
                 return;
 
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist or isn't a regular file", path);
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
         }
+
+        if (!metadata_storage.isFile(path))
+            throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
         try
         {
@@ -208,13 +211,16 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
     {
         for (const auto & [path, if_exists] : remove_paths)
         {
-            if (!metadata_storage.existsFile(path))
+            if (!metadata_storage.exists(path))
             {
                 if (if_exists)
                     continue;
 
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist or isn't a regular file", path);
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata path '{}' doesn't exist", path);
             }
+
+            if (!metadata_storage.isFile(path))
+                throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path '{}' is not a regular file", path);
 
             try
             {
@@ -312,7 +318,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     {
         checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-        if (metadata_storage.existsFile(path_to_remove))
+        if (metadata_storage.isFile(path_to_remove))
         {
             try
             {
@@ -361,7 +367,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
     void execute(MetadataTransactionPtr tx) override
     {
         /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
-        if (metadata_storage.existsFileOrDirectory(path))
+        if (metadata_storage.exists(path))
             removeMetadataRecursive(tx, path);
     }
 
@@ -427,7 +433,7 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
 
     void execute(MetadataTransactionPtr tx) override
     {
-        if (metadata_storage.existsFile(path_to))
+        if (metadata_storage.exists(path_to))
         {
             objects_to_remove = metadata_storage.getStorageObjects(path_to);
             tx->replaceFile(path_from, path_to);
@@ -481,7 +487,8 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
     void undo() override
     {
-        object_storage.removeObjectIfExists(object);
+        if (object_storage.exists(object))
+            object_storage.removeObject(object);
     }
 
     void finalize() override
@@ -543,7 +550,8 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void undo() override
     {
-         destination_object_storage.removeObjectsIfExist(created_objects);
+        for (const auto & object : created_objects)
+            destination_object_storage.removeObject(object);
     }
 
     void finalize() override
@@ -575,8 +583,13 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
     void execute(MetadataTransactionPtr tx) override
     {
-        if (metadata_storage.existsFile(path))
+        if (metadata_storage.exists(path))
+        {
+            if (!metadata_storage.isFile(path))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not a file", path);
+
             truncate_outcome = tx->truncateFile(path, size);
+        }
     }
 
     void undo() override
@@ -592,39 +605,6 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
         if (!truncate_outcome->objects_to_remove.empty())
             object_storage.removeObjectsIfExist(truncate_outcome->objects_to_remove);
     }
-};
-
-struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOperation
-{
-    StoredObject object;
-
-    CreateEmptyFileObjectStorageOperation(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        const std::string & path_)
-        : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
-    {
-        const auto key = object_storage.generateObjectKeyForPath(path_, std::nullopt);
-        object = StoredObject(key.serialize(), path_, /* file_size */0);
-    }
-
-    std::string getInfoForLog() const override
-    {
-        return fmt::format("CreateEmptyFileObjectStorageOperation (remote path: {}, local path: {})", object.remote_path, object.local_path);
-    }
-
-    void execute(MetadataTransactionPtr /* tx */) override
-    {
-        auto buf = object_storage.writeObject(object, WriteMode::Rewrite);
-        buf->finalize();
-    }
-
-    void undo() override
-    {
-        object_storage.removeObjectIfExists(object);
-    }
-
-    void finalize() override {}
 };
 
 }
@@ -683,7 +663,7 @@ void DiskObjectStorageTransaction::clearDirectory(const std::string & path)
 {
     for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
     {
-        if (metadata_storage.existsFile(it->path()))
+        if (metadata_storage.isFile(it->path()))
             removeFile(it->path());
     }
 }
@@ -789,7 +769,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             {
                 /// Otherwise we will produce lost blobs which nobody points to
                 /// WriteOnce storages are not affected by the issue
-                if (!tx->object_storage.isPlain() && tx->metadata_storage.existsFile(path))
+                if (!tx->object_storage.isPlain() && tx->metadata_storage.exists(path))
                     tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
 
                 tx->metadata_transaction->createMetadataFile(path, key_, count);
@@ -822,7 +802,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 {
                     /// Otherwise we will produce lost blobs which nobody points to
                     /// WriteOnce storages are not affected by the issue
-                    if (!object_storage_tx->object_storage.isPlain() && object_storage_tx->metadata_storage.existsFile(path))
+                    if (!object_storage_tx->object_storage.isPlain() && object_storage_tx->metadata_storage.exists(path))
                     {
                         object_storage_tx->object_storage.removeObjectsIfExist(object_storage_tx->metadata_storage.getStorageObjects(path));
                     }
@@ -896,7 +876,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     {
         /// Otherwise we will produce lost blobs which nobody points to
         /// WriteOnce storages are not affected by the issue
-        if (!object_storage.isPlain() && metadata_storage.existsFile(path))
+        if (!object_storage.isPlain() && metadata_storage.exists(path))
             object_storage.removeObjectsIfExist(metadata_storage.getStorageObjects(path));
 
         metadata_transaction->createMetadataFile(path, std::move(object_key), object_size);
@@ -944,12 +924,6 @@ void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
 
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
-    if (object_storage.isPlain() && !object_storage.isWriteOnce())
-    {
-        operations_to_execute.emplace_back(
-            std::make_unique<CreateEmptyFileObjectStorageOperation>(object_storage, metadata_storage, path));
-    }
-
     operations_to_execute.emplace_back(
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
         {

@@ -5,13 +5,13 @@ import os
 import sys
 from typing import List
 
-from ci_buddy import CIBuddy
-from ci_config import CI
-from ci_utils import Shell
-from env_helper import GITHUB_REPOSITORY
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
+from ci_utils import Shell
+from env_helper import GITHUB_REPOSITORY
 from report import SUCCESS
+from ci_buddy import CIBuddy
+from ci_config import CI
 
 
 def parse_args():
@@ -229,7 +229,7 @@ def main():
             )
         else:
             CIBuddy(dry_run=False).post_info(
-                title="Autorelease completed",
+                title=f"Autorelease completed",
                 body="",
                 with_wf_link=True,
             )

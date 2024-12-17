@@ -30,7 +30,8 @@ namespace
     {
         if (buckets_num > 1)
             return getProcessedPathForBucket(zk_path, getBucketForPathImpl(path, buckets_num));
-        return zk_path / "processed";
+        else
+            return zk_path / "processed";
     }
 
     zkutil::ZooKeeperPtr getZooKeeper()
@@ -134,7 +135,8 @@ std::vector<std::string> ObjectStorageQueueOrderedFileMetadata::getMetadataPaths
             paths.push_back("buckets/" + toString(i));
         return paths;
     }
-    return {"failed", "processing"};
+    else
+        return {"failed", "processing"};
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(

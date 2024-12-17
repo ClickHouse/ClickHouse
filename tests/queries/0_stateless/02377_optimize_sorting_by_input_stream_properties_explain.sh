@@ -8,7 +8,7 @@ DISABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=0;set quer
 ENABLE_OPTIMIZATION="set optimize_sorting_by_input_stream_properties=1;set query_plan_read_in_order=1;set optimize_read_in_order=1;set max_threads=3"
 MAKE_OUTPUT_STABLE="set optimize_read_in_order=1;set max_threads=3;set query_plan_remove_redundant_sorting=0"
 GREP_SORTING="grep 'PartialSortingTransform\|LimitsCheckingTransform\|MergeSortingTransform\|MergingSortedTransform'"
-GREP_SORTMODE="grep 'Sorting'"
+GREP_SORTMODE="grep 'Sorting ('"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
 FIND_SORTING="$GREP_SORTING | $TRIM_LEADING_SPACES"
 FIND_SORTMODE="$GREP_SORTMODE | $TRIM_LEADING_SPACES"

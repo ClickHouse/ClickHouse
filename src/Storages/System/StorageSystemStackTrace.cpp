@@ -168,7 +168,8 @@ bool wait(int timeout_ms)
         {
             if (notification_num == sequence_num.load(std::memory_order_relaxed))
                 return true;
-            continue; /// Drain delayed notifications.
+            else
+                continue;   /// Drain delayed notifications.
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read wrong number of bytes from pipe");
@@ -473,7 +474,7 @@ public:
     {
         Pipe pipe(std::make_shared<StackTraceSource>(
             column_names,
-            getOutputHeader(),
+            getOutputStream().header,
             std::move(filter_actions_dag),
             context,
             max_block_size,
@@ -489,7 +490,7 @@ public:
         Block sample_block,
         size_t max_block_size_,
         LoggerPtr log_)
-        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
         , column_names(column_names_)
         , max_block_size(max_block_size_)
         , log(log_)

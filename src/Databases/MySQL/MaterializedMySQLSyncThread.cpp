@@ -3,7 +3,6 @@
 
 #if USE_MYSQL
 
-#include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Databases/MySQL/tryParseTableIDFromDDL.h>
 #include <Databases/MySQL/tryQuoteUnrecognizedTokens.h>
@@ -44,19 +43,6 @@ namespace Setting
     extern const SettingsBool insert_allow_materialized_columns;
 }
 
-namespace MaterializedMySQLSetting
-{
-    extern const MaterializedMySQLSettingsString materialized_mysql_tables_list;
-    extern const MaterializedMySQLSettingsUInt64 max_bytes_in_binlog_queue;
-    extern const MaterializedMySQLSettingsUInt64 max_bytes_in_buffer;
-    extern const MaterializedMySQLSettingsUInt64 max_bytes_in_buffers;
-    extern const MaterializedMySQLSettingsUInt64 max_flush_data_time;
-    extern const MaterializedMySQLSettingsUInt64 max_milliseconds_to_wait_in_binlog_queue;
-    extern const MaterializedMySQLSettingsUInt64 max_rows_in_buffer;
-    extern const MaterializedMySQLSettingsUInt64 max_rows_in_buffers;
-    extern const MaterializedMySQLSettingsInt64 max_wait_time_when_mysql_unavailable;
-}
-
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
@@ -73,7 +59,6 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int THERE_IS_NO_QUERY;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DATABASE_NOT_EMPTY;
@@ -285,10 +270,10 @@ MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
 {
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 
-    if (!(*settings)[MaterializedMySQLSetting::materialized_mysql_tables_list].value.empty())
+    if (!settings->materialized_mysql_tables_list.value.empty())
     {
         Names tables_list;
-        boost::split(tables_list, (*settings)[MaterializedMySQLSetting::materialized_mysql_tables_list].value, [](char c){ return c == ','; });
+        boost::split(tables_list, settings->materialized_mysql_tables_list.value, [](char c){ return c == ','; });
         for (String & table_name: tables_list)
         {
             boost::trim(table_name);
@@ -320,7 +305,7 @@ void MaterializedMySQLSyncThread::synchronization()
             }
 
             /// TODO: add gc task for `sign = -1`(use alter table delete, execute by interval. need final state)
-            UInt64 max_flush_time = (*settings)[MaterializedMySQLSetting::max_flush_data_time];
+            UInt64 max_flush_time = settings->max_flush_data_time;
 
             try
             {
@@ -339,7 +324,7 @@ void MaterializedMySQLSyncThread::synchronization()
             }
             catch (const Exception & e)
             {
-                if ((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable] < 0)
+                if (settings->max_wait_time_when_mysql_unavailable < 0)
                     throw;
                 bool binlog_was_purged = e.code() == ER_MASTER_FATAL_ERROR_READING_BINLOG ||
                                          e.code() == ER_MASTER_HAS_PURGED_REQUIRED_GTIDS;
@@ -350,12 +335,12 @@ void MaterializedMySQLSyncThread::synchronization()
                 LOG_INFO(log, "Lost connection to MySQL");
                 need_reconnect = true;
                 setSynchronizationThreadException(std::current_exception());
-                sleepForMilliseconds((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable]);
+                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
                 continue;
             }
             if (watch.elapsedMilliseconds() > max_flush_time || buffers.checkThresholds(
-                    (*settings)[MaterializedMySQLSetting::max_rows_in_buffer], (*settings)[MaterializedMySQLSetting::max_bytes_in_buffer],
-                    (*settings)[MaterializedMySQLSetting::max_rows_in_buffers], (*settings)[MaterializedMySQLSetting::max_bytes_in_buffers])
+                    settings->max_rows_in_buffer, settings->max_bytes_in_buffer,
+                    settings->max_rows_in_buffers, settings->max_bytes_in_buffers)
                 )
             {
                 watch.restart();
@@ -402,9 +387,10 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
             throw Exception(ErrorCodes::SYNC_MYSQL_USER_ACCESS_ERROR, "MySQL SYNC USER ACCESS ERR: "
                             "mysql sync user needs at least GLOBAL PRIVILEGES:'RELOAD, REPLICATION SLAVE, REPLICATION CLIENT' "
                             "and SELECT PRIVILEGE on Database {}", mysql_database_name);
-        if (e.errnum() == ER_BAD_DB_ERROR)
+        else if (e.errnum() == ER_BAD_DB_ERROR)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Unknown database '{}' on MySQL", mysql_database_name);
-        throw;
+        else
+            throw;
     }
 }
 
@@ -565,9 +551,9 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
 
             if (connection.isNull())
             {
-                if ((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable] < 0)
+                if (settings->max_wait_time_when_mysql_unavailable < 0)
                     throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unable to connect to MySQL");
-                sleepForMilliseconds((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable]);
+                sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
                 continue;
             }
 
@@ -610,8 +596,8 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
                 binlog = binlog_client->createBinlog(metadata.executed_gtid_set,
                                                      database_name,
                                                      {mysql_database_name},
-                                                     (*settings)[MaterializedMySQLSetting::max_bytes_in_binlog_queue],
-                                                     (*settings)[MaterializedMySQLSetting::max_milliseconds_to_wait_in_binlog_queue]);
+                                                     settings->max_bytes_in_binlog_queue,
+                                                     settings->max_milliseconds_to_wait_in_binlog_queue);
             }
             else
             {
@@ -626,7 +612,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
         {
             tryLogCurrentException(log);
 
-            if ((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable] < 0)
+            if (settings->max_wait_time_when_mysql_unavailable < 0)
                 throw;
 
             if (!shouldReconnectOnException(std::current_exception()))
@@ -634,7 +620,7 @@ bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & meta
 
             setSynchronizationThreadException(std::current_exception());
             /// Avoid busy loop when MySQL is not available.
-            sleepForMilliseconds((*settings)[MaterializedMySQLSetting::max_wait_time_when_mysql_unavailable]);
+            sleepForMilliseconds(settings->max_wait_time_when_mysql_unavailable);
         }
     }
 
@@ -751,7 +737,7 @@ static void writeFieldsToColumn(
             return true;
         };
 
-        const auto & write_data_to_column = [&](auto * cast_column, auto from_type, auto to_type)
+        const auto & write_data_to_column = [&](auto * casted_column, auto from_type, auto to_type)
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -759,39 +745,39 @@ static void writeFieldsToColumn(
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
-                    cast_column->insertValue(static_cast<decltype(to_type)>(value.template safeGet<decltype(from_type)>()));
+                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template safeGet<decltype(from_type)>()));
             }
         };
 
-        if (ColumnInt8 * cast_int8_column = typeid_cast<ColumnInt8 *>(&column_to))
-            write_data_to_column(cast_int8_column, UInt64(), Int8());
-        else if (ColumnInt16 * cast_int16_column = typeid_cast<ColumnInt16 *>(&column_to))
-            write_data_to_column(cast_int16_column, UInt64(), Int16());
-        else if (ColumnInt64 * cast_int64_column = typeid_cast<ColumnInt64 *>(&column_to))
-            write_data_to_column(cast_int64_column, UInt64(), Int64());
-        else if (ColumnUInt8 * cast_uint8_column = typeid_cast<ColumnUInt8 *>(&column_to))
-            write_data_to_column(cast_uint8_column, UInt64(), UInt8());
-        else if (ColumnUInt16 * cast_uint16_column = typeid_cast<ColumnUInt16 *>(&column_to))
-            write_data_to_column(cast_uint16_column, UInt64(), UInt16());
-        else if (ColumnUInt32 * cast_uint32_column = typeid_cast<ColumnUInt32 *>(&column_to))
-            write_data_to_column(cast_uint32_column, UInt64(), UInt32());
-        else if (ColumnUInt64 * cast_uint64_column = typeid_cast<ColumnUInt64 *>(&column_to))
-            write_data_to_column(cast_uint64_column, UInt64(), UInt64());
-        else if (ColumnFloat32 * cast_float32_column = typeid_cast<ColumnFloat32 *>(&column_to))
-            write_data_to_column(cast_float32_column, Float64(), Float32());
-        else if (ColumnFloat64 * cast_float64_column = typeid_cast<ColumnFloat64 *>(&column_to))
-            write_data_to_column(cast_float64_column, Float64(), Float64());
-        else if (ColumnDecimal<Decimal32> * cast_decimal_32_column = typeid_cast<ColumnDecimal<Decimal32> *>(&column_to))
-            write_data_to_column(cast_decimal_32_column, Decimal32(), Decimal32());
-        else if (ColumnDecimal<Decimal64> * cast_decimal_64_column = typeid_cast<ColumnDecimal<Decimal64> *>(&column_to))
-            write_data_to_column(cast_decimal_64_column, Decimal64(), Decimal64());
-        else if (ColumnDecimal<Decimal128> * cast_decimal_128_column = typeid_cast<ColumnDecimal<Decimal128> *>(&column_to))
-            write_data_to_column(cast_decimal_128_column, Decimal128(), Decimal128());
-        else if (ColumnDecimal<Decimal256> * cast_decimal_256_column = typeid_cast<ColumnDecimal<Decimal256> *>(&column_to))
-            write_data_to_column(cast_decimal_256_column, Decimal256(), Decimal256());
-        else if (ColumnDecimal<DateTime64> * cast_datetime_64_column = typeid_cast<ColumnDecimal<DateTime64> *>(&column_to))
-            write_data_to_column(cast_datetime_64_column, DateTime64(), DateTime64());
-        else if (ColumnInt32 * cast_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
+        if (ColumnInt8 * casted_int8_column = typeid_cast<ColumnInt8 *>(&column_to))
+            write_data_to_column(casted_int8_column, UInt64(), Int8());
+        else if (ColumnInt16 * casted_int16_column = typeid_cast<ColumnInt16 *>(&column_to))
+            write_data_to_column(casted_int16_column, UInt64(), Int16());
+        else if (ColumnInt64 * casted_int64_column = typeid_cast<ColumnInt64 *>(&column_to))
+            write_data_to_column(casted_int64_column, UInt64(), Int64());
+        else if (ColumnUInt8 * casted_uint8_column = typeid_cast<ColumnUInt8 *>(&column_to))
+            write_data_to_column(casted_uint8_column, UInt64(), UInt8());
+        else if (ColumnUInt16 * casted_uint16_column = typeid_cast<ColumnUInt16 *>(&column_to))
+            write_data_to_column(casted_uint16_column, UInt64(), UInt16());
+        else if (ColumnUInt32 * casted_uint32_column = typeid_cast<ColumnUInt32 *>(&column_to))
+            write_data_to_column(casted_uint32_column, UInt64(), UInt32());
+        else if (ColumnUInt64 * casted_uint64_column = typeid_cast<ColumnUInt64 *>(&column_to))
+            write_data_to_column(casted_uint64_column, UInt64(), UInt64());
+        else if (ColumnFloat32 * casted_float32_column = typeid_cast<ColumnFloat32 *>(&column_to))
+            write_data_to_column(casted_float32_column, Float64(), Float32());
+        else if (ColumnFloat64 * casted_float64_column = typeid_cast<ColumnFloat64 *>(&column_to))
+            write_data_to_column(casted_float64_column, Float64(), Float64());
+        else if (ColumnDecimal<Decimal32> * casted_decimal_32_column = typeid_cast<ColumnDecimal<Decimal32> *>(&column_to))
+            write_data_to_column(casted_decimal_32_column, Decimal32(), Decimal32());
+        else if (ColumnDecimal<Decimal64> * casted_decimal_64_column = typeid_cast<ColumnDecimal<Decimal64> *>(&column_to))
+            write_data_to_column(casted_decimal_64_column, Decimal64(), Decimal64());
+        else if (ColumnDecimal<Decimal128> * casted_decimal_128_column = typeid_cast<ColumnDecimal<Decimal128> *>(&column_to))
+            write_data_to_column(casted_decimal_128_column, Decimal128(), Decimal128());
+        else if (ColumnDecimal<Decimal256> * casted_decimal_256_column = typeid_cast<ColumnDecimal<Decimal256> *>(&column_to))
+            write_data_to_column(casted_decimal_256_column, Decimal256(), Decimal256());
+        else if (ColumnDecimal<DateTime64> * casted_datetime_64_column = typeid_cast<ColumnDecimal<DateTime64> *>(&column_to))
+            write_data_to_column(casted_datetime_64_column, DateTime64(), DateTime64());
+        else if (ColumnInt32 * casted_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -801,19 +787,19 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     if (value.getType() == Field::Types::UInt64)
-                        cast_int32_column->insertValue(static_cast<Int32>(value.safeGet<Int32>()));
+                        casted_int32_column->insertValue(static_cast<Int32>(value.safeGet<Int32>()));
                     else if (value.getType() == Field::Types::Int64)
                     {
                         /// For MYSQL_TYPE_INT24
                         const Int32 & num = static_cast<Int32>(value.safeGet<Int32>());
-                        cast_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
+                        casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
                 }
             }
         }
-        else if (ColumnString * cast_string_column = typeid_cast<ColumnString *>(&column_to))
+        else if (ColumnString * casted_string_column = typeid_cast<ColumnString *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -823,11 +809,11 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     const String & data = value.safeGet<const String &>();
-                    cast_string_column->insertData(data.data(), data.size());
+                    casted_string_column->insertData(data.data(), data.size());
                 }
             }
         }
-        else if (ColumnFixedString * cast_fixed_string_column = typeid_cast<ColumnFixedString *>(&column_to))
+        else if (ColumnFixedString * casted_fixed_string_column = typeid_cast<ColumnFixedString *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -837,7 +823,7 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     const String & data = value.safeGet<const String &>();
-                    cast_fixed_string_column->insertData(data.data(), data.size());
+                    casted_fixed_string_column->insertData(data.data(), data.size());
                 }
             }
         }
@@ -1048,7 +1034,6 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
             exception.code() != ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY &&
             exception.code() != ErrorCodes::THERE_IS_NO_QUERY &&
             exception.code() != ErrorCodes::QUERY_WAS_CANCELLED &&
-            exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT &&
             exception.code() != ErrorCodes::TABLE_ALREADY_EXISTS &&
             exception.code() != ErrorCodes::UNKNOWN_DATABASE &&
             exception.code() != ErrorCodes::DATABASE_ALREADY_EXISTS &&

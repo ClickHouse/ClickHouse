@@ -66,7 +66,7 @@ public:
         ClusterPtr cluster_,
         LoggerPtr log_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -191,7 +191,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
                 queryToString(query_to_send),
-                getOutputHeader(),
+                getOutputStream().header,
                 new_context,
                 /*throttler=*/nullptr,
                 scalars,
@@ -210,7 +210,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(getOutputHeader()));
+        pipe = Pipe(std::make_shared<NullSource>(getOutputStream().header));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);

@@ -1,12 +1,12 @@
 import copy
 import logging
+import pytest
 import random
 import timeit
-from itertools import repeat
+
 from math import floor
 from multiprocessing import Pool
-
-import pytest
+from itertools import repeat
 
 from helpers.cluster import ClickHouseCluster
 

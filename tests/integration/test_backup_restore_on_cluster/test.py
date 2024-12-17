@@ -1,12 +1,10 @@
-import os.path
-import random
-import re
-import string
-
 import pytest
-
+import re
+import os.path
+import random, string
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
+
 
 cluster = ClickHouseCluster(__file__)
 
@@ -1153,7 +1151,7 @@ def test_get_error_from_other_host():
     node1.query("INSERT INTO tbl VALUES (3)")
 
     backup_name = new_backup_name()
-    expected_error = "Got error from host node2.*Table default.tbl was not found"
+    expected_error = "Got error from node2.*Table default.tbl was not found"
     assert re.search(
         expected_error,
         node1.query_and_get_error(
@@ -1162,7 +1160,8 @@ def test_get_error_from_other_host():
     )
 
 
-def test_shutdown_waits_for_backup():
+@pytest.mark.parametrize("kill", [False, True])
+def test_stop_other_host_during_backup(kill):
     node1.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt8"
@@ -1181,7 +1180,7 @@ def test_shutdown_waits_for_backup():
 
     # If kill=False the pending backup must be completed
     # If kill=True the pending backup might be completed or failed
-    node2.stop_clickhouse(kill=False)
+    node2.stop_clickhouse(kill=kill)
 
     assert_eq_with_retry(
         node1,
@@ -1191,11 +1190,22 @@ def test_shutdown_waits_for_backup():
     )
 
     status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
-    assert status == "BACKUP_CREATED"
+
+    if kill:
+        expected_statuses = ["BACKUP_CREATED", "BACKUP_FAILED"]
+    else:
+        expected_statuses = ["BACKUP_CREATED", "BACKUP_CANCELLED"]
+
+    assert status in expected_statuses
 
     node2.start_clickhouse()
 
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
-    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
-    node1.query("SYSTEM SYNC REPLICA tbl")
-    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
+    if status == "BACKUP_CREATED":
+        node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+        node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+        node1.query("SYSTEM SYNC REPLICA tbl")
+        assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
+    elif status == "BACKUP_FAILED":
+        assert not os.path.exists(
+            os.path.join(get_path_to_backup(backup_name), ".backup")
+        )

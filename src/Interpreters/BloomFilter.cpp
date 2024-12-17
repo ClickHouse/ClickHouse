@@ -127,7 +127,8 @@ DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)
     {
         if (!typeid_cast<const DataTypeArray *>(array_type->getNestedType().get()))
             return getPrimitiveType(array_type->getNestedType());
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
     }
 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))

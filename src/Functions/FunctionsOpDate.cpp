@@ -73,7 +73,7 @@ public:
         auto op_build = op->build(arguments);
 
         auto res_type = op_build->getResultType();
-        return op_build->execute(arguments, res_type, input_rows_count, /* dry_run = */ false);
+        return op_build->execute(arguments, res_type, input_rows_count);
     }
 
 private:

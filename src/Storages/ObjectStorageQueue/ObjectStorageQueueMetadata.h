@@ -7,9 +7,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/SettingsChanges.h>
 
 namespace fs = std::filesystem;
 namespace Poco { class Logger; }
@@ -17,7 +17,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 class StorageObjectStorageQueue;
-struct ObjectStorageQueueSettings;
 struct ObjectStorageQueueTableMetadata;
 struct StorageInMemoryMetadata;
 using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
@@ -68,12 +67,7 @@ public:
         const ObjectStorageQueueSettings & settings,
         const ColumnsDescription & columns,
         const std::string & format,
-        const ContextPtr & context,
-        bool is_attach,
         LoggerPtr log);
-
-    void registerIfNot(const StorageID & storage_id);
-    size_t unregister(const StorageID & storage_id);
 
     void shutdown();
 
@@ -93,8 +87,6 @@ public:
 
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
-
-    void alterSettings(const SettingsChanges & changes);
 
 private:
     void cleanupThreadFunc();

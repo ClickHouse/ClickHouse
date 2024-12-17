@@ -105,7 +105,7 @@ bool UserDefinedSQLObjectsStorageBase::storeObject(
     {
         if (throw_if_exists)
             throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined object '{}' already exists", object_name);
-        if (!replace_if_exists)
+        else if (!replace_if_exists)
             return false;
     }
 
@@ -136,7 +136,8 @@ bool UserDefinedSQLObjectsStorageBase::removeObject(
     {
         if (throw_if_not_exists)
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined object '{}' doesn't exist", object_name);
-        return false;
+        else
+            return false;
     }
 
     bool removed = removeObjectImpl(

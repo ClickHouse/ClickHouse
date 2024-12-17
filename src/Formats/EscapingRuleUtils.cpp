@@ -10,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
+#include <Parsers/TokenIterator.h>
 
 
 namespace DB
@@ -24,21 +25,22 @@ FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
 {
     if (escaping_rule.empty())
         return FormatSettings::EscapingRule::None;
-    if (escaping_rule == "None")
+    else if (escaping_rule == "None")
         return FormatSettings::EscapingRule::None;
-    if (escaping_rule == "Escaped")
+    else if (escaping_rule == "Escaped")
         return FormatSettings::EscapingRule::Escaped;
-    if (escaping_rule == "Quoted")
+    else if (escaping_rule == "Quoted")
         return FormatSettings::EscapingRule::Quoted;
-    if (escaping_rule == "CSV")
+    else if (escaping_rule == "CSV")
         return FormatSettings::EscapingRule::CSV;
-    if (escaping_rule == "JSON")
+    else if (escaping_rule == "JSON")
         return FormatSettings::EscapingRule::JSON;
-    if (escaping_rule == "XML")
+    else if (escaping_rule == "XML")
         return FormatSettings::EscapingRule::XML;
-    if (escaping_rule == "Raw")
+    else if (escaping_rule == "Raw")
         return FormatSettings::EscapingRule::Raw;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown escaping rule \"{}\"", escaping_rule);
 }
 
 String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
@@ -82,7 +84,7 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
-            skipJSONField(buf, std::string_view(field_name, field_name_len), format_settings.json);
+            skipJSONField(buf, StringRef(field_name, field_name_len), format_settings.json);
             break;
         case FormatSettings::EscapingRule::Raw:
             readStringInto(out, buf);
