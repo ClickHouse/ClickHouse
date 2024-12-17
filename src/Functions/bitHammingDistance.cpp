@@ -1,6 +1,8 @@
+#include <bit>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/FunctionFactory.h>
-#include <bit>
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+#include <simsimd/simsimd.h>
 
 
 namespace DB
@@ -26,17 +28,40 @@ struct BitHammingDistanceImpl
 
         if constexpr (sizeof(A) <= sizeof(UInt64) && sizeof(B) <= sizeof(UInt64))
         {
-            UInt64 res = static_cast<UInt64>(a) ^ static_cast<UInt64>(b);
-            return std::popcount(res);
+            if constexpr (std::is_same_v<A, B>)
+            {
+                simsimd_distance_t distance;
+                simsimd_hamming_b8(
+                    reinterpret_cast<const simsimd_b8_t *>(&a), reinterpret_cast<const simsimd_b8_t *>(&b), sizeof(A), &distance);
+                return static_cast<UInt64>(distance);
+            }
+            else
+            {
+                UInt64 res = static_cast<UInt64>(a) ^ static_cast<UInt64>(b);
+                return std::popcount(res);
+            }
         }
         else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         {
-            auto xored = a ^ b;
+            if constexpr (std::is_same_v<A, B>)
+            {
+                simsimd_distance_t distance;
+                simsimd_hamming_b8(
+                    reinterpret_cast<const simsimd_b8_t *>(&a.items),
+                    reinterpret_cast<const simsimd_b8_t *>(&b.items),
+                    sizeof(a.items),
+                    &distance);
+                return static_cast<ResultType>(distance);
+            }
+            else
+            {
+                auto xored = a ^ b;
 
-            ResultType res = 0;
-            for (auto item : xored.items)
-                res += std::popcount(item);
-            return res;
+                ResultType res = 0;
+                for (auto item : xored.items)
+                    res += std::popcount(item);
+                return res;
+            }
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unsupported data type combination in function 'bitHammingDistance'");
