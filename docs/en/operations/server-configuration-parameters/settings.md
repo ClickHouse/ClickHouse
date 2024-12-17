@@ -3276,6 +3276,14 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 - [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
 
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Type: Bool
+
+Default value: `true`.
+
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 The maximum number of authentication methods a user can be created with or altered to.
@@ -3296,7 +3304,6 @@ Controls if the user can change settings related to the different feature tiers.
 2 - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
 
 This is equivalent to setting a readonly constraint on all EXPERIMENTAL / BETA features.
-```
 
 Type: UInt32
 
