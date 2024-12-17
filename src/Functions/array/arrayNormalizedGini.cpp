@@ -216,7 +216,7 @@ public:
         if (arg1_type == nullptr || !isNumber(arg1_type->getNestedType()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be numeric array, got {}",
+                "First argument for function {} must be an Array of numeric type, got {}",
                 getName(),
                 arguments[0]->getName());
 
@@ -224,7 +224,7 @@ public:
         if (arg2_type == nullptr || !isNumber(arg2_type->getNestedType()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be numeric array, not {}",
+                "Second argument for function {} must be an Array of numeric typegot {}",
                 getName(),
                 arguments[1]->getName());
 
