@@ -3332,10 +3332,10 @@ static MutableColumnPtr deserializeConstant(
         FutureSet::Hash hash;
         readBinary(hash, in);
 
-        auto column_set = ColumnSet::create(0, nullptr);
+        auto column_set = ColumnSet::create(1, nullptr);
         registry.sets[hash].push_back(column_set.get());
 
-        return column_set;
+        return ColumnConst::create(std::move(column_set), 0);
     }
 
     if (WhichDataType(type).isFunction())
