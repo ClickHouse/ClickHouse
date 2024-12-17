@@ -695,6 +695,15 @@ Type: Bool
 
 Default: 0
 
+## table_engines_require_grant
+
+If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
+By default, for backward compatibility creating table with a specific table engine ignores grant, however you can change this behaviour by setting this to true.
+
+Type: Bool
+
+Default: false
+
 ## temporary_data_in_cache
 
 With this option, temporary data will be stored in the cache for the particular disk.
