@@ -60,6 +60,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/UseSSL.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -90,6 +91,7 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Common/ReplicasReconnector.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -296,6 +298,7 @@ namespace CurrentMetrics
     extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
+    extern const Metric StartupScriptsExecutionState;
 }
 
 namespace ProfileEvents
@@ -364,6 +367,14 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
 }
+
+
+enum StartupScriptsExecutionState : CurrentMetrics::Value
+{
+    NotFinished = 0,
+    Success = 1,
+    Failure = 2,
+};
 
 
 static std::string getCanonicalPath(std::string && path)
@@ -782,9 +793,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             startup_context->makeQueryContext();
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
+
+        CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Success);
     }
     catch (...)
     {
+        CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
     }
 }
@@ -1379,6 +1393,23 @@ try
     if (oom_score)
         setOOMScore(oom_score, log);
 #endif
+
+    std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
+
+    SCOPE_EXIT({
+        if (cancellation_task)
+            CancellationChecker::getInstance().terminateThread();
+    });
+
+    if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
+    {
+        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
+            "CancellationChecker",
+            [] { CancellationChecker::getInstance().workerFunction(); }
+        );
+        cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
+        (*cancellation_task)->activateAndSchedule();
+    }
 
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());
@@ -2211,6 +2242,8 @@ try
 
     if (dns_cache_updater)
         dns_cache_updater->start();
+
+    auto replicas_reconnector = ReplicasReconnector::init(global_context);
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.

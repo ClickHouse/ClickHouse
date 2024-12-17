@@ -1,6 +1,8 @@
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
 
+#include <filesystem>
+
 namespace DB
 {
 

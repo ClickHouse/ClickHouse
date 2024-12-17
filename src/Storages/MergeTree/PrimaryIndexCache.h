@@ -1,7 +1,6 @@
 #pragma once
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/IColumn.h>
 
@@ -50,12 +49,7 @@ public:
     }
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & part_path)
-    {
-        SipHash hash;
-        hash.update(part_path.data(), part_path.size() + 1);
-        return hash.get128();
-    }
+    static UInt128 hash(const String & part_path);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)

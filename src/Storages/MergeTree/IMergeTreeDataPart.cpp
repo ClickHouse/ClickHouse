@@ -5,6 +5,7 @@
 #include <exception>
 #include <optional>
 #include <string_view>
+#include <Common/quoteString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
@@ -882,39 +883,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
 }
 
-void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection) const
-{
-    if (isStoredOnDisk())
-    {
-        if (!isStoredOnReadonlyDisk())
-            appendFilesOfUUID(files);
-
-        appendFilesOfColumns(files);
-        appendFilesOfChecksums(files);
-        appendFilesOfIndexGranularity(files);
-        appendFilesOfIndex(files);
-        appendFilesOfRowsCount(files);
-        appendFilesOfPartitionAndMinMaxIndex(files);
-
-        if (!isStoredOnReadonlyDisk())
-            appendFilesOfTTLInfos(files);
-
-        appendFilesOfDefaultCompressionCodec(files);
-        appendFilesOfMetadataVersion(files);
-    }
-
-    if (!parent_part && include_projection)
-    {
-        for (const auto & [projection_name, projection_part] : projection_parts)
-        {
-            Strings projection_files;
-            projection_part->appendFilesOfColumnsChecksumsIndexes(projection_files, true);
-            for (const auto & projection_file : projection_files)
-                files.push_back(fs::path(projection_part->name + ".proj") / projection_file);
-        }
-    }
-}
-
 MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(const String & projection_name, bool is_temp_projection)
 {
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
@@ -993,10 +961,6 @@ void IMergeTreeDataPart::loadIndexGranularity()
                     "Method 'loadIndexGranularity' is not implemented for part with type {}", getType().toString());
 }
 
-/// Currently we don't cache mark files of part, because cache other meta files is enough to speed up loading.
-void IMergeTreeDataPart::appendFilesOfIndexGranularity(Strings & /* files */) const
-{
-}
 
 template <typename Columns>
 void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & index_columns) const
@@ -1095,22 +1059,6 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexBytes, total_bytes);
 
     return std::make_shared<Index>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
-}
-
-void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const
-{
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    if (parent_part)
-        metadata_snapshot = metadata_snapshot->projections.has(name) ? metadata_snapshot->projections.get(name).metadata : nullptr;
-
-    if (!metadata_snapshot)
-        return;
-
-    if (metadata_snapshot->hasPrimaryKey())
-    {
-        String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
-        files.push_back(index_name);
-    }
 }
 
 NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
@@ -1286,16 +1234,6 @@ void IMergeTreeDataPart::removeMetadataVersion()
     getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
 }
 
-void IMergeTreeDataPart::appendFilesOfDefaultCompressionCodec(Strings & files)
-{
-    files.push_back(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
-}
-
-void IMergeTreeDataPart::appendFilesOfMetadataVersion(Strings & files)
-{
-    files.push_back(METADATA_VERSION_FILE_NAME);
-}
-
 CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
 {
     /// In memory parts doesn't have any compression
@@ -1383,18 +1321,6 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
             getDataPartStorage().getFullPath(), calculated_partition_id, info.partition_id);
 }
 
-void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) const
-{
-    if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING && !parent_part)
-        return;
-
-    if (!parent_part)
-        MergeTreePartition::appendFiles(storage, files);
-
-    if (!parent_part)
-        IMergeTreeDataPart::MinMaxIndex::appendFiles(storage, files);
-}
-
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
     if (auto buf = metadata_manager->readIfExists("checksums.txt"))
@@ -1424,11 +1350,6 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         bytes_on_disk = checksums.getTotalSizeOnDisk();
         bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
     }
-}
-
-void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files)
-{
-    files.push_back("checksums.txt");
 }
 
 void IMergeTreeDataPart::loadRowsCountFileForUnexpectedPart()
@@ -1654,11 +1575,6 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     return existing_count;
 }
 
-void IMergeTreeDataPart::appendFilesOfRowsCount(Strings & files)
-{
-    files.push_back("count.txt");
-}
-
 void IMergeTreeDataPart::loadTTLInfos()
 {
     if (auto in = metadata_manager->readIfExists("ttl.txt"))
@@ -1685,11 +1601,6 @@ void IMergeTreeDataPart::loadTTLInfos()
 }
 
 
-void IMergeTreeDataPart::appendFilesOfTTLInfos(Strings & files)
-{
-    files.push_back("ttl.txt");
-}
-
 void IMergeTreeDataPart::loadUUID()
 {
     if (auto in = metadata_manager->readIfExists(UUID_FILE_NAME))
@@ -1698,11 +1609,6 @@ void IMergeTreeDataPart::loadUUID()
         if (uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty {} in part: {}", String(UUID_FILE_NAME), name);
     }
-}
-
-void IMergeTreeDataPart::appendFilesOfUUID(Strings & files)
-{
-    files.push_back(UUID_FILE_NAME);
 }
 
 void IMergeTreeDataPart::loadColumns(bool require)
@@ -1994,11 +1900,6 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     }
 }
 
-void IMergeTreeDataPart::appendFilesOfColumns(Strings & files)
-{
-    files.push_back("columns.txt");
-    files.push_back(SERIALIZATION_FILE_NAME);
-}
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
@@ -2007,7 +1908,6 @@ bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & stora
 }
 
 void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists)
-try
 {
     assertOnDisk();
 
@@ -2032,18 +1932,6 @@ try
 
     for (const auto & [_, part] : projection_parts)
         part->getDataPartStorage().changeRootPath(old_projection_root_path, new_projection_root_path);
-}
-catch (...)
-{
-    if (startsWith(new_relative_path, fs::path(MergeTreeData::DETACHED_DIR_NAME) / ""))
-    {
-        // Don't throw when the destination is to the detached folder. It might be able to
-        // recover in some cases, such as fetching parts into multi-disks while some of the
-        // disks are broken.
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-    else
-        throw;
 }
 
 std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
@@ -2159,11 +2047,42 @@ String IMergeTreeDataPart::getRelativePathOfActivePart() const
     return fs::path(getDataPartStorage().getFullRootPath()) / name / "";
 }
 
-void IMergeTreeDataPart::renameToDetached(const String & prefix)
+void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error)
 {
     auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
     assert(path_to_detach);
-    renameTo(path_to_detach.value(), true);
+    try
+    {
+        renameTo(path_to_detach.value(), true);
+    }
+    /// This exceptions majority of cases:
+    /// - fsync
+    /// - mtime adjustment
+    catch (const ErrnoException &)
+    {
+        if (ignore_error)
+        {
+            // Don't throw when the destination is to the detached folder. It might be able to
+            // recover in some cases, such as fetching parts into multi-disks while some of the
+            // disks are broken.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        else
+            throw;
+    }
+    /// - rename
+    catch (const fs::filesystem_error &)
+    {
+        if (ignore_error)
+        {
+            // Don't throw when the destination is to the detached folder. It might be able to
+            // recover in some cases, such as fetching parts into multi-disks while some of the
+            // disks are broken.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        else
+            throw;
+    }
     part_is_probably_removed_from_disk = true;
 }
 

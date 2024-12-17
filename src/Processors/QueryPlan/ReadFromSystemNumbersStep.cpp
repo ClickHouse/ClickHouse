@@ -251,7 +251,8 @@ protected:
 
         /// Find the data range.
         /// If data left is small, shrink block size.
-        RangesPos start, end;
+        RangesPos start;
+        RangesPos end;
         auto block_size = findRanges(start, end, base_block_size);
 
         if (!block_size)
@@ -427,7 +428,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
         context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
     , query_info_limit(query_info.trivial_limit)
