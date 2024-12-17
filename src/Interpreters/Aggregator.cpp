@@ -229,7 +229,10 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
     if (max_bytes_ratio_before_external_group_by != 0.)
     {
         if (max_bytes_before_external_group_by > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings max_bytes_ratio_before_external_group_by and max_bytes_before_external_group_by cannot be set simultaneously");
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Settings max_bytes_ratio_before_external_group_by: {} and max_bytes_before_external_group_by: {} cannot be set simultaneously",
+                max_bytes_ratio_before_external_group_by, max_bytes_before_external_group_by);
 
         double ratio = max_bytes_ratio_before_external_group_by;
         if (ratio < 0 || ratio >= 1.)
