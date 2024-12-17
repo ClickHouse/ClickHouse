@@ -31,13 +31,13 @@ struct NormalizedGiniImpl
     template <typename T1, typename T2>
     static void vectorArrayConstArrayNormalizedGini(
         const PaddedPODArray<T1> & array_datas1,
-        const ColumnArray::Offsets & offsets1,
+        const ColumnArray::Offsets & array_predicted_offsets,
         const PaddedPODArray<T2> & const_array,
-        PaddedPODArray<Float64> & pred_gini_col,
-        PaddedPODArray<Float64> & label_gini_col,
-        PaddedPODArray<Float64> & norm_gini_col)
+        PaddedPODArray<Float64> & col_gini_predicted,
+        PaddedPODArray<Float64> & col_gini_labels,
+        PaddedPODArray<Float64> & col_gini_normalized)
     {
-        size_t size = pred_gini_col.size();
+        size_t size = col_gini_predicted.size();
         size_t array_size = const_array.size();
 
         if (array_size > MAX_ARRAY_SIZE)
@@ -49,35 +49,33 @@ struct NormalizedGiniImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = offsets1[i] - offsets1[i - 1];
+            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
             if (array1_size != array_size)
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function arrayNormalizedGini should have same size");
-            }
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
             // Why we need to create a new array here every loop, because array2 will be sorted in arrayNormalizedGiniImpl.
             PODArrayWithStackMemory<T2, 1024> array2(const_array.begin(), const_array.end());
 
-            auto [pred_gini, label_gini, norm_gini] = arrayNormalizedGiniImpl(array_datas1, offsets1[i - 1], array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = arrayNormalizedGiniImpl(array_datas1, array_predicted_offsets[i - 1], array2, array_size);
 
-            pred_gini_col[i] = pred_gini;
-            label_gini_col[i] = label_gini;
-            norm_gini_col[i] = norm_gini;
+            col_gini_predicted[i] = gini_predicted;
+            col_gini_labels[i] = gini_labels;
+            col_gini_normalized[i] = gini_normalized;
         }
     }
 
     template <typename T1, typename T2>
     static void vectorArrayVectorArrayNormalizedGini(
         const PaddedPODArray<T1> & array_datas1,
-        const ColumnArray::Offsets & offsets1,
+        const ColumnArray::Offsets & array_predicted_offsets,
         const PaddedPODArray<T2> & array_datas2,
         const ColumnArray::Offsets & offsets2,
-        PaddedPODArray<Float64> & pred_gini_col,
-        PaddedPODArray<Float64> & label_gini_col,
-        PaddedPODArray<Float64> & norm_gini_col)
+        PaddedPODArray<Float64> & col_gini_predicted,
+        PaddedPODArray<Float64> & col_gini_labels,
+        PaddedPODArray<Float64> & col_gini_normalized)
     {
-        size_t size = pred_gini_col.size();
-        size_t array_size = size > 0 ? offsets1[0] - offsets1[-1] : 0;
+        size_t size = col_gini_predicted.size();
+        size_t array_size = size > 0 ? array_predicted_offsets[0] - array_predicted_offsets[-1] : 0;
 
         if (array_size > MAX_ARRAY_SIZE)
             throw Exception(
@@ -85,20 +83,18 @@ struct NormalizedGiniImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = offsets1[i] - offsets1[i - 1];
+            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
             size_t array2_size = offsets2[i] - offsets2[i - 1];
             if (array1_size != array_size || array2_size != array_size)
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function arrayNormalizedGini should have same size");
-            }
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
             PODArrayWithStackMemory<T2, 1024> array2(array_datas2.data() + offsets2[i - 1], array_datas2.data() + offsets2[i]);
 
-            auto [pred_gini, label_gini, norm_gini] = arrayNormalizedGiniImpl(array_datas1, offsets1[i - 1], array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = arrayNormalizedGiniImpl(array_datas1, array_predicted_offsets[i - 1], array2, array_size);
 
-            pred_gini_col[i] = pred_gini;
-            label_gini_col[i] = label_gini;
-            norm_gini_col[i] = norm_gini;
+            col_gini_predicted[i] = gini_predicted;
+            col_gini_labels[i] = gini_labels;
+            col_gini_normalized[i] = gini_normalized;
         }
     }
 
@@ -107,11 +103,11 @@ struct NormalizedGiniImpl
         const PaddedPODArray<T1> & const_array,
         const PaddedPODArray<T2> & array_datas1,
         const ColumnArray::Offsets & offsets1,
-        PaddedPODArray<Float64> & pred_gini_col,
-        PaddedPODArray<Float64> & label_gini_col,
-        PaddedPODArray<Float64> & norm_gini_col)
+        PaddedPODArray<Float64> & col_gini_predicted,
+        PaddedPODArray<Float64> & col_gini_labels,
+        PaddedPODArray<Float64> & col_gini_normalized)
     {
-        size_t size = pred_gini_col.size();
+        size_t size = col_gini_predicted.size();
         size_t array_size = const_array.size();
 
         if (array_size > MAX_ARRAY_SIZE)
@@ -122,32 +118,29 @@ struct NormalizedGiniImpl
         {
             size_t array1_size = offsets1[i] - offsets1[i - 1];
             if (array1_size != array_size)
-            {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All array in function arrayNormalizedGini should have same size");
-            }
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
             PODArrayWithStackMemory<T2, 1024> array2(array_datas1.data() + offsets1[i - 1], array_datas1.data() + offsets1[i]);
 
-            auto [pred_gini, label_gini, norm_gini] = arrayNormalizedGiniImpl(const_array, 0, array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = arrayNormalizedGiniImpl(const_array, 0, array2, array_size);
 
-            pred_gini_col[i] = pred_gini;
-            label_gini_col[i] = label_gini;
-            norm_gini_col[i] = norm_gini;
+            col_gini_predicted[i] = gini_predicted;
+            col_gini_labels[i] = gini_labels;
+            col_gini_normalized[i] = gini_normalized;
         }
     }
 
 private:
     template <typename T1, typename T2>
-    static std::tuple<Float64, Float64, Float64>
-    arrayNormalizedGiniImpl(const PaddedPODArray<T1> & array1, size_t offset, PODArrayWithStackMemory<T2, 1024> & array2, size_t array_size)
+    static std::tuple<Float64, Float64, Float64> arrayNormalizedGiniImpl(
+        const PaddedPODArray<T1> & array1, size_t offset,
+        PODArrayWithStackMemory<T2, 1024> & array2, size_t array_size)
     {
         auto sort_idx = sortIndexes(array1, offset, array_size);
 
         PODArrayWithStackMemory<T2, 1024> sorted_array2(array_size);
         for (size_t i = 0; i < array_size; ++i)
-        {
             sorted_array2[i] = array2[sort_idx[i]];
-        }
 
         Float64 total_sum = std::accumulate(array2.begin(), array2.end(), 0.0);
 
@@ -175,9 +168,9 @@ private:
         Float64 accumulate_ltv_ratio = std::accumulate(ltv_cumsum_ratio.begin(), ltv_cumsum_ratio.end(), 0.0);
 
         Float64 pred_gini = (random_gain_cumsum_ratio - accumulate_pred_ratio) / array_size;
-        Float64 label_gini = (random_gain_cumsum_ratio - accumulate_ltv_ratio) / array_size;
+        Float64 gini_labels = (random_gain_cumsum_ratio - accumulate_ltv_ratio) / array_size;
 
-        return std::make_tuple(pred_gini, label_gini, pred_gini / label_gini);
+        return std::make_tuple(pred_gini, gini_labels, pred_gini / gini_labels);
     }
 
     template <typename T>
@@ -243,17 +236,17 @@ public:
 
         if (const ColumnArray * array_predicted = checkAndGetColumn<ColumnArray>(col_predicted.get()))
         {
-            const auto & offsets1 = array_predicted->getOffsets();
-            const auto & array_arg_type1 = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+            const auto & array_predicted_offsets = array_predicted->getOffsets();
+            const auto & array_predicted_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
             if (const ColumnConst * array_labels_const = checkAndGetColumn<ColumnConst>(col_labels.get()))
             {
                 const ColumnArray * column_array_const = checkAndGetColumn<ColumnArray>(array_labels_const->getDataColumnPtr().get());
-                const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+                const auto & array_labels_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
                 if (castBothTypes(
-                        array_arg_type1.get(),
-                        array_arg_type2.get(),
+                        array_predicted_type.get(),
+                        array_labels_type.get(),
                         [&](const auto & array_column_type1, const auto & array_column_type2)
                         {
                             using ArrayDataType1 = std::decay_t<decltype(array_column_type1)>;
@@ -264,22 +257,21 @@ public:
                             using T2 = typename ArrayDataType2::FieldType;
                             const ColumnVector<T2> * array_column_vector2 = checkAndGetColumn<ColumnVector<T2>>(column_array_const->getDataPtr().get());
 
-                            auto pred_gini_col = ColumnFloat64::create(input_rows_count);
-                            auto label_gini_col = ColumnFloat64::create(input_rows_count);
-                            auto norm_gini_col = ColumnFloat64::create(input_rows_count);
-
+                            auto col_gini_predicted = ColumnFloat64::create(input_rows_count);
+                            auto col_gini_labels = ColumnFloat64::create(input_rows_count);
+                            auto col_gini_normalized = ColumnFloat64::create(input_rows_count);
 
                             NormalizedGiniImpl::vectorArrayConstArrayNormalizedGini(
                                 array_column_vector1->getData(),
-                                offsets1,
+                                array_predicted_offsets,
                                 array_column_vector2->getData(),
-                                pred_gini_col->getData(),
-                                label_gini_col->getData(),
-                                norm_gini_col->getData());
+                                col_gini_predicted->getData(),
+                                col_gini_labels->getData(),
+                                col_gini_normalized->getData());
 
-                            result[0] = std::move(pred_gini_col);
-                            result[1] = std::move(label_gini_col);
-                            result[2] = std::move(norm_gini_col);
+                            result[0] = std::move(col_gini_predicted);
+                            result[1] = std::move(col_gini_labels);
+                            result[2] = std::move(col_gini_normalized);
 
                             return true;
                         }))
@@ -291,11 +283,11 @@ public:
             {
                 const ColumnArray * array_labels = checkAndGetColumn<ColumnArray>(col_labels.get());
                 const auto & offsets2 = array_labels->getOffsets();
-                const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+                const auto & array_labels_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
                 if (castBothTypes(
-                        array_arg_type1.get(),
-                        array_arg_type2.get(),
+                        array_predicted_type.get(),
+                        array_labels_type.get(),
                         [&](const auto & array_column_type1, const auto & array_column_type2)
                         {
                             using ArrayDataType1 = std::decay_t<decltype(array_column_type1)>;
@@ -306,23 +298,23 @@ public:
                             using T2 = typename ArrayDataType2::FieldType;
                             const ColumnVector<T2> * array_column_vector2 = checkAndGetColumn<ColumnVector<T2>>(array_labels->getDataPtr().get());
 
-                            auto pred_gini_col = ColumnFloat64::create(input_rows_count);
-                            auto label_gini_col = ColumnFloat64::create(input_rows_count);
-                            auto norm_gini_col = ColumnFloat64::create(input_rows_count);
+                            auto col_gini_predicted = ColumnFloat64::create(input_rows_count);
+                            auto col_gini_labels = ColumnFloat64::create(input_rows_count);
+                            auto col_gini_normalized = ColumnFloat64::create(input_rows_count);
 
 
                             NormalizedGiniImpl::vectorArrayVectorArrayNormalizedGini(
                                 array_column_vector1->getData(),
-                                offsets1,
+                                array_predicted_offsets,
                                 array_column_vector2->getData(),
                                 offsets2,
-                                pred_gini_col->getData(),
-                                label_gini_col->getData(),
-                                norm_gini_col->getData());
+                                col_gini_predicted->getData(),
+                                col_gini_labels->getData(),
+                                col_gini_normalized->getData());
 
-                            result[0] = std::move(pred_gini_col);
-                            result[1] = std::move(label_gini_col);
-                            result[2] = std::move(norm_gini_col);
+                            result[0] = std::move(col_gini_predicted);
+                            result[1] = std::move(col_gini_labels);
+                            result[2] = std::move(col_gini_normalized);
 
                             return true;
                         }))
@@ -336,15 +328,15 @@ public:
             /// Note that const-const case is handled by useDefaultImplementationForConstants.
 
             const ColumnArray * column_array_const = checkAndGetColumn<ColumnArray>(array_predicted_const->getDataColumnPtr().get());
-            const auto & array_arg_type1 = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+            const auto & array_predicted_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
 
             const ColumnArray * array_labels = checkAndGetColumn<ColumnArray>(col_labels.get());
             const auto & offsets2 = array_labels->getOffsets();
-            const auto & array_arg_type2 = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
+            const auto & array_labels_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
 
             if (castBothTypes(
-                    array_arg_type1.get(),
-                    array_arg_type2.get(),
+                    array_predicted_type.get(),
+                    array_labels_type.get(),
                     [&](const auto & array_column_type1, const auto & array_column_type2)
                     {
                         using ArrayDataType1 = std::decay_t<decltype(array_column_type1)>;
@@ -355,22 +347,22 @@ public:
                         using T2 = typename ArrayDataType2::FieldType;
                         const ColumnVector<T2> * array_column_vector2 = checkAndGetColumn<ColumnVector<T2>>(array_labels->getDataPtr().get());
 
-                        auto pred_gini_col = ColumnFloat64::create(input_rows_count);
-                        auto label_gini_col = ColumnFloat64::create(input_rows_count);
-                        auto norm_gini_col = ColumnFloat64::create(input_rows_count);
+                        auto col_gini_predicted = ColumnFloat64::create(input_rows_count);
+                        auto col_gini_labels = ColumnFloat64::create(input_rows_count);
+                        auto col_gini_normalized = ColumnFloat64::create(input_rows_count);
 
 
                         NormalizedGiniImpl::constArrayVectorArrayNormalizedGini(
                             array_column_vector1->getData(),
                             array_column_vector2->getData(),
                             offsets2,
-                            pred_gini_col->getData(),
-                            label_gini_col->getData(),
-                            norm_gini_col->getData());
+                            col_gini_predicted->getData(),
+                            col_gini_labels->getData(),
+                            col_gini_normalized->getData());
 
-                        result[0] = std::move(pred_gini_col);
-                        result[1] = std::move(label_gini_col);
-                        result[2] = std::move(norm_gini_col);
+                        result[0] = std::move(col_gini_predicted);
+                        result[1] = std::move(col_gini_labels);
+                        result[2] = std::move(col_gini_normalized);
 
                         return true;
                     }))
