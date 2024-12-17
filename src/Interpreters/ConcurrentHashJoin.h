@@ -95,6 +95,7 @@ private:
     size_t slots;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
+    bool two_level_map_used = false;
 
     StatsCollectingParams stats_collecting_params;
 

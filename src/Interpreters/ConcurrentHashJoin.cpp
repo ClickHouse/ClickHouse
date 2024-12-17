@@ -72,6 +72,13 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
         DB::getHashTablesStatistics().update(sum_of_sizes, *median_size, params);
 }
 
+UInt32 toPowerOfTwo(UInt32 x)
+{
+    if (x <= 1)
+        return 1;
+    return static_cast<UInt32>(1) << (32 - std::countl_zero(x - 1));
+}
+
 template <typename HashTable>
 concept HasGetBucketFromHashMemberFunc = requires {
     { std::declval<HashTable>().getBucketFromHash(static_cast<size_t>(0)) };
@@ -87,12 +94,6 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-static UInt32 toPowerOfTwo(UInt32 x)
-{
-    if (x <= 1)
-        return 1;
-    return static_cast<UInt32>(1) << (32 - std::countl_zero(x - 1));
-}
 
 ConcurrentHashJoin::ConcurrentHashJoin(
     ContextPtr context_,
@@ -136,6 +137,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         table_join_,
                         right_sample_block,
                         any_take_last_row_,
+                        // reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
                         /*reserve_size*/ 0,
                         fmt::format("concurrent{}", idx),
                         /*use_two_level_maps*/ true);
@@ -144,6 +146,10 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                 });
         }
         pool->wait();
+
+        two_level_map_used = hash_joins[0]->data->isFixedSizeType(hash_joins[0]->data->getJoinedData()->type) == false;
+        if (!two_level_map_used)
+            return;
 
         if (auto hint = getSizeHint(stats_collecting_params, slots))
         {
@@ -332,15 +338,18 @@ void ConcurrentHashJoin::joinBlock(Block & block, ExtraScatteredBlocks & extra_b
     else
     {
         hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
-        dispatched_blocks.emplace_back(std::move(block));
+        if (two_level_map_used)
+            dispatched_blocks.emplace_back(std::move(block));
+        else
+            dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_left, std::move(block));
     }
-    if (dispatched_blocks.size() != 1)
+    if (dispatched_blocks.size() != (two_level_map_used ? 1 : slots))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "dispatched_blocks.size() != 1");
 
     block = {};
 
     /// Just in case, should be no-op always
-    remaining_blocks.resize(1);
+    remaining_blocks.resize(dispatched_blocks.size());
 
     chassert(res.empty());
     res.clear();
