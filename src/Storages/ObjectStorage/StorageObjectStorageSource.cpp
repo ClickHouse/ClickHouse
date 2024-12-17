@@ -144,7 +144,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
     else
     {
         ConfigurationPtr copy_configuration = configuration->clone();
-        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context);
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         if (filter_dag)
         {
             auto keys = configuration->getPaths();
@@ -572,6 +572,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         reader,
         modified_read_settings,
         buffer_size,
+        modified_read_settings.remote_read_min_bytes_for_seek,
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
@@ -637,7 +638,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs == "/**";
-        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, local_context))
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
             filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
