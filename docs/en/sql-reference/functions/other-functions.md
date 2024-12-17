@@ -1213,7 +1213,7 @@ SELECT parseTimeDelta('1yr2mo')
 
 ## least
 
-Returns the smaller value of a and b.
+Returns the smallest arguments of one or more input arguments.  NULL arguments are ignored.
 
 **Syntax**
 
@@ -1223,7 +1223,7 @@ least(a, b)
 
 ## greatest
 
-Returns the larger value of a and b.
+Returns the largest arguments of one or more input arguments.  NULL arguments are ignored.
 
 **Syntax**
 

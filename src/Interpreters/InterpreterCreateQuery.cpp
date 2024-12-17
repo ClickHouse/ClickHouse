@@ -229,16 +229,20 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                             db_num_limit, db_count);
     }
 
+    auto db_disk = getContext()->getDatabaseDisk();
+
     /// Will write file with database metadata, if needed.
     String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_path = fs::weakly_canonical(getContext()->getPath());
-    fs::create_directories(metadata_path / "metadata");
-    fs::path metadata_file_tmp_path = metadata_path / "metadata" / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = metadata_path / "metadata" / (database_name_escaped + ".sql");
+    fs::path metadata_dir_path("metadata");
+    fs::path store_dir_path("store");
+    db_disk->createDirectories(metadata_dir_path);
+    fs::path metadata_file_tmp_path = metadata_dir_path / (database_name_escaped + ".sql.tmp");
+    fs::path metadata_file_path = metadata_dir_path / (database_name_escaped + ".sql");
 
+    fs::path metadata_path;
     if (!create.storage && create.attach)
     {
-        if (!fs::exists(metadata_file_path))
+        if (!db_disk->existsFile(metadata_file_path))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         /// Short syntax: try read database definition from file
         auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), metadata_file_path);
@@ -283,9 +287,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (create.uuid == UUIDHelpers::Nil)
             create.uuid = UUIDHelpers::generateV4();
 
-        metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
+        metadata_path = store_dir_path / DatabaseCatalog::getPathForUUID(create.uuid);
 
-        if (!create.attach && fs::exists(metadata_path) && !fs::is_empty(metadata_path))
+        if (!create.attach && db_disk->existsDirectory(metadata_path) && !db_disk->isDirectoryEmpty(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
     }
     else if (create.storage->engine->name == "MaterializeMySQL"
@@ -314,9 +318,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         /// Set metadata path according to nested engine
         if (create.uuid == UUIDHelpers::Nil)
-            metadata_path = metadata_path / "metadata" / database_name_escaped;
+            metadata_path = metadata_dir_path / database_name_escaped;
         else
-            metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
+            metadata_path = store_dir_path / DatabaseCatalog::getPathForUUID(create.uuid);
     }
     else
     {
@@ -328,7 +332,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
-        metadata_path = metadata_path / "metadata" / database_name_escaped;
+        metadata_path = metadata_dir_path / database_name_escaped;
     }
 
     if (create.storage->engine->name == "Replicated" && !internal && !create.attach && create.storage->engine->arguments)
@@ -357,7 +361,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_postgresql to use it");
     }
 
-    bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
+    bool need_write_metadata = !create.attach || !db_disk->existsFile(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
     auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
 
@@ -385,16 +389,17 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         String statement = statement_buf.str();
 
         /// Needed to make database creation retriable if it fails after the file is created
-        fs::remove(metadata_file_tmp_path);
+        db_disk->removeFileIfExists(metadata_file_tmp_path);
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
-        WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
+        auto out = db_disk->writeFile(metadata_file_tmp_path, statement.size());
+        writeString(statement, *out);
 
-        out.next();
+        out->next();
         if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+            out->sync();
+        out->finalize();
+        out.reset();
     }
 
     /// We attach database before loading it's tables, so do not allow concurrent DDL queries
@@ -420,10 +425,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
 
+
         if (need_write_metadata)
         {
             /// Prevents from overwriting metadata of detached database
-            renameNoReplace(metadata_file_tmp_path, metadata_file_path);
+            db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
             renamed = true;
         }
     }
@@ -431,8 +437,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            [[maybe_unused]] bool removed = fs::remove(metadata_file_path);
-            assert(removed);
+            assert(db_disk->existsFile(metadata_file_path));
+            db_disk->removeFileIfExists(metadata_file_path);
         }
         if (added)
             DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
@@ -1188,6 +1194,22 @@ namespace
         source_ast->children.push_back(source_ast->elements);
         dict.set(dict.source, source_ast);
     }
+
+    ASTs * getEngineArgsFromCreateQuery(ASTCreateQuery & create_query)
+    {
+        ASTStorage * storage_def = create_query.storage;
+        if (!storage_def)
+            return nullptr;
+
+        if (!storage_def->engine)
+            return nullptr;
+
+        const ASTFunction & engine_def = *storage_def->engine;
+        if (!engine_def.arguments)
+            return nullptr;
+
+        return &engine_def.arguments->children;
+    }
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -1445,8 +1467,8 @@ void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_pt
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, /*can_throw*/ true);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies, loading_dependencies);
 }
 
@@ -1546,8 +1568,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach_from_path)
     {
         chassert(!ddl_guard);
+
+        auto db_disk = getContext()->getDatabaseDisk();
+
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
-        fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
+        fs::path root_path = fs::path(db_disk->getPath()).lexically_normal();
 
         if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
@@ -1607,7 +1632,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr);
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
@@ -1633,29 +1658,29 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             if (isReplicated(*inner_table_engine))
                 is_storage_replicated = true;
         }
-        }
+    }
 
-        bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
-        if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
+    if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
+    {
+        const bool allow_create_select_for_replicated
+            = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
+        if (!allow_create_select_for_replicated)
         {
-            const bool allow_create_select_for_replicated
-                = (create.isView() && !create.is_populate) || create.is_create_empty || !is_storage_replicated;
-            if (!allow_create_select_for_replicated)
-            {
-                /// POPULATE can be enabled with setting, provide hint in error message
-                if (create.is_populate)
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT "
-                        "queries. "
-                        "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with "
-                        "caution");
-
+            /// POPULATE can be enabled with setting, provide hint in error message
+            if (create.is_populate)
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
-                    "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
-            }
+                    "CREATE with POPULATE is not supported with Replicated databases. Consider using separate CREATE and INSERT "
+                    "queries. "
+                    "Alternatively, you can enable 'database_replicated_allow_heavy_create' setting to allow this operation, use with "
+                    "caution");
+
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "CREATE AS SELECT is not supported with Replicated databases. Consider using separate CREATE and INSERT queries.");
         }
+    }
 
     if (create.is_clone_as)
     {
@@ -1794,9 +1819,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
-    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
+    auto db_disk = getContext()->getDatabaseDisk();
 
-    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
+    if (!create.attach && !data_path.empty() && db_disk->existsDirectory(data_path))
     {
         if (getContext()->getZooKeeperMetadataTransaction() &&
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
@@ -1808,11 +1833,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// We don't have a table with this UUID (and all metadata is loaded),
             /// so the existing directory probably contains some leftovers from previous unsuccessful attempts to create the table
 
-            fs::path trash_path = fs::path{getContext()->getPath()} / "trash" / data_path / getHexUIntLowercase(thread_local_rng());
+            fs::path trash_path = fs::path("trash") / data_path / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
-            fs::create_directories(trash_path.parent_path());
-            renameNoReplace(full_data_path, trash_path);
+            db_disk->createDirectories(trash_path.parent_path());
+            db_disk->moveFile(data_path, trash_path);
         }
         else
         {
@@ -1884,12 +1909,16 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             mode);
 
         /// If schema wes inferred while storage creation, add columns description to create query.
-        addColumnsDescriptionToCreateQueryIfNecessary(query_ptr->as<ASTCreateQuery &>(), res);
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+        addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
+        /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
+        if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
+            res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
     validateVirtualColumns(*res);
 
-    if (!res->supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    if (!res->supportsDynamicSubcolumnsDeprecated() && hasDynamicSubcolumnsDeprecated(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "
@@ -2437,18 +2466,20 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
 
     /// Save new metadata
+    auto db_disk = getContext()->getDatabaseDisk();
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());
     {
-        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-        writeString(statement, out);
-        out.next();
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+        out->next();
         if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-            out.sync();
-        out.close();
+            out->sync();
+        out->finalize();
+        out.reset();
     }
-    fs::rename(table_metadata_tmp_path, table_metadata_path);
+    db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)

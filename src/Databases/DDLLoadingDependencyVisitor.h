@@ -16,7 +16,7 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 /// Returns a list of all tables which should be loaded before a specified table.
 /// For example, a local ClickHouse table should be loaded before a dictionary which uses that table as its source.
 /// Does not validate AST, works a best-effort way.
-TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast);
+TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw = false);
 
 
 class DDLMatcherBase
@@ -39,6 +39,7 @@ public:
         ContextPtr global_context;
         ASTPtr create_query;
         QualifiedTableName table_name;
+        bool can_throw;
     };
 
     using Visitor = ConstInDepthNodeVisitor<DDLLoadingDependencyVisitor, true>;
