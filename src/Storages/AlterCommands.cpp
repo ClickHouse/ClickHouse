@@ -1546,11 +1546,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
         }
-        else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
-        {
-            if (metadata.settings_changes == nullptr)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
-        }
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
            for (size_t j = i + 1; j < size(); ++j)
