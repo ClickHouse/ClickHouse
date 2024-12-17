@@ -1,7 +1,8 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/registerInterpreters.h>
-#include "Processors/Executors/PullingPipelineExecutor.h"
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
@@ -22,13 +23,11 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     if (context)
         return true;
 
-    /// The SharedContext depends on the Logger which is being destroyed by AutoLoggerShutdown (global variable)
-    /// And the GlobalContext depends on the SharedContext. So, this the SharedContext has to be static in order
-    /// to be destroyed last.
-    /// Addditionally, without it being static the shared context is destroyed on this function exit.
     static SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
+
+    MainThreadStatus::getInstance();
 
     registerInterpreters();
     registerFunctions();
@@ -47,13 +46,27 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
     try
     {
+        total_memory_tracker.resetCounters();
+        total_memory_tracker.setHardLimit(1_GiB);
+        CurrentThread::get().memory_tracker.resetCounters();
+        CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
+
         std::string input = std::string(reinterpret_cast<const char*>(data), size);
 
         auto io = DB::executeQuery(input, context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;
 
-        PullingPipelineExecutor executor(io.pipeline);
-        Block res;
-        while (!res && executor.pull(res));
+        /// Execute only SELECTs
+        if (io.pipeline.pulling())
+        {
+            PullingPipelineExecutor executor(io.pipeline);
+            Block res;
+            while (!res && executor.pull(res));
+        }
+        /// We don't want to execute it and thus need to finish it properly.
+        else
+        {
+            io.onCancelOrConnectionLoss();
+        }
     }
     catch (...)
     {
