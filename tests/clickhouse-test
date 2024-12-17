@@ -19,8 +19,8 @@ import json
 import math
 import multiprocessing
 import multiprocessing.managers
-import multiprocessing.synchronize
 import multiprocessing.sharedctypes
+import multiprocessing.synchronize
 import os
 import os.path
 import platform
