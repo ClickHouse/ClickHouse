@@ -464,12 +464,11 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         if (is_killed)
             return CancellationCode::CancelSent;
 
+        LOG_TRACE(getLogger("ProcessList"), "Cancelling the query (reason: {})", reason);
+
         is_killed = true;
-
-        if (!cancellation_exception)
-            cancellation_exception = exception;
-
         cancel_reason = reason;
+        cancellation_exception = exception;
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;

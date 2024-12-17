@@ -33,18 +33,19 @@ public:
 
     String getID(char) const override { return "external ddl query"; }
 
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked stacked) const override
-    {
-        ostr << (settings.hilite ? hilite_keyword : "") << "EXTERNAL DDL FROM " << (settings.hilite ? hilite_none : "");
-        from->formatImpl(ostr, settings, state, stacked);
-        external_ddl->formatImpl(ostr, settings, state, stacked);
-    }
-
     QueryKind getQueryKind() const override { return QueryKind::ExternalDDL; }
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&from));
+    }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked stacked) const override
+    {
+        ostr << (settings.hilite ? hilite_keyword : "") << "EXTERNAL DDL FROM " << (settings.hilite ? hilite_none : "");
+        from->format(ostr, settings, state, stacked);
+        external_ddl->format(ostr, settings, state, stacked);
     }
 };
 

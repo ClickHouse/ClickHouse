@@ -190,7 +190,7 @@ namespace
         /// REVOKE SELECT ON system.* FROM user2;
         ///
         /// the query `REVOKE SELECT ON *.* FROM user1` executed by user2 should succeed.
-        if (current_user_access.getAccessRights()->containsWithGrantOption(access_to_revoke))
+        if (current_user_access.getAccessRightsWithImplicit()->containsWithGrantOption(access_to_revoke))
             return;
 
         /// Technically, this check always fails if `containsWithGrantOption` returns `false`. But we still call it to get a nice exception message.

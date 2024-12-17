@@ -55,8 +55,8 @@ public:
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-private:
 
+private:
     ASTPtr getChild(Child child) const
     {
         auto it = positions.find(child);
