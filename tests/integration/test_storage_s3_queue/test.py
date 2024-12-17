@@ -6,9 +6,9 @@ import string
 import time
 import uuid
 from multiprocessing.dummy import Pool
-from kazoo.exceptions import NoNodeError
 
 import pytest
+from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
