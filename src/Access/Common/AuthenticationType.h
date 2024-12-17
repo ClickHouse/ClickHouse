@@ -21,6 +21,10 @@ enum class AuthenticationType : uint8_t
     /// This kind of hash is used by the `mysql_native_password` authentication plugin.
     DOUBLE_SHA1_PASSWORD,
 
+    /// A secret is stored instead of a password
+    /// Users are authenticated using time-based one-time passwords
+    ONE_TIME_PASSWORD,
+
     /// Password is checked by a [remote] LDAP server. Connection will be made at each authentication attempt.
     LDAP,
 
