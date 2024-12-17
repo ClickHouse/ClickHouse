@@ -2,6 +2,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -176,7 +177,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path, *queue_settings, storage_metadata.getColumns(), configuration_->format, log);
 
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms);
+        zk_path, std::move(table_metadata), queue_settings->cleanup_interval_min_ms, queue_settings->cleanup_interval_max_ms, getContext()->getServerSettings().keeper_multiread_batch_size);
 
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
