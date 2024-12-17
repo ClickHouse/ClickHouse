@@ -2,6 +2,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -39,6 +40,11 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 keeper_multiread_batch_size;
 }
 
 namespace ObjectStorageQueueSetting
@@ -204,7 +210,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.settings_changes = engine_args->settings->ptr();
+    if (engine_args->settings)
+        storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -217,7 +224,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path,
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
-        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata), table_id_);
 
@@ -654,6 +662,8 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
 
         StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        /// At the moment we cannot do ALTER MODIFY/RESET SETTING if there are no settings changes (exception will be thrown),
+        /// so we do not need to check if old_metadata.settings_changes == nullptr.
         const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();

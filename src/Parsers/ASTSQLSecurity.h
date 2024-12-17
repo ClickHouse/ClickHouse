@@ -20,6 +20,7 @@ public:
     String getID(char) const override { return "View SQL Security"; }
     ASTPtr clone() const override { return std::make_shared<ASTSQLSecurity>(*this); }
 
+protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
