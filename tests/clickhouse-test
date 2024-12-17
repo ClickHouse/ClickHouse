@@ -18,6 +18,9 @@ import itertools
 import json
 import math
 import multiprocessing
+import multiprocessing.managers
+import multiprocessing.synchronize
+import multiprocessing.sharedctypes
 import os
 import os.path
 import platform
@@ -2270,7 +2273,16 @@ class GlobalTimeout(Exception):
 
 
 def run_tests_array(
-    all_tests_with_params: Tuple[List[str], int, TestSuite, bool, Namespace]
+    all_tests_with_params: Tuple[
+        List[str],
+        int,
+        TestSuite,
+        bool,
+        Namespace,
+        multiprocessing.sharedctypes.Synchronized,
+        multiprocessing.synchronize.Event,
+        multiprocessing.managers.ListProxy,
+    ]
 ):
     (
         all_tests,
