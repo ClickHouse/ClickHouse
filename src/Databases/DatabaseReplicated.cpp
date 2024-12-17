@@ -15,6 +15,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
@@ -43,6 +44,7 @@
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/PoolId.h>
+#include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
@@ -1226,6 +1228,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
         query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
 
+        /// We apply the flatten_nested setting after writing the CREATE query to the DDL log,
+        /// but before writing metadata to ZooKeeper. So we have to apply the setting on secondary replicas, but not in recovery mode.
+        /// Set it to false, so it will do nothing on recovery. The metadata in ZooKeeper should be used as is.
+        /// Same for data_type_default_nullable.
+        query_context->setSetting("flatten_nested", false);
+        query_context->setSetting("data_type_default_nullable", false);
+
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
         return query_context;
@@ -1836,9 +1845,14 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
+    ReadSettings read_settings = getReadSettings();
+    read_settings.local_fs_method = LocalFSReadMethod::read;
+    read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+    auto in = db_disk->readFile(getObjectMetadataPath(table_name), read_settings);
+
     String statement;
-    ReadBufferFromFile in(getObjectMetadataPath(table_name), METADATA_FILE_BUFFER_SIZE);
-    readStringUntilEOF(statement, in);
+    readStringUntilEOF(statement, *in);
+
     return statement;
 }
 

@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -15,6 +17,12 @@
 
 namespace DB
 {
+
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 static ITransformingStep::Traits getTraits()
 {
@@ -246,5 +254,40 @@ bool FilterStep::canUseType(const DataTypePtr & filter_type)
     return FilterTransform::canUseType(filter_type);
 }
 
+
+void FilterStep::serialize(Serialization & ctx) const
+{
+    UInt8 flags = 0;
+    if (remove_filter_column)
+        flags |= 1;
+    writeIntBinary(flags, ctx.out);
+
+    writeStringBinary(filter_column_name, ctx.out);
+
+    actions_dag.serialize(ctx.out, ctx.registry);
+}
+
+std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
+
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+
+    bool remove_filter_column = bool(flags & 1);
+
+    String filter_column_name;
+    readStringBinary(filter_column_name, ctx.in);
+
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+
+    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+}
+
+void registerFilterStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Filter", FilterStep::deserialize);
+}
 
 }

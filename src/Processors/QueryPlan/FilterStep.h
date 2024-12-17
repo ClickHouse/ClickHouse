@@ -28,6 +28,10 @@ public:
 
     static bool canUseType(const DataTypePtr & type);
 
+    void serialize(Serialization & ctx) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
 private:
     void updateOutputHeader() override;
 

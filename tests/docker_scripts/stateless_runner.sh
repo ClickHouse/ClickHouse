@@ -384,7 +384,9 @@ clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
 # Because it's the simplest way to read it when server has crashed.
-sudo clickhouse stop ||:
+# Increase timeout to 10 minutes (max-tries * 2 seconds) to give gdb time to collect stack traces
+# (if safeExit breakpoint is hit after the server's internal shutdown timeout is reached).
+sudo clickhouse stop --max-tries 300 ||:
 
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
