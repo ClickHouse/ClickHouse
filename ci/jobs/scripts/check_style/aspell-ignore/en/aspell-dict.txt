@@ -1161,6 +1161,7 @@ argMin
 argmax
 argmin
 arrayAUC
+arrayAUCPr
 arrayAll
 arrayAvg
 arrayCompact
@@ -1316,7 +1317,6 @@ bools
 boringssl
 boundingRatio
 bozerkins
-broadcasted
 brotli
 bson
 bsoneachrow
@@ -1342,7 +1342,6 @@ cardinalities
 cardinality
 cartesian
 cassandra
-casted
 catboost
 catboostEvaluate
 categoricalInformationValue
@@ -3131,3 +3130,4 @@ DistributedCachePoolBehaviourOnLimit
 SharedJoin
 ShareSet
 unacked
+BFloat

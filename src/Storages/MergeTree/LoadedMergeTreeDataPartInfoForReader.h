@@ -51,7 +51,7 @@ public:
 
     const MergeTreeIndexGranularityInfo & getIndexGranularityInfo() const override { return data_part->index_granularity_info; }
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const override { return data_part->index_granularity; }
+    const MergeTreeIndexGranularity & getIndexGranularity() const override { return *data_part->index_granularity; }
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 

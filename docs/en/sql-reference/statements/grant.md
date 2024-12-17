@@ -117,6 +117,7 @@ GRANT SELECT ON db*.* TO john -- correct
 GRANT SELECT ON *.my_table TO john -- wrong
 GRANT SELECT ON foo*bar TO john -- wrong
 GRANT SELECT ON *suffix TO john -- wrong
+GRANT SELECT(foo) ON db.table* TO john -- wrong
 ```
 
 ## Privileges
@@ -603,6 +604,10 @@ Allows using a specified table engine when creating a table. Applies to [table e
 ### ALL
 
 Grants all the privileges on regulated entity to a user account or a role.
+
+:::note
+The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/en/cloud/security/cloud-access-management#initial-settings) for further details.
+:::
 
 ### NONE
 

@@ -387,7 +387,7 @@ template <typename Value, bool return_float, bool interpolated>
 using FuncQuantileExactWeighted = AggregateFunctionQuantile<
     Value,
     QuantileExactWeighted<Value, interpolated>,
-    NameQuantileExactWeighted,
+    std::conditional_t<interpolated, NameQuantileExactWeightedInterpolated, NameQuantileExactWeighted>,
     true,
     std::conditional_t<return_float, Float64, void>,
     false,
@@ -396,7 +396,7 @@ template <typename Value, bool return_float, bool interpolated>
 using FuncQuantilesExactWeighted = AggregateFunctionQuantile<
     Value,
     QuantileExactWeighted<Value, interpolated>,
-    NameQuantilesExactWeighted,
+    std::conditional_t<interpolated, NameQuantilesExactWeightedInterpolated, NameQuantilesExactWeighted>,
     true,
     std::conditional_t<return_float, Float64, void>,
     true,

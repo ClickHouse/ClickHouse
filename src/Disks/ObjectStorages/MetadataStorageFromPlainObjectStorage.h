@@ -98,9 +98,9 @@ protected:
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };
 
-class MetadataStorageFromPlainObjectStorageTransaction final : public IMetadataTransaction, private MetadataOperationsHolder
+class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
 {
-private:
+protected:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
     ObjectStoragePtr object_storage;
 

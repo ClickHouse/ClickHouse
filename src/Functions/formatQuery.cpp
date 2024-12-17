@@ -143,10 +143,10 @@ private:
                 throw;
             }
 
-            IAST::FormatSettings settings(buf, output_formatting == OutputFormatting::SingleLine, /*hilite*/ false);
+            IAST::FormatSettings settings(output_formatting == OutputFormatting::SingleLine, /*hilite*/ false);
             settings.show_secrets = true;
             settings.print_pretty_type_names = print_pretty_type_names;
-            ast->format(settings);
+            ast->format(buf, settings);
 
             auto formatted = buf.stringView();
 
