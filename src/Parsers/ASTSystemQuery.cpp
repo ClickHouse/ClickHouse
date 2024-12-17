@@ -123,10 +123,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     {
         chassert(database);
 
-        database->formatImpl(settings, state, frame);
-        settings.ostr << '.';
+        database->format(ostr, settings, state, frame);
+        ostr << '.';
         
-        return settings.ostr;
+        return ostr;
     };
 
     auto print_drop_replica = [&]
@@ -287,7 +287,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (database)
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_database();
             }
             break;
