@@ -3725,11 +3725,14 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
     return throttler;
 }
 
-ThrottlerPtr Context::getBackupsThrottler() const
+ThrottlerPtr Context::getBackupsThrottler(std::optional<UInt64> max_backup_bandwidth) const
 {
     ThrottlerPtr throttler = shared->backups_server_throttler;
-    if (auto bandwidth = getSettingsRef()[Setting::max_backup_bandwidth])
+    if (max_backup_bandwidth.has_value() || getSettingsRef()[Setting::max_backup_bandwidth])
     {
+        // Query setting takes precedence
+        auto bandwidth = max_backup_bandwidth.value_or(getSettingsRef()[Setting::max_backup_bandwidth]);
+
         std::lock_guard lock(mutex);
         if (!backups_query_throttler)
             backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler);
