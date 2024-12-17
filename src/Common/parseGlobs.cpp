@@ -35,61 +35,71 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     }
     std::string escaped_with_globs = buf_for_escaping.str();
 
-    static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without "{", "}", "*" and ","
-    std::string_view input(escaped_with_globs);
+    static const re2::RE2 range_regex(R"({([\d]+\.\.[\d]+)})"); /// regexp for {M..N}, where M and N - non-negative integers
+    static const re2::RE2 enum_regex(R"({([^{}*,]+[^{}*]*[^{}*,])})"); /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
+
     std::string_view matched;
+    std::string_view input(escaped_with_globs);
     std::ostringstream oss_for_replacing;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss_for_replacing.exceptions(std::ios::failbit);
     size_t current_index = 0;
-    while (RE2::FindAndConsume(&input, enum_or_range, &matched))
+
+    while (RE2::FindAndConsume(&input, range_regex, &matched))
     {
         std::string buffer(matched);
         oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
 
-        if (buffer.find(',') == std::string::npos)
+        size_t range_begin = 0;
+        size_t range_end = 0;
+        char point;
+        ReadBufferFromString buf_range(buffer);
+        buf_range >> range_begin >> point >> point >> range_end;
+
+        size_t range_begin_width = buffer.find('.');
+        size_t range_end_width = buffer.size() - buffer.find_last_of('.') - 1;
+        bool leading_zeros = buffer[0] == '0';
+        size_t output_width = 0;
+
+        if (range_begin > range_end)    //Descending Sequence {20..15} {9..01}
         {
-            size_t range_begin = 0;
-            size_t range_end = 0;
-            char point;
-            ReadBufferFromString buf_range(buffer);
-            buf_range >> range_begin >> point >> point >> range_end;
+            std::swap(range_begin,range_end);
+            leading_zeros = buffer[buffer.find_last_of('.')+1]=='0';
+            std::swap(range_begin_width,range_end_width);
+        }
+        if (range_begin_width == 1 && leading_zeros)
+            output_width = 1;   ///Special Case: {0..10} {0..999}
+        else
+            output_width = std::max(range_begin_width, range_end_width);
 
-            size_t range_begin_width = buffer.find('.');
-            size_t range_end_width = buffer.size() - buffer.find_last_of('.') - 1;
-            bool leading_zeros = buffer[0] == '0';
-            size_t output_width = 0;
+        if (leading_zeros)
+            oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
+        oss_for_replacing << range_begin;
 
-            if (range_begin > range_end)    //Descending Sequence {20..15} {9..01}
-            {
-                std::swap(range_begin,range_end);
-                leading_zeros = buffer[buffer.find_last_of('.')+1]=='0';
-                std::swap(range_begin_width,range_end_width);
-            }
-            if (range_begin_width == 1 && leading_zeros)
-                output_width = 1;   ///Special Case: {0..10} {0..999}
-            else
-                output_width = std::max(range_begin_width, range_end_width);
-
+        for (size_t i = range_begin + 1; i <= range_end; ++i)
+        {
+            oss_for_replacing << '|';
             if (leading_zeros)
                 oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
-            oss_for_replacing << range_begin;
+            oss_for_replacing << i;
+        }
 
-            for (size_t i = range_begin + 1; i <= range_end; ++i)
-            {
-                oss_for_replacing << '|';
-                if (leading_zeros)
-                    oss_for_replacing << std::setfill('0') << std::setw(static_cast<int>(output_width));
-                oss_for_replacing << i;
-            }
-        }
-        else
-        {
-            std::replace(buffer.begin(), buffer.end(), ',', '|');
-            oss_for_replacing << buffer;
-        }
         oss_for_replacing << ")";
         current_index = input.data() - escaped_with_globs.data();
     }
+
+    while (RE2::FindAndConsume(&input, enum_regex, &matched))
+    {
+        std::string buffer(matched);
+
+        oss_for_replacing << escaped_with_globs.substr(current_index, matched.data() - escaped_with_globs.data() - current_index - 1) << '(';
+        std::replace(buffer.begin(), buffer.end(), ',', '|');
+
+        oss_for_replacing << buffer;
+        oss_for_replacing << ")";
+
+        current_index = input.data() - escaped_with_globs.data();
+    }
+
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
     WriteBufferFromOwnString buf_final_processing;
