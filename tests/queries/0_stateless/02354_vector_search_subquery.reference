@@ -1,7 +1,7 @@
-Expression (Projection)
+Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
         ReadFromMergeTree (default.tab)
         Indexes:
           PrimaryKey
@@ -13,23 +13,33 @@ Expression (Projection)
             Description: vector_similarity GRANULARITY 2
             Parts: 1/1
             Granules: 2/4
-Expression (Projection)
+Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
         ReadFromMergeTree (default.tab)
         Indexes:
           PrimaryKey
             Condition: true
             Parts: 1/1
             Granules: 4/4
-Expression (Projection)
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
+Expression (Project names)
   Limit (preliminary LIMIT (without OFFSET))
     Sorting (Sorting for ORDER BY)
-      Expression (Before ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
         ReadFromMergeTree (default.tab)
         Indexes:
           PrimaryKey
             Condition: true
             Parts: 1/1
             Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4

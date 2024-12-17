@@ -69,7 +69,8 @@ StoragePtr StorageFactory::get(
     const ConstraintsDescription & constraints,
     LoadingStrictnessLevel mode) const
 {
-    String name, comment;
+    String name;
+    String comment;
 
     ASTStorage * storage_def = query.storage;
 

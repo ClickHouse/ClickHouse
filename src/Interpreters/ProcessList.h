@@ -48,6 +48,10 @@ enum CancelReason
     UNDEFINED,
     TIMEOUT,
     CANCELLED_BY_USER,
+
+    /// CANCELLED_BY_ERROR means that there were parallel processes/threads and some of them failed,
+    /// so we cancel other processes/threads with this cancel reason.
+    CANCELLED_BY_ERROR,
 };
 
 /** Information of process list element.
