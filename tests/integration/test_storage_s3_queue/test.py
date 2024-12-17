@@ -2600,11 +2600,15 @@ def test_upgrade_3(started_cluster):
         )
     )
 
-    assert "polling_max_timeout_ms = 333" in node.query(f"SHOW CREATE TABLE {table_name}")
+    assert "polling_max_timeout_ms = 333" in node.query(
+        f"SHOW CREATE TABLE {table_name}"
+    )
 
     node.restart_clickhouse()
 
-    assert "polling_max_timeout_ms = 333" in node.query(f"SHOW CREATE TABLE {table_name}")
+    assert "polling_max_timeout_ms = 333" in node.query(
+        f"SHOW CREATE TABLE {table_name}"
+    )
 
     assert 333 == int(
         node.query(
