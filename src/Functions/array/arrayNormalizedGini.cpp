@@ -26,10 +26,10 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
-struct NormalizedGiniImpl
+struct Impl
 {
     template <typename T1, typename T2>
-    static void vectorArrayConstArrayNormalizedGini(
+    static void vectorConst(
         const PaddedPODArray<T1> & array_predicted_data,
         const ColumnArray::Offsets & array_predicted_offsets,
         const PaddedPODArray<T2> & array_labels_const,
@@ -53,10 +53,10 @@ struct NormalizedGiniImpl
             if (array1_size != array_size)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
 
-            // Why we need to create a new array here every loop, because array2 will be sorted in arrayNormalizedGiniImpl.
+            // Why we need to create a new array here every loop, because array2 will be sorted in calculateNormalizedGini.
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_const.begin(), array_labels_const.end());
 
-            auto [gini_predicted, gini_labels, gini_normalized] = arrayNormalizedGiniImpl(array_predicted_data, array_predicted_offsets[i - 1], array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[i - 1], array2, array_size);
 
             col_gini_predicted[i] = gini_predicted;
             col_gini_labels[i] = gini_labels;
@@ -65,7 +65,7 @@ struct NormalizedGiniImpl
     }
 
     template <typename T1, typename T2>
-    static void vectorArrayVectorArrayNormalizedGini(
+    static void vectorVector(
         const PaddedPODArray<T1> & array_predicted_data,
         const ColumnArray::Offsets & array_predicted_offsets,
         const PaddedPODArray<T2> & array_labels_data,
@@ -90,7 +90,7 @@ struct NormalizedGiniImpl
 
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
 
-            auto [gini_predicted, gini_labels, gini_normalized] = arrayNormalizedGiniImpl(array_predicted_data, array_predicted_offsets[i - 1], array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_data, array_predicted_offsets[i - 1], array2, array_size);
 
             col_gini_predicted[i] = gini_predicted;
             col_gini_labels[i] = gini_labels;
@@ -99,7 +99,7 @@ struct NormalizedGiniImpl
     }
 
     template <typename T1, typename T2>
-    static void constArrayVectorArrayNormalizedGini(
+    static void constVector(
         const PaddedPODArray<T1> & array_predicted_const,
         const PaddedPODArray<T2> & array_labels_data,
         const ColumnArray::Offsets & array_labels_offsets,
@@ -122,7 +122,7 @@ struct NormalizedGiniImpl
 
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
 
-            auto [gini_predicted, gini_labels, gini_normalized] = arrayNormalizedGiniImpl(array_predicted_const, 0, array2, array_size);
+            auto [gini_predicted, gini_labels, gini_normalized] = calculateNormalizedGini(array_predicted_const, 0, array2, array_size);
 
             col_gini_predicted[i] = gini_predicted;
             col_gini_labels[i] = gini_labels;
@@ -132,7 +132,7 @@ struct NormalizedGiniImpl
 
 private:
     template <typename T1, typename T2>
-    static std::tuple<Float64, Float64, Float64> arrayNormalizedGiniImpl(
+    static std::tuple<Float64, Float64, Float64> calculateNormalizedGini(
         const PaddedPODArray<T1> & array1, size_t offset,
         PODArrayWithStackMemory<T2, 1024> & array2, size_t array_size)
     {
@@ -258,7 +258,7 @@ public:
                             auto col_gini_labels = ColumnFloat64::create(input_rows_count);
                             auto col_gini_normalized = ColumnFloat64::create(input_rows_count);
 
-                            NormalizedGiniImpl::vectorArrayConstArrayNormalizedGini(
+                            Impl::vectorConst(
                                 array_predicted_data->getData(),
                                 array_predicted_offsets,
                                 col_labels_data->getData(),
@@ -297,7 +297,7 @@ public:
                             auto col_gini_labels = ColumnFloat64::create(input_rows_count);
                             auto col_gini_normalized = ColumnFloat64::create(input_rows_count);
 
-                            NormalizedGiniImpl::vectorArrayVectorArrayNormalizedGini(
+                            Impl::vectorVector(
                                 array_predicted_data->getData(),
                                 array_predicted_offsets,
                                 col_labels_data->getData(),
@@ -343,7 +343,7 @@ public:
                         auto col_gini_labels = ColumnFloat64::create(input_rows_count);
                         auto col_gini_normalized = ColumnFloat64::create(input_rows_count);
 
-                        NormalizedGiniImpl::constArrayVectorArrayNormalizedGini(
+                        Impl::constVector(
                             array_predicted_data->getData(),
                             col_labels_data->getData(),
                             array_label_offsets,
