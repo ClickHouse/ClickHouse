@@ -2,6 +2,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -39,6 +40,11 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 keeper_multiread_batch_size;
 }
 
 namespace ObjectStorageQueueSetting
@@ -214,7 +220,11 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms], (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
+        zk_path,
+        std::move(table_metadata),
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
     files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
