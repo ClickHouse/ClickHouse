@@ -18,8 +18,8 @@
 ### <a id="2412"></a> ClickHouse release 24.12, 2024-12-19
 
 #### Backward Incompatible Change
-* Functions `greatest` and `least` now ignore NULL input values, whereas they previously returned NULL if one of the arguments was NULL. For example, `SELECT greatest(1, 2, NULL)` now returns 2. This makes the behavior compatible with PostgreSQL, but at the same time it breaks the compatibility with MySQL which returns NULL. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. [#65519](https://github.com/ClickHouse/ClickHouse/pull/65519) ([kevinyhzou](https://github.com/KevinyhZou)).
-* The legacy MongoDB integration based on the Poco driver has been removed. Server setting `use_legacy_mongodb_integration` is obsolete and has no effect anymore. [#71997](https://github.com/ClickHouse/ClickHouse/pull/71997) ([Kirill Nikiforov](https://github.com/allmazz)). The new integration is strictly more capable and powerful.
+* Functions `greatest` and `least` now ignore NULL input values, whereas they previously returned NULL if one of the arguments was NULL. For example, `SELECT greatest(1, 2, NULL)` now returns 2. This makes the behavior compatible with PostgreSQL, but at the same time it breaks the compatibility with MySQL which returns NULL. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. [#65519](https://github.com/ClickHouse/ClickHouse/pull/65519) [#73344](https://github.com/ClickHouse/ClickHouse/pull/73344) ([kevinyhzou](https://github.com/KevinyhZou)).
+* A new MongoDB integration is now the default. Users who like to use the legacy MongoDB driver (based on the Poco driver) can enable server setting `use_legacy_mongodb_integration`. [#73359](https://github.com/ClickHouse/ClickHouse/pull/73359) ([Kirill Nikiforov](https://github.com/allmazz).
 
 #### New Feature
 * Move `JSON`/`Dynamic`/`Variant` types from experimental features to beta. [#72294](https://github.com/ClickHouse/ClickHouse/pull/72294) ([Pavel Kruglov](https://github.com/Avogar)). We also backported all fixes as well as this change to 24.11.

@@ -79,7 +79,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"http_response_headers", "", "", "New setting."},
             {"skip_redundant_aliases_in_udf", false, false, "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
-            {"least_greatest_legacy_null_behavior", false, false, "New setting"},
+            {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             /// Release closed. Please use 25.1
         }
     },
