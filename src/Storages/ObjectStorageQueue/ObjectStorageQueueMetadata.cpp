@@ -708,7 +708,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
             for (size_t i = 0; i < response.size(); ++i)
             {
-                if (response[i].error != Coordination::Error::ZNONODE)
+                if (response[i].error == Coordination::Error::ZNONODE)
                 {
                     LOG_ERROR(log, "Failed to fetch node metadata {}", paths[i]);
                     continue;
