@@ -258,13 +258,11 @@ public:
                         {
                             using ArrayDataType1 = std::decay_t<decltype(array_column_type1)>;
                             using T1 = typename ArrayDataType1::FieldType;
-                            const ColumnVector<T1> * array_column_vector1
-                                = checkAndGetColumn<ColumnVector<T1>>(array_predicted->getDataPtr().get());
+                            const ColumnVector<T1> * array_column_vector1 = checkAndGetColumn<ColumnVector<T1>>(array_predicted->getDataPtr().get());
 
                             using ArrayDataType2 = std::decay_t<decltype(array_column_type2)>;
                             using T2 = typename ArrayDataType2::FieldType;
-                            const ColumnVector<T2> * array_column_vector2
-                                = checkAndGetColumn<ColumnVector<T2>>(column_array_const->getDataPtr().get());
+                            const ColumnVector<T2> * array_column_vector2 = checkAndGetColumn<ColumnVector<T2>>(column_array_const->getDataPtr().get());
 
                             auto pred_gini_col = ColumnFloat64::create(input_rows_count);
                             auto label_gini_col = ColumnFloat64::create(input_rows_count);
@@ -302,13 +300,11 @@ public:
                         {
                             using ArrayDataType1 = std::decay_t<decltype(array_column_type1)>;
                             using T1 = typename ArrayDataType1::FieldType;
-                            const ColumnVector<T1> * array_column_vector1
-                                = checkAndGetColumn<ColumnVector<T1>>(array_predicted->getDataPtr().get());
+                            const ColumnVector<T1> * array_column_vector1 = checkAndGetColumn<ColumnVector<T1>>(array_predicted->getDataPtr().get());
 
                             using ArrayDataType2 = std::decay_t<decltype(array_column_type2)>;
                             using T2 = typename ArrayDataType2::FieldType;
-                            const ColumnVector<T2> * array_column_vector2
-                                = checkAndGetColumn<ColumnVector<T2>>(array_labels->getDataPtr().get());
+                            const ColumnVector<T2> * array_column_vector2 = checkAndGetColumn<ColumnVector<T2>>(array_labels->getDataPtr().get());
 
                             auto pred_gini_col = ColumnFloat64::create(input_rows_count);
                             auto label_gini_col = ColumnFloat64::create(input_rows_count);
@@ -353,13 +349,11 @@ public:
                     {
                         using ArrayDataType1 = std::decay_t<decltype(array_column_type1)>;
                         using T1 = typename ArrayDataType1::FieldType;
-                        const ColumnVector<T1> * array_column_vector1
-                            = checkAndGetColumn<ColumnVector<T1>>(column_array_const->getDataPtr().get());
+                        const ColumnVector<T1> * array_column_vector1 = checkAndGetColumn<ColumnVector<T1>>(column_array_const->getDataPtr().get());
 
                         using ArrayDataType2 = std::decay_t<decltype(array_column_type2)>;
                         using T2 = typename ArrayDataType2::FieldType;
-                        const ColumnVector<T2> * array_column_vector2
-                            = checkAndGetColumn<ColumnVector<T2>>(array_labels->getDataPtr().get());
+                        const ColumnVector<T2> * array_column_vector2 = checkAndGetColumn<ColumnVector<T2>>(array_labels->getDataPtr().get());
 
                         auto pred_gini_col = ColumnFloat64::create(input_rows_count);
                         auto label_gini_col = ColumnFloat64::create(input_rows_count);
