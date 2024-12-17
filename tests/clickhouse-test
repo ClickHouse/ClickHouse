@@ -3581,8 +3581,14 @@ if __name__ == "__main__":
     # infinite tests processes left
     # (new process group is required to avoid killing some parent processes)
     os.setpgid(0, 0)
-    # TODO set 'fork' for all CI configurations and 'spawn' for aarch64
-    multiprocessing.set_start_method("spawn")
+
+    check_name = os.environ.get("CHECK_NAME")
+    if check_name and "aarch" in check_name:
+        multiprocessing.set_start_method("spawn")
+        print(
+            'The multiprocessing start method is set to "spawn". '
+            "It is the default start method on macOS and should be tested in CI as well."
+        )
 
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
