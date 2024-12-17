@@ -1532,10 +1532,13 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromArrayJoin(const Ide
         if (identifier_view.empty())
             return array_join_column;
 
-        auto resolved_nested_subcolumn = tryResolveExpressionFromArrayJoinNestedExpression(
-                resolved_identifier, scope, array_join_column_expression_typed, array_join_column_expression_typed.getExpressionOrThrow());
-        if (resolved_nested_subcolumn)
-            return resolved_nested_subcolumn;
+        if (resolved_identifier)
+        {
+            auto resolved_nested_subcolumn = tryResolveExpressionFromArrayJoinNestedExpression(
+                    resolved_identifier, scope, array_join_column_expression_typed, array_join_column_expression_typed.getExpressionOrThrow());
+            if (resolved_nested_subcolumn)
+                return resolved_nested_subcolumn;
+        }
 
         /// Resolve subcolumns. Example : SELECT x.y.z FROM tab ARRAY JOIN arr AS x
         auto compound_expr = tryResolveIdentifierFromCompoundExpression(
