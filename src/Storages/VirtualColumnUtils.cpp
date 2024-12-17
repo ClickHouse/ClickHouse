@@ -176,7 +176,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
         const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
-            if (prefer_virtual_column)
+            if (!prefer_virtual_column)
                 return;
 
             if (storage_columns.size() == 1)
