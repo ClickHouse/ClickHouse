@@ -150,7 +150,8 @@ static std::unordered_map<std::string, std::string> parseHivePartitioningKeysAnd
     re2::StringPiece input_piece(path);
 
     std::unordered_map<std::string, std::string> key_values;
-    std::string key, value;
+    std::string key;
+    std::string value;
     std::unordered_map<std::string, std::string> used_keys;
     while (RE2::FindAndConsume(&input_piece, pattern, &key, &value))
     {
@@ -244,15 +245,13 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
 
     Block block;
-    NameSet common_virtuals;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        common_virtuals = getVirtualNamesForFileLikeStorage();
+    NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
         if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))

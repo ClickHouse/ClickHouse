@@ -17,7 +17,7 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
 
 void ASTOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    children.front()->formatImpl(ostr, settings, state, frame);
+    children.front()->format(ostr, settings, state, frame);
     ostr << (settings.hilite ? hilite_keyword : "")
         << (direction == -1 ? " DESC" : " ASC")
         << (settings.hilite ? hilite_none : "");
@@ -33,7 +33,7 @@ void ASTOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & se
     if (auto collation = getCollation())
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " COLLATE " << (settings.hilite ? hilite_none : "");
-        collation->formatImpl(ostr, settings, state, frame);
+        collation->format(ostr, settings, state, frame);
     }
 
     if (with_fill)
@@ -42,24 +42,38 @@ void ASTOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & se
         if (auto fill_from = getFillFrom())
         {
             ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
-            fill_from->formatImpl(ostr, settings, state, frame);
+            fill_from->format(ostr, settings, state, frame);
         }
         if (auto fill_to = getFillTo())
         {
             ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-            fill_to->formatImpl(ostr, settings, state, frame);
+            fill_to->format(ostr, settings, state, frame);
         }
         if (auto fill_step = getFillStep())
         {
             ostr << (settings.hilite ? hilite_keyword : "") << " STEP " << (settings.hilite ? hilite_none : "");
-            fill_step->formatImpl(ostr, settings, state, frame);
+            fill_step->format(ostr, settings, state, frame);
         }
         if (auto fill_staleness = getFillStaleness())
         {
             ostr << (settings.hilite ? hilite_keyword : "") << " STALENESS " << (settings.hilite ? hilite_none : "");
-            fill_staleness->formatImpl(ostr, settings, state, frame);
+            fill_staleness->format(ostr, settings, state, frame);
         }
     }
+}
+
+void ASTStorageOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    hash_state.update(direction);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+void ASTStorageOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    children.front()->format(ostr, settings, state, frame);
+
+    if (direction == -1)
+        ostr << (settings.hilite ? hilite_keyword : "") << " DESC" << (settings.hilite ? hilite_none : "");
 }
 
 }

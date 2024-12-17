@@ -57,18 +57,18 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     if (with())
     {
         ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
-        s.one_line ? with()->formatImpl(ostr, s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        s.one_line ? with()->format(ostr, s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
         ostr << s.nl_or_ws;
     }
 
     ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (s.hilite ? hilite_none : "");
 
-    s.one_line ? select()->formatImpl(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+    s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
     if (groupBy())
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY " << (s.hilite ? hilite_none : "");
-        s.one_line ? groupBy()->formatImpl(ostr, s, state, frame) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        s.one_line ? groupBy()->format(ostr, s, state, frame) : groupBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 
     if (orderBy())
@@ -84,7 +84,7 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
             order_by = std::make_shared<ASTExpressionList>();
             order_by->children.push_back(orderBy());
         }
-        s.one_line ? order_by->formatImpl(ostr, s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        s.one_line ? order_by->format(ostr, s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 }
 

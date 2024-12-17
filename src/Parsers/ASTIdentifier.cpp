@@ -5,6 +5,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <IO/Operators.h>
 
 
@@ -109,7 +110,15 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
     auto format_element = [&](const String & elem_name)
     {
         ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
+        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
+        {
+            ostr << special_delimiter_and_identifier->first;
+            settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+        }
+        else
+        {
+            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
+        }
         ostr << (settings.hilite ? hilite_none : "");
     };
 
@@ -125,7 +134,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
             /// Here we also ignore children if they are empty.
             if (name_parts[i].empty() && j < children.size())
             {
-                children[j]->formatImpl(ostr, settings, state, frame);
+                children[j]->format(ostr, settings, state, frame);
                 ++j;
             }
             else
@@ -136,7 +145,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
     {
         const auto & name = shortName();
         if (name.empty() && !children.empty())
-            children.front()->formatImpl(ostr, settings, state, frame);
+            children.front()->format(ostr, settings, state, frame);
         else
             format_element(name);
     }
