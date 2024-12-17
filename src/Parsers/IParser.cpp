@@ -10,6 +10,7 @@ namespace ErrorCodes
 }
 
 
+/// NOLINTBEGIN(cert-oop54-cpp)
 IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
 {
     depth = rhs.depth;
@@ -29,6 +30,7 @@ IParser::Pos & IParser::Pos::operator=(const IParser::Pos & rhs)
 
     return *this;
 }
+/// NOLINTEND(cert-oop54-cpp)
 
 
 template <typename T>
