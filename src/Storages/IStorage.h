@@ -276,6 +276,10 @@ public:
         return false;
     }
 
+    /// Add engine args that were inferred during storage creation to create query to avoid the same
+    /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
+    virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
+
 private:
     StorageID storage_id;
 
