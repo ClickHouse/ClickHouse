@@ -51,13 +51,6 @@ struct TranslateImpl
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be ASCII strings");
             map[static_cast<unsigned char>(map_from[i])] = ascii_upper_bound + 1;
         }
-
-        // Validate any extra characters in map_to to ensure they are ASCII
-        for (size_t i = min_size; i < map_to.size(); ++i)
-        {
-            if (!isASCII(map_to[i]))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be ASCII strings");
-        }
     }
 
     static void vector(
@@ -359,7 +352,7 @@ public:
         const ColumnPtr column_map_to = arguments[2].column;
 
         if (!isColumnConst(*column_map_from) || !isColumnConst(*column_map_to))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "2nd and 3rd arguments of function {} must be constants.", getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "2nd and 3rd arguments of function {} must be constants", getName());
 
         const IColumn * c1 = arguments[1].column.get();
         const IColumn * c2 = arguments[2].column.get();
@@ -367,6 +360,12 @@ public:
         const ColumnConst * c2_const = typeid_cast<const ColumnConst *>(c2);
         String map_from = c1_const->getValue<String>();
         String map_to = c2_const->getValue<String>();
+
+        auto map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
+        auto map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
+
+        if (map_from_size < map_to_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
