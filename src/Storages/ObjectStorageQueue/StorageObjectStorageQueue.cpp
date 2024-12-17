@@ -220,7 +220,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
+    ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
+
     auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
+        storage_type,
         zk_path,
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],

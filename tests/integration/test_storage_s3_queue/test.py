@@ -396,17 +396,29 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
     node.query("system flush logs")
 
     if engine_name == "S3Queue":
-        system_table_name = "s3queue_log"
+        system_tables = ["s3queue_log", "s3queue"]
     else:
-        system_table_name = "azure_queue_log"
-    assert (
-        int(
-            node.query(
-                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
+        system_tables = ["azure_queue_log", "azure_queue"]
+
+    for table in system_tables:
+        if table.endswith("_log"):
+            assert (
+                int(
+                    node.query(
+                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
+                    )
+                )
+                == files_num * row_num
             )
-        )
-        == files_num * row_num
-    )
+        else:
+            assert (
+                int(
+                    node.query(
+                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
+                    )
+                )
+                == files_num * row_num
+            )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
