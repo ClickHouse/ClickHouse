@@ -630,7 +630,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-
+            {"add_implicit_sign_column_constraint_for_collapsing_engine", false, true, "Enable implicit constraint on the sign column of CollapsingMergeTree."},
         }
     },
     {"24.12",
