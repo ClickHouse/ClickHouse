@@ -62,6 +62,10 @@ KILL QUERY WHERE user='username' SYNC
 If you are killing a query in ClickHouse Cloud or in a self-managed cluster, then be sure to use the ```ON CLUSTER [cluster-name]``` option, in order to ensure the query is killed on all replicas
 :::
 
+:::tip
+KILL QUERY ON CLUSTER is treated as a distributed DDL query and added to a `system.distributed_ddl_queue` table with all the implications.
+:::
+
 Read-only users can only stop their own queries.
 
 By default, the asynchronous version of queries is used (`ASYNC`), which does not wait for confirmation that queries have stopped.
