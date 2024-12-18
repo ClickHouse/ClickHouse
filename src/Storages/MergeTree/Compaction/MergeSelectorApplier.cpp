@@ -151,13 +151,8 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
 
     if (choice.has_value())
     {
-        LOG_DEBUG(
-            log,
-            "Selected {} parts from {} to {} in {}ms",
-            choice->range.size(),
-            choice->range.front().part_info.getPartNameForLogs(),
-            choice->range.back().part_info.getPartNameForLogs(),
-            select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
+        LOG_DEBUG(log, "Selected {} parts from {} to {} in {}ms",
+            choice->range.size(), choice->range.front().name, choice->range.back().name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
 
         ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, choice->range.size());
         ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());

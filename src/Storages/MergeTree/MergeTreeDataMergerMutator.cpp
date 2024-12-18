@@ -93,10 +93,10 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
         if (prev_part)
         {
             if (part.part_info.contains(prev_part->part_info))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", part.part_info.getPartNameForLogs(), prev_part->part_info.getPartNameForLogs());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", part.name, prev_part->name);
 
             if (!part.part_info.isDisjoint(prev_part->part_info))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part.part_info.getPartNameForLogs(), prev_part->part_info.getPartNameForLogs());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part.name, prev_part->name);
         }
 
         assert(!mergeable_range.empty());
@@ -429,17 +429,14 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
             LOG_WARNING(log,
                 "Won't merge parts from {} to {} because not enough free space: "
                 "{} free and unreserved, {} required now; suppressing similar warnings for the next hour",
-                parts.front().part_info.getPartNameForLogs(),
-                parts.back().part_info.getPartNameForLogs(),
-                ReadableSize(available_disk_space),
-                ReadableSize(required_disk_space));
+                parts.front().name, parts.back().name, ReadableSize(available_disk_space), ReadableSize(required_disk_space));
         }
 
         out_disable_reason = PreformattedMessage::create("Insufficient available disk space, required {}", ReadableSize(required_disk_space));
         return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
     }
 
-    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front().part_info.getPartNameForLogs(), parts.back().part_info.getPartNameForLogs());
+    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front().name, parts.back().name);
 
     return MergeSelectorChoice{std::move(ranges.front()), MergeType::Regular};
 }
