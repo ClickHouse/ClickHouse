@@ -190,6 +190,7 @@ def test_parallel_replicas_custom_key_replicatedmergetree(
         == expected_result
     )
 
+
 def test_no_parallel_replicas_for_non_replicated_merge_tree(start_cluster):
     cluster = "test_single_shard_multiple_replicas"
     row_num = 40
