@@ -165,11 +165,9 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                 }
             };
 
-            auto & join = hash_joins[0]->data;
-
-            auto calculate_selector = [&](auto & maps, size_t idx)
+            auto calculate_selector = [&](auto & maps, HashJoin::Type type, size_t idx)
             {
-                switch (join->getJoinedData()->type)
+                switch (type)
                 {
                     case HashJoin::Type::EMPTY:
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::EMPTY");
@@ -189,6 +187,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
             for (size_t i = 0; i < slots; ++i)
             {
+                auto & join = hash_joins[i]->data;
                 pool->scheduleOrThrow(
                     [&, idx = i, thread_group = CurrentThread::getGroup()]()
                     {
@@ -206,11 +205,11 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                             {
                                 using T = std::decay_t<decltype(maps)>;
                                 if constexpr (std::is_same_v<T, HashJoin::MapsOne>)
-                                    return calculate_selector(maps, idx);
+                                    return calculate_selector(maps, join->getJoinedData()->type, idx);
                                 else if constexpr (std::is_same_v<T, HashJoin::MapsAll>)
-                                    return calculate_selector(maps, idx);
+                                    return calculate_selector(maps, join->getJoinedData()->type, idx);
                                 else if constexpr (std::is_same_v<T, HashJoin::MapsAsof>)
-                                    return calculate_selector(maps, idx);
+                                    return calculate_selector(maps, join->getJoinedData()->type, idx);
                                 else
                                     static_assert(false);
                             },
@@ -218,15 +217,6 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                     });
             }
             pool->wait();
-        }
-
-        for (size_t i = 1; i < slots; ++i)
-        {
-            if (hash_joins[0] && hash_joins[0]->data && hash_joins[0]->data->getJoinedData())
-            {
-                hash_joins[i]->data->getJoinedData()->maps = hash_joins[0]->data->getJoinedData()->maps;
-                hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
-            }
         }
     }
     catch (...)
@@ -614,5 +604,81 @@ UInt64 calculateCacheKey(
         hash.update(name);
 
     return hash.get64();
+}
+
+void ConcurrentHashJoin::onBuildPhaseFinish()
+{
+    for (auto & hash_join : hash_joins)
+    {
+        // It cannot be called concurrently with other IJoin methods
+        hash_join->data->onBuildPhaseFinish();
+    }
+
+    if (!two_level_map_used)
+        return;
+
+    auto & join = hash_joins[0]->data;
+    for (size_t i = 1; i < slots; ++i)
+    {
+        auto f = [&](auto & lhs_map, auto & rhs_map, size_t idx)
+        {
+            if constexpr (HasGetBucketFromHashMemberFunc<decltype(lhs_map)>)
+            {
+                for (size_t j = idx; j < 256; j += slots)
+                {
+                    if (!lhs_map.impls[j].empty())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map");
+                    lhs_map.impls[j] = std::move(rhs_map.impls[j]);
+                }
+            }
+        };
+
+        auto calculate_selector = [&](auto & lhs_map, HashJoin::Type type, auto & rhs_map, size_t idx)
+        {
+            switch (type)
+            {
+                case HashJoin::Type::EMPTY:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::EMPTY");
+                case HashJoin::Type::CROSS:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected HashJoin::Type::CROSS");
+
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
+        return f(*lhs_map.TYPE, *rhs_map.TYPE, idx);
+
+                    APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+            }
+
+            UNREACHABLE();
+        };
+
+        std::visit(
+            [&](auto & lhs_map)
+            {
+                using T = std::decay_t<decltype(lhs_map)>;
+                if constexpr (std::is_same_v<T, HashJoin::MapsOne>)
+                    return calculate_selector(
+                        lhs_map, join->getJoinedData()->type, std::get<T>(hash_joins[i]->data->getJoinedData()->maps.at(0)), i);
+                else if constexpr (std::is_same_v<T, HashJoin::MapsAll>)
+                    return calculate_selector(
+                        lhs_map, join->getJoinedData()->type, std::get<T>(hash_joins[i]->data->getJoinedData()->maps.at(0)), i);
+                else if constexpr (std::is_same_v<T, HashJoin::MapsAsof>)
+                    return calculate_selector(
+                        lhs_map, join->getJoinedData()->type, std::get<T>(hash_joins[i]->data->getJoinedData()->maps.at(0)), i);
+                else
+                    static_assert(false);
+            },
+            join->getJoinedData()->maps.at(0));
+    }
+
+    for (size_t i = 1; i < slots; ++i)
+    {
+        if (hash_joins[0] && hash_joins[0]->data && hash_joins[0]->data->getJoinedData())
+        {
+            hash_joins[i]->data->getJoinedData()->maps = hash_joins[0]->data->getJoinedData()->maps;
+            hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
+        }
+    }
 }
 }
