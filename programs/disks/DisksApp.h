@@ -12,10 +12,14 @@
 #include <boost/program_options/variables_map.hpp>
 #include <Poco/Util/Application.h>
 
+#include <boost/program_options/positional_options.hpp>
+
+
 namespace DB
 {
 
 using ProgramOptionsDescription = boost::program_options::options_description;
+using PositionalProgramOptionsDescription = boost::program_options::positional_options_description;
 using CommandLineOptions = boost::program_options::variables_map;
 
 class DisksApp : public Poco::Util::Application
@@ -36,7 +40,10 @@ public:
     void initializeHistoryFile();
 
     static void parseAndCheckOptions(
-        const std::vector<String> & arguments, const ProgramOptionsDescription & options_description, CommandLineOptions & options);
+        const std::vector<String> & arguments,
+        const ProgramOptionsDescription & options_description,
+        PositionalProgramOptionsDescription & positional_options_description,
+        CommandLineOptions & options);
 
     void printEntryHelpMessage() const;
     void printAvailableCommandsHelpMessage() const;
@@ -74,6 +81,7 @@ private:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
     ProgramOptionsDescription options_description;
+    PositionalProgramOptionsDescription positional_options_description;
     CommandLineOptions options;
     std::unordered_map<String, CommandPtr> command_descriptions;
 
@@ -100,7 +108,9 @@ private:
            {"current", "current_disk_with_path"},
            {"current_disk", "current_disk_with_path"},
            {"current_path", "current_disk_with_path"},
-           {"cur", "current_disk_with_path"}};
+           {"cur", "current_disk_with_path"},
+           {"init", "initialize"},
+           {"init", "initialise"}};
 
     std::set<String> multidisk_commands = {"copy", "packed-io", "switch-disk", "cd"};
 

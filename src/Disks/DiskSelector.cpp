@@ -27,11 +27,7 @@ void DiskSelector::assertInitialized() const
 
 
 void DiskSelector::initialize(
-    const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix,
-    ContextPtr context,
-    DiskValidator disk_validator,
-    bool lazy_disk_creation)
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context, DiskValidator disk_validator)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -55,31 +51,11 @@ void DiskSelector::initialize(
 
         if (disk_validator && !disk_validator(config, disk_config_prefix, disk_name))
             continue;
-        if (lazy_disk_creation)
+        auto created_disk
+            = factory.create(disk_name, config, disk_config_prefix, context, disks, /*attach*/ false, /*custom_disk*/ false, skip_types);
+        if (created_disk.get())
         {
-            postponed_disks.emplace(
-                disk_name,
-                [disk_name, disk_config_prefix, &factory, &config, context, this]()
-                {
-                    return factory.create(
-                        disk_name,
-                        config,
-                        disk_config_prefix,
-                        context,
-                        created_disks,
-                        /*attach*/ false,
-                        /*custom_disk*/ false,
-                        this->skip_types);
-                });
-        }
-        else
-        {
-            auto created_disk = factory.create(
-                disk_name, config, disk_config_prefix, context, created_disks, /*attach*/ false, /*custom_disk*/ false, this->skip_types);
-            if (created_disk.get())
-            {
-                disks.emplace(disk_name, std::move(created_disk));
-            }
+            disks.emplace(disk_name, std::move(created_disk));
         }
     }
     if (!has_default_disk)

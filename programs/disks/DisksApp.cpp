@@ -16,6 +16,7 @@
 #include <Disks/registerDisks.h>
 
 #include <Formats/registerFormats.h>
+#include <boost/program_options/positional_options.hpp>
 #include <Common/TerminalSize.h>
 
 namespace DB
@@ -261,9 +262,12 @@ void DisksApp::runInteractiveReplxx()
 }
 
 void DisksApp::parseAndCheckOptions(
-    const std::vector<String> & arguments, const ProgramOptionsDescription & options_description, CommandLineOptions & options)
+    const std::vector<String> & arguments,
+    const ProgramOptionsDescription & options_description,
+    PositionalProgramOptionsDescription & positional_options_description,
+    CommandLineOptions & options)
 {
-    auto parser = po::command_line_parser(arguments).options(options_description).allow_unregistered();
+    auto parser = po::command_line_parser(arguments).options(options_description).positional(positional_options_description);
     po::parsed_options parsed = parser.run();
     po::store(parsed, options);
 }
@@ -273,7 +277,9 @@ void DisksApp::addOptions()
     options_description.add_options()("help,h", "Print common help message")("config-file,C", po::value<String>(), "Set config file")(
         "disk", po::value<String>(), "Set disk name")("save-logs", "Save logs to a file")(
         "log-level", po::value<String>(), "Logging level")("query,q", po::value<String>(), "Query for a non-interactive mode")(
-        "test-mode", "Interactive interface in test regyme");
+        "test-mode", "Interactive interface in test regime");
+
+    positional_options_description.add("disk", 1);
 
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("copy", makeCommandCopy());
@@ -288,6 +294,7 @@ void DisksApp::addOptions()
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
+    command_descriptions.emplace("init", makeCommandInit());
     command_descriptions.emplace("help", makeCommandHelp(*this));
 #ifdef CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
@@ -406,7 +413,7 @@ void DisksApp::initializeHistoryFile()
 void DisksApp::init(const std::vector<String> & common_arguments)
 {
     addOptions();
-    parseAndCheckOptions(common_arguments, options_description, options);
+    parseAndCheckOptions(common_arguments, options_description, positional_options_description, options);
 
     po::notify(options);
 
@@ -473,24 +480,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     global_context->setPath(path);
 
-    String main_disk = config().getString("disk", "default");
-
-    auto validator = [](const Poco::Util::AbstractConfiguration &, const std::string &, const std::string &) { return true; };
-
-    constexpr auto config_prefix = "storage_configuration.disks";
-    auto disk_selector = std::make_shared<DiskSelector>(std::unordered_set<String>{"cache", "encrypted"});
-    disk_selector->initialize(config(), config_prefix, global_context, validator);
-
-    std::vector<std::pair<DiskPtr, std::optional<String>>> disks_with_path;
-
-    // for (const auto & [_, disk_ptr]) // : disk_selector->getDisksMap())
-    // {
-    //     disks_with_path.emplace_back(
-    //         disk_ptr, (disk_ptr->getName() == "local") ? std::optional{fs::current_path().string()} : std::nullopt);
-    // }
-
-
-    client = std::make_unique<DisksClient>(std::move(disks_with_path), main_disk);
+    client = std::make_unique<DisksClient>(config(), global_context);
 
     suggest.setCompletionsCallback([&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
 

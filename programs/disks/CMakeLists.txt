@@ -4,6 +4,7 @@ set (CLICKHOUSE_DISKS_SOURCES
     ICommand.cpp
     CommandChangeDirectory.cpp
     CommandCopy.cpp
+    CommandInit.cpp
     CommandLink.cpp
     CommandList.cpp
     CommandListDisks.cpp

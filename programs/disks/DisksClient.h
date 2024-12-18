@@ -57,7 +57,13 @@ private:
 
 class DisksClient
 {
+    inline static const String DEFAULT_DISK_NAME = "default";
+    inline static const String LOCAL_DISK_NAME = "local";
+    using DiskCreator = std::function<DiskPtr()>;
+
 public:
+    explicit DisksClient(const Poco::Util::AbstractConfiguration & config, ContextPtr context);
+
     explicit DisksClient(std::vector<std::pair<DiskPtr, std::optional<String>>> && disks_with_paths, std::optional<String> begin_disk);
 
     const DiskWithPath & getDiskWithPath(const String & disk) const;
@@ -74,15 +80,23 @@ public:
 
     void switchToDisk(const String & disk_, const std::optional<String> & path_);
 
+    std::vector<String> getInitializedDiskNames() const;
+    std::vector<String> getUninitializedDiskNames() const;
     std::vector<String> getAllDiskNames() const;
+
 
     std::vector<String> getAllFilesByPatternFromAllDisks(const String & pattern) const;
 
+    void addDisk(String disk_name, const std::optional<String> & path);
+
+    bool isDiskInitialized(const String & disk_name) const { return created_disks.contains(disk_name); }
 
 private:
-    void addDisk(DiskPtr disk_, const std::optional<String> & path_);
-
     String current_disk;
-    std::unordered_map<String, DiskWithPath> disks;
+    std::unordered_map<String, DiskWithPath> disks_with_paths;
+    DisksMap created_disks;
+
+    using PostponedDisksMap = std::map<String, DiskCreator>;
+    PostponedDisksMap postponed_disks;
 };
 }
