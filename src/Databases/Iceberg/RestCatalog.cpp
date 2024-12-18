@@ -34,11 +34,6 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace DB::Setting
-{
-    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
-}
-
 namespace Iceberg
 {
 
