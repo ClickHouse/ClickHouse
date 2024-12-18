@@ -68,7 +68,9 @@ def _update_workflow_artifacts(workflow):
         if artifact.name in artifact_job:
             artifact._provided_by = artifact_job[artifact.name]
         else:
-            print(f"WARNING: Artifact [{artifact.name}] in workflow [{workflow.name}] has no job that provides it")
+            print(
+                f"WARNING: Artifact [{artifact.name}] in workflow [{workflow.name}] has no job that provides it"
+            )
 
 
 def _update_workflow_with_native_jobs(workflow):
