@@ -957,9 +957,7 @@ private:
             return;
 
         auto & function_node = node->as<FunctionNode &>();
-        assert(function_node.getFunctionName() == "and");
-
-        if (function_node.getResultType()->isNullable())
+        if (function_node.getFunctionName() != "and" || function_node.getResultType()->isNullable())
             return;
 
         /// Step 1: identify constants, and store comparing pairs in hash
@@ -969,13 +967,10 @@ private:
         for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
-            const auto function_name = argument_function->getFunctionName();
             /// temporarily only consider less
             const auto valid_functions = std::unordered_set<std::string>{"less"};
-            if (!argument_function || !valid_functions.contains(function_name))
-            {
+            if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
                 continue;
-            }
 
             const auto & function_arguments = argument_function->getArguments().getNodes();
             const auto & lhs = function_arguments[0];
@@ -996,8 +991,6 @@ private:
 
         // std::cout<<"step2"<<std::endl;
 
-        auto & args = function_node.getArguments().getNodes();
-
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
         std::function<void(QueryTreeNodePtr, const ConstantNode *)> findPairs = [&](QueryTreeNodePtr current, const ConstantNode * constant)
         {
@@ -1008,13 +1001,11 @@ private:
                     if (constant)
                     {
                         // std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<" "<<constant->dumpTree()<<std::endl;
-                        auto arg = args[0]->clone();
-                        arg->as<FunctionNode>()->getArguments().getNodes().clear();
-                        arg->as<FunctionNode>()->getArguments().getNodes().push_back(left->clone());
-                        arg->as<FunctionNode>()->getArguments().getNodes().push_back(constant->clone());
-                        auto less_function_resolver = FunctionFactory::instance().get("less", getContext());
-                        arg->as<FunctionNode>()->resolveAsFunction(less_function_resolver);
-                        function_node.getArguments().getNodes().push_back(arg);
+                        const auto and_node = std::make_shared<FunctionNode>("less");
+                        and_node->getArguments().getNodes().push_back(left->clone());
+                        and_node->getArguments().getNodes().push_back(constant->clone());
+                        and_node->resolveAsFunction(FunctionFactory::instance().get("less", getContext()));
+                        function_node.getArguments().getNodes().push_back(and_node);
                         // for (const auto & argument : function_node.getArguments())
                         // {
                         //     std::cout<<argument->dumpTree()<<std::endl;
@@ -1029,9 +1020,7 @@ private:
         };
 
         for (const auto & constant : constants)
-        {
             findPairs(constant, nullptr);
-        }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.resolveAsFunction(and_function_resolver);

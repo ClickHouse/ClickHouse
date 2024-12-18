@@ -35,3 +35,5 @@ QUERY id: 0
               LIST id: 21, nodes: 2
                 COLUMN id: 22, column_name: a, result_type: Int32, source_id: 3
                 CONSTANT id: 23, constant_value: UInt64_5, constant_value_type: UInt8
+3
+5
