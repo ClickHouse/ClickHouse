@@ -44,8 +44,6 @@ std::string toString(const Values & value)
 bool isSafePrimaryDataKeyType(const IDataType & data_type)
 {
     auto type_id = data_type.getTypeId();
-    if (const auto * nullable = dynamic_cast<const DataTypeNullable *>(&data_type))
-        type_id = nullable->getNestedType()->getTypeId();
     switch (type_id)
     {
         case TypeIndex::Float32:

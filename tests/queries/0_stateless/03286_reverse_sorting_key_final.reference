@@ -1,19 +1,6 @@
 1
 1
 (Expression)
-ExpressionTransform
-  (ReadFromMergeTree)
-  ExpressionTransform
-    ReplacingSorted 2 → 1
-      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-6	6
-5	5
-4	4
-3	3
-2	2
-1	1
-0	0
-(Expression)
 ExpressionTransform × 2
   (ReadFromMergeTree)
   ExpressionTransform × 2
@@ -27,11 +14,9 @@ ExpressionTransform × 2
               Description: filter values in [(4, 4), +inf)
                 ExpressionTransform × 2
                   MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-\N	\N
-6	6
-5	5
-4	4
-3	3
-2	2
-1	1
-0	0
+(Expression)
+ExpressionTransform
+  (ReadFromMergeTree)
+  ExpressionTransform
+    ReplacingSorted 2 → 1
+      MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
