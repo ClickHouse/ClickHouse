@@ -723,10 +723,14 @@ def test_s3_trivial_glob_should_not_list(started_cluster):
         table_format,
     )
     query_id = "validate_no_s3_list_requests"
-    assert run_query(instance, query, query_id=query_id).splitlines() == ["11\t11\t11\t11"]
+    assert run_query(instance, query, query_id=query_id).splitlines() == [
+        "11\t11\t11\t11"
+    ]
 
     instance.query("SYSTEM FLUSH LOGS")
-    list_request_count = instance.query(f"select ProfileEvents['S3ListObjects'] from system.query_log where query_id = '{query_id}' and type = 'QueryFinish'")
+    list_request_count = instance.query(
+        f"select ProfileEvents['S3ListObjects'] from system.query_log where query_id = '{query_id}' and type = 'QueryFinish'"
+    )
     assert list_request_count == "0\n"
 
 
