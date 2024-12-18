@@ -3768,7 +3768,7 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             std::lock_guard lock2(shared->mutex);
-            shared->ddl_worker->startup(false);
+            shared->ddl_worker->startup();
         });
 
     shared->ddl_worker_startup_task = makeLoadTask(getAsyncLoader(), {job});

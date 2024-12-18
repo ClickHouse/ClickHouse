@@ -3,7 +3,6 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster, ClickHouseKiller
-from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
@@ -36,12 +35,54 @@ def prepare_dbs():
         )
 
 
+def failed_create_table(node, table_name: str):
+    assert node.query_and_get_error(
+        f"""
+            CREATE TABLE repl_db.{table_name} (n UInt32)
+            ENGINE = ReplicatedMergeTree
+            ORDER BY n PARTITION BY n % 10;
+        """
+    )
+
+
+def failed_rename_table(node, table_name: str, new_table_name: str):
+    assert node.query_and_get_error(
+        f"""
+            RENAME TABLE repl_db.{table_name} TO repl_db.{new_table_name}
+        """
+    )
+
+
+def failed_alter_table(node, table_name: str):
+    assert node.query_and_get_error(
+        f"""
+            ALTER TABLE repl_db.{table_name} ADD COLUMN m String
+        """
+    )
+
+
 def create_table(node, table_name: str):
     assert node.query(
         f"""
             CREATE TABLE repl_db.{table_name} (n UInt32)
             ENGINE = ReplicatedMergeTree
             ORDER BY n PARTITION BY n % 10;
+        """
+    )
+
+
+def rename_table(node, table_name: str, new_table_name: str):
+    assert node.query(
+        f"""
+            RENAME TABLE repl_db.{table_name} TO repl_db.{new_table_name}
+        """
+    )
+
+
+def alter_table(node, table_name: str):
+    assert node.query(
+        f"""
+            ALTER TABLE repl_db.{table_name} ADD COLUMN m String
         """
     )
 
@@ -56,16 +97,6 @@ def fill_table(node, table_name: str, amount: int):
 
 def check_contains_table(node, table_name: str, amount: int):
     assert [f"{amount}"] == node.query(f"SELECT count(*) FROM repl_db.{table_name}").split()
-
-
-def failed_create_table(node, table_name: str):
-    assert node.query_and_get_error(
-        f"""
-            CREATE TABLE repl_db.{table_name} (n UInt32)
-            ENGINE = ReplicatedMergeTree
-            ORDER BY n PARTITION BY n % 10;
-        """
-    )
 
 
 def get_tables_from_replicated(node):
@@ -112,14 +143,16 @@ def start_cluster():
     ]
 )
 @pytest.mark.parametrize(
-    "exists_table",
+    "exists_table, handler_create_table",
     [
         pytest.param(
+            None,
             None,
             id="no exists table",
         ),
         pytest.param(
             "exists_table",
+            create_table,
             id="with exists table",
         ),
     ]
@@ -138,22 +171,51 @@ def start_cluster():
     ]
 )
 @pytest.mark.parametrize(
-    "new_table",
+    "process_table, failed_action_with_table, action_with_table",
     [
         pytest.param(
             "test_create_table",
+            failed_create_table,
+            create_table,
             id="create table",
         ),
-        # drop
-        # rename
-        # alter
     ]
 )
-def test_query_after_restore_db_replica(start_cluster, need_restart, exists_table, new_table, need_fill_tables):
+@pytest.mark.parametrize(
+    "changed_table, failed_change_table, change_table",
+    [
+        pytest.param(
+            "renamed_table",
+            lambda node, t1, t2: failed_rename_table(node, t1, t2),
+            lambda node, t1, t2: rename_table(node, t1, t2),
+            id="rename table",
+        ),
+        pytest.param(
+            "test_create_table",
+            lambda node, t1, _: failed_alter_table(node, t1),
+            lambda node, t1, _: alter_table(node, t1),
+            id="alter table",
+        ),
+    ]
+)
+def test_query_after_restore_db_replica(
+    start_cluster, 
+    need_restart, 
+    exists_table, 
+    handler_create_table,
+    need_fill_tables,
+    process_table,
+    failed_action_with_table,
+    action_with_table,
+    changed_table,
+    failed_change_table,
+    change_table
+    ):
+    
     inserted_data = 1000
 
     if exists_table:
-        create_table(node_1, exists_table)
+        handler_create_table(node_1, exists_table)
 
         if need_fill_tables:
             fill_table(node_1, exists_table, inserted_data)
@@ -171,7 +233,7 @@ def test_query_after_restore_db_replica(start_cluster, need_restart, exists_tabl
     assert expected_tables == get_tables_from_replicated(node_1)
     assert expected_tables == get_tables_from_replicated(node_2)
         
-    failed_create_table(node_1, new_table)
+    failed_action_with_table(node_1, process_table)
 
     assert expected_tables == get_tables_from_replicated(node_1)
     assert expected_tables == get_tables_from_replicated(node_2)
@@ -180,7 +242,7 @@ def test_query_after_restore_db_replica(start_cluster, need_restart, exists_tabl
         node_1.restart_clickhouse()
 
     assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}") is None
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{new_table}") is None
+    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}") is None
 
     node_1.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
 
@@ -189,7 +251,7 @@ def test_query_after_restore_db_replica(start_cluster, need_restart, exists_tabl
         if need_fill_tables:
             check_contains_table(node_1, exists_table, inserted_data)
 
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{new_table}") is None
+    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}") is None
 
     assert zk.exists("/clickhouse/repl_db/replicas/shard1|replica1")
     assert zk.exists("/clickhouse/repl_db/replicas/shard1|replica2") is None
@@ -204,11 +266,11 @@ def test_query_after_restore_db_replica(start_cluster, need_restart, exists_tabl
             check_contains_table(node_1, exists_table, inserted_data)
             check_contains_table(node_2, exists_table, inserted_data)
 
-    create_table(node_1, new_table)
+    action_with_table(node_1, process_table)
     if need_fill_tables:
-        fill_table(node_1, new_table, inserted_data)
+        fill_table(node_1, process_table, inserted_data)
 
-    expected_tables = [new_table]
+    expected_tables = [process_table]
     if exists_table:
         expected_tables.append(exists_table)
 
@@ -218,14 +280,51 @@ def test_query_after_restore_db_replica(start_cluster, need_restart, exists_tabl
     assert expected_tables == get_tables_from_replicated(node_2)
 
     if need_fill_tables:
-        check_contains_table(node_1, new_table, inserted_data)
-        check_contains_table(node_2, new_table, inserted_data)
+        check_contains_table(node_1, process_table, inserted_data)
+        check_contains_table(node_2, process_table, inserted_data)
 
     if exists_table:
         assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}")
 
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{new_table}")
+    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}")
+
+    zk_rmr_with_retries(zk, "/clickhouse/repl_db")
+    assert zk.exists("/clickhouse/repl_db") is None
+
+    failed_change_table(node_1, process_table, changed_table)
+
+    if need_restart:
+        node_1.restart_clickhouse()
+
+    assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}") is None
+    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}") is None
+
+    node_1.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
+    node_2.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
+
+    if exists_table:
+        assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}")
+    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}")
+
+    change_table(node_1, process_table, changed_table)
+
+    if process_table != changed_table:
+        assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}") is None
+    assert zk.exists(f"/clickhouse/repl_db/metadata/{changed_table}")
+
+    expected_tables = [changed_table]
+    if exists_table:
+        expected_tables.append(exists_table)
+    expected_tables.sort()
+
+    assert expected_tables == get_tables_from_replicated(node_1)
+    assert expected_tables == get_tables_from_replicated(node_2)
+
+    if need_fill_tables:
+        if exists_table:
+            check_contains_table(node_1, exists_table, inserted_data)
+        check_contains_table(node_2, changed_table, inserted_data)
 
     if exists_table:
         node_1.query(f"DROP TABLE repl_db.{exists_table} SYNC")
-    node_1.query(f"DROP TABLE repl_db.{new_table} SYNC")
+    node_1.query(f"DROP TABLE repl_db.{changed_table} SYNC")

@@ -153,7 +153,7 @@ private:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
 
-    void initDdlWorker(bool restore) TSA_REQUIRES(ddl_worker_mutex);
+    void initDdlWorker() TSA_REQUIRES(ddl_worker_mutex);
 
     void restoreMetadataInZookeeper();
 

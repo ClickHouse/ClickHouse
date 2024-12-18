@@ -55,7 +55,7 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
     /// We also need similar graph to load tables on server startup in order of topsort.
 }
 
-bool DatabaseReplicatedDDLWorker::initializeMainThread(const bool restore)
+bool DatabaseReplicatedDDLWorker::initializeMainThread()
 {
     {
         std::lock_guard lock(initialization_duration_timer_mutex);
@@ -98,7 +98,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread(const bool restore)
                 zookeeper->trySet(database->replica_path + "/digest", FORCE_AUTO_RECOVERY_DIGEST);
             }
 
-            initializeReplication(restore);
+            initializeReplication();
             initialized = true;
             {
                 std::lock_guard lock(initialization_duration_timer_mutex);
@@ -127,7 +127,7 @@ void DatabaseReplicatedDDLWorker::shutdown()
     wait_current_task_change.notify_all();
 }
 
-void DatabaseReplicatedDDLWorker::initializeReplication(const bool restore)
+void DatabaseReplicatedDDLWorker::initializeReplication()
 {
     /// Check if we need to recover replica.
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
@@ -178,10 +178,8 @@ void DatabaseReplicatedDDLWorker::initializeReplication(const bool restore)
         if (!is_new_replica)
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
-        if (!restore)
-        {
-            database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
-        }
+
+        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
         
         zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));

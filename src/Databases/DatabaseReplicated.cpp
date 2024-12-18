@@ -768,7 +768,7 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             }
 
             std::lock_guard lock{ddl_worker_mutex};
-            initDdlWorker(false);
+            initDdlWorker();
         });
     std::scoped_lock lock(mutex);
     startup_replicated_database_task = makeLoadTask(async_loader, {job});
@@ -797,13 +797,13 @@ void DatabaseReplicated::stopLoading()
     DatabaseAtomic::stopLoading();
 }
 
-void DatabaseReplicated::initDdlWorker(const bool restore)
+void DatabaseReplicated::initDdlWorker()
 {
     chassert(!ddl_worker);
     chassert(!is_probably_dropped.load());
 
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
-    ddl_worker->startup(restore);
+    ddl_worker->startup();
     ddl_worker_initialized = true;
 }
 
@@ -1694,6 +1694,8 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
 
     tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::CREATE);
 
+    restoreMetadataInZookeeper();
+
     {
         std::lock_guard lock{ddl_worker_mutex};
 
@@ -1704,10 +1706,8 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
         }
 
         LOG_TRACE(log, "Ddl_worker will be initialized to restore database metadata in keeper.");
-        initDdlWorker(true);
+        initDdlWorker();
     }
-
-    restoreMetadataInZookeeper();
 }
 
 void DatabaseReplicated::drop(ContextPtr context_)

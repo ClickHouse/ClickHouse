@@ -137,11 +137,11 @@ DDLWorker::DDLWorker(
     host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getTCPPort());
 }
 
-void DDLWorker::startup(const bool restore)
+void DDLWorker::startup()
 {
     [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
     chassert(prev_stop_flag);
-    main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this, restore);
+    main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
 }
 
@@ -1127,7 +1127,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 }
 
 
-bool DDLWorker::initializeMainThread(const bool restore)
+bool DDLWorker::initializeMainThread()
 {
     chassert(!initialized);
     setThreadName("DDLWorker");
@@ -1139,7 +1139,7 @@ bool DDLWorker::initializeMainThread(const bool restore)
         {
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
-            initializeReplication(restore);
+            initializeReplication();
             initialized = true;
             return true;
         }
@@ -1166,7 +1166,7 @@ bool DDLWorker::initializeMainThread(const bool restore)
     return false;
 }
 
-void DDLWorker::runMainThread(bool restore)
+void DDLWorker::runMainThread()
 {
     auto reset_state = [&]()
     {
@@ -1195,7 +1195,7 @@ void DDLWorker::runMainThread(bool restore)
             if (!initialized)
             {
                 /// Stopped
-                if (!initializeMainThread(restore))
+                if (!initializeMainThread())
                     break;
                 LOG_DEBUG(log, "Initialized DDLWorker thread");
             }
@@ -1266,7 +1266,7 @@ void DDLWorker::runMainThread(bool restore)
 }
 
 
-void DDLWorker::initializeReplication(const bool)
+void DDLWorker::initializeReplication()
 {
     auto zookeeper = getAndSetZooKeeper();
 
