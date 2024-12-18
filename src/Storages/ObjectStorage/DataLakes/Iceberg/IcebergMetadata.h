@@ -92,16 +92,7 @@ public:
 
     std::vector<bool> getPruningMask(const Iceberg::ManifestFileEntry & manifest_file_entry, const ActionsDAG * filter_dag) const;
 
-    Strings makePartitionPruning(const ActionsDAG & filter_dag) override
-    {
-        LOG_DEBUG(&Poco::Logger::get("Make partition pruning"), "Make partition pruning");
-        auto configuration_ptr = configuration.lock();
-        if (!configuration_ptr)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
-        }
-        return getDataFilesImpl(&filter_dag);
-    }
+    Strings makePartitionPruning(const ActionsDAG & filter_dag) override;
 
     bool supportsPartitionPruning() override { return true; }
 
@@ -145,6 +136,6 @@ private:
     DataLakePartitionColumns partition_columns;
 };
 
-} // namespace DB
+}
 
 #endif

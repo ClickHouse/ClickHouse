@@ -35,4 +35,4 @@ Int16 getDay(Int32 value, Iceberg::PartitionTransform transform);
 DB::Range getPartitionRange(
     Iceberg::PartitionTransform partition_transform, UInt32 index, DB::ColumnPtr partition_column, DB::DataTypePtr column_data_type);
 
-} // namespace Iceberg
+}

@@ -10,6 +10,6 @@ namespace Iceberg
 {
 
 DB::MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const DB::Block & header, const DB::FormatSettings & settings);
-} // namespace Iceberg
+}
 
 #endif

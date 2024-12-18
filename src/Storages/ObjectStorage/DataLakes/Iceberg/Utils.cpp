@@ -26,7 +26,7 @@ MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & h
     return columns;
 }
 
-} // namespace Iceberg
+}
 
 
 #endif

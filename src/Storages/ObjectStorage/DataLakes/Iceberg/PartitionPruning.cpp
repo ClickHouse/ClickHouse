@@ -10,7 +10,6 @@
 
 namespace DB::ErrorCodes
 {
-extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -83,7 +82,6 @@ Int64 getTime(Int32 value, Iceberg::PartitionTransform transform)
 Int16 getDay(Int32 value, Iceberg::PartitionTransform transform)
 {
     DateLUTImpl::Time got_time = getTime(value, transform);
-    // LOG_DEBUG(&Poco::Logger::get("Get field"), "Time: {}", got_time);
     return DateLUT::instance().toDayNum(got_time);
 }
 
@@ -106,16 +104,12 @@ Range getPartitionRange(
         {
             const auto * casted_innner_column = assert_cast<const ColumnInt32 *>(column.get());
             Int32 begin_value = static_cast<Int32>(casted_innner_column->getInt(index));
-            LOG_DEBUG(
-                &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column_type: int", begin_value, partition_transform);
             return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), begin_value};
         }
         else if (column->getDataType() == TypeIndex::Date && (partition_transform == Iceberg::PartitionTransform::Day))
         {
             const auto * casted_innner_column = assert_cast<const ColumnDate *>(column.get());
             Int32 begin_value = static_cast<Int32>(casted_innner_column->getInt(index));
-            LOG_DEBUG(
-                &Poco::Logger::get("Partition"), "Partition value: {}, transform: {}, column type: date", begin_value, partition_transform);
             return {dynamic_cast<const DataTypeNullable *>(column_data_type.get())->getNestedType(), begin_value};
         }
         else
@@ -127,7 +121,6 @@ Range getPartitionRange(
     {
         const UInt16 begin_range_value = getDay(value, partition_transform);
         const UInt16 end_range_value = getDay(value + 1, partition_transform);
-        LOG_DEBUG(&Poco::Logger::get("Partition"), "Range begin: {}, range end {}", begin_range_value, end_range_value);
         return Range{begin_range_value, true, end_range_value, false};
     }
     else if (WhichDataType(nested_data_type).isDateTime64())
@@ -144,4 +137,4 @@ Range getPartitionRange(
 }
 
 
-} // namespace Iceberg
+}

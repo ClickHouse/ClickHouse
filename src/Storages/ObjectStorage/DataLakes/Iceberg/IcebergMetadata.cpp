@@ -542,6 +542,18 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
         return data_files_getter();
     }
 }
-} // namespace DB
+
+Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
+{
+    LOG_DEBUG(&Poco::Logger::get("Make partition pruning"), "Make partition pruning");
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+    }
+    return getDataFilesImpl(&filter_dag);
+}
+
+}
 
 #endif

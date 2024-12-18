@@ -215,6 +215,6 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     }
 }
 
-} // namespace Iceberg
+}
 
 #endif
