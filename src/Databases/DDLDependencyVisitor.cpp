@@ -13,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
@@ -101,18 +102,39 @@ namespace
             {
                 for (const auto & target : create.targets->targets)
                 {
-                    const auto & table_id = target.table_id;
-                    if (!table_id.table_name.empty())
+                    if (target.kind == ViewTarget::Kind::To)
                     {
-                        /// TO target_table (for materialized views)
-                        QualifiedTableName target_name{table_id.database_name, table_id.table_name};
-                        // auto target_name = table_id.getQualifiedName();
-                        if (target_name.database.empty())
-                            target_name.database = current_database;
-                        // view_dependencies.emplace(target_name);
-                        // view_dependencies.emplace(table_name);
-                        mv_to_dependency = target_name;
-                        dependencies.emplace(target_name);
+                        const auto & table_id = target.table_id;
+                        if (!table_id.table_name.empty())
+                        {
+                            /// TO target_table (for materialized views)
+                            // QualifiedTableName target_name{table_id.database_name, table_id.table_name};
+                            auto target_name = table_id.getQualifiedName();
+                            if (target_name.database.empty())
+                                target_name.database = current_database;
+                            // view_dependencies.emplace(target_name);
+                            // view_dependencies.emplace(table_name);
+                            mv_to_dependency = target_name;
+                            dependencies.emplace(mv_to_dependency);
+                        }
+                        // else if (target.inner_uuid != UUIDHelpers::Nil)
+                        else if (create.uuid != UUIDHelpers::Nil)
+                        {
+                            // mv_to_dependency = QualifiedTableName{current_database, ".inner_id." + toString(target.inner_uuid)};
+                            mv_to_dependency = QualifiedTableName{current_database, ".inner_id." + toString(create.uuid)};
+                            dependencies.emplace(mv_to_dependency);
+                        }
+                    }
+                    else if (target.kind == ViewTarget::Kind::Inner)
+                    {
+                        if (target.inner_uuid != UUIDHelpers::Nil)
+                        {
+                            mv_to_dependency = QualifiedTableName{current_database, ".inner_id." + toString(target.inner_uuid)};
+                        }
+                        else
+                        {
+                            mv_to_dependency = QualifiedTableName{current_database, ".inner." + target.table_id.getQualifiedName().table};
+                        }
                     }
                 }
             }

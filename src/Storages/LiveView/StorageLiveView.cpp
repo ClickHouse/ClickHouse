@@ -241,7 +241,7 @@ StorageLiveView::StorageLiveView(
     auto select_query_clone = query.select->clone();
     select_query_description = buildSelectQueryDescription(select_query_clone, getContext());
 
-    DatabaseCatalog::instance().addViewDependency(select_query_description.select_table_id, table_id_);
+    // DatabaseCatalog::instance().addViewDependency(select_query_description.select_table_id, table_id_);
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();

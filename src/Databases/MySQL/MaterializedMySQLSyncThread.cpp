@@ -24,6 +24,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Storages/StorageMergeTree.h>
 #include <Common/quoteString.h>
