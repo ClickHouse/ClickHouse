@@ -49,17 +49,17 @@ void MySQLOutputFormat::writePrefix()
 
     if (header.columns())
     {
-        packet_endpoint->sendPacket(LengthEncodedNumber(header.columns()), false);
+        packet_endpoint->sendPacket(LengthEncodedNumber(header.columns()));
 
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
-            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]), false);
+            packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]));
         }
 
         if (!(client_capabilities & Capability::CLIENT_DEPRECATE_EOF) && !use_binary_result_set)
         {
-            packet_endpoint->sendPacket(EOFPacket(0, 0), false);
+            packet_endpoint->sendPacket(EOFPacket(0, 0));
         }
     }
 }
@@ -71,7 +71,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
             ProtocolText::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
-            packet_endpoint->sendPacket(row_packet, false);
+            packet_endpoint->sendPacket(row_packet);
         }
     }
     else
@@ -79,11 +79,9 @@ void MySQLOutputFormat::consume(Chunk chunk)
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
             ProtocolBinary::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
-            packet_endpoint->sendPacket(row_packet, false);
+            packet_endpoint->sendPacket(row_packet);
         }
     }
-
-    flush();
 }
 
 void MySQLOutputFormat::finalizeImpl()
@@ -109,11 +107,11 @@ void MySQLOutputFormat::finalizeImpl()
 
         const auto & header = getPort(PortKind::Main).getHeader();
         if (header.columns() == 0)
-            packet_endpoint->sendPacket(OKPacket(0x0, client_capabilities, affected_rows, 0, 0, "", human_readable_info));
+            packet_endpoint->sendPacket(OKPacket(0x0, client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
         else if (client_capabilities & CLIENT_DEPRECATE_EOF)
-            packet_endpoint->sendPacket(OKPacket(0xfe, client_capabilities, affected_rows, 0, 0, "", human_readable_info));
+            packet_endpoint->sendPacket(OKPacket(0xfe, client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
         else
-            packet_endpoint->sendPacket(EOFPacket(0, 0));
+            packet_endpoint->sendPacket(EOFPacket(0, 0), true);
     }
     else
     {
@@ -125,9 +123,9 @@ void MySQLOutputFormat::finalizeImpl()
             affected_rows = info.written_rows;
         }
         if (client_capabilities & CLIENT_DEPRECATE_EOF)
-            packet_endpoint->sendPacket(OKPacket(0xfe, client_capabilities, affected_rows, 0, 0, "", ""));
+            packet_endpoint->sendPacket(OKPacket(0xfe, client_capabilities, affected_rows, 0, 0, "", ""), true);
         else
-            packet_endpoint->sendPacket(EOFPacket(0, 0));
+            packet_endpoint->sendPacket(EOFPacket(0, 0), true);
     }
 }
 

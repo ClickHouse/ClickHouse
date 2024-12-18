@@ -14,7 +14,6 @@
 #include <Databases/registerDatabases.h>
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
-#include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabasesOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -23,6 +22,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
+#include <base/getFQDNOrHostName.h>
 #include <Access/AccessControl.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
@@ -31,6 +31,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Loggers/OwnFormattingChannel.h>
@@ -49,6 +50,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
@@ -69,17 +71,14 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
-    extern const SettingsBool implicit_select;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
 }
 
 namespace ServerSetting
 {
-    extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
@@ -111,9 +110,6 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
-    extern const ServerSettingsString primary_index_cache_policy;
-    extern const ServerSettingsUInt64 primary_index_cache_size;
-    extern const ServerSettingsDouble primary_index_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
 }
 
@@ -130,7 +126,6 @@ void applySettingsOverridesForLocal(ContextMutablePtr context)
 
     settings[Setting::allow_introspection_functions] = true;
     settings[Setting::storage_file_read_method] = LocalFSReadMethod::mmap;
-    settings[Setting::implicit_select] = true;
 
     context->setSettings(settings);
 }
@@ -262,12 +257,12 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     return system_database;
 }
 
-static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context)
+static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPtr context_)
 {
-    auto overlay = std::make_shared<DatabasesOverlay>(name_, context);
-    overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, fs::weakly_canonical(context->getPath()), UUIDHelpers::generateV4(), context));
-    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
-    return overlay;
+    auto databaseCombiner = std::make_shared<DatabasesOverlay>(name_, context_);
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context_));
+    databaseCombiner->registerNextDatabase(std::make_shared<DatabaseMemory>(name_, context_));
+    return databaseCombiner;
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -620,14 +615,12 @@ catch (const DB::Exception & e)
 {
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
-    auto code = DB::getCurrentExceptionCode();
-    return static_cast<UInt8>(code) ? code : 1;
+    return e.code() ? e.code() : -1;
 }
 catch (...)
 {
-    std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
-    auto code = DB::getCurrentExceptionCode();
-    return static_cast<UInt8>(code) ? code : 1;
+    std::cerr << getCurrentExceptionMessage(false) << std::endl;
+    return getCurrentExceptionCode();
 }
 
 void LocalServer::updateLoggerLevel(const String & logs_level)
@@ -782,16 +775,6 @@ void LocalServer::processConfig()
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
-    size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
-    double primary_index_cache_size_ratio = server_settings[ServerSetting::primary_index_cache_size_ratio];
-    if (primary_index_cache_size > max_cache_size)
-    {
-        primary_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
-    }
-    global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
-
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -802,9 +785,6 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query cache.
     global_context->setQueryCache(0, 0, 0, 0);
-
-    /// Initialize allowed tiers
-    global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
@@ -829,12 +809,7 @@ void LocalServer::processConfig()
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
     std::string default_database = server_settings[ServerSetting::default_database];
-    {
-        DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
-        if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
-            DatabaseCatalog::instance().addUUIDMapping(uuid);
-        DatabaseCatalog::instance().attachDatabase(default_database, database);
-    }
+    DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
 
     if (getClientConfiguration().has("path"))
@@ -846,11 +821,11 @@ void LocalServer::processConfig()
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        auto load_system_metadata_tasks = loadMetadataSystem(global_context);
+        auto startup_system_tasks = loadMetadataSystem(global_context);
         attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
+        waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
 
         if (!getClientConfiguration().has("only-system-tables"))
         {
@@ -1054,7 +1029,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         auto code = DB::getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
+        return code ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -1065,6 +1040,6 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
         auto code = DB::getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
+        return code ? code : 1;
     }
 }

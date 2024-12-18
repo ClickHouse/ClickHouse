@@ -11,7 +11,6 @@
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 
 
 #define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
@@ -70,7 +69,6 @@ namespace impl
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
         break;                                                                                                      \
                                                                                                                     \
-    Stopwatch _logger_watch;                                                                                        \
     try                                                                                                             \
     {                                                                                                               \
         ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
@@ -124,7 +122,6 @@ namespace impl
     {                                                                                                               \
         ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
     }                                                                                                               \
-    ProfileEvents::incrementLoggerElapsedNanoseconds(_logger_watch.elapsedNanoseconds());                           \
 } while (false)
 
 

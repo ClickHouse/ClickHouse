@@ -4,8 +4,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
 
-#include <boost/noncopyable.hpp>
-
 namespace DB
 {
 

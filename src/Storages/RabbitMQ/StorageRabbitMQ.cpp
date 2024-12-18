@@ -147,8 +147,7 @@ StorageRabbitMQ::StorageRabbitMQ(
     std::pair<String, UInt16> parsed_address;
     auto setting_rabbitmq_username = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value;
     auto setting_rabbitmq_password = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value;
-    String username;
-    String password;
+    String username, password;
 
     if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed)
     {
@@ -688,8 +687,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
             if (setting_values.size() != 2)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid settings string: {}", setting);
 
-            String key = setting_values[0];
-            String value = setting_values[1];
+            String key = setting_values[0], value = setting_values[1];
 
             if (integer_settings.contains(key))
                 queue_settings[key] = parse<uint64_t>(value);

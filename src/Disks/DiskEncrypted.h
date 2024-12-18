@@ -313,8 +313,6 @@ public:
             return std::make_shared<FakeDiskTransaction>(*this);
         }
 
-        /// Need to overwrite explicetly because this disk change
-        /// a lot of "delegate" methods.
         return createEncryptedTransaction();
     }
 
