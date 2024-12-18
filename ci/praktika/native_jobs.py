@@ -1,19 +1,20 @@
 import sys
 from typing import Dict
 
-from . import Job, Workflow
-from ._environment import _Environment
-from .cidb import CIDB
-from .digest import Digest
-from .docker import Docker
-from .gh import GH
-from .hook_cache import CacheRunnerHooks
-from .hook_html import HtmlRunnerHooks
-from .mangle import _get_workflows
-from .result import Result, ResultInfo, _ResultS3
-from .runtime import RunConfig
-from .settings import Settings
-from .utils import Shell, Utils
+from praktika import Job, Workflow
+from praktika._environment import _Environment
+from praktika.cidb import CIDB
+from praktika.digest import Digest
+from praktika.docker import Docker
+from praktika.gh import GH
+from praktika.hook_cache import CacheRunnerHooks
+from praktika.hook_html import HtmlRunnerHooks
+from praktika.mangle import _get_workflows
+from praktika.result import Result, ResultInfo
+from praktika.runtime import RunConfig
+from praktika.s3 import S3
+from praktika.settings import Settings
+from praktika.utils import Shell, Utils
 
 assert Settings.CI_CONFIG_RUNS_ON
 
@@ -144,24 +145,20 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
         )
         info = ""
-        status = Result.Status.FAILED
+        status = Result.Status.SUCCESS
         if exit_code != 0:
             info = f"workspace has uncommitted files unexpectedly [{output}]"
             status = Result.Status.ERROR
             print("ERROR: ", info)
         else:
-            assert Shell.check(f"{Settings.PYTHON_INTERPRETER} -m praktika yaml")
+            Shell.check(f"{Settings.PYTHON_INTERPRETER} -m praktika --generate")
             exit_code, output, err = Shell.get_res_stdout_stderr(
                 f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
             )
-            if output:
-                info = f"workflows are outdated: [{output}]"
-                status = Result.Status.FAILED
+            if exit_code != 0:
+                info = f"workspace has outdated workflows [{output}] - regenerate with [python -m praktika --generate]"
+                status = Result.Status.ERROR
                 print("ERROR: ", info)
-            elif exit_code == 0 and not err:
-                status = Result.Status.SUCCESS
-            else:
-                print(f"ERROR: exit code [{exit_code}], err [{err}]")
 
         return (
             Result(
@@ -228,7 +225,6 @@ def _config_workflow(workflow: Workflow.Config, job_name):
         cache_success=[],
         cache_success_base64=[],
         cache_artifacts={},
-        cache_jobs={},
     ).dump()
 
     # checks:
@@ -253,9 +249,6 @@ def _config_workflow(workflow: Workflow.Config, job_name):
             job_status = Result.Status.ERROR
             info_lines.append(job_name + ": " + info)
         results.append(result_)
-
-    if workflow.enable_merge_commit:
-        assert False, "NOT implemented"
 
     # config:
     if workflow.dockers:
@@ -314,8 +307,9 @@ def _finish_workflow(workflow, job_name):
     print(env.get_needs_statuses())
 
     print("Check Workflow results")
-    version = _ResultS3.copy_result_from_s3_with_version(
+    S3.copy_result_from_s3(
         Result.file_name_static(workflow.name),
+        lock=False,
     )
     workflow_result = Result.from_fs(workflow.name)
 
@@ -337,7 +331,7 @@ def _finish_workflow(workflow, job_name):
             # dump workflow result after update - to have an updated result in post
             workflow_result.dump()
             # add error into env - should apper in the report
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+            env.add_info(ResultInfo.NOT_FINALIZED + f" [{result.name}]")
             update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
@@ -345,12 +339,10 @@ def _finish_workflow(workflow, job_name):
                 f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
             )
             ready_for_merge_status = Result.Status.FAILED
-            failed_results.append(result.name)
+            failed_results.append(result.name.split("(", maxsplit=1)[0])  # cut name
 
     if failed_results:
-        ready_for_merge_description = (
-            f'Failed {len(failed_results)} "Required for Merge" jobs'
-        )
+        ready_for_merge_description = f"failed: {', '.join(failed_results)}"
 
     if not GH.post_commit_status(
         name=Settings.READY_FOR_MERGE_STATUS_NAME + f" [{workflow.name}]",
@@ -362,9 +354,14 @@ def _finish_workflow(workflow, job_name):
         env.add_info(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
-        _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
+        S3.copy_result_to_s3(
+            workflow_result,
+            unlock=False,
+        )  # no lock - no unlock
 
-    Result.from_fs(job_name).set_status(Result.Status.SUCCESS)
+    Result.from_fs(job_name).set_status(Result.Status.SUCCESS).set_info(
+        ready_for_merge_description
+    )
 
 
 if __name__ == "__main__":

@@ -24,15 +24,13 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            font-family: 'IBM Plex Mono Condensed', monospace, sans-serif;
-            --header-background-color: #f4f4f4;
+            font-family: monospace, sans-serif;
         }
 
         body.night-theme {
             --background-color: #1F1F1C;
             --text-color: #fff;
             --tile-background: black;
-            --header-background-color: #1F1F1C;
         }
 
         #info-container {
@@ -52,64 +50,38 @@
             background-color: var(--tile-background);
             padding: 20px;
             box-sizing: border-box;
+            text-align: left;
             font-size: 18px;
-            margin: 0;
+            font-weight: bold;
+            margin: 0; /* Remove margin */
         }
 
-        #status-container a {
-            color: #007bff;
-            text-decoration: underline;
-            font-weight: bold;
+        #status-container button {
+            display: block; /* Stack buttons vertically */
+            width: 100%; /* Full width of container */
+            padding: 10px;
+            margin-bottom: 10px; /* Space between buttons */
+            background-color: #4CAF50; /* Green background color */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
             cursor: pointer;
-            display: inline-block;
-            margin-top: 5px;
-            margin-left: 20px;
-            padding: 2px 0;
-            font-size: 0.8em;
         }
 
-        #status-container a:hover {
-            color: #0056b3;
-            text-decoration: none;
-        }
-
-        .key-value-pair {
-            display: flex;               /* Enable Flexbox for alignment */
-            justify-content: space-between; /* Distribute space between key and value */
-            margin-bottom: 20px;         /* Add space between each pair */
-        }
-
-        .json-key {
-            font-weight: bold;
-        }
-
-        .json-value {
-            font-weight: normal;
-            font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
-        }
-
-        .dropdown-value {
-            width: 100px;
-            font-weight: normal;
-            font-family: inherit;
-            background-color: transparent;
-            color: inherit;
-            /*border: none;*/
-            /*outline: none;*/
-            /*cursor: pointer;*/
+        #status-container button:hover {
+            background-color: #45a049; /* Darker green on hover */
         }
 
         #result-container {
             background-color: var(--tile-background);
             margin-left: calc(var(--status-width) + 20px);
-            padding: 0;
+            padding: 20px;
             box-sizing: border-box;
             text-align: center;
             font-size: 18px;
             font-weight: normal;
             flex-grow: 1;
-            margin-bottom: 40px;
         }
 
         #footer {
@@ -201,7 +173,10 @@
         }
 
         th.name-column, td.name-column {
-            min-width: 350px;
+            max-width: 400px; /* Set the maximum width for the column */
+            white-space: nowrap; /* Prevent text from wrapping */
+            overflow: hidden; /* Hide the overflowed text */
+            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
         }
 
         th.status-column, td.status-column {
@@ -228,7 +203,7 @@
         }
 
         th {
-            background-color: var(--header-background-color);
+            background-color: #f4f4f4;
         }
 
         .status-success {
@@ -265,6 +240,23 @@
             color: grey;
             font-weight: bold;
         }
+
+        .json-key {
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .json-value {
+            margin-left: 20px;
+        }
+
+        .json-value a {
+            color: #007bff;
+        }
+
+        .json-value a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -291,62 +283,25 @@
         }
     }
 
-    function updateUrlParameter(paramName, paramValue) {
-        const url = new URL(window.location.href);
-        url.searchParams.set(paramName, paramValue);
-        window.location.href = url.toString();
-    }
-
     // Attach the toggle function to the click event of the icon
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
+    // Function to format timestamp to "DD-mmm-YYYY HH:MM:SS.MM"
     function formatTimestamp(timestamp, showDate = true) {
         const date = new Date(timestamp * 1000);
         const day = String(date.getDate()).padStart(2, '0');
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const month = monthNames[date.getMonth()];
-        //const year = date.getFullYear();
+        const year = date.getFullYear();
         const hours = String(date.getHours()).padStart(2, '0');
         const minutes = String(date.getMinutes()).padStart(2, '0');
         const seconds = String(date.getSeconds()).padStart(2, '0');
         //const milliseconds = String(date.getMilliseconds()).padStart(2, '0');
 
         return showDate
-            ? `${day}'${month} ${hours}:${minutes}:${seconds}`
+            ? `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`
             : `${hours}:${minutes}:${seconds}`;
-    }
-
-    function formatDuration(durationInSeconds, detailed = false) {
-        // Check if the duration is empty, null, or not a number
-        if (!durationInSeconds || isNaN(durationInSeconds)) {
-            return '';
-        }
-
-        // Ensure duration is a floating-point number
-        const duration = parseFloat(durationInSeconds);
-
-        if (detailed) {
-            // Format in the detailed format with hours, minutes, and seconds
-            const hours = Math.floor(duration / 3600);
-            const minutes = Math.floor((duration % 3600) / 60);
-            const seconds = Math.floor(duration % 60);
-
-            const formattedHours = hours > 0 ? `${hours}h ` : '';
-            const formattedMinutes = minutes > 0 ? `${minutes}m ` : '';
-            const formattedSeconds = `${String(seconds).padStart(2, '0')}s`;
-
-            return `${formattedHours}${formattedMinutes}${formattedSeconds}`.trim();
-        } else {
-            // Format in the default format with seconds and milliseconds
-            const seconds = Math.floor(duration);
-            const milliseconds = Math.floor((duration % 1) * 1000);
-
-            const formattedSeconds = String(seconds);
-            const formattedMilliseconds = String(milliseconds).padStart(2, '0').slice(-2);
-
-            return `${formattedSeconds}.${formattedMilliseconds}`;
-        }
     }
 
     // Function to determine status class based on value
@@ -361,51 +316,42 @@
         return 'status-other';
     }
 
-    function addKeyValueToStatus(key, value, options = null) {
-        const statusContainer = document.getElementById('status-container');
+    // Function to format duration from seconds to "HH:MM:SS"
+    function formatDuration(durationInSeconds) {
+        // Check if the duration is empty, null, or not a number
+        if (!durationInSeconds || isNaN(durationInSeconds)) {
+            return '';
+        }
 
-        let keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
+        // Ensure duration is a floating-point number
+        const duration = parseFloat(durationInSeconds);
+
+        // Calculate seconds and milliseconds
+        const seconds = Math.floor(duration); // Whole seconds
+        const milliseconds = Math.floor((duration % 1) * 1000); // Convert fraction to milliseconds
+
+        // Format seconds and milliseconds with leading zeros where needed
+        const formattedSeconds = String(seconds);
+        const formattedMilliseconds = String(milliseconds).padStart(3, '0');
+
+        // Return the formatted duration as seconds.milliseconds
+        return `${formattedSeconds}.${formattedMilliseconds}`;
+    }
+
+    function addKeyValueToStatus(key, value) {
+
+        const statusContainer = document.getElementById('status-container');
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
         keyElement.textContent = key + ':';
 
-        let valueElement;
+        const valueElement = document.createElement('div');
+        valueElement.className = 'json-value';
+        valueElement.textContent = value;
 
-        if (options) {
-            // Create dropdown if options are provided
-            valueElement = document.createElement('select');
-            valueElement.className = 'dropdown-value';
-
-            options.forEach(optionValue => {
-                const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue.slice(0, 10);
-
-                // Set the initially selected option
-                if (optionValue === value) {
-                    option.selected = true;
-                }
-
-                valueElement.appendChild(option);
-            });
-
-            // Update the URL parameter when the selected value changes
-            valueElement.addEventListener('change', (event) => {
-                const selectedValue = event.target.value;
-                updateUrlParameter(key, selectedValue);
-            });
-        } else {
-            // Create a simple text display if no options are provided
-            valueElement = document.createElement('div');
-            valueElement.className = 'json-value';
-            valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
-        }
-
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+        statusContainer.appendChild(keyElement);
+        statusContainer.appendChild(valueElement);
     }
 
     function addFileButtonToStatus(key, links) {
@@ -418,68 +364,64 @@
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        keyElement.textContent = columnSymbols[key] + ':' || key;
+        keyElement.textContent = key + ':';
         statusContainer.appendChild(keyElement);
 
         if (Array.isArray(links) && links.length > 0) {
             links.forEach(link => {
-                const textLink = document.createElement('a');
-                textLink.href = link;
-                textLink.textContent = link.split('/').pop();
-                textLink.target = '_blank';
-                statusContainer.appendChild(textLink);
-                statusContainer.appendChild(document.createElement('br'));
+                // const a = document.createElement('a');
+                // a.href = link;
+                // a.textContent = link.split('/').pop();
+                // a.target = '_blank';
+                // statusContainer.appendChild(a);
+                const button = document.createElement('button');
+                button.textContent = link.split('/').pop();
+                button.addEventListener('click', function () {
+                    window.location.href = link;
+                });
+                statusContainer.appendChild(button);
             });
         }
     }
 
     function addStatusToStatus(status, start_time, duration) {
-        const statusContainer = document.getElementById('status-container')
+        const statusContainer = document.getElementById('status-container');
 
-        let keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
         let keyElement = document.createElement('div');
         let valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
+        keyElement.textContent = 'status:';
         valueElement.classList.add('status-value');
         valueElement.classList.add(getStatusClass(status));
         valueElement.textContent = status;
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+        statusContainer.appendChild(keyElement);
+        statusContainer.appendChild(valueElement);
 
-        keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
         keyElement = document.createElement('div');
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
+        keyElement.textContent = 'start_time:';
         valueElement.textContent = formatTimestamp(start_time);
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+        statusContainer.appendChild(keyElement);
+        statusContainer.appendChild(valueElement);
 
-        keyValuePair = document.createElement('div');
-        keyValuePair.className = 'key-value-pair';
         keyElement = document.createElement('div');
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
+        keyElement.textContent = 'duration:';
         if (duration === null) {
             // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
             valueElement.textContent = '00:00:00';
             valueElement.setAttribute('id', 'duration-value');
         } else {
             // Format the duration if it's a valid number
-            valueElement.textContent = formatDuration(duration, true);
+            valueElement.textContent = formatDuration(duration);
         }
-        keyValuePair.appendChild(keyElement);
-        keyValuePair.appendChild(valueElement);
-        statusContainer.appendChild(keyValuePair);
+        statusContainer.appendChild(keyElement);
+        statusContainer.appendChild(valueElement);
     }
 
     function navigatePath(jsonObj, nameArray) {
@@ -528,12 +470,11 @@
     const columns = ['name', 'status', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        name: '🗂️',
-        status: '✅',
+        name: '👤',
+        status: '✔️',
         start_time: '🕒',
         duration: '⏳',
-        info: '📝',
-        files: '📎'
+        info: '⚠️'
     };
 
     function createResultsTable(results, nest_level) {
@@ -542,14 +483,16 @@
             const thead = document.createElement('thead');
             const tbody = document.createElement('tbody');
 
+            // Get the current URL parameters
+            const currentUrl = new URL(window.location.href);
+
             // Create table headers based on the fixed columns
             const headerRow = document.createElement('tr');
             columns.forEach(column => {
                 const th = document.createElement('th');
-                th.textContent = columnSymbols[column] || column;
+                th.textContent = th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer'; // Make headers clickable
-                th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns)); // Add click event to sort the table
+                th.addEventListener('click', () => sortTable(results, column, tbody, nest_level)); // Add click event to sort the table
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -601,7 +544,8 @@
                     td.classList.add('time-column');
                     td.textContent = value ? formatDuration(value) : '';
                 } else if (column === 'info') {
-                    td.textContent = value && value.includes('\n') ? '↵' : (value || '');
+                    // For info and other columns, just display the value
+                    td.textContent = value || '';
                     td.classList.add('info-column');
                 }
 
@@ -612,33 +556,39 @@
         });
     }
 
-    function sortTable(results, column, key, tbody, nest_level, columns) {
+    function sortTable(results, key, tbody, nest_level) {
         // Find the table header element for the given key
-        const tableHeaders = document.querySelectorAll('th');
-        let th = Array.from(tableHeaders).find(header => header.textContent === key);
+        let th = null;
+        const tableHeaders = document.querySelectorAll('th'); // Select all table headers
+        tableHeaders.forEach(header => {
+            if (header.textContent.trim().toLowerCase() === key.toLowerCase()) {
+                th = header;
+            }
+        });
 
         if (!th) {
             console.error(`No table header found for key: ${key}`);
             return;
         }
 
-        const ascending = th.getAttribute('data-sort-direction') === 'asc';
-        th.setAttribute('data-sort-direction', ascending ? 'desc' : 'asc');
+        // Determine the current sort direction
+        let ascending = th.getAttribute('data-sort-direction') === 'asc' ? false : true;
 
+        // Toggle the sort direction for the next click
+        th.setAttribute('data-sort-direction', ascending ? 'asc' : 'desc');
+
+        // Sort the results array by the given key
         results.sort((a, b) => {
-            if (a[column] < b[column]) return ascending ? -1 : 1;
-            if (a[column] > b[column]) return ascending ? 1 : -1;
+            if (a[key] < b[key]) return ascending ? -1 : 1;
+            if (a[key] > b[key]) return ascending ? 1 : -1;
             return 0;
         });
-
-        // Clear the existing rows in tbody
-        tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
         populateTableRows(tbody, results, columns, nest_level);
     }
 
-    function loadResultsJSON(PR, sha, nameParams) {
+    function loadJSON(PR, sha, nameParams) {
         const infoElement = document.getElementById('info-container');
         let lastModifiedTime = null;
         const task = nameParams[0].toLowerCase();
@@ -663,21 +613,19 @@
                 let targetData = navigatePath(data, nameParams);
                 let nest_level = nameParams.length;
 
-                // Add footer links from top-level  Result
-                if (Array.isArray(data.links) && data.links.length > 0) {
-                    data.links.forEach(link => {
-                        const a = document.createElement('a');
-                        a.href = link;
-                        a.textContent = link.split('/').pop();
-                        a.target = '_blank';
-                        footerRight.appendChild(a);
-                    });
-                }
-
                 if (targetData) {
-                    //infoElement.style.display = 'none';
-                    infoElement.innerHTML = (targetData.info || '').replace(/\n/g, '<br>');
+                    infoElement.style.display = 'none';
 
+                    // Handle footer links if present
+                    if (Array.isArray(data.aux_links) && data.aux_links.length > 0) {
+                        data.aux_links.forEach(link => {
+                            const a = document.createElement('a');
+                            a.href = link;
+                            a.textContent = link.split('/').pop();
+                            a.target = '_blank';
+                            footerRight.appendChild(a);
+                        });
+                    }
                     addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
 
                     // Handle links
@@ -691,7 +639,7 @@
 
                         const intervalId = setInterval(() => {
                             duration++;
-                            durationElement.textContent = formatDuration(duration, true);
+                            durationElement.textContent = formatDuration(duration);
                         }, 1000);
                     }
 
@@ -755,62 +703,22 @@
             }
         });
 
-        let path_commits_json = '';
-        let commitsArray = [];
-
         if (PR) {
-            addKeyValueToStatus("PR", PR);
-            const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-            path_commits_json = `${baseUrl}/${encodeURIComponent(PR)}/commits.json`;
+            addKeyValueToStatus("PR", PR)
         } else {
-            // Placeholder for a different path when PR is missing
-            console.error("PR parameter is missing. Setting alternate commits path.");
-            path_commits_json = '/path/to/alternative/commits.json';
+            console.error("TODO")
         }
-
-        function loadCommitsArray(path) {
-            return fetch(path, { cache: "no-cache" })
-                .then(response => {
-                    if (!response.ok) {
-                        console.error(`HTTP error! status: ${response.status}`)
-                        return [];
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (Array.isArray(data) && data.every(item => typeof item === 'object' && item.hasOwnProperty('sha'))) {
-                        return data.map(item => item.sha);
-                    } else {
-                        throw new Error('Invalid data format: expected array of objects with a "sha" key');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading commits JSON:', error);
-                    return []; // Return an empty array if an error occurs
-                });
+        addKeyValueToStatus("sha", sha);
+        if (nameParams[1]) {
+            addKeyValueToStatus("job", nameParams[1]);
         }
+        addKeyValueToStatus("workflow", nameParams[0]);
 
-        loadCommitsArray(path_commits_json)
-            .then(data => {
-                commitsArray = data;
-            })
-            .finally(() => {
-                // Proceed with the rest of the initialization
-                addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
-
-                if (nameParams[1]) {
-                    addKeyValueToStatus("job", nameParams[1]);
-                }
-                addKeyValueToStatus("workflow", nameParams[0]);
-
-                // Check if all required parameters are present to load JSON
-                if (PR && sha && root_name) {
-                    const shaToLoad = (sha === 'latest') ? commitsArray[commitsArray.length - 1] : sha;
-                    loadResultsJSON(PR, shaToLoad, nameParams);
-                } else {
-                    document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
-                }
-            });
+        if (PR && sha && root_name) {
+            loadJSON(PR, sha, nameParams);
+        } else {
+            document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
+        }
     }
 
     window.onload = init;

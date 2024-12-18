@@ -51,7 +51,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         std::string contents;
         {
             ReadBufferFromFile in(path, 1024);
-            LimitReadBuffer limit_in(in, {.read_no_more = 1024});
+            LimitReadBuffer limit_in(in, 1024, /* throw_exception */ false, /* exact_limit */ {});
             readStringUntilEOF(contents, limit_in);
         }
 
@@ -87,11 +87,13 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         try
         {
             fill(out);
+            /// Finalize here to avoid throwing exceptions in destructor.
             out.finalize();
         }
         catch (...)
         {
-            out.cancel();
+            /// Finalize in case of exception to avoid throwing exceptions in destructor
+            out.finalize();
             throw;
         }
     }

@@ -53,7 +53,7 @@ String serializeAccessEntity(const IAccessEntity & entity)
     return buf.str();
 }
 
-static AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
+AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
 {
     ASTs queries;
     ParserAttachAccessEntity parser;

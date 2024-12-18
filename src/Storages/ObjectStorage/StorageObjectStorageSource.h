@@ -14,7 +14,7 @@ namespace DB
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public SourceWithKeyCondition
+class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
 {
     friend class ObjectStorageQueueSource;
 public:
@@ -75,7 +75,6 @@ protected:
     const String name;
     ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
-    const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;

@@ -38,7 +38,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
-#include <IO/SharedThreadPools.h>
 
 
 namespace DB
@@ -155,11 +154,6 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
     loadDeduplicationLog();
-
-    prewarmCaches(
-        getActivePartsLoadingThreadPool().get(),
-        getMarkCacheToPrewarm(0),
-        getPrimaryIndexCacheToPrewarm(0));
 }
 
 
@@ -1429,8 +1423,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     assert(!isStaticStorage());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    MergeMutateSelectedEntryPtr merge_entry;
-    MergeMutateSelectedEntryPtr mutate_entry;
+    MergeMutateSelectedEntryPtr merge_entry, mutate_entry;
 
     auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
@@ -1523,7 +1516,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 cleared_count += clearOldPartsFromFilesystem();
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
-                cleared_count += unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+                cleared_count += unloadPrimaryKeysOfOutdatedParts();
                 return cleared_count;
                 /// TODO maybe take into account number of cleared objects when calculating backoff
             }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);

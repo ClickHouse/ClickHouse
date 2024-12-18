@@ -100,16 +100,6 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedAtStartRequests(
 
 void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl()
 {
-    setProcessedImpl(false);
-}
-
-void ObjectStorageQueueUnorderedFileMetadata::resetProcessingImpl()
-{
-    setProcessedImpl(true);
-}
-
-void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl(bool remove_processing_nodes_only)
-{
     /// In one zookeeper transaction do the following:
     enum RequestType
     {
@@ -134,19 +124,16 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl(bool remove_proce
         request_index[CHECK_PROCESSING_ID_PATH] = 0;
         request_index[REMOVE_PROCESSING_ID_PATH] = 1;
         request_index[REMOVE_PROCESSING_PATH] = 2;
-
-        if (!remove_processing_nodes_only)
-            request_index[SET_PROCESSED_PATH] = 3;
+        request_index[SET_PROCESSED_PATH] = 3;
     }
-    else if (!remove_processing_nodes_only)
+    else
     {
         request_index[SET_PROCESSED_PATH] = 0;
     }
 
-    if (!remove_processing_nodes_only)
-        requests.push_back(
-            zkutil::makeCreateRequest(
-                processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
+    requests.push_back(
+        zkutil::makeCreateRequest(
+            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
     auto is_request_failed = [&](RequestType type)
@@ -160,9 +147,6 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl(bool remove_proce
     const auto code = zk_client->tryMulti(requests, responses);
     if (code == Coordination::Error::ZOK)
     {
-        if (remove_processing_nodes_only)
-            return;
-
         if (max_loading_retries
             && zk_client->tryRemove(failed_node_path + ".retriable", -1) == Coordination::Error::ZOK)
         {
@@ -197,7 +181,7 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl(bool remove_proce
         /// This is normal in case of expired session with keeper as this node is ephemeral.
         failure_reason = "Failed to remove processing path";
     }
-    else if (!remove_processing_nodes_only && is_request_failed(SET_PROCESSED_PATH))
+    else if (is_request_failed(SET_PROCESSED_PATH))
     {
         unexpected_error = true;
         failure_reason = "Cannot create a persistent node in /processed since it already exists";
@@ -208,8 +192,7 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl(bool remove_proce
     if (unexpected_error)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", failure_reason);
 
-    if (!remove_processing_nodes_only)
-        LOG_WARNING(log, "Cannot set file {} as processed: {}. Reason: {}", path, code, failure_reason);
+    LOG_WARNING(log, "Cannot set file {} as processed: {}. Reason: {}", path, code, failure_reason);
 }
 
 }
