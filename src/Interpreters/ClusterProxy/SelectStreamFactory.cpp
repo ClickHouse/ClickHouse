@@ -270,9 +270,12 @@ void SelectStreamFactory::createForShardImpl(
                 emplace_remote_stream();
                 return;
             }
-            else
-                throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
-                    "{}s.), but no other replica configured", shard_info.shard_num, toString(local_delay));
+            throw Exception(
+                ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                "Local replica of shard {} is stale (delay: "
+                "{}s.), but no other replica configured",
+                shard_info.shard_num,
+                toString(local_delay));
         }
 
         if (!shard_info.hasRemoteConnections())

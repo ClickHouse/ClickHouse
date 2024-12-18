@@ -125,7 +125,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         bool has_all = false;
         if (!s_select.ignore(pos, expected))
-            return false;
+        {
+            /// This allows queries without SELECT, like `1 + 2`.
+            if (!implicit_select || with_expression_list || tables)
+                return false;
+        }
 
         if (s_all.ignore(pos, expected))
             has_all = true;

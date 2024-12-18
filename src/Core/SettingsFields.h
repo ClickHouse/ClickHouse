@@ -2,12 +2,12 @@
 
 #include <chrono>
 #include <string_view>
+#include <optional>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-
 
 namespace DB
 {
@@ -125,8 +125,10 @@ struct SettingAutoWrapper
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
+    std::optional<Type> get() const { return is_auto ? std::nullopt : std::make_optional(base.value); }
 };
 
+using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;
 using SettingFieldUInt64Auto = SettingAutoWrapper<SettingFieldUInt64>;
 using SettingFieldInt64Auto = SettingAutoWrapper<SettingFieldInt64>;
 using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;

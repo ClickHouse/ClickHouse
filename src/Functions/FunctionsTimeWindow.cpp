@@ -60,11 +60,12 @@ ColumnPtr executeWindowBound(const ColumnPtr & column, size_t index, const Strin
                 "Must be a Tuple(DataTime, DataTime)", function_name);
         return col_tuple->getColumnPtr(index);
     }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
-            "Must be Tuple", function_name);
-    }
+
+    throw Exception(
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "Illegal column for first argument of function {}. "
+        "Must be Tuple",
+        function_name);
 }
 
 void checkFirstArgument(const ColumnWithTypeAndName & argument, const String & function_name)
@@ -273,18 +274,16 @@ struct TimeWindowImpl<TUMBLE_START>
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Tuple passed to {} should not be empty", function_name);
                 return tuple_elems[0];
             }
-            else if (type.isUInt32())
+            if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Illegal type of first argument of function {} should be DateTime, Tuple or UInt32",
-                                function_name);
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type of first argument of function {} should be DateTime, Tuple or UInt32",
+                function_name);
         }
-        else
-        {
-            return std::static_pointer_cast<const DataTypeTuple>(TimeWindowImpl<TUMBLE>::getReturnType(arguments, function_name))
-                ->getElement(0);
-        }
+
+        return std::static_pointer_cast<const DataTypeTuple>(TimeWindowImpl<TUMBLE>::getReturnType(arguments, function_name))
+            ->getElement(0);
     }
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
@@ -296,8 +295,8 @@ struct TimeWindowImpl<TUMBLE_START>
         {
             if (which_type.isUInt32())
                 return time_column.column;
-            else //isTuple
-                result_column = time_column.column;
+            //isTuple
+            result_column = time_column.column;
         }
         else
             result_column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name, input_rows_count);
@@ -324,8 +323,8 @@ struct TimeWindowImpl<TUMBLE_END>
         {
             if (which_type.isUInt32())
                 return time_column.column;
-            else //isTuple
-                result_column = time_column.column;
+            //isTuple
+            result_column = time_column.column;
         }
         else
             result_column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name, input_rows_count);
@@ -508,8 +507,7 @@ struct TimeWindowImpl<WINDOW_ID>
 
         if (result_type_is_date)
             return std::make_shared<DataTypeUInt16>();
-        else
-            return std::make_shared<DataTypeUInt32>();
+        return std::make_shared<DataTypeUInt32>();
     }
 
     static ColumnPtr dispatchForHopColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
@@ -605,14 +603,11 @@ struct TimeWindowImpl<WINDOW_ID>
     {
         if (arguments.size() == 2)
             return dispatchForTumbleColumns(arguments, function_name, input_rows_count);
-        else
-        {
-            const auto & third_column = arguments[2];
-            if (arguments.size() == 3 && WhichDataType(third_column.type).isString())
-                return dispatchForTumbleColumns(arguments, function_name, input_rows_count);
-            else
-                return dispatchForHopColumns(arguments, function_name, input_rows_count);
-        }
+
+        const auto & third_column = arguments[2];
+        if (arguments.size() == 3 && WhichDataType(third_column.type).isString())
+            return dispatchForTumbleColumns(arguments, function_name, input_rows_count);
+        return dispatchForHopColumns(arguments, function_name, input_rows_count);
     }
 };
 
@@ -633,17 +628,15 @@ struct TimeWindowImpl<HOP_START>
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Tuple passed to {} should not be empty", function_name);
                 return tuple_elems[0];
             }
-            else if (type.isUInt32())
+            if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
-            else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Illegal type of first argument of function {} should be DateTime, Tuple or UInt32",
-                                function_name);
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type of first argument of function {} should be DateTime, Tuple or UInt32",
+                function_name);
         }
-        else
-        {
-            return std::static_pointer_cast<const DataTypeTuple>(TimeWindowImpl<HOP>::getReturnType(arguments, function_name))->getElement(0);
-        }
+
+        return std::static_pointer_cast<const DataTypeTuple>(TimeWindowImpl<HOP>::getReturnType(arguments, function_name))->getElement(0);
     }
 
     static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
@@ -655,8 +648,8 @@ struct TimeWindowImpl<HOP_START>
         {
             if (which_type.isUInt32())
                 return time_column.column;
-            else //isTuple
-                result_column = time_column.column;
+            //isTuple
+            result_column = time_column.column;
         }
         else
             result_column = TimeWindowImpl<HOP>::dispatchForColumns(arguments, function_name, input_rows_count);
@@ -683,8 +676,8 @@ struct TimeWindowImpl<HOP_END>
         {
             if (which_type.isUInt32())
                 return time_column.column;
-            else //isTuple
-                result_column = time_column.column;
+            //isTuple
+            result_column = time_column.column;
         }
         else
             result_column = TimeWindowImpl<HOP>::dispatchForColumns(arguments, function_name, input_rows_count);

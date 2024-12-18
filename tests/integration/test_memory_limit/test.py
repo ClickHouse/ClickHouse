@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import logging
 import time
-import pytest
-from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

@@ -19,6 +19,19 @@ Features:
 - Performance Optimizations: Utilizes Indexed DB for efficient caching and state management.
 - Local Data Storage: All data is stored locally in the browser, ensuring no data is sent anywhere else.
 
+### ChartDB {#chartdb}
+
+[ChartDB](https://chartdb.io) is a free and open-source tool for visualizing and designing database schemas, including ClickHouse, with a single query. Built with React, it provides a seamless and user-friendly experience, requiring no database credentials or signup to get started.
+
+Features:
+
+- Schema Visualization: Instantly import and visualize your ClickHouse schema, including ER diagrams with materialized views and standard views, showing references to tables.
+- AI-Powered DDL Export: Generate DDL scripts effortlessly for better schema management and documentation.
+- Multi-SQL Dialect Support: Compatible with a range of SQL dialects, making it versatile for various database environments.
+- No Signup or Credentials Needed: All functionality is accessible directly in the browser, keeping it frictionless and secure.
+
+[ChartDB Source Code](https://github.com/chartdb/chartdb).
+
 ### Tabix {#tabix}
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.

@@ -308,6 +308,28 @@ void ColumnSparse::popBack(size_t n)
     _size = new_size;
 }
 
+ColumnCheckpointPtr ColumnSparse::getCheckpoint() const
+{
+    return std::make_shared<ColumnCheckpointWithNested>(size(), values->getCheckpoint());
+}
+
+void ColumnSparse::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    values->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
+void ColumnSparse::rollback(const ColumnCheckpoint & checkpoint)
+{
+    _size = checkpoint.size;
+
+    const auto & nested = *assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested;
+    chassert(nested.size > 0);
+
+    values->rollback(nested);
+    getOffsetsData().resize_assume_reserved(nested.size - 1);
+}
+
 ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 {
     if (_size != filt.size())
@@ -752,10 +774,10 @@ UInt64 ColumnSparse::getNumberOfDefaultRows() const
     return _size - offsets->size();
 }
 
-ColumnPtr ColumnSparse::compress() const
+ColumnPtr ColumnSparse::compress(bool force_compression) const
 {
-    auto values_compressed = values->compress();
-    auto offsets_compressed = offsets->compress();
+    auto values_compressed = values->compress(force_compression);
+    auto offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 

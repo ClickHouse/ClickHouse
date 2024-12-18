@@ -8,6 +8,7 @@ import string
 from contextlib import contextmanager
 
 import pyodbc  # pylint:disable=import-error; for style check
+
 from exceptions import ProgramError
 
 logger = logging.getLogger("connection")
@@ -276,10 +277,9 @@ def execute_request(request, connection):
             rows = cursor.fetchall()
             connection.commit()
             return ExecResult().as_ok(rows=rows, description=cursor.description)
-        else:
-            logging.debug("request doesn't have a description")
-            connection.commit()
-            return ExecResult().as_ok()
+        logging.debug("request doesn't have a description")
+        connection.commit()
+        return ExecResult().as_ok()
     except (pyodbc.Error, sqlite3.DatabaseError) as err:
         return ExecResult().as_exception(err)
     finally:

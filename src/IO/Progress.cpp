@@ -91,8 +91,6 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(result_bytes, out);
     writeCString("\",\"elapsed_ns\":\"", out);
     writeText(elapsed_ns, out);
-    writeCString("\",\"real_time_microseconds\":\"", out);
-    writeText(real_time_microseconds, out);
     writeCString("\"", out);
     writeCString("}", out);
 }
@@ -112,7 +110,6 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
     result_bytes += rhs.result_bytes;
 
     elapsed_ns += rhs.elapsed_ns;
-    real_time_microseconds += rhs.real_time_microseconds;
 
     return rhs.read_rows || rhs.written_rows;
 }
@@ -132,7 +129,6 @@ void Progress::reset()
     result_bytes = 0;
 
     elapsed_ns = 0;
-    real_time_microseconds = 0;
 }
 
 ProgressValues Progress::getValues() const
@@ -152,7 +148,6 @@ ProgressValues Progress::getValues() const
     res.result_bytes = result_bytes.load(std::memory_order_relaxed);
 
     res.elapsed_ns = elapsed_ns.load(std::memory_order_relaxed);
-    res.real_time_microseconds = real_time_microseconds.load(std::memory_order_relaxed);
 
     return res;
 }
@@ -174,7 +169,6 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
     res.result_bytes = result_bytes.fetch_and(0);
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
-    res.real_time_microseconds = real_time_microseconds.fetch_and(0);
 
     return res;
 }
@@ -196,7 +190,6 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
     res.result_bytes = result_bytes.fetch_and(0);
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
-    res.real_time_microseconds = real_time_microseconds.fetch_and(0);
 
     return res;
 }
@@ -216,7 +209,6 @@ Progress & Progress::operator=(Progress && other) noexcept
     result_bytes = other.result_bytes.load(std::memory_order_relaxed);
 
     elapsed_ns = other.elapsed_ns.load(std::memory_order_relaxed);
-    real_time_microseconds = other.real_time_microseconds.load(std::memory_order_relaxed);
 
     return *this;
 }
@@ -250,11 +242,6 @@ void Progress::writeJSON(WriteBuffer & out) const
 void Progress::incrementElapsedNs(UInt64 elapsed_ns_)
 {
     elapsed_ns.fetch_add(elapsed_ns_, std::memory_order_relaxed);
-}
-
-void Progress::incrementRealTimeMicroseconds(UInt64 microseconds)
-{
-    real_time_microseconds.fetch_add(microseconds, std::memory_order_relaxed);
 }
 
 }

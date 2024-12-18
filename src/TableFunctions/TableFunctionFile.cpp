@@ -65,8 +65,7 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 {
     if (fd >= 0)
         return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
-    else
-        return FormatFactory::instance().tryGetFormatFromFileName(filename);
+    return FormatFactory::instance().tryGetFormatFromFileName(filename);
 }
 
 StoragePtr TableFunctionFile::getStorage(

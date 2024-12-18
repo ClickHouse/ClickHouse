@@ -62,7 +62,7 @@ public:
     void pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
     void init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
-    void fill(Queue & queue);
+    void fill(Queue & queue, Queue & async_queue);
     void upscale(size_t use_threads_);
 
     void processAsyncTasks();

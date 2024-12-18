@@ -53,8 +53,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     {
         if (input_function)
             throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT query requires format to be set");
     }
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
@@ -66,8 +65,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
-    auto source
-        = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
+    auto source = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettingsRef()[Setting::max_insert_block_size]);
     source->addBuffer(std::move(input_buffer));
     return source;
 }

@@ -1,5 +1,4 @@
 #pragma once
-#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <base/types.h>
@@ -16,7 +15,7 @@
 
 namespace DB
 {
-
+struct ReadSettings;
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 
@@ -112,8 +111,8 @@ public:
     virtual bool exists() const = 0;
 
     /// File inside part directory exists. Specified path is relative to the part path.
-    virtual bool exists(const std::string & name) const = 0;
-    virtual bool isDirectory(const std::string & name) const = 0;
+    virtual bool existsFile(const std::string & name) const = 0;
+    virtual bool existsDirectory(const std::string & name) const = 0;
 
     /// Modification time for part directory.
     virtual Poco::Timestamp getLastModified() const = 0;
@@ -137,6 +136,17 @@ public:
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const = 0;
+
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const
+    {
+        if (existsFile(name))
+            return readFile(name, settings, read_hint, file_size);
+        return {};
+    }
 
     struct ProjectionChecksums
     {
@@ -229,7 +239,6 @@ public:
         bool allow_backup_broken_projection) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
-    /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
     /// Some files can be copied instead of hardlinks. It's because of details of zero copy replication
     /// implementation which relies on paths of some blobs in S3. For example if we want to hardlink
     /// the whole part during mutation we shouldn't hardlink checksums.txt, because otherwise

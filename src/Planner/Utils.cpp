@@ -11,11 +11,13 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 
 #include <IO/WriteBufferFromString.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 
 #include <Storages/StorageDummy.h>
@@ -78,7 +80,7 @@ namespace ErrorCodes
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 }
 
-String dumpQueryPlan(QueryPlan & query_plan)
+String dumpQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString query_plan_buffer;
     query_plan.explainPlan(query_plan_buffer, QueryPlan::ExplainPlanOptions{true, true, true, true});
@@ -86,7 +88,7 @@ String dumpQueryPlan(QueryPlan & query_plan)
     return query_plan_buffer.str();
 }
 
-String dumpQueryPipeline(QueryPlan & query_plan)
+String dumpQueryPipeline(const QueryPlan & query_plan)
 {
     QueryPlan::ExplainPipelineOptions explain_pipeline;
     WriteBufferFromOwnString query_pipeline_buffer;
@@ -144,9 +146,9 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
 
     while (true)
     {
-        if (auto * select_query = result_ast->as<ASTSelectQuery>())
+        if (auto * /*select_query*/ _ = result_ast->as<ASTSelectQuery>())
             break;
-        else if (auto * select_with_union = result_ast->as<ASTSelectWithUnionQuery>())
+        if (auto * select_with_union = result_ast->as<ASTSelectWithUnionQuery>())
             result_ast = select_with_union->list_of_selects->children.at(0);
         else if (auto * subquery = result_ast->as<ASTSubquery>())
             result_ast = subquery->children.at(0);
@@ -298,6 +300,14 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             {
                 return true;
             }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
+                for (const auto & expr : cross_join_node.getTableExpressions())
+                    join_tree_nodes_to_process.push_back(expr);
+
+                break;
+            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
@@ -362,6 +372,14 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
             {
                 auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
                 join_tree_nodes_to_process.push_back(array_join_node.getTableExpression());
+                break;
+            }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
+                for (const auto & expr : cross_join_node.getTableExpressions())
+                    join_tree_nodes_to_process.push_back(expr);
+
                 break;
             }
             case QueryTreeNodeType::JOIN:

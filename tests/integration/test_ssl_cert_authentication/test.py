@@ -1,13 +1,15 @@
+import logging
+import os.path
+import ssl
+import urllib.parse
+import urllib.request
+from os import remove
+
 import pytest
+
 from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 from helpers.ssl_context import WrapSSLContextWithSNI
-import urllib.request, urllib.parse
-import ssl
-import os.path
-from os import remove
-import logging
-
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
 # The client have to verify server certificate against that name. Client uses SNI

@@ -114,34 +114,32 @@ Chunk KafkaSource::generateImpl()
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
         if (put_error_to_stream)
         {
             exception_message = e.message();
-            for (const auto & column : result_columns)
+            for (size_t i = 0; i < result_columns.size(); ++i)
             {
-                // read_kafka_message could already push some rows to result_columns
-                // before exception, we need to fix it.
-                auto cur_rows = column->size();
-                if (cur_rows > total_rows)
-                    column->popBack(cur_rows - total_rows);
+                // We could already push some rows to result_columns before exception, we need to fix it.
+                result_columns[i]->rollback(*checkpoints[i]);
 
                 // all data columns will get default value in case of error
-                column->insertDefault();
+                result_columns[i]->insertDefault();
             }
 
             return 1;
         }
-        else
-        {
-            e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-                consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
-            consumer->setExceptionInfo(e.message());
-            throw std::move(e);
-        }
+
+        e.addMessage(
+            "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+            consumer->currentTopic(),
+            consumer->currentPartition(),
+            consumer->currentOffset());
+        consumer->setExceptionInfo(e.message());
+        throw std::move(e);
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -255,7 +253,7 @@ Chunk KafkaSource::generateImpl()
     {
         return {};
     }
-    else if (consumer->polledDataUnusable())
+    if (consumer->polledDataUnusable())
     {
         // the rows were counted already before by KafkaRowsRead,
         // so let's count the rows we ignore separately

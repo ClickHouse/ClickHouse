@@ -65,7 +65,7 @@ struct StatisticsNumeric
         memcpy(s.min_value.data(), &min, sizeof(T));
         memcpy(s.max_value.data(), &max, sizeof(T));
 
-        if constexpr (std::is_signed<T>::value)
+        if constexpr (std::is_signed_v<T>)
         {
             s.__set_min(s.min_value);
             s.__set_max(s.max_value);
@@ -139,8 +139,8 @@ struct StatisticsFixedStringCopy
     {
         if (s.empty)
             return;
-        addMin(&s.min[0]);
-        addMax(&s.max[0]);
+        addMin(s.min.data());
+        addMax(s.max.data());
         empty = false;
     }
 
@@ -543,6 +543,7 @@ void writeColumnImpl(
     {
         parq::PageHeader header;
         PODArray<char> data;
+        size_t first_row_index = 0;
     };
     std::vector<PageData> dict_encoded_pages; // can't write them out until we have full dictionary
 
@@ -596,9 +597,32 @@ void writeColumnImpl(
         if (options.write_page_statistics)
         {
             d.__set_statistics(page_statistics.get(options));
-
-            if (s.max_def == 1 && s.max_rep == 0)
+            bool all_null_page = data_count == 0;
+            if (all_null_page)
+            {
+                s.column_index.min_values.push_back("");
+                s.column_index.max_values.push_back("");
+            }
+            else
+            {
+                s.column_index.min_values.push_back(d.statistics.min_value);
+                s.column_index.max_values.push_back(d.statistics.max_value);
+            }
+            bool has_null_count = s.max_def == 1 && s.max_rep == 0;
+            if (has_null_count)
                 d.statistics.__set_null_count(static_cast<Int64>(def_count - data_count));
+            s.column_index.__isset.null_counts = has_null_count;
+            if (has_null_count)
+            {
+                s.column_index.__isset.null_counts = true;
+                s.column_index.null_counts.emplace_back(d.statistics.null_count);
+            }
+            else
+            {
+                if (s.column_index.__isset.null_counts)
+                    s.column_index.null_counts.emplace_back(0);
+            }
+            s.column_index.null_pages.push_back(all_null_page);
         }
 
         total_statistics.merge(page_statistics);
@@ -606,14 +630,18 @@ void writeColumnImpl(
 
         if (use_dictionary)
         {
-            dict_encoded_pages.push_back({.header = std::move(header), .data = {}});
+            dict_encoded_pages.push_back({.header = std::move(header), .data = {}, .first_row_index = def_offset});
             std::swap(dict_encoded_pages.back().data, compressed);
         }
         else
         {
+            parquet::format::PageLocation location;
+            location.offset = out.count();
             writePage(header, compressed, s, out);
+            location.compressed_page_size = static_cast<int32_t>(out.count() - location.offset);
+            location.first_row_index = def_offset;
+            s.offset_index.page_locations.emplace_back(location);
         }
-
         def_offset += def_count;
         data_offset += data_count;
     };
@@ -642,7 +670,14 @@ void writeColumnImpl(
         writePage(header, compressed, s, out);
 
         for (auto & p : dict_encoded_pages)
+        {
+            parquet::format::PageLocation location;
+            location.offset = out.count();
             writePage(p.header, p.data, s, out);
+            location.compressed_page_size = static_cast<int32_t>(out.count() - location.offset);
+            location.first_row_index = p.first_row_index;
+            s.offset_index.page_locations.emplace_back(location);
+        }
 
         dict_encoded_pages.clear();
         encoder.reset();
@@ -703,6 +738,9 @@ void writeColumnImpl(
                 def_offset = 0;
                 data_offset = 0;
                 dict_encoded_pages.clear();
+
+                //clear column_index
+                s.column_index = parquet::format::ColumnIndex();
                 use_dictionary = false;
 
 #ifndef NDEBUG
@@ -907,6 +945,50 @@ parq::RowGroup makeRowGroup(std::vector<parq::ColumnChunk> column_chunks, size_t
         r.__set_file_offset(m.__isset.dictionary_page_offset ? m.dictionary_page_offset : m.data_page_offset);
     }
     return r;
+}
+
+void writePageIndex(
+    const std::vector<std::vector<parquet::format::ColumnIndex>> & column_indexes,
+    const std::vector<std::vector<parquet::format::OffsetIndex>> & offset_indexes,
+    std::vector<parq::RowGroup> & row_groups,
+    WriteBuffer & out,
+    size_t base_offset)
+{
+    chassert(row_groups.size() == column_indexes.size() && row_groups.size() == offset_indexes.size());
+    auto num_row_groups = row_groups.size();
+    // write column index
+    for (size_t i = 0; i < num_row_groups; ++i)
+    {
+        const auto & current_group_column_index = column_indexes.at(i);
+        chassert(row_groups.at(i).columns.size() == current_group_column_index.size());
+        auto & row_group = row_groups.at(i);
+        for (size_t j = 0; j < row_groups.at(i).columns.size(); ++j)
+        {
+            auto & column = row_group.columns.at(j);
+            int64_t column_index_offset = static_cast<int64_t>(out.count() - base_offset);
+            int32_t column_index_length = static_cast<int32_t>(serializeThriftStruct(current_group_column_index.at(j), out));
+            column.__isset.column_index_offset = true;
+            column.column_index_offset = column_index_offset;
+            column.__isset.column_index_length = true;
+            column.column_index_length = column_index_length;
+        }
+    }
+
+    // write offset index
+    for (size_t i = 0; i < num_row_groups; ++i)
+    {
+        const auto & current_group_offset_index = offset_indexes.at(i);
+        chassert(row_groups.at(i).columns.size() == current_group_offset_index.size());
+        for (size_t j = 0; j < row_groups.at(i).columns.size(); ++j)
+        {
+            int64_t offset_index_offset = out.count() - base_offset;
+            int32_t offset_index_length = static_cast<int32_t>(serializeThriftStruct(current_group_offset_index.at(j), out));
+            row_groups.at(i).columns.at(j).__isset.offset_index_offset = true;
+            row_groups.at(i).columns.at(j).offset_index_offset = offset_index_offset;
+            row_groups.at(i).columns.at(j).__isset.offset_index_length = true;
+            row_groups.at(i).columns.at(j).offset_index_length = offset_index_length;
+        }
+    }
 }
 
 void writeFileFooter(std::vector<parq::RowGroup> row_groups, SchemaElements schema, const WriteOptions & options, WriteBuffer & out)

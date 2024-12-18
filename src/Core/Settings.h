@@ -4,9 +4,9 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
-#include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
 
 #include <string_view>
@@ -45,6 +45,7 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \
@@ -53,17 +54,21 @@ class WriteBuffer;
     M(CLASS_NAME, DefaultDatabaseEngine) \
     M(CLASS_NAME, DefaultTableEngine) \
     M(CLASS_NAME, Dialect) \
+    M(CLASS_NAME, DistributedCacheLogMode) /* Cloud only */ \
+    M(CLASS_NAME, DistributedCachePoolBehaviourOnLimit) /* Cloud only */ \
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
+    M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, LoadBalancing) \
     M(CLASS_NAME, LocalFSReadMethod) \
     M(CLASS_NAME, LogQueriesType) \
@@ -77,6 +82,7 @@ class WriteBuffer;
     M(CLASS_NAME, ORCCompression) \
     M(CLASS_NAME, OverflowMode) \
     M(CLASS_NAME, OverflowModeGroupBy) \
+    M(CLASS_NAME, ParallelReplicasMode) \
     M(CLASS_NAME, ParallelReplicasCustomKeyFilterType) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
@@ -113,6 +119,7 @@ struct Settings
     /// General API as needed
     bool has(std::string_view name) const;
     bool isChanged(std::string_view name) const;
+    SettingsTierType getTier(std::string_view name) const;
 
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
@@ -135,6 +142,8 @@ struct Settings
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
+    /// Equivalent to Settings().write(out, <any format>) but faster.
+    static void writeEmpty(WriteBuffer & out);
 
     void addToProgramOptions(boost::program_options::options_description & options);
     void addToProgramOptions(std::string_view setting_name, boost::program_options::options_description & options);

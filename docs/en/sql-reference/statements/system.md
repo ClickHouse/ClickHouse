@@ -506,6 +506,18 @@ Will do sync syscall.
 SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
 ```
 
+### LOAD PRIMARY KEY
+
+Load the primary keys for the given table or for all tables.
+
+```sql
+SYSTEM LOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM LOAD PRIMARY KEY
+```
+
 ### UNLOAD PRIMARY KEY
 
 Unload the primary keys for the given table or for all tables.
@@ -564,4 +576,14 @@ If there's a refresh in progress for the given view, interrupt and cancel it. Ot
 
 ```sql
 SYSTEM CANCEL VIEW [db.]name
+```
+
+### SYSTEM WAIT VIEW
+
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+
+Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+
+```sql
+SYSTEM WAIT VIEW [db.]name
 ```

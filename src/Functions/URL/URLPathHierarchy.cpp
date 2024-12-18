@@ -70,8 +70,7 @@ public:
                 token_end = end;
                 return true;
             }
-            else
-                pos += 3;
+            pos += 3;
 
             /// The domain for simplicity is everything that after the protocol and two slashes, until the next slash or `?` or `#`
             while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))

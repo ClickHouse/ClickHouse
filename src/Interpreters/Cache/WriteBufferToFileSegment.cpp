@@ -34,9 +34,9 @@ namespace
         auto query_context = CurrentThread::getQueryContext();
         if (query_context)
             return query_context->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
-        else
-            return Context::getGlobalContextInstance()
-                ->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
+
+        return Context::getGlobalContextInstance()
+            ->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
     }
 }
 
@@ -142,8 +142,7 @@ std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
     finalize();
     if (file_segment->getDownloadedSize() > 0)
         return std::make_unique<ReadBufferFromFile>(file_segment->getPath());
-    else
-        return std::make_unique<ReadBufferFromEmptyFile>();
+    return std::make_unique<ReadBufferFromEmptyFile>();
 }
 
 }

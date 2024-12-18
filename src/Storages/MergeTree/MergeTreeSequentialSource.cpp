@@ -14,11 +14,17 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
-#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/checkDataPart.h>
+
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
+}
 
 /// Lightweight (in terms of logic) stream for reading single part from
 /// MergeTree, used for merges and mutations.
@@ -135,7 +141,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = !storage.getSettings()->force_read_through_cache_for_merges;
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
@@ -178,7 +184,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         /*avg_value_size_hints=*/ {},
         /*profile_callback=*/ {});
 
-    if (prefetch)
+    if (prefetch && !data_part->isEmpty())
         reader->prefetchBeginOfRange(Priority{});
 }
 
@@ -224,7 +230,7 @@ try
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
-        size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
+        size_t rows_to_read = data_part->index_granularity->getMarkRows(current_mark);
         bool continue_reading = (current_mark != 0);
 
         const auto & sample = reader->getColumns();
@@ -266,7 +272,7 @@ try
 
             auto result = Chunk(std::move(res_columns), rows_read);
             if (add_part_level)
-                result.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
+                result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
             return result;
         }
     }
@@ -361,7 +367,7 @@ public:
         bool prefetch_,
         ContextPtr context_,
         LoggerPtr log_)
-        : ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)})
+        : ISourceStep(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
         , type(type_)
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
@@ -404,7 +410,7 @@ public:
 
             if (mark_ranges && mark_ranges->empty())
             {
-                pipeline.init(Pipe(std::make_unique<NullSource>(output_stream->header)));
+                pipeline.init(Pipe(std::make_unique<NullSource>(*output_header)));
                 return;
             }
         }

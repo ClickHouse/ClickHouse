@@ -37,6 +37,15 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
+class MergesWebUIRequestHandler : public HTTPRequestHandler
+{
+private:
+    IServer & server;
+public:
+    explicit MergesWebUIRequestHandler(IServer & server_);
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+};
+
 class JavaScriptWebUIRequestHandler : public HTTPRequestHandler
 {
 private:

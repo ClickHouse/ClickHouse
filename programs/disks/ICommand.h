@@ -63,46 +63,34 @@ protected:
     static T getValueFromCommandLineOptionsThrow(const CommandLineOptions & options, const String & name)
     {
         if (options.count(name))
-        {
             return getValueFromCommandLineOptions<T>(options, name);
-        }
-        else
-        {
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Mandatory argument '{}' is missing", name);
-        }
+
+        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Mandatory argument '{}' is missing", name);
     }
 
     template <typename T>
     static T getValueFromCommandLineOptionsWithDefault(const CommandLineOptions & options, const String & name, const T & default_value)
     {
         if (options.count(name))
-        {
             return getValueFromCommandLineOptions<T>(options, name);
-        }
-        else
-        {
-            return default_value;
-        }
+
+        return default_value;
     }
 
     template <typename T>
     static std::optional<T> getValueFromCommandLineOptionsWithOptional(const CommandLineOptions & options, const String & name)
     {
         if (options.count(name))
-        {
             return std::optional{getValueFromCommandLineOptions<T>(options, name)};
-        }
-        else
-        {
-            return std::nullopt;
-        }
+
+        return std::nullopt;
     }
 
     DiskWithPath & getDiskWithPath(DisksClient & client, const CommandLineOptions & options, const String & name);
 
     String getTargetLocation(const String & path_from, DiskWithPath & disk_to, const String & path_to)
     {
-        if (!disk_to.getDisk()->isDirectory(path_to))
+        if (!disk_to.getDisk()->existsDirectory(path_to))
         {
             return path_to;
         }

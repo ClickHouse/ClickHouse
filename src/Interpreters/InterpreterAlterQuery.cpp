@@ -44,6 +44,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool disable_insertion_and_mutation;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -70,7 +75,7 @@ BlockIO InterpreterAlterQuery::execute()
     {
         return executeToDatabase(alter);
     }
-    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE)
+    if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE)
     {
         return executeToTable(alter);
     }
@@ -94,7 +99,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     BlockIO res;
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr);
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
@@ -200,7 +205,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
     {
-        if (getContext()->getServerSettings().disable_insertion_and_mutation)
+        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 

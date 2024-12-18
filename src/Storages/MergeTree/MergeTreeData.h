@@ -31,6 +31,8 @@
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/MarkCache.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -241,7 +243,7 @@ public:
 
     MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count) const;
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
-    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir) const;
+    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -441,6 +443,7 @@ public:
 
     bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
 
@@ -504,6 +507,16 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    /// Returns a pointer to primary index cache if it is enabled.
+    PrimaryIndexCachePtr getPrimaryIndexCache() const;
+    /// Returns a pointer to primary index cache if it is enabled and required to be prewarmed.
+    PrimaryIndexCachePtr getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const;
+    /// Returns a pointer to primary mark cache if it is required to be prewarmed.
+    MarkCachePtr getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const;
+
+    /// Prewarm mark cache and primary index cache for the most recent data parts.
+    void prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
 
     String getLogName() const { return log.loadName(); }
 
@@ -1147,12 +1160,13 @@ public:
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
 
-    /// Unloads primary keys of all parts.
+    /// Load/unload primary keys of all data parts
+    void loadPrimaryKeys() const;
     void unloadPrimaryKeys();
 
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
-    size_t unloadPrimaryKeysOfOutdatedParts();
+    size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1242,6 +1256,11 @@ protected:
     /// protected by @data_parts_mutex.
     ColumnsDescription object_columns;
 
+    /// Serialization info accumulated among all active parts.
+    /// It changes only when set of parts is changed and is
+    /// protected by @data_parts_mutex.
+    SerializationInfoByName serialization_hints;
+
     MergeTreePartsMover parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1316,7 +1335,7 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
-    /// The same for unloadPrimaryKeysOfOutdatedParts.
+    /// The same for unloadPrimaryKeysAndClearCachesOfOutdatedParts.
     std::mutex unload_primary_key_mutex;
 
     void checkProperties(
@@ -1324,6 +1343,7 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
         bool allow_empty_sorting_key,
+        bool allow_reverse_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context) const;
 
@@ -1530,6 +1550,13 @@ protected:
     void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
     void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
 
+    void resetSerializationHints(const DataPartsLock & lock);
+
+    template <typename AddedParts, typename RemovedParts>
+    void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);
+
+    SerializationInfoByName getSerializationHints() const override;
+
     /** A structure that explicitly represents a "merge tree" of parts
      *  which is implicitly presented by min-max block numbers and levels of parts.
      *  The children of node are parts which are covered by parent part.
@@ -1697,7 +1724,8 @@ private:
 
     virtual void startBackgroundMovesIfNeeded() = 0;
 
-    bool allow_nullable_key{};
+    bool allow_nullable_key = false;
+    bool allow_reverse_key = false;
 
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);

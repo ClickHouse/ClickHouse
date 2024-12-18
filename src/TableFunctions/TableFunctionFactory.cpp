@@ -47,8 +47,7 @@ TableFunctionPtr TableFunctionFactory::get(
         auto hints = getHints(table_function->name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function->name, toString(hints));
-        else
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function->name);
     }
 
     res->parseArguments(ast_function, context);

@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
+#include <Backups/SettingsFieldOptionalUInt64.h>
 
 namespace DB
 {
@@ -37,9 +38,11 @@ namespace ErrorCodes
     M(Bool, check_parts) \
     M(Bool, check_projection_parts) \
     M(Bool, allow_backup_broken_projections) \
+    M(Bool, write_access_entities_dependents) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(OptionalUUID, backup_uuid)
+    M(OptionalUUID, backup_uuid) \
+    M(OptionalUInt64, max_backup_bandwidth)
     /// M(Int64, compression_level)
 
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
@@ -71,6 +74,17 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         res.cluster_host_ids = Util::clusterHostIDsFromAST(*query.cluster_host_ids);
 
     return res;
+}
+
+bool BackupSettings::isAsync(const ASTBackupQuery & query)
+{
+    if (query.settings)
+    {
+        const auto * field = query.settings->as<const ASTSetQuery &>().changes.tryGet("async");
+        if (field)
+            return field->safeGet<bool>();
+    }
+    return false; /// `async` is false by default.
 }
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const

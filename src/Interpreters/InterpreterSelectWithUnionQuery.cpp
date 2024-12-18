@@ -252,10 +252,9 @@ Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr 
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
-    else if (ast_ptr_->as<ASTSelectQuery>())
+    if (ast_ptr_->as<ASTSelectQuery>())
         return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
-    else
-        return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
+    return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
@@ -263,10 +262,9 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    else if (ast_ptr_->as<ASTSelectQuery>())
+    if (ast_ptr_->as<ASTSelectQuery>())
         return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    else
-        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
+    return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
@@ -318,29 +316,29 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     else
     {
         std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-        DataStreams data_streams(num_plans);
+        Headers headers(num_plans);
 
         for (size_t i = 0; i < num_plans; ++i)
         {
             plans[i] = std::make_unique<QueryPlan>();
             nested_interpreters[i]->buildQueryPlan(*plans[i]);
 
-            if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
+            if (!blocksHaveEqualStructure(plans[i]->getCurrentHeader(), result_header))
             {
                 auto actions_dag = ActionsDAG::makeConvertingActions(
-                        plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                        plans[i]->getCurrentHeader().getColumnsWithTypeAndName(),
                         result_header.getColumnsWithTypeAndName(),
                         ActionsDAG::MatchColumnsMode::Position);
-                auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
+                auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
                 converting_step->setStepDescription("Conversion before UNION");
                 plans[i]->addStep(std::move(converting_step));
             }
 
-            data_streams[i] = plans[i]->getCurrentDataStream();
+            headers[i] = plans[i]->getCurrentHeader();
         }
 
         auto max_threads = settings[Setting::max_threads];
-        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), max_threads);
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
@@ -351,7 +349,11 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
             auto distinct_step = std::make_unique<DistinctStep>(
-                query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false, settings[Setting::optimize_distinct_in_order]);
+                query_plan.getCurrentHeader(),
+                limits,
+                0,
+                result_header.getNames(),
+                false);
 
             query_plan.addStep(std::move(distinct_step));
         }
@@ -362,13 +364,13 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         if (settings[Setting::limit] > 0)
         {
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentDataStream(), settings[Setting::limit], settings[Setting::offset], settings[Setting::exact_rows_before_limit]);
+                query_plan.getCurrentHeader(), settings[Setting::limit], settings[Setting::offset], settings[Setting::exact_rows_before_limit]);
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
         }
         else
         {
-            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), settings[Setting::offset]);
+            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), settings[Setting::offset]);
             offset->setStepDescription("OFFSET for SETTINGS");
             query_plan.addStep(std::move(offset));
         }

@@ -28,11 +28,11 @@ namespace ErrorCodes
 
 
 /// Some types are only for intermediate values of expressions and cannot be used in tables.
-static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
+void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 {
     for (const auto & elem : names_and_types)
         if (elem.type->cannotBeStoredInTables())
-            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} cannot be used in tables", elem.type->getName());
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES, "Data type {} of column '{}' cannot be used in tables", elem.type->getName(), elem.name);
 }
 
 
@@ -69,7 +69,8 @@ StoragePtr StorageFactory::get(
     const ConstraintsDescription & constraints,
     LoadingStrictnessLevel mode) const
 {
-    String name, comment;
+    String name;
+    String comment;
 
     ASTStorage * storage_def = query.storage;
 
@@ -132,23 +133,26 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
             }
-            else if (name == "MaterializedView")
+            if (name == "MaterializedView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE MaterializedView "
-                                "is not supported, use CREATE MATERIALIZED VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE MaterializedView "
+                    "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
-            else if (name == "LiveView")
+            if (name == "LiveView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE LiveView "
-                                "is not supported, use CREATE LIVE VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE LiveView "
+                    "is not supported, use CREATE LIVE VIEW statement");
             }
-            else if (name == "WindowView")
+            if (name == "WindowView")
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Direct creation of tables with ENGINE WindowView "
-                                "is not supported, use CREATE WINDOW VIEW statement");
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE WindowView "
+                    "is not supported, use CREATE WINDOW VIEW statement");
             }
 
             auto it = storages.find(name);
@@ -157,8 +161,7 @@ StoragePtr StorageFactory::get(
                 auto hints = getHints(name);
                 if (!hints.empty())
                     throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}. Maybe you meant: {}", name, toString(hints));
-                else
-                    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
+                throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", name);
             }
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
@@ -231,7 +234,7 @@ StoragePtr StorageFactory::get(
     {
         /// Storage creator modified empty arguments list, so we should modify the query
         assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
-        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();
+        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();  /// NOLINT(clang-analyzer-core.NullDereference)
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
     }

@@ -118,8 +118,7 @@ private:
         {
             if (std::holds_alternative<Block>(*this))
                 return DataKind::Preprocessed;
-            else
-                return DataKind::Parsed;
+            return DataKind::Parsed;
         }
 
         bool empty() const

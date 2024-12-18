@@ -1,12 +1,13 @@
 #pragma once
 #include "config.h"
 
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/ObjectStorageQueueLog.h>
 #include <Processors/ISource.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/ObjectStorageQueueLog.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace Poco { class Logger; }
@@ -39,6 +40,8 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             std::unique_ptr<Source::GlobIterator> glob_iterator_,
+            ObjectStoragePtr object_storage_,
+            bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_,
             LoggerPtr logger_);
 
@@ -66,7 +69,9 @@ public:
         using Processor = ObjectStorageQueueMetadata::Processor;
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
+        const ObjectStoragePtr object_storage;
         const std::unique_ptr<Source::GlobIterator> glob_iterator;
+        const bool file_deletion_on_processed_enabled;
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
@@ -93,6 +98,14 @@ public:
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
+    struct CommitSettings
+    {
+        size_t max_processed_files_before_commit;
+        size_t max_processed_rows_before_commit;
+        size_t max_processed_bytes_before_commit;
+        size_t max_processing_time_sec_before_commit;
+    };
+
     ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
@@ -101,7 +114,7 @@ public:
         ObjectStoragePtr object_storage_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
-        const ObjectStorageQueueSettings & queue_settings_,
+        const CommitSettings & commit_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -130,7 +143,7 @@ private:
     const ObjectStoragePtr object_storage;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
-    const ObjectStorageQueueSettings queue_settings;
+    const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
 
@@ -158,7 +171,6 @@ private:
     void appendLogElement(
         const std::string & filename,
         ObjectStorageQueueMetadata::FileStatus & file_status_,
-        size_t processed_rows,
         bool processed);
 };
 

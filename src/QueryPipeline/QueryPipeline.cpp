@@ -566,12 +566,9 @@ Block QueryPipeline::getHeader() const
 {
     if (input)
         return input->getHeader();
-    else if (output)
+    if (output)
         return output->getHeader();
-    else
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Header is available only for pushing or pulling QueryPipeline");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is available only for pushing or pulling QueryPipeline");
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
@@ -700,6 +697,16 @@ void QueryPipeline::reset()
     QueryPipeline to_remove = std::move(*this);
     *this = QueryPipeline();
 }
+
+void QueryPipeline::cancel() noexcept
+{
+    if (processors)
+    {
+        for (auto & processor : *processors)
+            processor->cancel();
+    }
+}
+
 
 static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Processors & processors)
 {

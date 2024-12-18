@@ -70,12 +70,15 @@
         You can specify log format(for now, JSON only). In that case, the console log will be printed
         in specified format like JSON.
         For example, as below:
+
         {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
+        {"date_time_utc":"2024-11-06T09:06:09Z","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
         To enable JSON logging support, please uncomment the entire <formatting> tag below.
 
         a) You can modify key names by changing values under tag values inside <names> tag.
         For example, to change DATE_TIME to MY_DATE_TIME, you can do like:
             <date_time>MY_DATE_TIME</date_time>
+            <date_time_utc>MY_UTC_DATE_TIME</date_time_utc>
         b) You can stop unwanted log properties to appear in logs. To do so, you can simply comment out (recommended)
         that property from this file.
         For example, if you do not want your log to print query_id, you can comment out only <query_id> tag.
@@ -86,6 +89,7 @@
             <type>json</type>
             <names>
                 <date_time>date_time</date_time>
+                <date_time_utc>date_time_utc</date_time_utc>
                 <thread_name>thread_name</thread_name>
                 <thread_id>thread_id</thread_id>
                 <level>level</level>
@@ -263,7 +267,7 @@
 
     <!-- <listen_backlog>4096</listen_backlog> -->
 
-    <max_connections>4096</max_connections>
+    <!-- <max_connections>4096</max_connections> -->
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
     <keep_alive_timeout>10</keep_alive_timeout>
@@ -1195,6 +1199,19 @@
         <flush_on_crash>false</flush_on_crash>
     </error_log>
 
+    <!-- Query metric log contains rows Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
+    every "collect_interval_milliseconds" interval-->
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
+
     <!--
         Asynchronous metric log contains values of metrics from
         system.asynchronous_metrics.
@@ -1386,6 +1403,10 @@
      If not specified they will be stored locally. -->
     <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
 
+    <!-- Path in ZooKeeper to store workload and resource created by the command CREATE WORKLOAD and CREATE REESOURCE.
+     If not specified they will be stored locally. -->
+    <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
+
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->
@@ -1437,6 +1458,8 @@
     <distributed_ddl>
         <!-- Path in ZooKeeper to queue with DDL queries -->
         <path>/clickhouse/task_queue/ddl</path>
+        <!-- Path in ZooKeeper to store running DDL hosts -->
+        <replicas_path>/clickhouse/task_queue/replicas</replicas_path>
 
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->

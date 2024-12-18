@@ -1,7 +1,6 @@
-import pytest
-
 import pymysql.cursors
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -121,6 +120,24 @@ SETTINGS input_format_with_names_use_header = 0"""
     )
     assert node1.query(f"SELECT id FROM {dbname}.merge_tree") == "100\n"
 
+    node1.query(
+        f"CREATE DICTIONARY {dbname}.dict1 (id INT, data String) PRIMARY KEY id "
+        f"SOURCE(MYSQL(HOST 'mysql80' PORT 3306 USER 'root' PASSWORD 'clickhouse' DB 'clickhouse' TABLE 'inference_table'))"
+        f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)"
+    )
+
+    node1.query(
+        f"CREATE DICTIONARY {dbname}.dict2 (name String, value UInt32) PRIMARY KEY value "
+        f"SOURCE(CLICKHOUSE(HOST '127.0.0.2' PORT 9000 USER 'default' PASSWORD '' DB '{dbname}' TABLE 'example_s3_engine_table'))"
+        f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)"
+    )
+
+    node1.query(
+        f"CREATE DICTIONARY {dbname}.dict3 (name String, value UInt32) PRIMARY KEY value "
+        f"SOURCE(CLICKHOUSE(USER 'default' PASSWORD '' DB '{dbname}' TABLE 'example_s3_engine_table'))"
+        f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)"
+    )
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -142,6 +159,9 @@ def test_restore_table(start_cluster):
 
     node2.query(f"BACKUP DATABASE replicated TO {backup_name}")
 
+    node2.query("DROP DICTIONARY IF EXISTS replicated.dict3 SYNC")
+    node2.query("DROP DICTIONARY IF EXISTS replicated.dict2 SYNC")
+    node2.query("DROP DICTIONARY IF EXISTS replicated.dict1 SYNC")
     node2.query("DROP TABLE replicated.example_s3_engine_table")
     node2.query("DROP TABLE replicated.mysql_schema_inference_engine")
     node2.query("DROP TABLE replicated.mysql_schema_inference_function")
@@ -189,6 +209,9 @@ def test_restore_table_null(start_cluster):
 
     node2.query(f"BACKUP DATABASE replicated2 TO {backup_name}")
 
+    node2.query("DROP DICTIONARY IF EXISTS replicated2.dict3 SYNC")
+    node2.query("DROP DICTIONARY IF EXISTS replicated2.dict2 SYNC")
+    node2.query("DROP DICTIONARY IF EXISTS replicated2.dict1 SYNC")
     node2.query("DROP TABLE replicated2.example_s3_engine_table")
     node2.query("DROP TABLE replicated2.mysql_schema_inference_engine")
     node2.query("DROP TABLE replicated2.mysql_schema_inference_function")
@@ -199,7 +222,8 @@ def test_restore_table_null(start_cluster):
     assert node3.query("EXISTS replicated2.mysql_schema_inference_function") == "0\n"
 
     node3.query(
-        f"RESTORE DATABASE replicated2 FROM {backup_name} SETTINGS allow_different_database_def=1, allow_different_table_def=1 SETTINGS restore_replace_external_engines_to_null=1, restore_replace_external_table_functions_to_null=1"
+        f"RESTORE DATABASE replicated2 FROM {backup_name} SETTINGS allow_different_database_def=1, allow_different_table_def=1 "
+        f"SETTINGS restore_replace_external_engines_to_null=1, restore_replace_external_table_functions_to_null=1, restore_replace_external_dictionary_source_to_null=1"
     )
     node1.query(f"SYSTEM SYNC DATABASE REPLICA replicated2")
 
@@ -237,4 +261,7 @@ def test_restore_table_null(start_cluster):
         )
         == "MergeTree\n"
     )
+    assert "SOURCE(NULL())" in node1.query("SHOW CREATE replicated2.dict1")
+    assert "SOURCE(NULL())" in node1.query("SHOW CREATE replicated2.dict1")
+    assert "SOURCE(CLICKHOUSE(" in node1.query("SHOW CREATE replicated2.dict3")
     cleanup_nodes(nodes, "replicated2")

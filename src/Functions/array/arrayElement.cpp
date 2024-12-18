@@ -1101,8 +1101,8 @@ ColumnPtr FunctionArrayElement<mode>::executeArrayStringConst(
 
     if (col_nullable)
         return ColumnArray::create(ColumnNullable::create(std::move(res_string), std::move(res_string_null_map)), std::move(res_offsets));
-    else
-        return ColumnArray::create(std::move(res_string), std::move(res_offsets));
+
+    return ColumnArray::create(std::move(res_string), std::move(res_offsets));
 }
 
 template <ArrayElementExceptionMode mode>
@@ -1408,8 +1408,8 @@ ColumnPtr FunctionArrayElement<mode>::removeNullableIfNeeded(const ColumnPtr & c
         /// To keep return type consistency, we need to unwrap the Nullable column returned by ArrayElementOrNull(T1) and ArrayElementOrNull(T2)
         return nullable_column->getNestedColumnPtr();
     }
-    else
-        return column;
+
+    return column;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2055,55 +2055,53 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
         if (builder && res->canBeInsideNullable())
             return ColumnNullable::create(res, std::move(builder).getNullMapColumnPtr());
-        else
-            return res;
+
+        return res;
+    }
+
+    /// Perform initializations.
+    ArrayImpl::NullMapBuilder<mode> builder;
+    ColumnsWithTypeAndName source_columns;
+
+    const DataTypePtr & input_type
+        = typeid_cast<const DataTypeNullable &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType())
+              .getNestedType();
+
+    DataTypePtr tmp_ret_type = removeNullable(result_type);
+
+    if (col_array)
+    {
+        const auto & nullable_col = typeid_cast<const ColumnNullable &>(col_array->getData());
+        const auto & nested_col = nullable_col.getNestedColumnPtr();
+
+        /// Put nested_col inside a ColumnArray.
+        source_columns = {
+            {ColumnArray::create(nested_col, col_array->getOffsetsPtr()), std::make_shared<DataTypeArray>(input_type), ""},
+            arguments[1],
+        };
+
+        builder.initSource(nullable_col.getNullMapData().data());
     }
     else
     {
-        /// Perform initializations.
-        ArrayImpl::NullMapBuilder<mode> builder;
-        ColumnsWithTypeAndName source_columns;
+        /// ColumnConst(ColumnArray(ColumnNullable(...)))
+        const auto & nullable_col = assert_cast<const ColumnNullable &>(col_const_array->getData());
+        const auto & nested_col = nullable_col.getNestedColumnPtr();
 
-        const DataTypePtr & input_type
-            = typeid_cast<const DataTypeNullable &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType())
-                  .getNestedType();
+        source_columns = {
+            {ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsPtr()), input_rows_count),
+             std::make_shared<DataTypeArray>(input_type),
+             ""},
+            arguments[1],
+        };
 
-        DataTypePtr tmp_ret_type = removeNullable(result_type);
-
-        if (col_array)
-        {
-            const auto & nullable_col = typeid_cast<const ColumnNullable &>(col_array->getData());
-            const auto & nested_col = nullable_col.getNestedColumnPtr();
-
-            /// Put nested_col inside a ColumnArray.
-            source_columns = {
-                {ColumnArray::create(nested_col, col_array->getOffsetsPtr()), std::make_shared<DataTypeArray>(input_type), ""},
-                arguments[1],
-            };
-
-            builder.initSource(nullable_col.getNullMapData().data());
-        }
-        else
-        {
-            /// ColumnConst(ColumnArray(ColumnNullable(...)))
-            const auto & nullable_col = assert_cast<const ColumnNullable &>(col_const_array->getData());
-            const auto & nested_col = nullable_col.getNestedColumnPtr();
-
-            source_columns = {
-                {ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsPtr()), input_rows_count),
-                 std::make_shared<DataTypeArray>(input_type),
-                 ""},
-                arguments[1],
-            };
-
-            builder.initSource(nullable_col.getNullMapData().data());
-        }
-
-        auto res = perform(source_columns, tmp_ret_type, builder, input_rows_count);
-
-        /// Store the result.
-        return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+        builder.initSource(nullable_col.getNullMapData().data());
     }
+
+    auto res = perform(source_columns, tmp_ret_type, builder, input_rows_count);
+
+    /// Store the result.
+    return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2116,9 +2114,9 @@ ColumnPtr FunctionArrayElement<mode>::perform(
     ColumnPtr res;
     if ((res = executeTuple(arguments, input_rows_count)))
         return res;
-    else if ((res = executeMap2(arguments, input_rows_count)))
+    if ((res = executeMap2(arguments, input_rows_count)))
         return res;
-    else if (!isColumnConst(*arguments[1].column))
+    if (!isColumnConst(*arguments[1].column))
     {
         if (!((res = executeArgument<UInt8>(arguments, result_type, builder, input_rows_count))
               || (res = executeArgument<UInt16>(arguments, result_type, builder, input_rows_count))

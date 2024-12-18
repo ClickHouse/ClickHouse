@@ -69,9 +69,9 @@ static std::pair<String, Int32> tryToExtractSingleColumn(const RPNBuilderTreeNod
         auto subresult = tryToExtractSingleColumn(function_argument);
         if (subresult.second == 0) /// the subnode contains 0 column
             continue;
-        else if (subresult.second > 1) /// the subnode contains more than 1 column
+        if (subresult.second > 1) /// the subnode contains more than 1 column
             return subresult;
-        else if (result.second == 0 || result.first == subresult.first) /// subnodes contain same column.
+        if (result.second == 0 || result.first == subresult.first) /// subnodes contain same column.
             result = subresult;
         else
             return {"", 2};
@@ -103,20 +103,18 @@ Float64 ConditionSelectivityEstimator::estimateRowCount(const RPNBuilderTreeNode
     {
         if (op == "equals")
             return default_cond_equal_factor * total_rows;
-        else if (op == "less" || op == "lessOrEquals" || op == "greater" || op == "greaterOrEquals")
+        if (op == "less" || op == "lessOrEquals" || op == "greater" || op == "greaterOrEquals")
             return default_cond_range_factor * total_rows;
-        else
-            return default_unknown_cond_factor * total_rows;
+        return default_unknown_cond_factor * total_rows;
     }
 
     if (op == "equals")
         return estimator.estimateEqual(val, total_rows);
-    else if (op == "less" || op == "lessOrEquals")
+    if (op == "less" || op == "lessOrEquals")
         return estimator.estimateLess(val, total_rows);
-    else if (op == "greater" || op == "greaterOrEquals")
+    if (op == "greater" || op == "greaterOrEquals")
         return estimator.estimateGreater(val, total_rows);
-    else
-        return default_unknown_cond_factor * total_rows;
+    return default_unknown_cond_factor * total_rows;
 }
 
 void ConditionSelectivityEstimator::incrementRowCount(UInt64 rows)

@@ -184,7 +184,7 @@ StorageSnapshotPtr getStorageSnapshot(const QueryTreeNodePtr & node)
     StorageSnapshotPtr storage_snapshot{nullptr};
     if (auto * table_node = node->as<TableNode>())
         return table_node->getStorageSnapshot();
-    else if (auto * table_function_node = node->as<TableFunctionNode>())
+    if (auto * table_function_node = node->as<TableFunctionNode>())
         return table_function_node->getStorageSnapshot();
 
     return nullptr;

@@ -107,7 +107,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 
     ASTPtr cluster_name_arg = args.front();
     args.erase(args.begin());
-    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context);
+    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
     args.insert(args.begin(), cluster_name_arg);
 }
 
@@ -123,8 +123,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         auto object_info = iterator->next(0);
         if (object_info)
             return object_info->getPath();
-        else
-            return "";
+        return "";
     });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
