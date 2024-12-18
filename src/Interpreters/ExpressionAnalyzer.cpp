@@ -1716,7 +1716,7 @@ void SelectQueryExpressionAnalyzer::validateOrderByKeyType(const DataTypePtr & k
                 "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
 
         if (!getContext()->getSettingsRef()[Setting::allow_not_comparable_types_in_order_by] && !type.isComparable())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable. Set setting allow_not_comparable_types_in_order_by in order to allow it", type.getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable. Set setting allow_not_comparable_types_in_order_by = 1 in order to allow it", type.getName());
     };
 
     check(*key_type);

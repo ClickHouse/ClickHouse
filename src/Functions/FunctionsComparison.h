@@ -1142,7 +1142,7 @@ public:
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality."
-                        "Set setting allow_not_comparable_types_in_comparison_functions in order to allow it",
+                        "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
                         arguments[0]->getName(),
                         arguments[1]->getName(),
                         getName());
@@ -1152,7 +1152,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable."
-                    "Set setting allow_not_comparable_types_in_comparison_functions in order to allow it",
+                    "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
                     arguments[0]->getName(),
                     arguments[1]->getName(),
                     getName());
