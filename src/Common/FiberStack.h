@@ -29,6 +29,10 @@ class FiberStack
 private:
     size_t stack_size;
     size_t page_size = 0;
+    
+    /// The real number of pages and bytes allocated for the stack.
+    size_t num_pages = 0;
+    size_t num_bytes = 0;
 public:
     /// NOTE: If you see random segfaults in CI and stack starts from boost::context::...fiber...
     /// probably it worth to try to increase stack size for coroutines.
@@ -40,6 +44,8 @@ public:
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
         page_size = getPageSize();
+        num_pages = 1 + (stack_size - 1) / page_size;
+        num_bytes = (num_pages + 1) * page_size; /// Add one page at bottom that will be used as guard-page
     }
 
     boost::context::stack_context allocate() const;
@@ -47,7 +53,6 @@ public:
     void deallocate(boost::context::stack_context & sctx) const;
 };
 
-class FiberStackWithStandardAllocator;
 class FixedSizeFiberStackCache;
 
 /// Fiber stack allocator with cached pages.
@@ -66,6 +71,9 @@ private:
     FixedSizeFiberStackCache * cache;
 
     /// Fallback allocator is used when the cache is full
+    /// TODO: can we use standard allocator with ::malloc here? It's being used in boost::context::pooled_fixedsize_stack
+    /// The only reason to use mmap is to have guard page, but since we're using fibers to run specific tasks, I think
+    /// we may have SOME stack without guard page (if stack overflow happens, cached stacks with guard page will catch it)
     FiberStack * fallback_allocator;
 };
 
