@@ -161,7 +161,6 @@ public:
 
     /// Do last segment writing
     void finalize();
-    void cancel() noexcept;
 
     /// Method for writing segment data to Gin index files
     void writeSegment();

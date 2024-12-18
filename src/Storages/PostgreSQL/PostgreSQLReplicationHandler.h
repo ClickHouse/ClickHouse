@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MaterializedPostgreSQLConsumer.h"
+#include "MaterializedPostgreSQLSettings.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -9,7 +10,6 @@
 namespace DB
 {
 
-struct MaterializedPostgreSQLSettings;
 class StorageMaterializedPostgreSQL;
 struct SettingChange;
 

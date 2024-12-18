@@ -1,7 +1,0 @@
-<clickhouse>
-    <query_log>
-        <database>system</database>
-        <table>query_log</table>
-        <storage_policy>broken_s3</storage_policy>
-    </query_log>
-</clickhouse>

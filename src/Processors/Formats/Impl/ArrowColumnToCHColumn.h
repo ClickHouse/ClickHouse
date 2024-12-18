@@ -9,7 +9,6 @@
 #include <Core/Block.h>
 #include <arrow/table.h>
 #include <Formats/FormatSettings.h>
-#include <Core/BlockMissingValues.h>
 
 namespace DB
 {

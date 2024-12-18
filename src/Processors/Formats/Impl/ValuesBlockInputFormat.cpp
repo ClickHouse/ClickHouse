@@ -57,7 +57,6 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
         rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
-    , block_missing_values(getPort().getHeader().columns())
 {
 }
 
@@ -475,7 +474,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             parser_type_for_column[column_idx] = ParserType::Streaming;
             return true;
         }
-        if (rollback_on_exception)
+        else if (rollback_on_exception)
             column.popBack(1);
     }
 
@@ -586,11 +585,13 @@ bool ValuesBlockInputFormat::checkDelimiterAfterValue(size_t column_idx)
     {
         return checkChar(',', *buf);
     }
-
-    /// Optional trailing comma.
-    if (checkChar(',', *buf))
-        skipWhitespaceIfAny(*buf);
-    return checkChar(')', *buf);
+    else
+    {
+        /// Optional trailing comma.
+        if (checkChar(',', *buf))
+            skipWhitespaceIfAny(*buf);
+        return checkChar(')', *buf);
+    }
 }
 
 bool ValuesBlockInputFormat::shouldDeduceNewTemplate(size_t column_idx)

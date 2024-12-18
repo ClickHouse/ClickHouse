@@ -12,7 +12,6 @@
 #include <Common/assert_cast.h>
 
 #include <base/find_symbols.h>
-#include <base/scope_guard.h>
 
 #include <Common/logger_useful.h>
 
@@ -57,7 +56,7 @@ namespace JSONUtils
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                if (pos == in.buffer().end())
+                else if (pos == in.buffer().end())
                     continue;
 
                 if (*pos == '\\')
@@ -78,10 +77,10 @@ namespace JSONUtils
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                if (pos == in.buffer().end())
+                else if (pos == in.buffer().end())
                     continue;
 
-                if (*pos == opening_bracket)
+                else if (*pos == opening_bracket)
                 {
                     ++balance;
                     ++pos;
@@ -137,7 +136,7 @@ namespace JSONUtils
 
                 if (in.position() > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                if (in.position() == in.buffer().end())
+                else if (in.position() == in.buffer().end())
                     continue;
 
                 if (*in.position() == '\\')
@@ -159,10 +158,10 @@ namespace JSONUtils
 
                 if (in.position() > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                if (in.position() == in.buffer().end())
+                else if (in.position() == in.buffer().end())
                     continue;
 
-                if (*in.position() == opening_bracket)
+                else if (*in.position() == opening_bracket)
                 {
                     ++balance;
                     ++in.position();
@@ -300,7 +299,8 @@ namespace JSONUtils
 
             if (format_settings.json.empty_as_default)
                 return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize);
-            return deserialize(column, in);
+            else
+                return deserialize(column, in);
         }
         catch (Exception & e)
         {

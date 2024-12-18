@@ -139,7 +139,6 @@ public:
     void convertStructureTo(const ColumnsWithTypeAndName & columns);
 
     void reset();
-    void cancel() noexcept;
 
 private:
     QueryPlanResourceHolder resources;

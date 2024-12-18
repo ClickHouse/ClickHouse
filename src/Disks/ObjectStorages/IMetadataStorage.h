@@ -135,8 +135,6 @@ public:
     /// Create empty file in metadata storage
     virtual void createEmptyMetadataFile(const std::string & path) = 0;
 
-    virtual void createEmptyFile(const std::string & /* path */) {}
-
     /// Create metadata file on paths with content (blob_name, size_in_bytes)
     virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
 
@@ -185,15 +183,17 @@ public:
 
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
-    virtual bool existsFile(const std::string & path) const = 0;
-    virtual bool existsDirectory(const std::string & path) const = 0;
-    virtual bool existsFileOrDirectory(const std::string & path) const = 0;
+    virtual bool exists(const std::string & path) const = 0;
+
+    virtual bool isFile(const std::string & path) const = 0;
+
+    virtual bool isDirectory(const std::string & path) const = 0;
 
     virtual uint64_t getFileSize(const std::string & path) const = 0;
 
     virtual std::optional<uint64_t> getFileSizeIfExists(const std::string & path) const
     {
-        if (existsFile(path))
+        if (isFile(path))
             return getFileSize(path);
         return std::nullopt;
     }
@@ -202,7 +202,7 @@ public:
 
     virtual std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const
     {
-        if (existsFileOrDirectory(path))
+        if (exists(path))
             return getLastModified(path);
         return std::nullopt;
     }
@@ -256,13 +256,6 @@ public:
     /// Return object information (absolute_path, bytes_size, ...) for metadata path.
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
-
-    virtual std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const
-    {
-        if (existsFile(path))
-            return getStorageObjects(path);
-        return std::nullopt;
-    }
 
 protected:
     [[noreturn]] static void throwNotImplemented()

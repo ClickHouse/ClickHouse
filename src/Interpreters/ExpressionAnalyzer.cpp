@@ -77,6 +77,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -105,8 +106,6 @@ namespace Setting
     extern const SettingsBool query_plan_aggregation_in_order;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
-    extern const SettingsBool allow_suspicious_types_in_group_by;
-    extern const SettingsBool allow_suspicious_types_in_order_by;
 }
 
 
@@ -120,7 +119,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -1058,7 +1056,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
-    Block right_sample_block = joined_plan->getCurrentHeader();
+    Block right_sample_block = joined_plan->getCurrentDataStream().header;
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
     for (const auto alg : join_algorithms)
     {
@@ -1073,13 +1071,12 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
     ContextPtr context,
-    PreparedSetsPtr prepared_sets,
     const ASTTablesInSelectQueryElement & join_element,
     TableJoin & analyzed_join,
     SelectQueryOptions query_options)
 {
     /// Actions which need to be calculated on joined block.
-    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context, std::move(prepared_sets));
+    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context);
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
@@ -1112,13 +1109,13 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
                 rename_dag.getOutputs()[pos] = &alias;
             }
         }
-        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentHeader());
-        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(rename_dag));
+        rename_dag.appendInputsForUnusedColumns(joined_plan->getCurrentDataStream().header);
+        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
     }
 
-    auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(joined_block_actions));
+    auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(joined_block_actions));
     joined_actions_step->setStepDescription("Joined actions");
     joined_plan->addStep(std::move(joined_actions_step));
 
@@ -1185,7 +1182,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     if (auto storage = analyzed_join->getStorageJoin())
     {
-        auto joined_block_actions = analyzed_join->createJoinedBlockActions(getContext(), getPreparedSets());
+        auto joined_block_actions = analyzed_join->createJoinedBlockActions(getContext());
         NamesWithAliases required_columns_with_aliases = analyzed_join->getRequiredColumns(
             Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
@@ -1198,13 +1195,13 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
         return storage->getJoinLocked(analyzed_join, getContext(), original_right_column_names);
     }
 
-    joined_plan = buildJoinedPlan(getContext(), getPreparedSets(), join_element, *analyzed_join, query_options);
+    joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
 
-    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader().getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
     if (right_convert_actions)
     {
-        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentHeader(), std::move(*right_convert_actions));
+        auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(*right_convert_actions));
         converting_step->setStepDescription("Convert joined columns");
         joined_plan->addStep(std::move(converting_step));
     }
@@ -1372,7 +1369,6 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
     ASTs asts = select_query->groupBy()->children;
-    NameSet group_by_keys;
     if (select_query->group_by_with_grouping_sets)
     {
         for (const auto & ast : asts)
@@ -1380,7 +1376,6 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
             for (const auto & ast_element : ast->children)
             {
                 step.addRequiredOutput(ast_element->getColumnName());
-                group_by_keys.insert(ast_element->getColumnName());
                 getRootActions(ast_element, only_types, step.actions()->dag);
             }
         }
@@ -1390,15 +1385,8 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
         for (const auto & ast : asts)
         {
             step.addRequiredOutput(ast->getColumnName());
-            group_by_keys.insert(ast->getColumnName());
             getRootActions(ast, only_types, step.actions()->dag);
         }
-    }
-
-    for (const auto & result_column : step.getResultColumns())
-    {
-        if (group_by_keys.contains(result_column.name))
-            validateGroupByKeyType(result_column.type);
     }
 
     if (optimize_aggregation_in_order)
@@ -1413,26 +1401,6 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     }
 
     return true;
-}
-
-void SelectQueryExpressionAnalyzer::validateGroupByKeyType(const DB::DataTypePtr & key_type) const
-{
-    if (getContext()->getSettingsRef()[Setting::allow_suspicious_types_in_group_by])
-        return;
-
-    auto check = [](const IDataType & type)
-    {
-        if (isDynamic(type) || isVariant(type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Data types Variant/Dynamic are not allowed in GROUP BY keys, because it can lead to unexpected results. "
-                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
-                "its a JSON path subcolumn) or casting this column to a specific data type. "
-                "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
-    };
-
-    check(*key_type);
-    key_type->forEachChild(check);
 }
 
 void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
@@ -1632,12 +1600,6 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(
             with_fill = true;
     }
 
-    for (const auto & result_column : step.getResultColumns())
-    {
-        if (order_by_keys.contains(result_column.name))
-            validateOrderByKeyType(result_column.type);
-    }
-
     if (auto interpolate_list = select_query->interpolate())
     {
 
@@ -1701,26 +1663,6 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(
     auto actions = chain.getLastActions();
     chain.addStep(non_constant_inputs);
     return actions;
-}
-
-void SelectQueryExpressionAnalyzer::validateOrderByKeyType(const DataTypePtr & key_type) const
-{
-    if (getContext()->getSettingsRef()[Setting::allow_suspicious_types_in_order_by])
-        return;
-
-    auto check = [](const IDataType & type)
-    {
-        if (isDynamic(type) || isVariant(type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Data types Variant/Dynamic are not allowed in ORDER BY keys, because it can lead to unexpected results. "
-                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
-                "its a JSON path subcolumn) or casting this column to a specific data type. "
-                "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
-    };
-
-    check(*key_type);
-    key_type->forEachChild(check);
 }
 
 bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)

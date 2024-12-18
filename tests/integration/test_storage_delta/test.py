@@ -1,48 +1,48 @@
-import glob
-import json
+import helpers.client
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
+
+import pytest
 import logging
 import os
+import json
+import time
+import glob
 import random
 import string
-import time
-import uuid
-from datetime import datetime
 
+import pyspark
 import delta
+from delta import *
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    IntegerType,
+    DateType,
+    TimestampType,
+    BooleanType,
+    ArrayType,
+)
+from pyspark.sql.functions import current_timestamp
+from datetime import datetime
+from pyspark.sql.functions import monotonically_increasing_id, row_number
+from pyspark.sql.window import Window
+from minio.deleteobjects import DeleteObject
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pyspark
-import pytest
-from delta import *
 from deltalake.writer import write_deltalake
-from minio.deleteobjects import DeleteObject
-from pyspark.sql.functions import (
-    current_timestamp,
-    monotonically_increasing_id,
-    row_number,
-)
-from pyspark.sql.types import (
-    ArrayType,
-    BooleanType,
-    DateType,
-    IntegerType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
-from pyspark.sql.window import Window
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+
 from helpers.s3_tools import (
-    get_file_contents,
-    list_s3_objects,
     prepare_s3_bucket,
     upload_directory,
+    get_file_contents,
+    list_s3_objects,
 )
-from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -74,7 +74,6 @@ def started_cluster():
             "node1",
             main_configs=[
                 "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
@@ -842,67 +841,6 @@ def test_complex_types(started_cluster):
         "{'key1':'value1','key2':'value2'}\n{'key1':'value3','key2':'value4'}\n{'key1':'value5','key2':'value6'}"
         in node.query(
             f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123')"
-        )
-    )
-
-
-@pytest.mark.parametrize("storage_type", ["s3"])
-def test_filesystem_cache(started_cluster, storage_type):
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
-    TABLE_NAME = randomize_table_name("test_filesystem_cache")
-    bucket = started_cluster.minio_bucket
-
-    if not minio_client.bucket_exists(bucket):
-        minio_client.make_bucket(bucket)
-
-    parquet_data_path = create_initial_data_file(
-        started_cluster,
-        instance,
-        "SELECT number, toString(number) FROM numbers(100)",
-        TABLE_NAME,
-    )
-
-    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
-    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    create_delta_table(instance, TABLE_NAME, bucket=bucket)
-
-    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
-    instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    count = int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferCacheWriteBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-    assert 0 < int(
-        instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-
-    query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
-    instance.query(
-        f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
-        query_id=query_id,
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    assert count == int(
-        instance.query(
-            f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-    )
-    assert 0 == int(
-        instance.query(
-            f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
 

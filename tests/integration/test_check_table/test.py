@@ -1,9 +1,8 @@
-import concurrent
-
 import pytest
 
-from helpers.client import QueryRuntimeException
+import concurrent
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
 
 cluster = ClickHouseCluster(__file__)

@@ -226,7 +226,8 @@ public:
 
         if (null_map_column)
             return ColumnNullable::create(std::move(res_column), null_map_column);
-        return res_column;
+        else
+            return res_column;
     }
 };
 

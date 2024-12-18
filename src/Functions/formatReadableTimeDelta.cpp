@@ -85,11 +85,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -109,8 +104,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::string_view maximum_unit_str;
-        std::string_view minimum_unit_str;
+        std::string_view maximum_unit_str, minimum_unit_str;
         if (arguments.size() >= 2)
         {
             const ColumnPtr & maximum_unit_column = arguments[1].column;
@@ -326,31 +320,29 @@ private:
     {
         if (unit_str.empty())
             return default_unit;
-        if (unit_str == "years")
+        else if (unit_str == "years")
             return Years;
-        if (unit_str == "months")
+        else if (unit_str == "months")
             return Months;
-        if (unit_str == "days")
+        else if (unit_str == "days")
             return Days;
-        if (unit_str == "hours")
+        else if (unit_str == "hours")
             return Hours;
-        if (unit_str == "minutes")
+        else if (unit_str == "minutes")
             return Minutes;
-        if (unit_str == "seconds")
+        else if (unit_str == "seconds")
             return Seconds;
-        if (unit_str == "milliseconds")
+        else if (unit_str == "milliseconds")
             return Milliseconds;
-        if (unit_str == "microseconds")
+        else if (unit_str == "microseconds")
             return Microseconds;
-        if (unit_str == "nanoseconds")
+        else if (unit_str == "nanoseconds")
             return Nanoseconds;
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected value of {} unit argument ({}) for function {}, the only allowed values are:"
-            " 'nanoseconds', 'microseconds', 'nanoseconds', 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
-            bound_name,
-            unit_str,
-            getName());
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Unexpected value of {} unit argument ({}) for function {}, the only allowed values are:"
+                            " 'nanoseconds', 'microseconds', 'nanoseconds', 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
+                            bound_name, unit_str, getName());
     }
 };
 

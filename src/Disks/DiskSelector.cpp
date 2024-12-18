@@ -34,17 +34,19 @@ void DiskSelector::initialize(
 
     auto & factory = DiskFactory::instance();
 
+    constexpr auto default_disk_name = "default";
     bool has_default_disk = false;
+    constexpr auto local_disk_name = "local";
     bool has_local_disk = false;
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Disk name can contain only alphanumeric and '_' ({})", disk_name);
 
-        if (disk_name == DEFAULT_DISK_NAME)
+        if (disk_name == default_disk_name)
             has_default_disk = true;
 
-        if (disk_name == LOCAL_DISK_NAME)
+        if (disk_name == local_disk_name)
             has_local_disk = true;
 
         const auto disk_config_prefix = config_prefix + "." + disk_name;
@@ -61,13 +63,13 @@ void DiskSelector::initialize(
     if (!has_default_disk)
     {
         disks.emplace(
-            DEFAULT_DISK_NAME, std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix));
+            default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0, context, config, config_prefix));
     }
 
     if (!has_local_disk && (context->getApplicationType() == Context::ApplicationType::DISKS))
     {
         throw_away_local_on_update = true;
-        disks.emplace(LOCAL_DISK_NAME, std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context, config, config_prefix));
+        disks.emplace(local_disk_name, std::make_shared<DiskLocal>(local_disk_name, "/", 0, context, config, config_prefix));
     }
     is_initialized = true;
 }

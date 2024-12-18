@@ -169,7 +169,6 @@ public:
     static AnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-        const std::optional<VectorSearchParameters> & vector_search_parameters,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -188,10 +187,8 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit, std::optional<ActionsDAG> virtual_row_conversion_);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
     bool readsInOrder() const;
-    const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
-    const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool isQueryWithSampling() const;
@@ -213,9 +210,15 @@ public:
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    void setVectorSearchParameters(std::optional<VectorSearchParameters> && vector_search_parameters_) { vector_search_parameters = vector_search_parameters_; }
-
 private:
+    int getSortDirection() const
+    {
+        if (query_info.input_order_info)
+            return query_info.input_order_info->direction;
+
+        return 1;
+    }
+
     MergeTreeReaderSettings reader_settings;
 
     MergeTreeData::DataPartsVector prepared_parts;
@@ -227,8 +230,6 @@ private:
     ExpressionActionsSettings actions_settings;
 
     const MergeTreeReadTask::BlockSizeParams block_size;
-
-    SortDescription result_sort_description;
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;
@@ -245,8 +246,6 @@ private:
     UInt64 selected_parts = 0;
     UInt64 selected_rows = 0;
     UInt64 selected_marks = 0;
-
-    std::optional<VectorSearchParameters> vector_search_parameters;
 
     using PoolSettings = MergeTreeReadPoolBase::PoolSettings;
 
@@ -275,9 +274,6 @@ private:
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
-    int getSortDirection() const;
-    void updateSortDescription();
-
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
 
@@ -286,9 +282,6 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
-
-    ExpressionActionsPtr virtual_row_conversion;
-
     std::optional<size_t> number_of_current_replica;
 };
 

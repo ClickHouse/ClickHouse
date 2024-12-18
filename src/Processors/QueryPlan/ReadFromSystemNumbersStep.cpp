@@ -251,8 +251,7 @@ protected:
 
         /// Find the data range.
         /// If data left is small, shrink block size.
-        RangesPos start;
-        RangesPos end;
+        RangesPos start, end;
         auto block_size = findRanges(start, end, base_block_size);
 
         if (!block_size)
@@ -378,16 +377,18 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
             size -= static_cast<UInt64>(range_size);
             continue;
         }
-        if (range_size == size)
+        else if (range_size == size)
         {
             last_range_idx = i;
             break;
         }
-
-        auto & range = ranges[i];
-        range.size = static_cast<UInt128>(size);
-        last_range_idx = i;
-        break;
+        else
+        {
+            auto & range = ranges[i];
+            range.size = static_cast<UInt128>(size);
+            last_range_idx = i;
+            break;
+        }
     }
 
     /// delete the additional ranges
@@ -405,14 +406,14 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        storage_snapshot_->getSampleBlockForColumns(column_names_),
+        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
         column_names_,
         query_info_,
         storage_snapshot_,
         context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
@@ -432,8 +433,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_header != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(*output_header));
+        assert(output_stream != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
     }
 
     /// Add storage limits.

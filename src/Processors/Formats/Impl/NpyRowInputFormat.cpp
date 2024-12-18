@@ -141,21 +141,22 @@ std::shared_ptr<NumpyDataType> parseType(String type)
     /// Parse type
     if (type[1] == 'i')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), true);
-    if (type[1] == 'b')
+    else if (type[1] == 'b')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
-    if (type[1] == 'u')
+    else if (type[1] == 'u')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
-    if (type[1] == 'f')
+    else if (type[1] == 'f')
         return std::make_shared<NumpyDataTypeFloat>(endianness, parseTypeSize(type.substr(2)));
-    if (type[1] == 'S')
+    else if (type[1] == 'S')
         return std::make_shared<NumpyDataTypeString>(endianness, parseTypeSize(type.substr(2)));
-    if (type[1] == 'U')
+    else if (type[1] == 'U')
         return std::make_shared<NumpyDataTypeUnicode>(endianness, parseTypeSize(type.substr(2)));
-    if (type[1] == 'c')
+    else if (type[1] == 'c')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support complex numeric type");
-    if (type[1] == 'O')
+    else if (type[1] == 'O')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support object types");
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
 }
 
 std::vector<int> parseShape(String shape_string)

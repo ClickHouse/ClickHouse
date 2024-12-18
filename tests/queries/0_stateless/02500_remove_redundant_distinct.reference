@@ -46,17 +46,18 @@ ORDER BY number
 Expression (Projection)
   Distinct
     Sorting (Sorting for ORDER BY)
-      Union
-        Expression ((Before ORDER BY + Projection))
-          Distinct
-            Distinct (Preliminary DISTINCT)
-              Expression (Before ORDER BY)
-                ReadFromSystemNumbers
-        Expression ((Before ORDER BY + Projection))
-          Distinct
-            Distinct (Preliminary DISTINCT)
-              Expression (Before ORDER BY)
-                ReadFromSystemNumbers
+      Distinct (Preliminary DISTINCT)
+        Union
+          Expression ((Before ORDER BY + Projection))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromSystemNumbers
+          Expression ((Before ORDER BY + Projection))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromSystemNumbers
 -- execute
 0
 1
@@ -528,17 +529,18 @@ ORDER BY number
 Expression (Projection)
   Distinct
     Sorting (Sorting for ORDER BY)
-      Union
-        Expression ((Before ORDER BY + Projection))
-          Distinct
-            Distinct (Preliminary DISTINCT)
-              Expression (Before ORDER BY)
-                ReadFromSystemNumbers
-        Expression ((Before ORDER BY + Projection))
-          Distinct
-            Distinct (Preliminary DISTINCT)
-              Expression (Before ORDER BY)
-                ReadFromSystemNumbers
+      Distinct (Preliminary DISTINCT)
+        Union
+          Expression ((Before ORDER BY + Projection))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromSystemNumbers
+          Expression ((Before ORDER BY + Projection))
+            Distinct
+              Distinct (Preliminary DISTINCT)
+                Expression (Before ORDER BY)
+                  ReadFromSystemNumbers
 -- execute
 0
 1

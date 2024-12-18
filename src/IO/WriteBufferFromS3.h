@@ -38,7 +38,7 @@ public:
         const String & bucket_,
         const String & key_,
         size_t buf_size_,
-        const S3::S3RequestSettings & request_settings_,
+        const S3::RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
@@ -79,12 +79,12 @@ private:
 
     const String bucket;
     const String key;
-    const S3::S3RequestSettings request_settings;
+    const S3::RequestSettings request_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromS3");
-    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 

@@ -156,7 +156,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    if (disk->existsDirectory(path))
+    if (disk->exists(path))
         disk->removeRecursive(path);
     else
         LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
@@ -217,7 +217,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.finalize();
+        compressed_backup_buf.next();
+        backup_buf->next();
         backup_buf->finalize();
 
         std::vector<std::string> files;
