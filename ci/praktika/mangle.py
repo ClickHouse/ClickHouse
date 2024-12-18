@@ -1,13 +1,16 @@
 import copy
 import importlib.util
 from pathlib import Path
+from typing import List
+
+from praktika import Workflow
 
 from . import Job
 from .settings import Settings
 from .utils import Utils
 
 
-def _get_workflows(name=None, file=None):
+def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
     """
     Gets user's workflow configs
     """

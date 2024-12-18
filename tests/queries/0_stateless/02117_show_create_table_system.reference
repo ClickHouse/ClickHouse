@@ -22,7 +22,8 @@ CREATE TABLE system.asynchronous_metrics
 (
     `metric` String,
     `value` Float64,
-    `description` String
+    `description` String,
+    `name` String ALIAS metric
 )
 ENGINE = SystemAsynchronousMetrics
 COMMENT 'Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.'
@@ -87,7 +88,8 @@ CREATE TABLE system.columns
     `numeric_precision` Nullable(UInt64),
     `numeric_precision_radix` Nullable(UInt64),
     `numeric_scale` Nullable(UInt64),
-    `datetime_precision` Nullable(UInt64)
+    `datetime_precision` Nullable(UInt64),
+    `serialization_hint` Nullable(String)
 )
 ENGINE = SystemColumns
 COMMENT 'Lists all columns from all tables of the current server.'
@@ -1115,7 +1117,6 @@ CREATE TABLE system.tables
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
     `total_bytes_uncompressed` Nullable(UInt64),
-    `total_bytes_with_inactive` Nullable(UInt64),
     `parts` Nullable(UInt64),
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),

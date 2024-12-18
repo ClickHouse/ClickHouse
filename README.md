@@ -35,22 +35,22 @@ curl https://clickhouse.com/ | sh
 
 Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release. If you are interested in sharing what you've built on ClickHouse, let us know.
 
-* [v24.10 Community Call](https://clickhouse.com/company/events/v24-10-community-release-call) - October 31
+* [v24.12 Community Call](https://clickhouse.com/company/events/v24-12-community-release-call) - December 19
 
 ## Upcoming Events
 
 Keep an eye out for upcoming meetups and events around the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-
-* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/304382411) - December 9
-* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/304268174) - December 9
-* [Kuala Lampur Meetup](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/304576472/) - December 11
-* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/304286951/) - December 12
+* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/305126993/) - Jan 23
 * [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - Feb 3
 
 Recently completed meetups
 
+* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/304286951/) - December 12
+* [Kuala Lampur Meetup](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/304576472/) - December 11
+* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/304382411) - December 9
+* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/304268174) - December 9
 * [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/303638814) - December 3
 * [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/303096434) - November 26
 * [Ghent Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/303049405/) - November 19
