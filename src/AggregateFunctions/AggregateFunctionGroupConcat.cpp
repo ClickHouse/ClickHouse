@@ -35,7 +35,8 @@ void GroupConcatDataBase::insert(const IColumn * column, const SerializationPtr 
     WriteBufferFromOwnString buff;
     serialization->serializeText(*column, row_num, buff, FormatSettings{});
     auto string = buff.stringView();
-    insertChar(string.data(), string.size(), arena);
+    if (!string.empty())
+        insertChar(string.data(), string.size(), arena);
 }
 
 UInt64 GroupConcatData::getSize(size_t i) const
