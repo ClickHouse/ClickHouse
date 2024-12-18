@@ -107,8 +107,7 @@ private:
     const String current_host;
     const size_t current_host_index;
     const bool plain_backup;
-    const QueryStatusPtr process_list_element;
-    const LoggerPtr log;
+    LoggerPtr const log;
 
     /// The order is important: `stage_sync` must be initialized after `with_retries` and `cleaner`.
     const WithRetries with_retries;

@@ -50,7 +50,7 @@ StorageSnapshotPtr
 StorageFromMergeTreeDataPart::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
-    if (!hasDynamicSubcolumnsDeprecated(storage_columns))
+    if (!hasDynamicSubcolumns(storage_columns))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
     auto data_parts = storage.getDataPartsVectorForInternalUsage();

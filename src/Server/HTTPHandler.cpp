@@ -524,9 +524,6 @@ void HTTPHandler::processQuery(
 
         if (details.timezone)
             response.add("X-ClickHouse-Timezone", *details.timezone);
-
-        for (const auto & [name, value] : details.additional_headers)
-            response.set(name, value);
     };
 
     auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format,
@@ -889,9 +886,9 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        std::vector<std::string_view> matches(num_captures);
+        std::string_view matches[num_captures];
         std::string_view input(begin, end - begin);
-        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches.data(), num_captures))
+        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())
             {

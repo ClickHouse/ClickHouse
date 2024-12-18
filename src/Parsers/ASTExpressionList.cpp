@@ -12,18 +12,18 @@ ASTPtr ASTExpressionList::clone() const
     return clone;
 }
 
-void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTExpressionList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (frame.expression_list_prepend_whitespace)
-        ostr << ' ';
+        settings.ostr << ' ';
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
     {
         if (i)
         {
             if (separator)
-                ostr << separator;
-            ostr << ' ';
+                settings.ostr << separator;
+            settings.ostr << ' ';
         }
 
         FormatStateStacked frame_nested = frame;
@@ -31,16 +31,16 @@ void ASTExpressionList::formatImpl(WriteBuffer & ostr, const FormatSettings & se
         frame_nested.list_element_index = i;
 
         if (frame.surround_each_list_element_with_parens)
-            ostr << "(";
+            settings.ostr << "(";
 
-        children[i]->format(ostr, settings, state, frame_nested);
+        children[i]->formatImpl(settings, state, frame_nested);
 
         if (frame.surround_each_list_element_with_parens)
-            ostr << ")";
+            settings.ostr << ")";
     }
 }
 
-void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ++frame.indent;
     std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
@@ -48,16 +48,16 @@ void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSett
     if (frame.expression_list_prepend_whitespace)
     {
         if (!(children.size() > 1 || frame.expression_list_always_start_on_new_line))
-            ostr << ' ';
+            settings.ostr << ' ';
     }
 
     for (size_t i = 0, size = children.size(); i < size; ++i)
     {
         if (i && separator)
-            ostr << separator;
+            settings.ostr << separator;
 
         if (size > 1 || frame.expression_list_always_start_on_new_line)
-            ostr << indent_str;
+            settings.ostr << indent_str;
 
         FormatStateStacked frame_nested = frame;
         frame_nested.expression_list_always_start_on_new_line = false;
@@ -65,12 +65,12 @@ void ASTExpressionList::formatImplMultiline(WriteBuffer & ostr, const FormatSett
         frame_nested.list_element_index = i;
 
         if (frame.surround_each_list_element_with_parens)
-            ostr << "(";
+            settings.ostr << "(";
 
-        children[i]->format(ostr, settings, state, frame_nested);
+        children[i]->formatImpl(settings, state, frame_nested);
 
         if (frame.surround_each_list_element_with_parens)
-            ostr << ")";
+            settings.ostr << ")";
     }
 }
 

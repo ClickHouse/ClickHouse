@@ -1,14 +1,13 @@
 #include <Server/PrometheusRequestHandler.h>
 
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <IO/HTTPCommon.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
-#include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
-#include <base/scope_guard.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
+#include <Server/HTTPHandler.h>
 #include "config.h"
 
 #include <Access/Credentials.h>
