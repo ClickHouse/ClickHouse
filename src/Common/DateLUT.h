@@ -1,16 +1,22 @@
 #pragma once
 
-#include "DateLUTImpl.h"
-
 #include <base/defines.h>
+#include <base/types.h>
 
 #include <boost/noncopyable.hpp>
-#include "Common/CurrentThread.h"
 
 #include <atomic>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+
+namespace DB
+{
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
+}
+
+class DateLUTImpl;
 
 
 /// This class provides lazy initialization and lookup of singleton DateLUTImpl objects for a given timezone.
@@ -20,38 +26,7 @@ public:
     /// Return DateLUTImpl instance for session timezone.
     /// session_timezone is a session-level setting.
     /// If setting is not set, returns the server timezone.
-    static ALWAYS_INLINE const DateLUTImpl & instance()
-    {
-        const auto & date_lut = getInstance();
-
-        if (DB::CurrentThread::isInitialized())
-        {
-            std::string timezone_from_context;
-            const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-            if (query_context)
-            {
-                timezone_from_context = extractTimezoneFromContext(query_context);
-
-                if (!timezone_from_context.empty())
-                    return date_lut.getImplementation(timezone_from_context);
-            }
-
-            /// On the server side, timezone is passed in query_context,
-            /// but on CH-client side we have no query context,
-            /// and each time we modify client's global context
-            const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
-            if (global_context)
-            {
-                timezone_from_context = extractTimezoneFromContext(global_context);
-
-                if (!timezone_from_context.empty())
-                    return date_lut.getImplementation(timezone_from_context);
-            }
-
-        }
-        return serverTimezoneInstance();
-    }
+    static const DateLUTImpl & instance();
 
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {

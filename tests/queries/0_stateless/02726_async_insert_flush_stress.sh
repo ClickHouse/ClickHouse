@@ -91,5 +91,5 @@ flush1 $TIMEOUT &
 wait
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.asynchronous_inserts"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.asynchronous_inserts WHERE database = currentDatabase() AND table = 'async_inserts'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts";

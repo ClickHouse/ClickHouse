@@ -24,4 +24,4 @@
 7
 8
 9
-< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","written_rows":"10","written_bytes":"40","total_rows_to_read":"0","result_rows":"10","result_bytes":"40"}
+< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","written_rows":"10","written_bytes":"40","total_rows_to_read":"10","result_rows":"10","result_bytes":"40"}

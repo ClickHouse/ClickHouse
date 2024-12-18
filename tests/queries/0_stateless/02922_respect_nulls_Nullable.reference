@@ -1,0 +1,45 @@
+-- { echoOn }
+Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+Select anyOrNull(tp) FROM (Select (number, number) as tp from numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT
+    any(tp) AS default,
+    toTypeName(default) as default_type,
+    any(tp) RESPECT NULLS AS respect,
+    toTypeName(respect) as respect_type
+FROM
+(
+    SELECT (toLowCardinality(number), number) AS tp
+    FROM numbers(10)
+);
+(0,0)	Tuple(UInt64, UInt64)	(0,0)	Tuple(UInt64, UInt64)
+SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(number) as t FROM numbers(0));
+0
+SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(number::Nullable(UInt8)) as t FROM numbers(0));
+\N
+SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(number::LowCardinality(Nullable(UInt8))) as t FROM numbers(0)) settings allow_suspicious_low_cardinality_types=1;
+\N
+SELECT first_value_respect_nullsOrNullMerge(t) FROM (Select first_value_respect_nullsOrNullState(number) as t FROM numbers(0));
+\N
+SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsOrNullState(number) as t FROM numbers(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT first_value_respect_nullsOrNullMerge(t) FROM (Select first_value_respect_nullsState(number) as t FROM numbers(0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(dummy) as t FROM system.one);
+0
+SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(dummy::Nullable(UInt8)) as t FROM system.one);
+0
+SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(NULL) as t FROM system.one);
+\N
+SELECT first_value_respect_nullsMerge(t) FROM (Select first_value_respect_nullsState(NULL::Nullable(UInt8)) as t FROM system.one);
+\N
+-- Assert sanitizer: passing NULL (not Nullable() with different values is accepted and ignored)
+SELECT
+    anyLastIf(n, cond) RESPECT NULLS,
+    anyLastIf(nullable_n, cond) RESPECT NULLS
+FROM
+(
+    SELECT
+        number AS n,
+        NULL as cond,
+        number::Nullable(Int64) as nullable_n
+    FROM numbers(10000)
+);
+0	\N

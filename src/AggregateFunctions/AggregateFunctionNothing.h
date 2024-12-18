@@ -6,7 +6,8 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "DataTypes/IDataType.h"
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -18,19 +19,41 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+/// Returns the same type as the first argument
+struct NameAggregateFunctionNothing { static constexpr auto name = "nothing"; };
+/// Always returns Nullable(Nothing)
+struct NameAggregateFunctionNothingNull { static constexpr auto name = "nothingNull"; };
+/// Always returns UInt64
+struct NameAggregateFunctionNothingUInt64 { static constexpr auto name = "nothingUInt64"; };
+
+template <typename Name> class AggregateFunctionNothingImpl;
+
+using AggregateFunctionNothing = AggregateFunctionNothingImpl<NameAggregateFunctionNothing>;
+using AggregateFunctionNothingNull = AggregateFunctionNothingImpl<NameAggregateFunctionNothingNull>;
+using AggregateFunctionNothingUInt64 = AggregateFunctionNothingImpl<NameAggregateFunctionNothingUInt64>;
+
 
 /** Aggregate function that takes arbitrary number of arbitrary arguments and does nothing.
   */
-class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
+template <typename Name>
+class AggregateFunctionNothingImpl final : public IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>
 {
-public:
-    AggregateFunctionNothing(const DataTypes & arguments, const Array & params, const DataTypePtr & result_type_)
-        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, result_type_) {}
-
-    String getName() const override
+    static DataTypePtr getReturnType(const DataTypes & arguments [[maybe_unused]])
     {
-        return "nothing";
+        if constexpr (std::is_same_v<Name, NameAggregateFunctionNothingUInt64>)
+            return std::make_shared<DataTypeUInt64>();
+        else if constexpr (std::is_same_v<Name, NameAggregateFunctionNothingNull>)
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        return arguments.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : arguments.front();
     }
+
+public:
+    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, params, getReturnType(arguments))
+    {
+    }
+
+    String getName() const override { return Name::name; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -75,7 +98,8 @@ public:
         [[maybe_unused]] char symbol;
         readChar(symbol, buf);
         if (symbol != '\0')
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function 'nothing', it should contain exactly one zero byte, while it is {}.", static_cast<UInt32>(symbol));
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function '{}', it should contain exactly one zero byte, while it is {}",
+                getName(), static_cast<UInt32>(symbol));
     }
 
     void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override

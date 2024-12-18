@@ -1,0 +1,15 @@
+WITH
+    cte1 AS
+    (
+        SELECT n
+        FROM numbers_1e6__fuzz_34
+    ),
+    cte2 AS
+    (
+        SELECT n
+        FROM numbers_1e6__fuzz_33
+        PREWHERE n IN cte1
+    )
+SELECT count()
+FROM
+cte2

@@ -2,8 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/ThreadPool_fwd.h>
-
-namespace Poco { class Logger; }
+#include <Common/Logger.h>
 
 namespace DB
 {
@@ -14,6 +13,8 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 struct ReadSettings;
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 
 /// Information about a file stored in a backup.
@@ -75,9 +76,9 @@ struct BackupFileInfo
 using BackupFileInfos = std::vector<BackupFileInfo>;
 
 /// Builds a BackupFileInfo for a specified backup entry.
-BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const BackupEntryPtr & backup_entry, const BackupPtr & base_backup, const ReadSettings & read_settings, Poco::Logger * log);
+BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const BackupEntryPtr & backup_entry, const BackupPtr & base_backup, const ReadSettings & read_settings, LoggerPtr log);
 
 /// Builds a vector of BackupFileInfos for specified backup entries.
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool);
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
 
 }

@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/data-types/datetime64
-sidebar_position: 49
+sidebar_position: 18
 sidebar_label: DateTime64
 ---
 
@@ -9,7 +9,7 @@ sidebar_label: DateTime64
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
 
 Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
-Typically are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
+Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 
 **Syntax:**
 
@@ -119,7 +119,7 @@ FROM dt64;
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 - [The `date_time_input_format` setting](../../operations/settings/settings-formats.md#date_time_input_format)
 - [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
-- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+- [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
 - [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
 - [`Date` data type](../../sql-reference/data-types/date.md)

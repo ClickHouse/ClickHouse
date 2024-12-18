@@ -13,7 +13,7 @@ using FunctionLog2 = FunctionMathUnary<UnaryFunctionVectorized<Log2Name, log2>>;
 
 REGISTER_FUNCTION(Log2)
 {
-    factory.registerFunction<FunctionLog2>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionLog2>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

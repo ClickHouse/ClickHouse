@@ -1,0 +1,47 @@
+<clickhouse>
+    <listen_try>true</listen_try>
+    <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+    </logger>
+
+    <keeper_server>
+        <tcp_port>2181</tcp_port>
+        <server_id>3</server_id>
+
+        <max_memory_usage_soft_limit>200000000</max_memory_usage_soft_limit>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>15000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+            <force_sync>false</force_sync>
+            <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
+
+            <async_replication>1</async_replication>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>zoo1</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>zoo2</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>zoo3</hostname>
+                <port>9444</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>

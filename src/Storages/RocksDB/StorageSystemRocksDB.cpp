@@ -7,38 +7,47 @@
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <rocksdb/statistics.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool system_events_show_zero_values;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 
-}
-
-namespace DB
+ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
 {
-
-
-NamesAndTypesList StorageSystemRocksDB::getNamesAndTypes()
-{
-    return {
-        { "database",              std::make_shared<DataTypeString>() },
-        { "table",                 std::make_shared<DataTypeString>() },
-        { "name",                  std::make_shared<DataTypeString>() },
-        { "value",                 std::make_shared<DataTypeUInt64>() },
+    return ColumnsDescription
+    {
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
+        {"table", std::make_shared<DataTypeString>(), "Name of the table with StorageEmbeddedRocksDB engine."},
+        {"name", std::make_shared<DataTypeString>(), "Metric name."},
+        {"value", std::make_shared<DataTypeUInt64>(), "Metric value."},
     };
 }
 
 
-void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+Block StorageSystemRocksDB::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
+
+void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -86,7 +95,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
             { col_table_to_filter, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;
@@ -95,7 +104,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         col_table_to_filter = filtered_block.getByName("table").column;
     }
 
-    bool show_zeros = context->getSettingsRef().system_events_show_zero_values;
+    bool show_zeros = context->getSettingsRef()[Setting::system_events_show_zero_values];
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
         String database = (*col_database_to_filter)[i].safeGet<const String &>();

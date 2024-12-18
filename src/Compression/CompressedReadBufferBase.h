@@ -25,7 +25,11 @@ protected:
     char * compressed_buffer = nullptr;
 
     /// Don't checksum on decompressing.
+#if defined(FUZZER)
+    bool disable_checksum = true;
+#else
     bool disable_checksum = false;
+#endif
 
     /// Allow reading data, compressed by different codecs from one file.
     bool allow_different_codecs;
@@ -59,14 +63,6 @@ protected:
     /// This method can change location of `to` to avoid unnecessary copy if data is uncompressed.
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
     void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
-
-    /// Flush all asynchronous decompress request.
-    void flushAsynchronousDecompressRequests() const;
-
-    /// Set decompression mode: Synchronous/Asynchronous/SoftwareFallback.
-    /// The mode is "Synchronous" by default.
-    /// flushAsynchronousDecompressRequests must be called subsequently once set "Asynchronous" mode.
-    void setDecompressMode(ICompressionCodec::CodecMode mode) const;
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.

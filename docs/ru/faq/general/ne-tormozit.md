@@ -20,6 +20,6 @@ sidebar_position: 11
 
 Если вы не видели наших футболок, посмотрите видео о ClickHouse. Например, вот это:
 
-![iframe](https://www.youtube.com/embed/bSyQahMVZ7w)
+<iframe width="675" height="380" src="https://www.youtube.com/embed/bSyQahMVZ7w" frameborder="0" allow="accelerometer; autoplay; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 P.S. Эти футболки не продаются, а распространяются бесплатно на большинстве митапов [ClickHouse](https://clickhouse.com/#meet), обычно в награду за самые интересные вопросы или другие виды активного участия.

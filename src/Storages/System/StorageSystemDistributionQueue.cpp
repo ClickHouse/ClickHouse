@@ -10,6 +10,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
@@ -88,25 +89,33 @@ namespace DB
 {
 
 
-NamesAndTypesList StorageSystemDistributionQueue::getNamesAndTypes()
+ColumnsDescription StorageSystemDistributionQueue::getColumnsDescription()
 {
-    return {
-        { "database",              std::make_shared<DataTypeString>() },
-        { "table",                 std::make_shared<DataTypeString>() },
-        { "data_path",             std::make_shared<DataTypeString>() },
-        { "is_blocked",            std::make_shared<DataTypeUInt8>()  },
-        { "error_count",           std::make_shared<DataTypeUInt64>() },
-        { "data_files",            std::make_shared<DataTypeUInt64>() },
-        { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
-        { "broken_data_files",            std::make_shared<DataTypeUInt64>() },
-        { "broken_data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
-        { "last_exception",        std::make_shared<DataTypeString>() },
-        { "last_exception_time",        std::make_shared<DataTypeDateTime>() },
+    return ColumnsDescription
+    {
+        { "database",              std::make_shared<DataTypeString>(), "Name of the database."},
+        { "table",                 std::make_shared<DataTypeString>(), "Name of the table."},
+        { "data_path",             std::make_shared<DataTypeString>(), "Path to the folder with local files."},
+        { "is_blocked",            std::make_shared<DataTypeUInt8>(), "Flag indicates whether sending local files to the server is blocked."},
+        { "error_count",           std::make_shared<DataTypeUInt64>(), "Number of errors."},
+        { "data_files",            std::make_shared<DataTypeUInt64>(), "Number of local files in a folder."},
+        { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "Size of compressed data in local files, in bytes."},
+        { "broken_data_files",            std::make_shared<DataTypeUInt64>(), "Number of files that has been marked as broken (due to an error)."},
+        { "broken_data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "Size of compressed data in broken files, in bytes."},
+        { "last_exception",        std::make_shared<DataTypeString>(), "Text message about the last error that occurred (if any)."},
+        { "last_exception_time",        std::make_shared<DataTypeDateTime>(), "Time when last exception occurred."},
     };
 }
 
+Block StorageSystemDistributionQueue::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
 
-void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -158,7 +167,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
             { col_table_to_filter, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;

@@ -3,8 +3,9 @@ import re
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -60,7 +61,7 @@ def started_cluster():
                 CREATE TABLE mydb.filtered_table2 (a UInt8, b UInt8, c UInt8, d UInt8) ENGINE MergeTree ORDER BY a;
                 INSERT INTO mydb.filtered_table2 values (0, 0, 0, 0), (1, 2, 3, 4), (4, 3, 2, 1), (0, 0, 6, 0);
 
-                CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
+                CREATE TABLE mydb.filtered_table3 (a UInt8, b UInt8, bb ALIAS b + 1, c UInt16 ALIAS a + bb - 1) ENGINE MergeTree ORDER BY a;
                 INSERT INTO mydb.filtered_table3 values (0, 0), (0, 1), (1, 0), (1, 1);
 
                 CREATE TABLE mydb.`.filtered_table4` (a UInt8, b UInt8, c UInt16 ALIAS a + b) ENGINE MergeTree ORDER BY a;
@@ -113,6 +114,7 @@ def test_smoke():
 
     assert node.query("SELECT a FROM mydb.filtered_table3") == TSV([[0], [1]])
     assert node.query("SELECT b FROM mydb.filtered_table3") == TSV([[1], [0]])
+    assert node.query("SELECT bb FROM mydb.filtered_table3") == TSV([[2], [1]])
     assert node.query("SELECT c FROM mydb.filtered_table3") == TSV([[1], [1]])
     assert node.query("SELECT a + b FROM mydb.filtered_table3") == TSV([[1], [1]])
     assert node.query("SELECT a FROM mydb.filtered_table3 WHERE c = 1") == TSV(
@@ -803,9 +805,9 @@ def test_tags_with_db_and_table_names():
     assert node.query("SHOW CREATE POLICIES default") == TSV(
         [
             "CREATE ROW POLICY default ON mydb.`.filtered_table4` FOR SELECT USING c = 2 TO default",
+            "CREATE ROW POLICY default ON mydb.`table` FOR SELECT USING a = 0 TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table2 FOR SELECT USING c > (d + 5) TO default",
             "CREATE ROW POLICY default ON mydb.filtered_table3 FOR SELECT USING c = 0 TO default",
-            "CREATE ROW POLICY default ON mydb.table FOR SELECT USING a = 0 TO default",
         ]
     )
 

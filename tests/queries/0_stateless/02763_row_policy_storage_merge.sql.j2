@@ -1,0 +1,166 @@
+DROP TABLE IF EXISTS 02763_merge_log_1;
+DROP TABLE IF EXISTS 02763_merge_log_2;
+DROP TABLE IF EXISTS 02763_merge_merge_1;
+DROP TABLE IF EXISTS 02763_merge_merge_2;
+DROP TABLE IF EXISTS 02763_merge_fancycols;
+DROP ROW POLICY IF EXISTS 02763_filter_1 ON 02763_merge_log_1;
+DROP ROW POLICY IF EXISTS 02763_filter_2 ON 02763_merge_merge_1;
+DROP ROW POLICY IF EXISTS 02763_filter_3 ON 02763_merge_log_1;
+DROP ROW POLICY IF EXISTS 02763_filter_4 ON 02763_merge_merge_1;
+DROP ROW POLICY IF EXISTS 02763_filter_5 ON 02763_merge_fancycols;
+DROP ROW POLICY IF EXISTS 02763_filter_6 ON 02763_merge_fancycols;
+
+
+CREATE TABLE 02763_merge_log_1 (x UInt8, y UInt64) ENGINE = Log;
+CREATE TABLE 02763_merge_log_2 (x UInt8, y UInt64) ENGINE = Log;
+
+CREATE TABLE 02763_merge_merge_1 (x UInt8, y UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE 02763_merge_merge_2 (x UInt8, y UInt64) ENGINE = MergeTree ORDER BY x;
+
+CREATE TABLE 02763_engine_merge_12 (x UInt8, y UInt64) ENGINE = Merge(currentDatabase(), '02763_merge_merge');
+
+INSERT INTO 02763_merge_log_1 VALUES (1, 11), (2, 12), (3, 13), (4, 14);
+INSERT INTO 02763_merge_log_2 VALUES (1, 11), (2, 12), (3, 13), (4, 14);
+INSERT INTO 02763_merge_merge_1 VALUES (1, 11), (2, 12), (3, 13), (4, 14);
+INSERT INTO 02763_merge_merge_2 VALUES (1, 11), (2, 12), (3, 13), (4, 14);
+
+SELECT 'SELECT * FROM 02763_merge_log_1 ORDER BY x';
+SELECT * FROM 02763_merge_log_1 ORDER BY x;
+
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge) ORDER BY x';
+SELECT * FROM merge(currentDatabase(), '02763_merge') ORDER BY x;
+
+
+{% for prew in [0 , 1] -%}
+
+SELECT 'SETTINGS optimize_move_to_prewhere= {{prew}}';
+
+CREATE ROW POLICY 02763_filter_1 ON 02763_merge_log_1 USING x=3 AS permissive TO ALL;
+
+SELECT 'SELECT * FROM 02763_merge_log_1';
+SELECT * FROM 02763_merge_log_1 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_log_1)';
+SELECT * FROM merge(currentDatabase(), '02763_merge_log_1') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_log)';
+SELECT * FROM merge(currentDatabase(), '02763_merge_log') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>2';
+SELECT * FROM merge(currentDatabase(), '02763_merge_log') WHERE x>2 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+CREATE ROW POLICY 02763_filter_2 ON 02763_merge_merge_1 USING x=4 AS permissive TO ALL;
+
+SELECT 'SELECT * FROM 02763_merge_merge_1';
+SELECT * FROM 02763_merge_merge_1 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_merge_1)';
+SELECT * FROM merge(currentDatabase(), '02763_merge_merge_1') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_merge)';
+SELECT * FROM merge(currentDatabase(), '02763_merge_merge') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>2';
+SELECT * FROM merge(currentDatabase(), '02763_merge_merge') WHERE x>2 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+
+SELECT 'SELECT * FROM engine_merge_12 WHERE x>2';
+SELECT * FROM 02763_engine_merge_12 WHERE x>2 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge)';
+SELECT * FROM merge(currentDatabase(), '02763_merge') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge) WHERE x>2';
+SELECT * FROM merge(currentDatabase(), '02763_merge') WHERE x>2 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'aaa', x*2 as x_2, y*3 as y_3 FROM merge(currentDatabase(), '02763_merge') WHERE x>2 ORDER BY x_2 SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT x FROM (SELECT * FROM merge(currentDatabase(), '02763_merge') WHERE x IN (3,4)) ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'SELECT * FROM merge(...) LEFT JOIN merge(...)';
+SELECT * FROM merge(currentDatabase(), '02763_merge.*1') as a
+LEFT JOIN
+merge(currentDatabase(), '02763_merge.*2') as b
+USING (x)
+ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'SELECT * FROM merge(...) UNION ALL SELECT * FROM merge(...)';
+SELECT * FROM
+(
+SELECT * FROM merge(currentDatabase(), '02763_merge.*1')
+UNION ALL
+SELECT * FROM merge(currentDatabase(), '02763_merge.*2')
+)
+ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'SELECT x, SUM(x) FROM (SELECT * FROM merge(...) UNION ALL ...) GROUP BY x';
+SELECT x, SUM(y) FROM
+(SELECT * FROM merge(currentDatabase(), '02763_merge.*1')
+UNION ALL
+SELECT * FROM merge(currentDatabase(), '02763_merge.*2'))
+GROUP BY x
+ORDER BY x;
+
+SELECT *, x=4 FROM merge(currentDatabase(), '02763_merge_merge') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+CREATE ROW POLICY 02763_filter_3 ON 02763_merge_log_1 USING y>12 AS permissive TO ALL;
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>1 -- with y>12';
+SELECT * FROM merge(currentDatabase(), '02763_merge_log') WHERE x>1 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+CREATE ROW POLICY 02763_filter_4 ON 02763_merge_merge_1 USING y>12 AS permissive TO ALL;
+SELECT 'SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>1 -- with y>12';
+SELECT * FROM merge(currentDatabase(), '02763_merge_merge') WHERE x>1 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT *, (x=4 OR y>12) FROM merge(currentDatabase(), '02763_merge_merge') WHERE x>1 ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'SELECT y from merge(currentDatabase(), 02763_merge)';
+SELECT y from merge(currentDatabase(), '02763_merge') ORDER BY y SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT '02763_merge_fancycols';
+CREATE TABLE 02763_merge_fancycols (x UInt8, y Nullable(UInt64), z String DEFAULT CONCAT(toString(x), toString(y)), lc LowCardinality(String) DEFAULT z, cnst UInt32 MATERIALIZED 42) ENGINE = MergeTree() ORDER BY tuple();
+INSERT INTO 02763_merge_fancycols  (x, y) SELECT x, y from merge(currentDatabase(), '02763_merge');
+
+CREATE ROW POLICY 02763_filter_5 ON 02763_merge_fancycols USING cnst<>42 AS permissive TO ALL;
+SELECT 'SELECT *';
+SELECT * from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT x, lc';
+SELECT x, lc from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+CREATE ROW POLICY 02763_filter_6 ON 02763_merge_fancycols USING lc='111' AS permissive TO ALL;
+SELECT 'SELECT *';
+SELECT * from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT x, lc';
+SELECT x, lc from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT x, lc, cnst';
+SELECT x, lc, cnst from merge(currentDatabase(), '02763_merge_fancycols') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+SELECT 'SELECT x, y from merge(currentDatabase(), 02763_merge';
+SELECT x, y from merge(currentDatabase(), '02763_merge') ORDER BY x SETTINGS optimize_move_to_prewhere= {{prew}};
+
+
+
+CREATE TABLE 02763_t1 ( b String ) ENGINE = MergeTree() ORDER BY tuple();
+INSERT INTO 02763_t1 VALUES('zzz');
+CREATE TABLE 02763_t2 AS 02763_t1 ENGINE = Merge(currentDatabase(), '02763_t1');
+
+SELECT 'USING 0';
+CREATE ROW POLICY OR REPLACE 02763_filter_t1 ON 02763_t1 USING 0 TO ALL;
+SELECT * FROM 02763_t2 SETTINGS optimize_move_to_prewhere= {{prew}};
+
+SELECT 'USING 1';
+CREATE ROW POLICY OR REPLACE 02763_filter_t1 ON 02763_t1 USING 1 TO ALL;
+SELECT * FROM 02763_t2 SETTINGS optimize_move_to_prewhere= {{prew}};
+
+
+DROP TABLE 02763_t1;
+DROP TABLE 02763_t2;
+SELECT '====';
+
+
+
+DROP TABLE 02763_merge_fancycols;
+
+DROP ROW POLICY 02763_filter_1 ON 02763_merge_log_1;
+DROP ROW POLICY 02763_filter_2 ON 02763_merge_merge_1;
+
+DROP ROW POLICY 02763_filter_3 ON 02763_merge_log_1;
+DROP ROW POLICY 02763_filter_4 ON 02763_merge_merge_1;
+
+DROP ROW POLICY 02763_filter_5 ON 02763_merge_fancycols;
+DROP ROW POLICY 02763_filter_6 ON 02763_merge_fancycols;
+
+DROP ROW POLICY 02763_filter_t1 ON 02763_t1;
+
+{% endfor %}

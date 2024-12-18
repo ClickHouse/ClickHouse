@@ -15,6 +15,8 @@ StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
+    /// This column doesn't have a comment, because otherwise it will be added to all tables created via:
+    /// CREATE TABLE test (dummy UInt8) ENGINE = Distributed(`default`, `system.one`)
     storage_metadata.setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
     setInMemoryMetadata(storage_metadata);
 }
@@ -39,7 +41,10 @@ Pipe StorageSystemOne::read(
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
     Chunk chunk({ std::move(column) }, 1);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+    auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
+    source->addTotalRowsApprox(1);
+
+    return Pipe(source);
 }
 
 

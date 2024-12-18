@@ -1,12 +1,19 @@
 ---
 slug: /en/engines/table-engines/integrations/postgresql
+title: PostgreSQL Table Engine
 sidebar_position: 160
 sidebar_label: PostgreSQL
 ---
 
-# PostgreSQL
+The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
-The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data that is stored on a remote PostgreSQL server.
+:::note
+Currently, only PostgreSQL versions 12 and up are supported.
+:::
+
+:::note Replicating or migrating Postgres data with with PeerDB
+> In addition to the Postgres table engine, you can use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).
+:::
 
 ## Creating a Table {#creating-a-table}
 
@@ -16,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
+) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
 ```
 
 See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
@@ -35,31 +42,25 @@ The table structure can differ from the original PostgreSQL table structure:
 - `user` — PostgreSQL user.
 - `password` — User password.
 - `schema` — Non-default table schema. Optional.
-- `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
+- `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
-or via config (since version 21.11):
+[Named collections](/docs/en/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
 
 ```
 <named_collections>
-    <postgres1>
-        <host></host>
-        <port></port>
-        <user></user>
-        <password></password>
-        <table></table>
-    </postgres1>
-    <postgres2>
-        <host></host>
-        <port></port>
-        <user></user>
-        <password></password>
-    </postgres2>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <schema>schema1</schema>
+    </postgres_creds>
 </named_collections>
 ```
 
 Some parameters can be overridden by key value arguments:
 ``` sql
-SELECT * FROM postgresql(postgres1, schema='schema1', table='table1');
+SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
 ## Implementation Details {#implementation-details}

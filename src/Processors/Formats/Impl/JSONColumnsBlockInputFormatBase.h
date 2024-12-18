@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -16,7 +17,7 @@ class ReadBuffer;
 class JSONColumnsReaderBase
 {
 public:
-    JSONColumnsReaderBase(ReadBuffer & in_);
+    explicit JSONColumnsReaderBase(ReadBuffer & in_);
 
     virtual ~JSONColumnsReaderBase() = default;
 
@@ -51,12 +52,12 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override;
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
 protected:
-    Chunk generate() override;
+    Chunk read() override;
 
     size_t readColumn(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, const String & column_name);
 
@@ -80,10 +81,11 @@ class JSONColumnsSchemaReaderBase : public ISchemaReader
 public:
     JSONColumnsSchemaReaderBase(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & ctx) override;
+    void setContext(const ContextPtr & ctx) override;
 
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
     {

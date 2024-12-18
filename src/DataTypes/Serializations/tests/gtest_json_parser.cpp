@@ -34,7 +34,7 @@ TEST(JSONDataParser, ReadJSON)
         JSONDataParser<SimdJSONParser> parser;
         ReadBufferFromString buf(json_bad);
         String res;
-        parser.readJSON(res, buf);
+        JSONDataParser<SimdJSONParser>::readJSON(res, buf);
         ASSERT_EQ(json1, res);
     }
 
@@ -44,7 +44,7 @@ TEST(JSONDataParser, ReadJSON)
         JSONDataParser<SimdJSONParser> parser;
         ReadBufferFromString buf(json_bad);
         String res;
-        parser.readJSON(res, buf);
+        JSONDataParser<SimdJSONParser>::readJSON(res, buf);
         ASSERT_EQ(json2, res);
     }
 }

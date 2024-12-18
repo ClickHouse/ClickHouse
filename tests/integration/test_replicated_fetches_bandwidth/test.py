@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-from helpers.cluster import ClickHouseCluster
-import pytest
 import random
+import statistics
 import string
-from helpers.network import NetThroughput
 import subprocess
 import time
-import statistics
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.network import NetThroughput
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
@@ -129,7 +131,7 @@ def test_limited_fetches_for_server(start_cluster):
             node3.query(f"SYSTEM STOP FETCHES limited_fetches{j}")
             for i in range(5):
                 node1.query(
-                    "INSERT INTO limited_fetches{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(50)".format(
+                    "INSERT INTO limited_fetches{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(150)".format(
                         j, i
                     )
                 )
@@ -175,7 +177,7 @@ def test_limited_sends_for_server(start_cluster):
             node1.query(f"SYSTEM STOP FETCHES limited_sends{j}")
             for i in range(5):
                 node3.query(
-                    "INSERT INTO limited_sends{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(50)".format(
+                    "INSERT INTO limited_sends{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(150)".format(
                         j, i
                     )
                 )

@@ -7,10 +7,10 @@ Contains information about the dependent views executed when running a query, fo
 
 To start logging:
 
-1. Configure parameters in the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) section.
-2. Set [log_query_views](../../operations/settings/settings.md#settings-log-query-views) to 1.
+1. Configure parameters in the [query_views_log](../../operations/server-configuration-parameters/settings.md#query_views_log) section.
+2. Set [log_query_views](../../operations/settings/settings.md#log-query-views) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](../../operations/server-configuration-parameters/settings.md#query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
@@ -18,6 +18,7 @@ You can use the [log_queries_probability](../../operations/settings/settings.md#
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the last event of the view happened.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution.
 - `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution with microseconds precision.
@@ -59,6 +60,7 @@ Result:
 ``` text
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 event_date:              2021-06-22
 event_time:              2021-06-22 13:23:07
 event_time_microseconds: 2021-06-22 13:23:07.738221

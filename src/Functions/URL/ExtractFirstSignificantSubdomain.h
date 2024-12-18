@@ -1,8 +1,8 @@
 #pragma once
 
 #include <base/find_symbols.h>
-#include "domain.h"
-#include "tldLookup.h"
+#include <Functions/URL/domain.h>
+#include <Functions/URL/tldLookup.h>
 #include <Common/TLDListsHolder.h> /// TLDType
 
 namespace DB

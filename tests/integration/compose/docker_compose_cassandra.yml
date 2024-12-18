@@ -1,0 +1,4 @@
+services:
+    cassandra1:
+        image: cassandra:4.0
+        restart: always

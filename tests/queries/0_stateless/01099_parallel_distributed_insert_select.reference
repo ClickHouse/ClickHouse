@@ -17,6 +17,12 @@ distributed
 0	4
 1	4
 2	4
+test_cluster_1_shard_3_replicas_1_unavailable
+distributed
+local
+test_cluster_1_shard_3_replicas_1_unavailable with storageCluster
+distributed
+local
 parallel_distributed_insert_select=2
 test_shard_localhost
 0
@@ -35,3 +41,21 @@ local
 0	2
 1	2
 2	2
+test_cluster_1_shard_3_replicas_1_unavailable
+distributed
+0	1
+1	1
+2	1
+local
+0	1
+1	1
+2	1
+test_cluster_1_shard_3_replicas_1_unavailable with storageCluster
+distributed
+1	1
+2	1
+3	1
+local
+1	1
+2	1
+3	1

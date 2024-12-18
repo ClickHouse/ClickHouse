@@ -14,7 +14,7 @@ ClickHouse提供了一个原生命令行客户端`clickhouse-client`客户端支
 $ clickhouse-client
 ClickHouse client version 19.17.1.1579 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 19.17.1 revision 54428.
+Connected to ClickHouse server version 19.17.1.
 
 :)
 ```

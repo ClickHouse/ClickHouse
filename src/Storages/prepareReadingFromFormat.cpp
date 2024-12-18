@@ -1,10 +1,19 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 
-ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, bool supports_subset_of_columns, const NamesAndTypesList & virtuals)
+namespace Setting
+{
+    extern const SettingsBool enable_parsing_to_custom_serialization;
+}
+
+ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool supports_subset_of_columns)
 {
     ReadFromFormatInfo info;
     /// Collect requested virtual columns and remove them from requested columns.
@@ -12,11 +21,11 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
     for (const auto & column_name : requested_columns)
     {
         bool is_virtual = false;
-        for (const auto & virtual_column : virtuals)
+        for (const auto & virtual_column : *storage_snapshot->virtual_columns)
         {
             if (column_name == virtual_column.name)
             {
-                info.requested_virtual_columns.push_back(virtual_column);
+                info.requested_virtual_columns.emplace_back(virtual_column.name, virtual_column.type);
                 is_virtual = true;
                 break;
             }
@@ -72,7 +81,35 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
 
     /// Create header for InputFormat with columns that will be read from the data.
     info.format_header = storage_snapshot->getSampleBlockForColumns(info.columns_description.getNamesOfPhysical());
+    info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
     return info;
+}
+
+SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::enable_parsing_to_custom_serialization])
+        return {};
+
+    auto insertion_table = context->getInsertionTable();
+    if (!insertion_table)
+        return {};
+
+    auto storage_ptr = DatabaseCatalog::instance().tryGetTable(insertion_table, context);
+    if (!storage_ptr)
+        return {};
+
+    const auto & our_columns = metadata_snapshot->getColumns();
+    const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
+    auto storage_hints = storage_ptr->getSerializationHints();
+    SerializationInfoByName res;
+
+    for (const auto & hint : storage_hints)
+    {
+        if (our_columns.tryGetPhysical(hint.first) == storage_columns.tryGetPhysical(hint.first))
+            res.insert(hint);
+    }
+
+    return res;
 }
 
 }

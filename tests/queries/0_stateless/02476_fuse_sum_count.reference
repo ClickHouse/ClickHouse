@@ -21,7 +21,7 @@ QUERY id: 0
           LIST id: 7, nodes: 1
             COLUMN id: 4, column_name: a, result_type: Nullable(Int8), source_id: 5
   JOIN TREE
-    TABLE id: 5, table_name: default.fuse_tbl
+    TABLE id: 5, alias: __table1, table_name: default.fuse_tbl
 QUERY id: 0
   PROJECTION COLUMNS
     sum(b) Int64
@@ -59,7 +59,7 @@ QUERY id: 0
                               COLUMN id: 6, column_name: b, result_type: Int8, source_id: 7
                         CONSTANT id: 18, constant_value: UInt64_2, constant_value_type: UInt8
   JOIN TREE
-    TABLE id: 7, table_name: default.fuse_tbl
+    TABLE id: 7, alias: __table1, table_name: default.fuse_tbl
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(a, 1)) Nullable(Int64)
@@ -138,7 +138,7 @@ QUERY id: 0
           LIST id: 39, nodes: 1
             COLUMN id: 6, column_name: a, result_type: Nullable(Int8), source_id: 7
   JOIN TREE
-    TABLE id: 7, table_name: default.fuse_tbl
+    TABLE id: 7, alias: __table1, table_name: default.fuse_tbl
 QUERY id: 0
   PROJECTION COLUMNS
     multiply(avg(b), 3) Float64
@@ -215,14 +215,14 @@ QUERY id: 0
                         COLUMN id: 10, column_name: b, result_type: Int8, source_id: 11
                   CONSTANT id: 37, constant_value: UInt64_2, constant_value_type: UInt8
   JOIN TREE
-    QUERY id: 11, is_subquery: 1
+    QUERY id: 11, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         b Int8
       PROJECTION
         LIST id: 38, nodes: 1
           COLUMN id: 39, column_name: b, result_type: Int8, source_id: 40
       JOIN TREE
-        TABLE id: 40, table_name: default.fuse_tbl
+        TABLE id: 40, alias: __table2, table_name: default.fuse_tbl
 QUERY id: 0
   PROJECTION COLUMNS
     sum(b) Int64
@@ -246,14 +246,14 @@ QUERY id: 0
                   COLUMN id: 6, column_name: b, result_type: Int64, source_id: 7
             CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
   JOIN TREE
-    QUERY id: 7, is_subquery: 1
+    QUERY id: 7, alias: __table1, is_subquery: 1
       PROJECTION COLUMNS
         b Int64
       PROJECTION
         LIST id: 12, nodes: 1
           COLUMN id: 13, column_name: x, result_type: Int64, source_id: 14
       JOIN TREE
-        QUERY id: 14, is_subquery: 1
+        QUERY id: 14, alias: __table2, is_subquery: 1
           PROJECTION COLUMNS
             x Int64
             count(b) UInt64
@@ -276,7 +276,7 @@ QUERY id: 0
                           COLUMN id: 20, column_name: b, result_type: Int8, source_id: 21
                     CONSTANT id: 25, constant_value: UInt64_2, constant_value_type: UInt8
           JOIN TREE
-            TABLE id: 21, table_name: default.fuse_tbl
+            TABLE id: 21, alias: __table3, table_name: default.fuse_tbl
 0	0	nan
 0	0	nan
 45	10	4.5	Decimal(38, 0)	UInt64	Float64

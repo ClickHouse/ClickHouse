@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
-from http.server import SimpleHTTPRequestHandler, HTTPServer
+import os
 import socket
+import subprocess
 import sys
 import threading
-import os
 import traceback
 import urllib.request
-import subprocess
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from socketserver import ThreadingMixIn
 
 
 def is_ipv6(host):
@@ -116,11 +117,19 @@ class HTTPServerV6(HTTPServer):
     address_family = socket.AF_INET6
 
 
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    pass
+
+
+class ThreadedHTTPServerV6(ThreadingMixIn, HTTPServerV6):
+    pass
+
+
 def start_server(requests_amount):
     if IS_IPV6:
-        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
+        httpd = ThreadedHTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
     else:
-        httpd = HTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
+        httpd = ThreadedHTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
 
     def real_func():
         for i in range(requests_amount):

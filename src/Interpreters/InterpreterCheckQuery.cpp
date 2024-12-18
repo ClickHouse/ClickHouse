@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <algorithm>
+#include <memory>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -11,15 +13,19 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/Settings.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IInflatingTransform.h>
 #include <Processors/ISimpleTransform.h>
@@ -30,6 +36,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool check_query_single_value_result;
+    extern const SettingsMaxThreads max_threads;
+}
 
 namespace ErrorCodes
 {
@@ -89,7 +100,7 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
     return Chunk(std::move(columns), 1);
 }
 
-class TableCheckTask : public ChunkInfo
+class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
     TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
@@ -108,6 +119,12 @@ public:
         context->checkAccess(AccessType::SHOW_TABLES, table_->getStorageID());
     }
 
+    TableCheckTask(const TableCheckTask & other)
+        : table(other.table)
+        , check_data_tasks(other.check_data_tasks)
+        , is_finished(other.is_finished.load())
+    {}
+
     std::optional<CheckResult> checkNext() const
     {
         if (isFinished())
@@ -119,8 +136,8 @@ public:
             std::this_thread::sleep_for(sleep_time);
         });
 
-        IStorage::DataValidationTasksPtr check_data_tasks_ = check_data_tasks;
-        auto result = table->checkDataNext(check_data_tasks_);
+        IStorage::DataValidationTasksPtr tmp = check_data_tasks;
+        auto result = table->checkDataNext(tmp);
         is_finished = !result.has_value();
         return result;
     }
@@ -148,7 +165,7 @@ private:
 class TableCheckSource : public ISource
 {
 public:
-    TableCheckSource(Strings databases_, ContextPtr context_, Poco::Logger * log_)
+    TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
         : ISource(getSingleValueBlock(0))
         , databases(databases_)
         , context(context_)
@@ -156,7 +173,7 @@ public:
     {
     }
 
-    TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, Poco::Logger * log_)
+    TableCheckSource(std::shared_ptr<TableCheckTask> table_check_task_, LoggerPtr log_)
         : ISource(getSingleValueBlock(0))
         , table_check_task(table_check_task_)
         , log(log_)
@@ -178,7 +195,7 @@ protected:
         /// source should return at least one row to start pipeline
         result.addColumn(ColumnUInt8::create(1, 1));
         /// actual data stored in chunk info
-        result.setChunkInfo(std::move(current_check_task));
+        result.getChunkInfos().add(std::move(current_check_task));
         return result;
     }
 
@@ -245,10 +262,8 @@ private:
                 LOG_DEBUG(log, "Checking '{}' database", database_name);
                 return current_database;
             }
-            else
-            {
-                LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
-            }
+
+            LOG_DEBUG(log, "Skipping database '{}' because it was dropped", database_name);
         }
         return {};
     }
@@ -259,14 +274,14 @@ private:
 
     ContextPtr context;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
 class TableCheckWorkerProcessor : public ISimpleTransform
 {
 public:
-    TableCheckWorkerProcessor(bool with_table_name_, Poco::Logger * log_)
+    TableCheckWorkerProcessor(bool with_table_name_, LoggerPtr log_)
         : ISimpleTransform(getSingleValueBlock(0), getHeaderForCheckResult(with_table_name_), true)
         , with_table_name(with_table_name_)
         , log(log_)
@@ -278,7 +293,7 @@ public:
 protected:
     void transform(Chunk & chunk) override
     {
-        auto table_check_task = std::dynamic_pointer_cast<const TableCheckTask>(chunk.getChunkInfo());
+        auto table_check_task = chunk.getChunkInfos().get<TableCheckTask>();
         auto check_result = table_check_task->checkNext();
         if (!check_result)
         {
@@ -307,7 +322,7 @@ private:
     /// If true, then output will contain columns with database and table names
     bool with_table_name;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 /// Accumulates all results and returns single value
@@ -328,14 +343,14 @@ public:
         if (result_value == 0)
             return;
 
-        auto columns = chunk.getColumns();
+        const auto & columns = chunk.getColumns();
         if ((columns.size() != 3 && columns.size() != 5) || column_position_to_check >= columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of columns: {}, position {}", columns.size(), column_position_to_check);
 
-        const auto * col = checkAndGetColumn<ColumnUInt8>(columns[column_position_to_check].get());
-        for (size_t i = 0; i < col->size(); ++i)
+        const auto & col = checkAndGetColumn<ColumnUInt8>(*columns[column_position_to_check]);
+        for (size_t i = 0; i < col.size(); ++i)
         {
-            if (col->getElement(i) == 0)
+            if (col.getElement(i) == 0)
             {
                 result_value = 0;
                 return;
@@ -410,7 +425,7 @@ BlockIO InterpreterCheckQuery::execute()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query {} in InterpreterCheckQuery", query_ptr->formatForErrorMessage());
     }
 
-    size_t num_streams = std::max<size_t>(settings.max_threads, 1);
+    size_t num_streams = std::max<size_t>(settings[Setting::max_threads], 1);
 
     processors->emplace_back(worker_source);
     std::vector<OutputPort *> worker_ports;
@@ -451,7 +466,7 @@ BlockIO InterpreterCheckQuery::execute()
         resize_outport = &resize_processor->getOutputs().front();
     }
 
-    if (settings.check_query_single_value_result)
+    if (settings[Setting::check_query_single_value_result])
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         Block header = processors->back()->getOutputs().front().getHeader();
@@ -470,6 +485,15 @@ BlockIO InterpreterCheckQuery::execute()
     res.pipeline.setNumThreads(num_streams);
 
     return res;
+}
+
+void registerInterpreterCheckQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCheckQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCheckQuery", create_fn);
 }
 
 }

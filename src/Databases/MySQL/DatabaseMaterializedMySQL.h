@@ -9,12 +9,14 @@
 #include <base/UUID.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseAtomic.h>
-#include <Databases/MySQL/MaterializedMySQLSettings.h>
+#include <Databases/MySQL/MySQLBinlogClient.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+struct MaterializedMySQLSettings;
 
 /** Real-time pull table structure and data from remote MySQL
  *
@@ -31,7 +33,10 @@ public:
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
+        const MySQLReplication::BinlogClientPtr & binlog_client_,
         std::unique_ptr<MaterializedMySQLSettings> settings_);
+
+    ~DatabaseMaterializedMySQL() override;
 
     void rethrowExceptionIfNeeded() const;
 
@@ -46,10 +51,14 @@ protected:
 
     std::atomic_bool started_up{false};
 
+    LoadTaskPtr startup_mysql_database_task TSA_GUARDED_BY(mutex);
+
 public:
     String getEngineName() const override { return "MaterializedMySQL"; }
 
-    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
+    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
 
     void createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
@@ -67,7 +76,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context_) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void checkIsInternalQuery(ContextPtr context_, const char * method) const;
 

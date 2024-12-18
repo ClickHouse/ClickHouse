@@ -11,7 +11,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 NUM_REPLICAS=6
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -n -q "
+    $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS r$i SYNC;
         CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x;
     "
@@ -24,7 +24,7 @@ function thread {
         while true; do
             $CLICKHOUSE_CLIENT --query "DETACH TABLE r$1"
             $CLICKHOUSE_CLIENT --query "ATTACH TABLE r$1"
-            $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 0 --insert_keeper_fault_injection_probability=0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
+            $CLICKHOUSE_CLIENT --insert_quorum 3 --insert_quorum_parallel 0 --query "INSERT INTO r$1 SELECT $x" 2>&1 | grep -qE "$valid_exceptions_to_retry" || break
         done
     done
 }
@@ -36,7 +36,7 @@ done
 wait
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -n -q "
+    $CLICKHOUSE_CLIENT -q "
         SYSTEM SYNC REPLICA r$i;
         SELECT count(), min(x), max(x), sum(x) FROM r$i;"
 done

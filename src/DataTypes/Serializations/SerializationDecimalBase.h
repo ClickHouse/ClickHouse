@@ -29,4 +29,10 @@ public:
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 };
 
+extern template class SerializationDecimalBase<Decimal32>;
+extern template class SerializationDecimalBase<Decimal64>;
+extern template class SerializationDecimalBase<Decimal128>;
+extern template class SerializationDecimalBase<Decimal256>;
+extern template class SerializationDecimalBase<DateTime64>;
+
 }

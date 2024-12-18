@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -mn -q """
+$CLICKHOUSE_CLIENT -m -q """
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 

@@ -1,0 +1,71 @@
+-- Const string + non-const arbitrary type
+The answer to all questions is 42.
+The answer to all questions is 43.
+The answer to all questions is 44.
+The answer to all questions is 45.
+The answer to all questions is 46.
+The answer to all questions is 47.
+The answer to all questions is 48.
+The answer to all questions is 49.
+The answer to all questions is 50.
+The answer to all questions is 51.
+The answer to all questions is 52.
+The answer to all questions is 53.
+The answer to all questions is 42.42.
+The answer to all questions is 43.43.
+The answer to all questions is 44.
+The answer to all questions is true.
+The answer to all questions is false.
+The answer to all questions is foo.
+The answer to all questions is bar.
+The answer to all questions is foo.
+The answer to all questions is bar.
+The answer to all questions is foo.
+The answer to all questions is bar.
+The answer to all questions is foo.
+The answer to all questions is bar.
+The answer to all questions is 42.
+The answer to all questions is 42.
+The answer to all questions is fae310ca-d52a-4923-9e9b-02bf67f4b009.
+The answer to all questions is 2023-11-14.
+The answer to all questions is 2123-11-14.
+The answer to all questions is 2023-11-14 05:50:12.
+The answer to all questions is 2023-11-14 05:50:12.123.
+The answer to all questions is hallo.
+The answer to all questions is [\'foo\',\'bar\'].
+The answer to all questions is {"foo":"bar"}.
+The answer to all questions is {"foo":"bar"}.
+The answer to all questions is (42,\'foo\').
+The answer to all questions is {42:\'foo\'}.
+The answer to all questions is 122.233.64.201.
+The answer to all questions is 2001:1:130f:2:3:9c0:876a:130b.
+The answer to all questions is (42,43).
+The answer to all questions is [(0,0),(10,0),(10,10),(0,10)].
+The answer to all questions is [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]].
+The answer to all questions is [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]].
+-- Nested
+The [\'foo\',\'bar\'] to all questions is [\'qaz\',\'qux\'].
+-- NULL arguments
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+-- Various arguments tests
+The Non-const to all questions is  strings
+The Two arguments  to all questions is test
+The Three  to all questions is arguments and  test
+The 3 to all questions is  arguments test and  with int type
+The 42 to all questions is 144
+The 42 to all questions is 144 and 255
+The 42 to all questions is 144
+The 42 to all questions is 144 and 255
+-- Single argument tests
+The answer to all questions is 42.
+The answer to all questions is 42.
+The answer to all questions is foo.
+The answer to all questions is foo.
+\N
+\N

@@ -1,11 +1,12 @@
-import time
-import pytest
 import logging
+import time
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
-from helpers.network import PartitionManager
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_by_path
+from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 
 
 def fill_node(node):
@@ -56,6 +57,7 @@ def check_data(nodes, detached_parts):
 
         node.query_with_retry("SYSTEM SYNC REPLICA test")
 
+    for node in nodes:
         print("> Checking data integrity for", node.name)
 
         for i in range(10):

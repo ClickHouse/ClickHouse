@@ -30,6 +30,7 @@ static const std::unordered_map<String, String> quantile_fuse_name_mapping =
     {"quantileTDigestWeighted", "quantilesTDigestWeighted"},
     {"quantileTiming", "quantilesTiming"},
     {"quantileTimingWeighted", "quantilesTimingWeighted"},
+    {"quantileGK", "quantilesGK"},
 };
 
 String GatherFunctionQuantileData::toFusedNameOrSelf(const String & func_name)
@@ -70,12 +71,12 @@ void GatherFunctionQuantileData::FuseQuantileAggregatesData::addFuncNode(ASTPtr 
     if (arguments.size() != (need_two_args ? 2 : 1))
         return;
 
-    if (arguments[0]->getColumnName().find(',') != std::string::npos)
+    if (arguments[0]->getColumnName().contains(','))
         return;
     String arg_name = arguments[0]->getColumnName();
     if (need_two_args)
     {
-        if (arguments[1]->getColumnName().find(',') != std::string::npos)
+        if (arguments[1]->getColumnName().contains(','))
             return;
         arg_name += "," + arguments[1]->getColumnName();
     }

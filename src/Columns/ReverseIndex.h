@@ -86,7 +86,7 @@ struct ReverseIndexHashTableCell
     {
         /// Careful: apparently this uses SFINAE to redefine isZero for all types
         /// except the IndexType, for which the default ZeroTraits::isZero is used.
-        static_assert(!std::is_same_v<typename std::decay<T>::type, typename std::decay<IndexType>::type>);
+        static_assert(!std::is_same_v<typename std::decay_t<T>, typename std::decay_t<IndexType>>);
         return false;
     }
 

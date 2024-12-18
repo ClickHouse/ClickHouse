@@ -37,7 +37,11 @@ private:
     void profileRemoved(const UUID & profile_id);
     void mergeSettingsAndConstraints();
     void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const;
-    void substituteProfiles(SettingsProfileElements & elements, std::vector<UUID> & substituted_profiles, std::unordered_map<UUID, String> & names_of_substituted_profiles) const;
+
+    void substituteProfiles(SettingsProfileElements & elements,
+        std::vector<UUID> & profiles,
+        std::vector<UUID> & substituted_profiles,
+        std::unordered_map<UUID, String> & names_of_substituted_profiles) const;
 
     const AccessControl & access_control;
     std::unordered_map<UUID, SettingsProfilePtr> all_profiles;

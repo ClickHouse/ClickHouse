@@ -5,10 +5,18 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString errors_output_format;
+    extern const SettingsString input_format_record_errors_file_path;
+    extern const SettingsUInt64 max_block_size;
+}
 
 namespace ErrorCodes
 {
@@ -20,9 +28,9 @@ namespace
     const String DEFAULT_OUTPUT_FORMAT = "CSV";
 }
 
-InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context)
+InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : max_block_size(context->getSettingsRef()[Setting::max_block_size])
 {
-    String output_format = context->getSettingsRef().errors_output_format;
+    String output_format = context->getSettingsRef()[Setting::errors_output_format];
     if (!FormatFactory::instance().isOutputFormat(output_format))
         output_format = DEFAULT_OUTPUT_FORMAT;
     if (context->hasInsertionTable())
@@ -30,7 +38,7 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context)
     if (context->getInsertionTable().hasDatabase())
         database = context->getInsertionTable().getDatabaseName();
 
-    String path_in_setting = context->getSettingsRef().input_format_record_errors_file_path;
+    String path_in_setting = context->getSettingsRef()[Setting::input_format_record_errors_file_path];
 
     if (context->getApplicationType() == Context::ApplicationType::SERVER)
     {
@@ -59,30 +67,47 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context)
         {std::make_shared<DataTypeUInt32>(), "offset"},
         {std::make_shared<DataTypeString>(), "reason"},
         {std::make_shared<DataTypeString>(), "raw_data"}};
+    errors_columns = header.cloneEmptyColumns();
 
     writer = context->getOutputFormat(output_format, *write_buf, header);
 }
 
+
 InputFormatErrorsLogger::~InputFormatErrorsLogger()
 {
-    writer->finalize();
-    writer->flush();
-    write_buf->finalize();
+    try
+    {
+        if (!errors_columns[0]->empty())
+            writeErrors();
+        writer->finalize();
+        writer->flush();
+        write_buf->finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("InputFormatErrorsLogger");
+    }
 }
 
 void InputFormatErrorsLogger::logErrorImpl(ErrorEntry entry)
 {
-    auto error = header.cloneEmpty();
-    auto columns = error.mutateColumns();
-    columns[0]->insert(entry.time);
-    database.empty() ? columns[1]->insertDefault() : columns[1]->insert(database);
-    table.empty() ? columns[2]->insertDefault() : columns[2]->insert(table);
-    columns[3]->insert(entry.offset);
-    columns[4]->insert(entry.reason);
-    columns[5]->insert(entry.raw_data);
-    error.setColumns(std::move(columns));
+    errors_columns[0]->insert(entry.time);
+    database.empty() ? errors_columns[1]->insertDefault() : errors_columns[1]->insert(database);
+    table.empty() ? errors_columns[2]->insertDefault() : errors_columns[2]->insert(table);
+    errors_columns[3]->insert(entry.offset);
+    errors_columns[4]->insert(entry.reason);
+    errors_columns[5]->insert(entry.raw_data);
 
-    writer->write(error);
+    if (errors_columns[0]->size() >= max_block_size)
+        writeErrors();
+}
+
+void InputFormatErrorsLogger::writeErrors()
+{
+    auto block = header.cloneEmpty();
+    block.setColumns(std::move(errors_columns));
+    writer->write(block);
+    errors_columns = header.cloneEmptyColumns();
 }
 
 void InputFormatErrorsLogger::logError(ErrorEntry entry)

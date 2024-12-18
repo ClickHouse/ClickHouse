@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -25,6 +26,7 @@ struct IFilterDescription
     virtual ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const = 0;
     virtual size_t countBytesInFilter() const = 0;
     virtual ~IFilterDescription() = default;
+protected:
 };
 
 /// Obtain a filter from non constant Column, that may have type: UInt8, Nullable(UInt8).
@@ -37,15 +39,17 @@ struct FilterDescription final : public IFilterDescription
 
     ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override { return column.filter(*data, result_size_hint); }
     size_t countBytesInFilter() const override { return DB::countBytesInFilter(*data); }
+protected:
 };
 
 struct SparseFilterDescription final : public IFilterDescription
 {
-    const IColumn * filter_indices = nullptr;
+    const ColumnUInt64 * filter_indices = nullptr;
     explicit SparseFilterDescription(const IColumn & column);
 
     ColumnPtr filter(const IColumn & column, ssize_t) const override { return column.index(*filter_indices, 0); }
     size_t countBytesInFilter() const override { return filter_indices->size(); }
+protected:
 };
 
 struct ColumnWithTypeAndName;

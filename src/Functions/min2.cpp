@@ -22,6 +22,6 @@ namespace
 
 REGISTER_FUNCTION(Min2)
 {
-    factory.registerFunction<FunctionMin2>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMin2>({}, FunctionFactory::Case::Insensitive);
 }
 }

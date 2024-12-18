@@ -75,7 +75,7 @@ private:
 
     static Field getDictID() { return UUIDHelpers::generateV4(); }
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     const DictionaryStructure dict_struct;
     const std::string config_prefix;

@@ -20,7 +20,7 @@ protected:
     {
         auto query = std::make_shared<ASTShowAccessQuery>();
 
-        if (!ParserKeyword("SHOW ACCESS").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::SHOW_ACCESS).ignore(pos, expected))
             return false;
 
         node = query;

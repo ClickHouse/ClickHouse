@@ -8,6 +8,12 @@
 namespace DB
 {
 
+struct TTLExpressions
+{
+    ExpressionActionsPtr expression;
+    ExpressionActionsPtr where_expression;
+};
+
 /**
  * Represents the actions, which are required to do
  * with data, when TTL is expired: delete, aggregate, etc.
@@ -18,7 +24,7 @@ public:
     using TTLInfo = IMergeTreeDataPart::TTLInfo;
     using MutableDataPartPtr = MergeTreeMutableDataPartPtr;
 
-    ITTLAlgorithm(const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_);
+    ITTLAlgorithm(const TTLExpressions & ttl_expressions_, const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_);
     virtual ~ITTLAlgorithm() = default;
 
     virtual void execute(Block & block) = 0;
@@ -39,6 +45,7 @@ protected:
     bool isTTLExpired(time_t ttl) const;
     UInt32 getTimestampByIndex(const IColumn * column, size_t index) const;
 
+    const TTLExpressions ttl_expressions;
     const TTLDescription description;
     const TTLInfo old_ttl_info;
     const time_t current_time;

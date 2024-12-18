@@ -39,11 +39,6 @@ public:
         ContextPtr global_context,
         bool created_from_ddl) const;
 
-    /// Create dictionary from DDL-query
-    DictionaryPtr create(const std::string & name,
-        const ASTCreateQuery & ast,
-        ContextPtr global_context) const;
-
     using LayoutCreateFunction = std::function<DictionaryPtr(
         const std::string & name,
         const DictionaryStructure & dict_struct,

@@ -12,14 +12,14 @@ namespace DB
 
 bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_exists("EXISTS");
-    ParserKeyword s_temporary("TEMPORARY");
-    ParserKeyword s_show("SHOW");
-    ParserKeyword s_create("CREATE");
-    ParserKeyword s_database("DATABASE");
-    ParserKeyword s_table("TABLE");
-    ParserKeyword s_view("VIEW");
-    ParserKeyword s_dictionary("DICTIONARY");
+    ParserKeyword s_exists(Keyword::EXISTS);
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
+    ParserKeyword s_show(Keyword::SHOW);
+    ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_database(Keyword::DATABASE);
+    ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_view(Keyword::VIEW);
+    ParserKeyword s_dictionary(Keyword::DICTIONARY);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
 

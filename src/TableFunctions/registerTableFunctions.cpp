@@ -1,7 +1,6 @@
 #include "registerTableFunctions.h"
 #include <TableFunctions/TableFunctionFactory.h>
 
-
 namespace DB
 {
 void registerTableFunctions()
@@ -11,37 +10,26 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionLoop(factory);
+    registerTableFunctionGenerateSeries(factory);
     registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);
     registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
+    registerTableFunctionFileCluster(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionURLCluster(factory);
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+#if USE_MONGODB
     registerTableFunctionMongoDB(factory);
+#endif
     registerTableFunctionRedis(factory);
-
-#if USE_AWS_S3
-    registerTableFunctionS3(factory);
-    registerTableFunctionS3Cluster(factory);
-    registerTableFunctionCOS(factory);
-    registerTableFunctionOSS(factory);
-    registerTableFunctionGCS(factory);
-    registerTableFunctionHudi(factory);
-#if USE_PARQUET
-    registerTableFunctionDeltaLake(factory);
-#endif
-#if USE_AVRO
-    registerTableFunctionIceberg(factory);
-#endif
-
-#endif
-
-#if USE_HDFS
-    registerTableFunctionHDFS(factory);
-    registerTableFunctionHDFSCluster(factory);
+    registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionFuzzQuery(factory);
+#if USE_RAPIDJSON || USE_SIMDJSON
+    registerTableFunctionFuzzJSON(factory);
 #endif
 
 #if USE_HIVE
@@ -70,13 +58,12 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
+    registerTableFunctionTimeSeries(factory);
 
-#if USE_AZURE_BLOB_STORAGE
-    registerTableFunctionAzureBlobStorage(factory);
-    registerTableFunctionAzureBlobStorageCluster(factory);
-#endif
-
-
+    registerTableFunctionObjectStorage(factory);
+    registerTableFunctionObjectStorageCluster(factory);
+    registerDataLakeTableFunctions(factory);
+    registerDataLakeClusterTableFunctions(factory);
 }
 
 }

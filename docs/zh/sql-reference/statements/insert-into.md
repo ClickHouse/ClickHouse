@@ -68,7 +68,7 @@ SELECT * FROM insert_select_testtable;
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
-例如，下面的查询所使用的输入格式就与上面INSERT … VALUES的中使用的输入格式相同：
+例如，下面的查询所使用的输入格式就与上面INSERT ... VALUES的中使用的输入格式相同：
 
 ``` sql
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...

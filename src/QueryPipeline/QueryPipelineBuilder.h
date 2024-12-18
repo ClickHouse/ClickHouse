@@ -126,6 +126,7 @@ public:
         JoinPtr join,
         const Block & output_header,
         size_t max_block_size,
+        size_t min_block_size_bytes,
         size_t max_streams,
         bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
@@ -188,12 +189,12 @@ public:
         concurrency_control = concurrency_control_;
     }
 
-    bool getConcurrencyControl()
+    bool getConcurrencyControl() const
     {
         return concurrency_control;
     }
 
-    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
+    void addResources(QueryPlanResourceHolder resources_) { resources.append(std::move(resources_)); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 

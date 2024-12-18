@@ -1,4 +1,5 @@
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
@@ -8,11 +9,11 @@
     throw std::runtime_error(error);
 }
 
-std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterIml::logged_messages;
-time_t LogFrequencyLimiterIml::last_cleanup = 0;
-std::mutex LogFrequencyLimiterIml::mutex;
+std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterImpl::logged_messages;
+time_t LogFrequencyLimiterImpl::last_cleanup = 0;
+std::mutex LogFrequencyLimiterImpl::mutex;
 
-void LogFrequencyLimiterIml::log(Poco::Message & message)
+void LogFrequencyLimiterImpl::log(Poco::Message & message)
 {
     std::string_view pattern = message.getFormatString();
     if (pattern.empty())
@@ -26,7 +27,7 @@ void LogFrequencyLimiterIml::log(Poco::Message & message)
     SipHash hash;
     hash.update(logger->name());
     /// Format strings are compile-time constants, so they are uniquely identified by pointer and size
-    hash.update(pattern.data());
+    hash.update(reinterpret_cast<uintptr_t>(pattern.data()));
     hash.update(pattern.size());
 
     time_t now = time(nullptr);
@@ -67,7 +68,7 @@ void LogFrequencyLimiterIml::log(Poco::Message & message)
         channel->log(message);
 }
 
-void LogFrequencyLimiterIml::cleanup(time_t too_old_threshold_s)
+void LogFrequencyLimiterImpl::cleanup(time_t too_old_threshold_s)
 {
     time_t now = time(nullptr);
     time_t old = now - too_old_threshold_s;
@@ -80,8 +81,8 @@ void LogFrequencyLimiterIml::cleanup(time_t too_old_threshold_s)
 std::mutex LogSeriesLimiter::mutex;
 time_t LogSeriesLimiter::last_cleanup = 0;
 
-LogSeriesLimiter::LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_, time_t interval_s_)
-    : logger(logger_)
+LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_)
+    : logger(std::move(logger_))
 {
     if (allowed_count_ == 0)
     {
@@ -130,13 +131,12 @@ LogSeriesLimiter::LogSeriesLimiter(Poco::Logger * logger_, size_t allowed_count_
     if (last_time + interval_s_ <= now)
     {
         debug_message = fmt::format(
-            " (LogSeriesLimiter: on interval from {} to {} accepted series {} / {} for the logger {} : {})",
+            " (LogSeriesLimiter: on interval from {} to {} accepted series {} / {} for the logger {})",
             DateLUT::instance().timeToString(last_time),
             DateLUT::instance().timeToString(now),
             accepted_count,
             total_count,
-            logger->name(),
-            double(name_hash));
+            logger->name());
 
         register_as_first();
         return;

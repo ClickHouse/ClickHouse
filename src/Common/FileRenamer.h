@@ -25,7 +25,7 @@ class FileRenamer
 public:
     FileRenamer();
 
-    FileRenamer(const String & renaming_rule);
+    explicit FileRenamer(const String & renaming_rule);
 
     String generateNewFilename(const String & filename) const;
 

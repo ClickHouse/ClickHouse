@@ -29,6 +29,16 @@ slug: /ru/operations/system-tables/text_log
 -   `source_file` (LowCardinality(String)) — исходный файл, из которого была сделана запись.
 -   `source_line` (UInt64) — исходная строка, из которой была сделана запись.
 -   `message_format_string` (LowCardinality(String)) — форматная строка, с помощью которой было отформатировано сообщение.
+-   `value1` (String) - аргумент 1, который использовался для форматирования сообщения.
+-   `value2` (String) - аргумент 2, который использовался для форматирования сообщения.
+-   `value3` (String) - аргумент 3, который использовался для форматирования сообщения.
+-   `value4` (String) - аргумент 4, который использовался для форматирования сообщения.
+-   `value5` (String) - аргумент 5, который использовался для форматирования сообщения.
+-   `value6` (String) - аргумент 6, который использовался для форматирования сообщения.
+-   `value7` (String) - аргумент 7, который использовался для форматирования сообщения.
+-   `value8` (String) - аргумент 8, который использовался для форматирования сообщения.
+-   `value9` (String) - аргумент 9, который использовался для форматирования сообщения.
+-   `value10` (String) - аргумент 10, который использовался для форматирования сообщения.
 
 **Пример**
 
@@ -53,4 +63,14 @@ revision:                54440
 source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void DB::DNSCacheUpdater::start()
 source_line:             45
 message_format_string:   Update period {} seconds
+value1:                  15
+value2:                  
+value3:                  
+value4:                  
+value5:                  
+value6:                  
+value7:                  
+value8:                  
+value9:                  
+value10:                  
 ```

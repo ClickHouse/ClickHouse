@@ -23,11 +23,14 @@ namespace ErrorCodes
 }
 
 ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_), skip_stripes(format_settings.orc.skip_stripes)
+    : IInputFormat(std::move(header_), &in_)
+    , block_missing_values(getPort().getHeader().columns())
+    , format_settings(format_settings_)
+    , skip_stripes(format_settings.orc.skip_stripes)
 {
 }
 
-Chunk ORCBlockInputFormat::generate()
+Chunk ORCBlockInputFormat::read()
 {
     block_missing_values.clear();
 
@@ -48,7 +51,7 @@ Chunk ORCBlockInputFormat::generate()
 
     auto batch_result = file_reader->ReadStripe(stripe_current, include_indices);
     if (!batch_result.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", batch_result.status().ToString());
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", batch_result.status().ToString());
 
     auto batch = batch_result.ValueOrDie();
     if (!batch)
@@ -56,7 +59,7 @@ Chunk ORCBlockInputFormat::generate()
 
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
-        throw ParsingException(
+        throw Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
 
     /// We should extract the number of rows directly from the stripe, because in case when
@@ -64,19 +67,17 @@ Chunk ORCBlockInputFormat::generate()
     /// are not presented in data) the number of rows in record batch will be 0.
     size_t num_rows = file_reader->GetRawORCReader()->getStripe(stripe_current)->getNumberOfRows();
 
-    auto table = table_result.ValueOrDie();
+    const auto & table = table_result.ValueOrDie();
     if (!table || !num_rows)
         return {};
 
     approx_bytes_read_for_chunk = file_reader->GetRawORCReader()->getStripe(stripe_current)->getDataLength();
     ++stripe_current;
 
-    Chunk res;
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, num_rows, block_missing_values_ptr);
-    return res;
+    return arrow_column_to_ch_column->arrowTableToCHChunk(table, num_rows, block_missing_values_ptr);
 }
 
 void ORCBlockInputFormat::resetParser()
@@ -88,9 +89,9 @@ void ORCBlockInputFormat::resetParser()
     block_missing_values.clear();
 }
 
-const BlockMissingValues & ORCBlockInputFormat::getMissingValues() const
+const BlockMissingValues * ORCBlockInputFormat::getMissingValues() const
 {
-    return block_missing_values;
+    return &block_missing_values;
 }
 
 
@@ -105,7 +106,7 @@ static void getFileReaderAndSchema(
     if (is_stopped)
         return;
 
-    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, arrow::default_memory_pool());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, ArrowMemoryPool::instance());
     if (!result.ok())
         throw Exception::createDeprecated(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
@@ -162,8 +163,11 @@ NamesAndTypesList ORCSchemaReader::readSchema()
 {
     initializeIfNeeded();
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
-        *schema, "ORC", format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
-    if (format_settings.schema_inference_make_columns_nullable)
+        *schema,
+        "ORC",
+        format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
+        format_settings.schema_inference_make_columns_nullable != 0);
+    if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }

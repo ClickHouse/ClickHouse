@@ -1,9 +1,8 @@
 #include <Common/UTF8Helpers.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 #include <widechar_width.h>
 #include <bit>
-
 
 namespace DB
 {
@@ -97,13 +96,14 @@ namespace
 enum ComputeWidthMode
 {
     Width,              /// Calculate and return visible width
-    BytesBeforLimit     /// Calculate and return the maximum number of bytes when substring fits in visible width.
+    BytesBeforeLimit    /// Calculate and return the maximum number of bytes when substring fits in visible width.
 };
 
 template <ComputeWidthMode mode>
 size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     UTF8Decoder decoder;
+    bool is_escape_sequence = false;
     size_t width = 0;
     size_t rollback = 0;
     for (size_t i = 0; i < size; ++i)
@@ -116,6 +116,9 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
         while (i + 15 < size)
         {
+            if (is_escape_sequence)
+                break;
+
             __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
 
             const uint16_t non_regular_width_mask = _mm_movemask_epi8(
@@ -130,23 +133,35 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
                 i += num_regular_chars;
                 break;
             }
-            else
-            {
-                i += 16;
-                width += 16;
-            }
+
+            i += 16;
+            width += 16;
         }
 #endif
 
         while (i < size && isPrintableASCII(data[i]))
         {
-            ++width;
+            bool ignore_width = is_escape_sequence && (isCSIParameterByte(data[i]) || isCSIIntermediateByte(data[i]));
+
+            if (ignore_width || (data[i] == '[' && is_escape_sequence))
+            {
+                /// don't count the width
+            }
+            else if (is_escape_sequence && isCSIFinalByte(data[i]))
+            {
+                is_escape_sequence = false;
+            }
+            else
+            {
+                ++width;
+            }
             ++i;
         }
 
         /// Now i points to position in bytes after regular ASCII sequence
         /// and if width > limit, then (width - limit) is the number of extra ASCII characters after width limit.
-        if (mode == BytesBeforLimit && width > limit)
+
+        if (mode == BytesBeforeLimit && width > limit)
             return i - (width - limit);
 
         switch (decoder.decode(data[i]))
@@ -162,20 +177,18 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
             }
             case UTF8Decoder::ACCEPT:
             {
-                // there are special control characters that manipulate the terminal output.
-                // (`0x08`, `0x09`, `0x0a`, `0x0b`, `0x0c`, `0x0d`, `0x1b`)
-                // Since we don't touch the original column data, there is no easy way to escape them.
-                // TODO: escape control characters
                 // TODO: multiline support for '\n'
 
-                // special treatment for '\t'
+                // special treatment for '\t' and for ESC
                 size_t next_width = width;
-                if (decoder.codepoint == '\t')
+                if (decoder.codepoint == '\x1b')
+                    is_escape_sequence = true;
+                else if (decoder.codepoint == '\t')
                     next_width += 8 - (prefix + width) % 8;
                 else
                     next_width += wcwidth(decoder.codepoint);
 
-                if (mode == BytesBeforLimit && next_width > limit)
+                if (mode == BytesBeforeLimit && next_width > limit)
                     return i - rollback;
                 width = next_width;
 
@@ -189,11 +202,10 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
     }
 
     // no need to handle trailing sequence as they have zero width
-    return (mode == BytesBeforLimit) ? size : width;
+    return (mode == BytesBeforeLimit) ? size : width;
 }
 
 }
-
 
 size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
 {
@@ -202,7 +214,7 @@ size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
 
 size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
-    return computeWidthImpl<BytesBeforLimit>(data, size, prefix, limit);
+    return computeWidthImpl<BytesBeforeLimit>(data, size, prefix, limit);
 }
 
 }

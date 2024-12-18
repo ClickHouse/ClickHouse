@@ -11,7 +11,7 @@ static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
 
 
-RabbitMQConnection::RabbitMQConnection(const RabbitMQConfiguration & configuration_, Poco::Logger * log_)
+RabbitMQConnection::RabbitMQConnection(const RabbitMQConfiguration & configuration_, LoggerPtr log_)
     : configuration(configuration_)
     , log(log_)
     , event_handler(loop.getLoop(), log)

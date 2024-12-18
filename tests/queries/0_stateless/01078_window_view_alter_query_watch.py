@@ -7,7 +7,7 @@ import sys
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, "helpers"))
 
-from client import client, prompt, end_of_block
+from client import client, end_of_block, prompt
 
 log = None
 # uncomment the line below for debugging
@@ -20,7 +20,7 @@ with client(name="client1>", log=log) as client1, client(
     client2.expect(prompt)
     client3.expect(prompt)
 
-    client1.send("SET allow_experimental_analyzer = 0")
+    client1.send("SET enable_analyzer = 0")
     client1.expect(prompt)
     client1.send("SET allow_experimental_window_view = 1")
     client1.expect(prompt)
@@ -28,9 +28,13 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
+    client2.send("SET enable_analyzer = 0")
+    client2.expect(prompt)
     client3.send("SET allow_experimental_window_view = 1")
     client3.expect(prompt)
     client3.send("SET window_view_heartbeat_interval = 1")
+    client3.expect(prompt)
+    client3.send("SET enable_analyzer = 0")
     client3.expect(prompt)
 
     client1.send("CREATE DATABASE IF NOT EXISTS 01078_window_view_alter_query_watch")
@@ -51,7 +55,7 @@ with client(name="client1>", log=log) as client1, client(
 
     client1.send("WATCH 01078_window_view_alter_query_watch.wv")
     client1.expect("Query id" + end_of_block)
-    client1.expect("Progress: 0.00 rows.*\)")
+    client1.expect("Progress: 0.00 rows.*\\)")
     client2.send(
         "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));"
     )
@@ -61,7 +65,7 @@ with client(name="client1>", log=log) as client1, client(
     )
     client2.expect("Ok.")
     client1.expect("1" + end_of_block)
-    client1.expect("Progress: 1.00 rows.*\)")
+    client1.expect("Progress: 1.00 rows.*\\)")
     client2.send(
         "ALTER TABLE 01078_window_view_alter_query_watch.wv MODIFY QUERY SELECT count(a) * 2 AS count, hopEnd(wid) AS w_end FROM 01078_window_view_alter_query_watch.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid"
     )
@@ -71,7 +75,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.expect(prompt)
     client3.send("WATCH 01078_window_view_alter_query_watch.wv")
     client3.expect("Query id" + end_of_block)
-    client3.expect("Progress: 0.00 rows.*\)")
+    client3.expect("Progress: 0.00 rows.*\\)")
     client2.send(
         "INSERT INTO 01078_window_view_alter_query_watch.mt VALUES (1, toDateTime('1990/01/01 12:00:06', 'US/Samoa'));"
     )
@@ -81,11 +85,11 @@ with client(name="client1>", log=log) as client1, client(
     )
     client2.expect("Ok.")
     client3.expect("2" + end_of_block)
-    client3.expect("Progress: 1.00 rows.*\)")
+    client3.expect("Progress: 1.00 rows.*\\)")
 
     # send Ctrl-C
     client3.send("\x03", eol="")
-    match = client3.expect("(%s)|([#\$] )" % prompt)
+    match = client3.expect("(%s)|([#\\$] )" % prompt)
     if match.groups()[1]:
         client3.send(client3.command)
         client3.expect(prompt)

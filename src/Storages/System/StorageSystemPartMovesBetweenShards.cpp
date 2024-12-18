@@ -16,33 +16,42 @@ namespace DB
 {
 
 
-NamesAndTypesList StorageSystemPartMovesBetweenShards::getNamesAndTypes()
+ColumnsDescription StorageSystemPartMovesBetweenShards::getColumnsDescription()
 {
-    return {
+    return ColumnsDescription
+    {
         /// Table properties.
-        { "database",                std::make_shared<DataTypeString>() },
-        { "table",                   std::make_shared<DataTypeString>() },
+        { "database",                std::make_shared<DataTypeString>(), "The name of the database where move is performed."},
+        { "table",                   std::make_shared<DataTypeString>(), "The name of the table where move is performed."},
 
         /// Constant element properties.
-        { "task_name",               std::make_shared<DataTypeString>() },
-        { "task_uuid",               std::make_shared<DataTypeUUID>() },
-        { "create_time",             std::make_shared<DataTypeDateTime>() },
-        { "part_name",               std::make_shared<DataTypeString>() },
-        { "part_uuid",               std::make_shared<DataTypeUUID>() },
-        { "to_shard",                std::make_shared<DataTypeString>() },
-        { "dst_part_name",           std::make_shared<DataTypeString>() },
+        { "task_name",               std::make_shared<DataTypeString>(), "The name of the moving task."},
+        { "task_uuid",               std::make_shared<DataTypeUUID>(), "The identifier of the moving task."},
+        { "create_time",             std::make_shared<DataTypeDateTime>(), "The time when the task was created."},
+        { "part_name",               std::make_shared<DataTypeString>(), "The name of the part which is in a process of moving."},
+        { "part_uuid",               std::make_shared<DataTypeUUID>(), "The UUID of the part which is in a process of moving."},
+        { "to_shard",                std::make_shared<DataTypeString>(), "The name of the destination shard."},
+        { "dst_part_name",           std::make_shared<DataTypeString>(), "The result part name."},
 
         /// Processing status of item.
-        { "update_time",             std::make_shared<DataTypeDateTime>() },
-        { "state",                   std::make_shared<DataTypeString>() },
-        { "rollback",                std::make_shared<DataTypeUInt8>() },
-        { "num_tries",               std::make_shared<DataTypeUInt32>() },
-        { "last_exception",          std::make_shared<DataTypeString>() },
+        { "update_time",             std::make_shared<DataTypeDateTime>(), "The last time update was performed."},
+        { "state",                   std::make_shared<DataTypeString>(), "The current state of the move."},
+        { "rollback",                std::make_shared<DataTypeUInt8>(), "The flag which indicated whether the operation was rolled back."},
+        { "num_tries",               std::make_shared<DataTypeUInt32>(), "The number of tries to complete the operation."},
+        { "last_exception",          std::make_shared<DataTypeString>(), "The last exception name if any."},
     };
 }
 
 
-void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+Block StorageSystemPartMovesBetweenShards::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
+
+void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -93,7 +102,7 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
             { col_table_to_filter, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;

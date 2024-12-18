@@ -1,14 +1,18 @@
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
 
+from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.test_tools import TSV
+
 disk_types = {
-    "default": "local",
-    "disk_s3": "s3",
-    "disk_hdfs": "hdfs",
-    "disk_encrypted": "s3",
+    "default": "Local",
+    "disk_s3": "S3",
+    "disk_hdfs": "HDFS",
+    "disk_encrypted": "S3",
 }
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 @pytest.fixture(scope="module")
@@ -45,8 +49,15 @@ def test_different_types(cluster):
 
     for fields in response[1:]:  # skip header
         assert len(fields) >= 7
+        expected_disk_type = disk_types.get(fields[name_col_ix], "UNKNOWN")
+
+        if expected_disk_type != "Local":
+            disk_type = fields[response[0].index("object_storage_type")]
+        else:
+            disk_type = fields[type_col_ix]
+
         assert (
-            disk_types.get(fields[name_col_ix], "UNKNOWN") == fields[type_col_ix]
+            expected_disk_type == disk_type
         ), f"Wrong type ({fields[type_col_ix]}) for disk {fields[name_col_ix]}!"
         if "encrypted" in fields[name_col_ix]:
             assert (
@@ -60,22 +71,29 @@ def test_different_types(cluster):
 
 def test_select_by_type(cluster):
     node = cluster.instances["node"]
-    fs = HdfsClient(hosts=cluster.hdfs_ip)
-
     for name, disk_type in list(disk_types.items()):
-        if disk_type != "s3":
+        if disk_type == "Local":
             assert (
                 node.query(
                     "SELECT name FROM system.disks WHERE type='" + disk_type + "'"
                 )
                 == name + "\n"
             )
-        else:
+        elif disk_type == "S3":
             assert (
                 node.query(
-                    "SELECT name FROM system.disks WHERE type='"
+                    "SELECT name FROM system.disks WHERE object_storage_type='"
                     + disk_type
                     + "' ORDER BY name"
                 )
                 == "disk_encrypted\ndisk_s3\n"
+            )
+        else:
+            assert (
+                node.query(
+                    "SELECT name FROM system.disks WHERE object_storage_type='"
+                    + disk_type
+                    + "'"
+                )
+                == name + "\n"
             )

@@ -15,7 +15,6 @@ Usage:
 URL=http://cloud-images.ubuntu.com/bionic/current
 IMAGE=bionic-server-cloudimg-amd64.img
 SSH_PORT=11022
-CLICKHOUSE_PORT=9090
 PASSWORD=root
 
 TABLE_NAME=$1
@@ -34,19 +33,18 @@ function run()
 
 function copy()
 {
-    sshpass -p $PASSWORD scp -r -P $SSH_PORT $1 root@localhost:$2 2>/dev/null
+    sshpass -p $PASSWORD scp -r -P $SSH_PORT "$1" "root@localhost:$2" 2>/dev/null
 }
 
 function wait_vm_for_start()
 {
     echo "Waiting until VM started..."
     started=0
-    for i in {0..100}; do
-        run "exit"
-        if [ $? -eq 0 ]; then
+    for _ in {0..100}; do
+        if run "exit"; then
             started=1
             break
-        fi 
+        fi
         sleep 1s
     done
 
@@ -62,9 +60,8 @@ function wait_clickhouse_for_start()
 {
     echo "Waiting until ClickHouse started..."
     started=0
-    for i in {0..30}; do
-        run "clickhouse client --query 'select 1'" > /dev/null
-        if [ $? -eq 0 ]; then
+    for _ in {0..30}; do
+        if run "clickhouse client --query 'select 1'" > /dev/null; then
             started=1
             break
         fi
@@ -105,11 +102,11 @@ if [[ -z $CLICKHOUSE_CONFIG_DIR ]]; then
     CLICKHOUSE_CONFIG_DIR=/etc/clickhouse-server
 fi
 
-echo "Using ClickHouse binary:" $CLICKHOUSE_BINARY
-echo "Using ClickHouse config from:" $CLICKHOUSE_CONFIG_DIR
+echo "Using ClickHouse binary: $CLICKHOUSE_BINARY"
+echo "Using ClickHouse config from: $CLICKHOUSE_CONFIG_DIR"
 
-copy $CLICKHOUSE_BINARY /usr/bin
-copy $CLICKHOUSE_CONFIG_DIR /etc
+copy "$CLICKHOUSE_BINARY" /usr/bin
+copy "$CLICKHOUSE_CONFIG_DIR" /etc
 run "mv /etc/$CLICKHOUSE_CONFIG_DIR /etc/clickhouse-server"
 
 echo "Prepared VM"
@@ -118,23 +115,23 @@ echo "Starting ClickHouse"
 run "clickhouse server --config-file=/etc/clickhouse-server/config.xml > clickhouse-server.log 2>&1" &
 wait_clickhouse_for_start
 
-query=`cat $CREATE_QUERY`
-echo "Executing query:" $query
+query=$(cat "$CREATE_QUERY")
+echo "Executing query: $query"
 run "clickhouse client --query '$query'"
 
-query=`cat $INSERT_QUERY`
-echo "Will run in a loop query: " $query
+query=$(cat "$INSERT_QUERY")
+echo "Will run in a loop query:  $query"
 run "clickhouse benchmark <<< '$query' -c 8" &
 echo "Running queries"
 
-pid=`pidof qemu-system-x86_64`
+pid=$(pidof qemu-system-x86_64)
 sec=$(( (RANDOM % 5) + 25 ))
 ms=$(( RANDOM % 1000 ))
 
 echo "Will kill VM in $sec.$ms sec"
 
 sleep $sec.$ms
-kill -9 $pid
+kill -9 "$pid"
 
 echo "Restarting"
 
@@ -147,22 +144,22 @@ run "rm -r *data/system"
 run "clickhouse server --config-file=/etc/clickhouse-server/config.xml > clickhouse-server.log 2>&1" &
 wait_clickhouse_for_start
 
-pid=`pidof qemu-system-x86_64`
-result=`run "grep $TABLE_NAME clickhouse-server.log | grep 'Caught exception while loading metadata'"`
+pid=$(pidof qemu-system-x86_64)
+result=$(run "grep $TABLE_NAME clickhouse-server.log | grep 'Caught exception while loading metadata'")
 if [[ -n $result ]]; then
     echo "FAIL. Can't attach table:"
-    echo $result
-    kill -9 $pid
+    echo "$result"
+    kill -9 "$pid"
     exit 1
 fi
 
-result=`run "grep $TABLE_NAME clickhouse-server.log | grep 'Considering to remove broken part'"`
+result=$(run "grep $TABLE_NAME clickhouse-server.log | grep 'Considering to remove broken part'")
 if [[ -n $result ]]; then
     echo "FAIL. Have broken parts:"
-    echo $result
-    kill -9 $pid
+    echo "$result"
+    kill -9 "$pid"
     exit 1
 fi
 
-kill -9 $pid
+kill -9 "$pid"
 echo OK

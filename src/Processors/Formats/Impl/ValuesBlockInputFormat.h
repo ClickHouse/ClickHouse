@@ -34,11 +34,13 @@ public:
 
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
-    void setContext(ContextPtr & context_) { context = Context::createCopy(context_); }
+    void setContext(const ContextPtr & context_) { context = Context::createCopy(context_); }
+    void setQueryParameters(const NameToNameMap & parameters);
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -48,7 +50,7 @@ private:
     ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
 
-    enum class ParserType
+    enum class ParserType : uint8_t
     {
         Streaming,
         BatchTemplate,
@@ -57,7 +59,7 @@ private:
 
     using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
 
-    Chunk generate() override;
+    Chunk read() override;
 
     void readRow(MutableColumns & columns, size_t row_num);
     void readUntilTheEndOfRowAndReTokenize(size_t current_column_idx);
@@ -111,6 +113,7 @@ public:
 
 private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;

@@ -28,7 +28,7 @@ The CSV file has 10 columns:
 
 ```response
 ┌─name─────────────────┬─type─────────────┐
-│ date                 │ Nullable(String) │
+│ date                 │ Nullable(Date)   │
 │ location_key         │ Nullable(String) │
 │ new_confirmed        │ Nullable(Int64)  │
 │ new_deceased         │ Nullable(Int64)  │
@@ -132,7 +132,7 @@ FROM covid19;
 └────────────────────────────────────────────┘
 ```
 
-7. You will notice the data has a lot of 0's for dates - either weekends or days where numbers were not reported each day. We can use a window function to smooth out the daily averages of new cases:
+7. You will notice the data has a lot of 0's for dates - either weekends or days when numbers were not reported each day. We can use a window function to smooth out the daily averages of new cases:
 
 ```sql
 SELECT

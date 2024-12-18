@@ -24,6 +24,7 @@ Columns:
 - `num_rebalance_revocations`, (UInt64) - number of times the consumer was revoked its partitions
 - `num_rebalance_assignments`, (UInt64) - number of times the consumer was assigned to Kafka cluster
 - `is_currently_used`, (UInt8) - consumer is in use
+- `last_used`, (UInt64) - last time this consumer was in use, unix time in microseconds
 - `rdkafka_stat` (String) - library internal statistic. See https://github.com/ClickHouse/librdkafka/blob/master/STATISTICS.md . Set `statistics_interval_ms` to 0 disable, default is 3000 (once in three seconds).
 
 Example:

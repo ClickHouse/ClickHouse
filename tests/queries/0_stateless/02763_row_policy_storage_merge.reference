@@ -1,0 +1,322 @@
+SELECT * FROM 02763_merge_log_1 ORDER BY x
+1	11
+2	12
+3	13
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge) ORDER BY x
+1	11
+1	11
+1	11
+1	11
+2	12
+2	12
+2	12
+2	12
+3	13
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+4	14
+SETTINGS optimize_move_to_prewhere= 0
+SELECT * FROM 02763_merge_log_1
+3	13
+SELECT * FROM merge(currentDatabase(), 02763_merge_log_1)
+3	13
+SELECT * FROM merge(currentDatabase(), 02763_merge_log)
+1	11
+2	12
+3	13
+3	13
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>2
+3	13
+3	13
+4	14
+SELECT * FROM 02763_merge_merge_1
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge_1)
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge)
+1	11
+2	12
+3	13
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>2
+3	13
+4	14
+4	14
+SELECT * FROM engine_merge_12 WHERE x>2
+3	13
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge)
+1	11
+1	11
+2	12
+2	12
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge) WHERE x>2
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+aaa	6	39
+aaa	6	39
+aaa	6	39
+aaa	8	42
+aaa	8	42
+aaa	8	42
+3
+3
+3
+4
+4
+4
+SELECT * FROM merge(...) LEFT JOIN merge(...)
+3	13	13
+3	13	13
+4	14	14
+4	14	14
+SELECT * FROM merge(...) UNION ALL SELECT * FROM merge(...)
+1	11
+1	11
+2	12
+2	12
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+SELECT x, SUM(x) FROM (SELECT * FROM merge(...) UNION ALL ...) GROUP BY x
+1	22
+2	24
+3	39
+4	42
+1	11	0
+2	12	0
+3	13	0
+4	14	1
+4	14	1
+SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>1 -- with y>12
+2	12
+3	13
+3	13
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>1 -- with y>12
+2	12
+3	13
+3	13
+4	14
+4	14
+2	12	0
+3	13	1
+3	13	1
+4	14	1
+4	14	1
+SELECT y from merge(currentDatabase(), 02763_merge)
+11
+11
+12
+12
+13
+13
+13
+13
+14
+14
+14
+14
+02763_merge_fancycols
+SELECT *
+SELECT x, lc
+SELECT *
+1	11	111	111	42
+1	11	111	111	42
+SELECT x, lc
+1	111
+1	111
+SELECT x, lc, cnst
+1	111	42
+1	111	42
+SELECT x, y from merge(currentDatabase(), 02763_merge
+1	11
+1	11
+1	11
+1	11
+2	12
+2	12
+3	13
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+4	14
+USING 0
+USING 1
+zzz
+====
+SETTINGS optimize_move_to_prewhere= 1
+SELECT * FROM 02763_merge_log_1
+3	13
+SELECT * FROM merge(currentDatabase(), 02763_merge_log_1)
+3	13
+SELECT * FROM merge(currentDatabase(), 02763_merge_log)
+1	11
+2	12
+3	13
+3	13
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>2
+3	13
+3	13
+4	14
+SELECT * FROM 02763_merge_merge_1
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge_1)
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge)
+1	11
+2	12
+3	13
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>2
+3	13
+4	14
+4	14
+SELECT * FROM engine_merge_12 WHERE x>2
+3	13
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge)
+1	11
+1	11
+2	12
+2	12
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge) WHERE x>2
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+aaa	6	39
+aaa	6	39
+aaa	6	39
+aaa	8	42
+aaa	8	42
+aaa	8	42
+3
+3
+3
+4
+4
+4
+SELECT * FROM merge(...) LEFT JOIN merge(...)
+3	13	13
+3	13	13
+4	14	14
+4	14	14
+SELECT * FROM merge(...) UNION ALL SELECT * FROM merge(...)
+1	11
+1	11
+2	12
+2	12
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+SELECT x, SUM(x) FROM (SELECT * FROM merge(...) UNION ALL ...) GROUP BY x
+1	22
+2	24
+3	39
+4	42
+1	11	0
+2	12	0
+3	13	0
+4	14	1
+4	14	1
+SELECT * FROM merge(currentDatabase(), 02763_merge_log) WHERE x>1 -- with y>12
+2	12
+3	13
+3	13
+4	14
+4	14
+SELECT * FROM merge(currentDatabase(), 02763_merge_merge) WHERE x>1 -- with y>12
+2	12
+3	13
+3	13
+4	14
+4	14
+2	12	0
+3	13	1
+3	13	1
+4	14	1
+4	14	1
+SELECT y from merge(currentDatabase(), 02763_merge)
+11
+11
+12
+12
+13
+13
+13
+13
+14
+14
+14
+14
+02763_merge_fancycols
+SELECT *
+SELECT x, lc
+SELECT *
+1	11	111	111	42
+1	11	111	111	42
+SELECT x, lc
+1	111
+1	111
+SELECT x, lc, cnst
+1	111	42
+1	111	42
+SELECT x, y from merge(currentDatabase(), 02763_merge
+1	11
+1	11
+1	11
+1	11
+2	12
+2	12
+3	13
+3	13
+3	13
+3	13
+4	14
+4	14
+4	14
+4	14
+USING 0
+USING 1
+zzz
+====

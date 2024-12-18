@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
 
@@ -50,11 +51,15 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
         || code == ErrorCodes::CANNOT_PARSE_IPV4
         || code == ErrorCodes::CANNOT_PARSE_IPV6
-        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM;
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+        || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
+    : IInputFormat(std::move(header), &in_)
+    , serializations(getPort().getHeader().getSerializations())
+    , params(params_)
+    , block_missing_values(getPort().getHeader().columns())
 {
 }
 
@@ -83,7 +88,7 @@ void IRowInputFormat::logError()
     errors_logger->logError(InputFormatErrorsLogger::ErrorEntry{now_time, total_rows, diagnostic, raw_data});
 }
 
-Chunk IRowInputFormat::generate()
+Chunk IRowInputFormat::read()
 {
     if (total_rows == 0)
     {
@@ -93,19 +98,18 @@ Chunk IRowInputFormat::generate()
         }
         catch (Exception & e)
         {
-            auto file_name = getFileNameFromReadBuffer(getReadBuffer());
-            if (!file_name.empty())
-                e.addMessage(fmt::format("(in file/uri {})", file_name));
-
             e.addMessage("(while reading header)");
             throw;
         }
     }
 
     const Block & header = getPort().getHeader();
-
     size_t num_columns = header.columns();
-    MutableColumns columns = header.cloneEmptyColumns();
+    MutableColumns columns = header.cloneEmptyColumns(serializations);
+
+    ColumnCheckpoints checkpoints(columns.size());
+    for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
+        checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
 
     block_missing_values.clear();
 
@@ -128,11 +132,12 @@ Chunk IRowInputFormat::generate()
 
         RowReadExtension info;
         bool continue_reading = true;
-        for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
+        for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)
         {
             try
             {
-                ++total_rows;
+                for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
+                    columns[column_idx]->updateCheckpoint(*checkpoints[column_idx]);
 
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
@@ -148,6 +153,8 @@ Chunk IRowInputFormat::generate()
                     }
                 }
 
+                ++total_rows;
+
                 /// Some formats may read row AND say the read is finished.
                 /// For such a case, get the number or rows from first column.
                 if (!columns.empty())
@@ -162,6 +169,8 @@ Chunk IRowInputFormat::generate()
             }
             catch (Exception & e)
             {
+                ++total_rows;
+
                 /// Logic for possible skipping of errors.
 
                 if (!isParseError(e.code()))
@@ -193,37 +202,11 @@ Chunk IRowInputFormat::generate()
 
                 syncAfterError();
 
-                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
-
+                /// Rollback all columns in block to initial size (remove values, that was appended to only part of columns).
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                {
-                    auto & column = columns[column_idx];
-                    if (column->size() > num_rows)
-                        column->popBack(column->size() - num_rows);
-                }
+                    columns[column_idx]->rollback(*checkpoints[column_idx]);
             }
         }
-    }
-    catch (ParsingException & e)
-    {
-        String verbose_diagnostic;
-        try
-        {
-            verbose_diagnostic = getDiagnosticInfo();
-        }
-        catch (const Exception & exception)
-        {
-            verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// Error while trying to obtain verbose diagnostic. Ok to ignore.
-        }
-
-        e.setFileName(getFileNameFromReadBuffer(getReadBuffer()));
-        e.setLineNumber(static_cast<int>(total_rows));
-        e.addMessage(verbose_diagnostic);
-        throw;
     }
     catch (Exception & e)
     {
@@ -244,10 +227,6 @@ Chunk IRowInputFormat::generate()
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
-        auto file_name = getFileNameFromReadBuffer(getReadBuffer());
-        if (!file_name.empty())
-            e.addMessage(fmt::format("(in file/uri {})", file_name));
-
         e.addMessage(fmt::format("(at row {})\n", total_rows));
         e.addMessage(verbose_diagnostic);
         throw;
@@ -257,7 +236,7 @@ Chunk IRowInputFormat::generate()
     {
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
-            Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
+            LoggerPtr log = getLogger("IRowInputFormat");
             LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 
@@ -289,6 +268,12 @@ void IRowInputFormat::resetParser()
 size_t IRowInputFormat::countRows(size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", getName());
+}
+
+void IRowInputFormat::setSerializationHints(const SerializationInfoByName & hints)
+{
+    if (supportsCustomSerializations())
+        serializations = getPort().getHeader().getSerializations(hints);
 }
 
 

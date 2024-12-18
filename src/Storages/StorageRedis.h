@@ -74,7 +74,7 @@ private:
     StorageID table_id;
     RedisConfiguration configuration;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     RedisPoolPtr pool;
 
     const String primary_key;

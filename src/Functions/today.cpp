@@ -1,11 +1,9 @@
-#include <Common/DateLUT.h>
-
 #include <Core/Field.h>
-
 #include <DataTypes/DataTypeDate.h>
-
-#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -86,8 +84,8 @@ public:
 REGISTER_FUNCTION(Today)
 {
     factory.registerFunction<TodayOverloadResolver>();
-    factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }

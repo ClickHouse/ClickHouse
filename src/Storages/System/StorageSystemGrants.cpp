@@ -18,23 +18,27 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
+ColumnsDescription StorageSystemGrants::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues())},
-        {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"is_partial_revoke", std::make_shared<DataTypeUInt8>()},
-        {"grant_option", std::make_shared<DataTypeUInt8>()},
+    return ColumnsDescription
+    {
+        {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "User name."},
+        {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Role assigned to user account."},
+        {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues()), "Access parameters for ClickHouse user account."},
+        {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a database."},
+        {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a table."},
+        {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a column to which access is granted."},
+        {"is_partial_revoke", std::make_shared<DataTypeUInt8>(),
+            "Logical value. It shows whether some privileges have been revoked. Possible values: "
+            "0 — The row describes a grant, "
+            "1 — The row describes a partial revoke."
+        },
+        {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
     };
-    return names_and_types;
 }
 
 
-void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
@@ -131,13 +135,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
         for (const auto & element : elements)
         {
             auto access_types = element.access_flags.toAccessTypes();
-            if (access_types.empty() || (!element.any_column && element.columns.empty()))
+            if (access_types.empty() || (!element.anyColumn() && element.columns.empty()))
                 continue;
 
-            const auto * database = element.any_database ? nullptr : &element.database;
-            const auto * table = element.any_table ? nullptr : &element.table;
+            const auto * database = element.anyDatabase() ? nullptr : &element.database;
+            const auto * table = element.anyTable() ? nullptr : &element.table;
 
-            if (element.any_column)
+            if (element.anyColumn())
             {
                 for (const auto & access_type : access_types)
                     add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.is_partial_revoke, element.grant_option);

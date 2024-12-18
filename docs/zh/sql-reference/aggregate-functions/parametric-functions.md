@@ -80,7 +80,7 @@ FROM
 
 在这种情况下，您应该记住您不知道直方图bin边界。
 
-## sequenceMatch(pattern)(timestamp, cond1, cond2, …) {#function-sequencematch}
+## sequenceMatch(pattern)(timestamp, cond1, cond2, ...) {#function-sequencematch}
 
 检查序列是否包含与模式匹配的事件链。
 
@@ -167,7 +167,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 -   [sequenceCount](#function-sequencecount)
 
-## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
+## sequenceCount(pattern)(time, cond1, cond2, ...) {#function-sequencecount}
 
 计算与模式匹配的事件链的数量。该函数搜索不重叠的事件链。当前链匹配后，它开始搜索下一个链。
 
@@ -472,7 +472,7 @@ FROM
 
 -   `r1`-2020-01-01期间访问该网站的独立访问者数量（ `cond1` 条件）。
 -   `r2`-在2020-01-01和2020-01-02之间的特定时间段内访问该网站的唯一访问者的数量 (`cond1` 和 `cond2` 条件）。
--   `r3`-在2020-01-01和2020-01-03之间的特定时间段内访问该网站的唯一访问者的数量 (`cond1` 和 `cond3` 条件）。
+-   `r3`-在2020-01-01和2020-01-03 网站的独立访客数量 (`cond1` 和 `cond3` 条件）。
 
 ## uniqUpTo(N)(x) {#uniquptonx}
 

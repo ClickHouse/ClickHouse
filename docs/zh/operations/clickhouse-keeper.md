@@ -45,6 +45,7 @@ ClickHouse Keeper 完全可以作为ZooKeeper的独立替代品或者作为Click
 -    `heart_beat_interval_ms` — ClickHouse Keeper的leader发送心跳频率(毫秒)(默认为500)。
 -    `election_timeout_lower_bound_ms` — 如果follower在此间隔内没有收到leader的心跳，那么它可以启动leader选举(默认为1000).
 -    `election_timeout_upper_bound_ms` — 如果follower在此间隔内没有收到leader的心跳，那么它必须启动leader选举(默认为2000)。
+-    `leadership_expiry_ms` — 如果leader在此间隔内没有收到足够的follower回复，那么他会主动放弃领导权。当被设置为0时会自动设置为`heart_beat_interval_ms`的20倍，当被设置小于0时leader不会主动放弃领导权（默认为0）。
 -    `rotate_log_storage_interval` — 单个文件中存储的日志记录数量(默认100000条)。
 -    `reserved_log_items` — 在压缩之前需要存储多少协调日志记录(默认100000)。
 -    `snapshot_distance` — ClickHouse Keeper创建新快照的频率(以日志记录的数量为单位)(默认100000)。
@@ -214,6 +215,7 @@ dead_session_check_period_ms=500
 heart_beat_interval_ms=500
 election_timeout_lower_bound_ms=1000
 election_timeout_upper_bound_ms=2000
+leadership_expiry_ms=0
 reserved_log_items=1000000000000000
 snapshot_distance=10000
 auto_forwarding=true

@@ -1,12 +1,8 @@
-SELECT
-    x,
-    y
-FROM prewhere_move
-PREWHERE x > 100
-SELECT
-    x1,
-    x2,
-    x3,
-    x4
-FROM prewhere_move
-PREWHERE (x1 > 100) AND (x2 > 100) AND (x3 > 100) AND (x4 > 100)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(x, 100) (removed)
+  Filter
+  Filter column: and(greater(x1, 100), greater(x2, 100), greater(x3, 100), greater(x4, \'100\')) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(x1, 100)

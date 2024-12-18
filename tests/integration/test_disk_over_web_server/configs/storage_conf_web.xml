@@ -29,4 +29,8 @@
             </cached_web>
         </policies>
     </storage_configuration>
+
+    <page_cache_size>10000000000</page_cache_size>
+
+    <query_log></query_log>
 </clickhouse>

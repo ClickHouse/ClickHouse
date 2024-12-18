@@ -2,13 +2,13 @@
 
 import bisect
 import os.path
-import xml.etree.ElementTree as ET
-from urllib.parse import urlparse
 import shutil
-
+import xml.etree.ElementTree as ET
 import zipfile  # For reading backups from zip archives
-import boto3  # For reading backups from S3
+from urllib.parse import urlparse
 
+import boto3  # For reading backups from S3
+import botocore
 
 ## Examples:
 ## from backupview import open_backup
@@ -1256,7 +1256,7 @@ class S3URI:
         host = parsed_url.netloc
         if host.find(".s3") == -1:
             return False
-        self.bucket, new_host = path.split(".s3", maxsplit=1)
+        self.bucket, new_host = host.split(".s3", maxsplit=1)
         if len(self.bucket) < 3:
             return False
         new_host = "s3" + new_host

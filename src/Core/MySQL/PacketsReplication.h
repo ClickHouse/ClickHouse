@@ -34,7 +34,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    RegisterSlave(UInt32 server_id_);
+    explicit RegisterSlave(UInt32 server_id_);
 };
 
 /// https://dev.mysql.com/doc/internals/en/com-binlog-dump-gtid.html

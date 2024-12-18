@@ -443,7 +443,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 `toISOWeek()`是一个兼容函数，等效于`toWeek(date,3)`。
 下表描述了mode参数的工作方式。
 
-| Mode | First day of week | Range | Week 1 is the first week …    |
+| Mode | First day of week | Range | Week 1 is the first week ...    |
 |------|-------------------|-------|-------------------------------|
 | 0    | Sunday            | 0-53  | with a Sunday in this year    |
 | 1    | Monday            | 0-53  | with 4 or more days this year |
@@ -643,6 +643,7 @@ date_diff('unit', startdate, enddate, [timezone])
 -   `unit` — `value`对应的时间单位。类型为[String](../../sql-reference/data-types/string.md)。
     可能的值：
 
+    - `nanosecond`
     - `microsecond`
     - `millisecond`
     - `second`
@@ -1156,7 +1157,7 @@ SELECT toModifiedJulianDayOrNull('2020-01-01');
 
 ## fromModifiedJulianDay {#frommodifiedjulianday}
 
-将 [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) 数字转换为 `YYYY-MM-DD` 文本格式的 [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) 日期。该函数支持从 `-678941` 到 `2973119` 的天数（分别代表 0000-01-01 和 9999-12-31）。如果天数超出支持范围，则会引发异常。
+将 [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) 数字转换为 `YYYY-MM-DD` 文本格式的 [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) 日期。该函数支持从 `-678941` 到 `2973483` 的天数（分别代表 0000-01-01 和 9999-12-31）。如果天数超出支持范围，则会引发异常。
 
 **语法**
 

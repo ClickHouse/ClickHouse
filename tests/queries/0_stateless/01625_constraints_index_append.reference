@@ -1,23 +1,15 @@
-SELECT i AS i
-FROM index_append_test_test
-PREWHERE a = 0
-WHERE (a = 0) AND indexHint((i + 40) > 0)
-SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, optimize_move_to_prewhere = 1, optimize_substitute_columns = 1, optimize_append_index = 1
-1
-SELECT i AS i
-FROM index_append_test_test
-PREWHERE a < 0
-SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, optimize_move_to_prewhere = 1, optimize_substitute_columns = 1, optimize_append_index = 1
-0
-SELECT i AS i
-FROM index_append_test_test
-PREWHERE a >= 0
-WHERE (a >= 0) AND indexHint((i + 40) > 0)
-SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, optimize_move_to_prewhere = 1, optimize_substitute_columns = 1, optimize_append_index = 1
-1
-SELECT i AS i
-FROM index_append_test_test
-PREWHERE (2 * b) < 100
-WHERE ((2 * b) < 100) AND indexHint(i < 100)
-SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, optimize_move_to_prewhere = 1, optimize_substitute_columns = 1, optimize_append_index = 1
-1
+  Filter column: and(equals(a, 0), indexHint(greater(plus(i, 40), 0))) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: equals(a, 0)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: less(a, 0) (removed)
+  Filter column: and(greaterOrEquals(a, 0), indexHint(greater(plus(i, 40), 0))) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greaterOrEquals(a, 0)
+  Filter column: and(less(multiply(2, b), 100), indexHint(less(i, 100))) (removed)
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: less(multiply(2, b), 100)

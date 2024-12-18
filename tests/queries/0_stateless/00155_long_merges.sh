@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-debug
+# Tags: long, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings
+# Test can be very long in case when we have busy background pool + s3 storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,32 +35,40 @@ function test {
 
     SETTINGS="--min_insert_block_size_rows=0 --min_insert_block_size_bytes=0 --max_block_size=65505"
 
+    $CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES summing_00155"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO summing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $1"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO summing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $2"
 
+    $CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES collapsing_00155"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO collapsing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $1"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO collapsing_00155 (x) SELECT number AS x FROM system.numbers LIMIT $2"
 
+    $CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES aggregating_00155"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO aggregating_00155 (d, x, s) SELECT today() AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $1) GROUP BY number"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO aggregating_00155 (d, x, s) SELECT today() AS d, number AS x, sumState(materialize(toUInt64(1))) AS s FROM (SELECT number FROM system.numbers LIMIT $2) GROUP BY number"
 
+    $CLICKHOUSE_CLIENT --query="SYSTEM STOP MERGES replacing_00155"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO replacing_00155 (x, v) SELECT number AS x, toUInt64(number % 3 == 0) FROM system.numbers LIMIT $1"
     $CLICKHOUSE_CLIENT $SETTINGS --query="INSERT INTO replacing_00155 (x, v) SELECT number AS x, toUInt64(number % 3 == 1) FROM system.numbers LIMIT $2"
 
     $CLICKHOUSE_CLIENT --query="SELECT count() = $SUM, sum(s) = $SUM FROM summing_00155"
+    $CLICKHOUSE_CLIENT --query="SYSTEM START MERGES summing_00155"
     $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE summing_00155"
     $CLICKHOUSE_CLIENT --query="SELECT count() = $MAX, sum(s) = $SUM FROM summing_00155"
     echo
     $CLICKHOUSE_CLIENT --query="SELECT count() = $SUM, sum(s) = $SUM FROM collapsing_00155"
-    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE collapsing_00155" --server_logs_file='/dev/null';
+    $CLICKHOUSE_CLIENT --query="SYSTEM START MERGES collapsing_00155"
+    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE collapsing_00155 FINAL" --server_logs_file='/dev/null';
     $CLICKHOUSE_CLIENT --query="SELECT count() = $MAX, sum(s) = $MAX FROM collapsing_00155"
     echo
     $CLICKHOUSE_CLIENT --query="SELECT count() = $SUM, sumMerge(s) = $SUM FROM aggregating_00155"
-    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE aggregating_00155"
+    $CLICKHOUSE_CLIENT --query="SYSTEM START MERGES aggregating_00155"
+    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE aggregating_00155 FINAL"
     $CLICKHOUSE_CLIENT --query="SELECT count() = $MAX, sumMerge(s) = $SUM FROM aggregating_00155"
     echo
     $CLICKHOUSE_CLIENT --query="SELECT count() = $SUM, sum(s) = $SUM FROM replacing_00155"
-    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE replacing_00155"
+    $CLICKHOUSE_CLIENT --query="SYSTEM START MERGES replacing_00155"
+    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE replacing_00155 FINAL"
     $CLICKHOUSE_CLIENT --query="SELECT count() = $MAX, sum(s) = $MAX FROM replacing_00155"
     $CLICKHOUSE_CLIENT --query="SELECT count() = sum(v) FROM replacing_00155 where x % 3 == 0 and x < $1"
     $CLICKHOUSE_CLIENT --query="SELECT count() = sum(v) FROM replacing_00155 where x % 3 == 1 and x < $2"

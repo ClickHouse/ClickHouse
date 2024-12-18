@@ -25,7 +25,7 @@ struct RowPolicyName
 
 /// Types of the filters of row policies.
 /// Currently only RowPolicyFilterType::SELECT is supported.
-enum class RowPolicyFilterType
+enum class RowPolicyFilterType : uint8_t
 {
     /// Filter is a SQL conditional expression used to figure out which rows should be visible
     /// for user or available for modification. If the expression returns NULL or false for some rows
@@ -52,6 +52,7 @@ struct RowPolicyFilterTypeInfo
     const char * const raw_name;
     const String name;    /// Lowercased with underscores, e.g. "select_filter".
     const String command; /// Uppercased without last word, e.g. "SELECT".
+    const String description;
     const bool is_check;  /// E.g. false for SELECT_FILTER.
     static const RowPolicyFilterTypeInfo & get(RowPolicyFilterType type);
 };

@@ -10,11 +10,11 @@ namespace DB
 
 bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_case{"CASE"};
-    ParserKeyword s_when{"WHEN"};
-    ParserKeyword s_then{"THEN"};
-    ParserKeyword s_else{"ELSE"};
-    ParserKeyword s_end{ "END"};
+    ParserKeyword s_case{Keyword::CASE};
+    ParserKeyword s_when{Keyword::WHEN};
+    ParserKeyword s_then{Keyword::THEN};
+    ParserKeyword s_else{Keyword::ELSE};
+    ParserKeyword s_end{ Keyword::END};
     ParserExpressionWithOptionalAlias p_expr{false};
 
     if (!s_case.ignore(pos, expected))

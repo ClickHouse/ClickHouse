@@ -8,14 +8,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ARGUMENT_OUT_OF_BOUND;
-}
-
 struct ReplaceStringTraits
 {
-    enum class Replace
+    enum class Replace : uint8_t
     {
         First,
         All
@@ -35,10 +30,15 @@ struct ReplaceStringImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         if (needle.empty())
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+        {
+            res_data.assign(haystack_data.begin(), haystack_data.end());
+            res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
+            return;
+        }
 
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -46,8 +46,7 @@ struct ReplaceStringImpl
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
-        const size_t haystack_size = haystack_offsets.size();
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         /// The current index in the array of strings.
         size_t i = 0;
@@ -124,21 +123,20 @@ struct ReplaceStringImpl
         const ColumnString::Offsets & needle_offsets,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         chassert(haystack_offsets.size() == needle_offsets.size());
 
-        const size_t haystack_size = haystack_offsets.size();
-
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         ColumnString::Offset res_offset = 0;
 
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -146,34 +144,34 @@ struct ReplaceStringImpl
             const auto * const cur_needle_data = &needle_data[prev_needle_offset];
             const size_t cur_needle_length = needle_offsets[i] - prev_needle_offset - 1;
 
-            if (cur_needle_length == 0)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
-
-            /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
-            StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
-
             const auto * last_match = static_cast<UInt8 *>(nullptr);
             const auto * start_pos = cur_haystack_data;
             const auto * const cur_haystack_end = cur_haystack_data + cur_haystack_length;
 
-            while (start_pos < cur_haystack_end)
+            if (cur_needle_length)
             {
-                if (const auto * const match = searcher.search(start_pos, cur_haystack_end); match != cur_haystack_end)
+                /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
+                StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
+
+                while (start_pos < cur_haystack_end)
                 {
-                    /// Copy prefix before match
-                    copyToOutput(start_pos, match - start_pos, res_data, res_offset);
+                    if (const auto * const match = searcher.search(start_pos, cur_haystack_end); match != cur_haystack_end)
+                    {
+                        /// Copy prefix before match
+                        copyToOutput(start_pos, match - start_pos, res_data, res_offset);
 
-                    /// Insert replacement for match
-                    copyToOutput(replacement.data(), replacement.size(), res_data, res_offset);
+                        /// Insert replacement for match
+                        copyToOutput(replacement.data(), replacement.size(), res_data, res_offset);
 
-                    last_match = match;
-                    start_pos = match + cur_needle_length;
+                        last_match = match;
+                        start_pos = match + cur_needle_length;
 
-                    if constexpr (replace == ReplaceStringTraits::Replace::First)
+                        if constexpr (replace == ReplaceStringTraits::Replace::First)
+                            break;
+                    }
+                    else
                         break;
                 }
-                else
-                    break;
             }
 
             /// Copy suffix after last match
@@ -195,24 +193,27 @@ struct ReplaceStringImpl
         const ColumnString::Chars & replacement_data,
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         chassert(haystack_offsets.size() == replacement_offsets.size());
 
         if (needle.empty())
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
-
-        const size_t haystack_size = haystack_offsets.size();
+        {
+            res_data.assign(haystack_data.begin(), haystack_data.end());
+            res_offsets.assign(haystack_offsets.begin(), haystack_offsets.end());
+            return;
+        }
 
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         ColumnString::Offset res_offset = 0;
 
         size_t prev_haystack_offset = 0;
         size_t prev_replacement_offset = 0;
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -267,15 +268,14 @@ struct ReplaceStringImpl
         const ColumnString::Chars & replacement_data,
         const ColumnString::Offsets & replacement_offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         chassert(haystack_offsets.size() == needle_offsets.size());
         chassert(needle_offsets.size() == replacement_offsets.size());
 
-        const size_t haystack_size = haystack_offsets.size();
-
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         ColumnString::Offset res_offset = 0;
 
@@ -283,7 +283,7 @@ struct ReplaceStringImpl
         size_t prev_needle_offset = 0;
         size_t prev_replacement_offset = 0;
 
-        for (size_t i = 0; i < haystack_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * const cur_haystack_data = &haystack_data[prev_haystack_offset];
             const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
@@ -294,36 +294,35 @@ struct ReplaceStringImpl
             const auto * const cur_replacement_data = &replacement_data[prev_replacement_offset];
             const size_t cur_replacement_length = replacement_offsets[i] - prev_replacement_offset - 1;
 
-            if (cur_needle_length == 0)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
-
-            /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
-            StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
-
             const auto * last_match = static_cast<UInt8 *>(nullptr);
             const auto * start_pos = cur_haystack_data;
             const auto * const cur_haystack_end = cur_haystack_data + cur_haystack_length;
 
-            while (start_pos < cur_haystack_end)
+            if (cur_needle_length)
             {
-                if (const auto * const match = searcher.search(start_pos, cur_haystack_end); match != cur_haystack_end)
+                /// Using "slow" "stdlib searcher instead of Volnitsky because there is a different pattern in each row
+                StdLibASCIIStringSearcher</*CaseInsensitive*/ false> searcher(cur_needle_data, cur_needle_length);
+
+                while (start_pos < cur_haystack_end)
                 {
-                    /// Copy prefix before match
-                    copyToOutput(start_pos, match - start_pos, res_data, res_offset);
+                    if (const auto * const match = searcher.search(start_pos, cur_haystack_end); match != cur_haystack_end)
+                    {
+                        /// Copy prefix before match
+                        copyToOutput(start_pos, match - start_pos, res_data, res_offset);
 
-                    /// Insert replacement for match
-                    copyToOutput(cur_replacement_data, cur_replacement_length, res_data, res_offset);
+                        /// Insert replacement for match
+                        copyToOutput(cur_replacement_data, cur_replacement_length, res_data, res_offset);
 
-                    last_match = match;
-                    start_pos = match + cur_needle_length;
+                        last_match = match;
+                        start_pos = match + cur_needle_length;
 
-                    if constexpr (replace == ReplaceStringTraits::Replace::First)
+                        if constexpr (replace == ReplaceStringTraits::Replace::First)
+                            break;
+                    }
+                    else
                         break;
                 }
-                else
-                    break;
             }
-
             /// Copy suffix after last match
             size_t bytes = (last_match == nullptr) ? (cur_haystack_end - cur_haystack_data + 1)
                                                    : (cur_haystack_end - last_match - cur_needle_length + 1);
@@ -345,19 +344,33 @@ struct ReplaceStringImpl
         const String & needle,
         const String & replacement,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         if (needle.empty())
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Length of the pattern argument in function {} must be greater than 0.", name);
+        {
+            chassert(input_rows_count == haystack_data.size() / n);
+            /// Since ColumnFixedString does not have a zero byte at the end, while ColumnString does,
+            /// we need to split haystack_data into strings of length n, add 1 zero byte to the end of each string
+            /// and then copy to res_data, ref: ColumnString.h and ColumnFixedString.h
+            res_data.reserve(haystack_data.size() + input_rows_count);
+            res_offsets.resize(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                res_data.insert(res_data.end(), haystack_data.begin() + i * n, haystack_data.begin() + (i + 1) * n);
+                res_data.push_back(0);
+                res_offsets[i] = (i + 1) * n + 1;
+            }
+            return;
+        }
 
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
 
         ColumnString::Offset res_offset = 0;
-        size_t haystack_size = haystack_data.size() / n;
         res_data.reserve(haystack_data.size());
-        res_offsets.resize(haystack_size);
+        res_offsets.resize(input_rows_count);
 
         /// The current index in the string array.
         size_t i = 0;
@@ -384,13 +397,13 @@ struct ReplaceStringImpl
 
             /// Copy skipped strings without any changes but
             /// add zero byte to the end of each string.
-            while (i < haystack_size && begin + n * (i + 1) <= match)
+            while (i < input_rows_count && begin + n * (i + 1) <= match)
             {
                 COPY_REST_OF_CURRENT_STRING();
             }
 
             /// If you have reached the end, it's time to stop
-            if (i == haystack_size)
+            if (i == input_rows_count)
                 break;
 
             /// Copy unchanged part of current string.

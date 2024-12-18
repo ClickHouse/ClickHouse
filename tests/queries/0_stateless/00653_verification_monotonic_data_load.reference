@@ -1,26 +1,26 @@
-no monotonic int case: String -> UInt64
-no monotonic int case: FixedString -> UInt64
-monotonic int case: Int32 -> Int64
-monotonic int case: Int32 -> UInt64
-monotonic int case: Int32 -> Int32
-monotonic int case: Int32 -> UInt32
-monotonic int case: Int32 -> Int16
-monotonic int case: Int32 -> UInt16
-monotonic int case: UInt32 -> Int64
-monotonic int case: UInt32 -> UInt64
-monotonic int case: UInt32 -> Int32
-monotonic int case: UInt32 -> UInt32
-monotonic int case: UInt32 -> Int16
-monotonic int case: UInt32 -> UInt16
-monotonic int case: Enum16 -> Int32
-monotonic int case: Enum16 -> UInt32
-monotonic int case: Enum16 -> Int16
-monotonic int case: Enum16 -> UInt16
-monotonic int case: Enum16 -> Int8
-monotonic int case: Enum16 -> UInt8
-monotonic int case: Date -> Int32
-monotonic int case: Date -> UInt32
-monotonic int case: Date -> Int16
-monotonic int case: Date -> UInt16
-monotonic int case: Date -> Int8
-monotonic int case: Date -> UInt8
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK

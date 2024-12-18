@@ -15,10 +15,11 @@ class ContextAccessParams
 {
 public:
     ContextAccessParams(
-        const std::optional<UUID> user_id_,
+        std::optional<UUID> user_id_,
         bool full_access_,
         bool use_default_roles_,
         const std::shared_ptr<const std::vector<UUID>> & current_roles_,
+        const std::shared_ptr<const std::vector<UUID>> & external_roles_,
         const Settings & settings_,
         const String & current_database_,
         const ClientInfo & client_info_);
@@ -31,6 +32,7 @@ public:
 
     const bool use_default_roles;
     const std::shared_ptr<const std::vector<UUID>> current_roles;
+    const std::shared_ptr<const std::vector<UUID>> external_roles;
 
     const UInt64 readonly;
     const bool allow_ddl;

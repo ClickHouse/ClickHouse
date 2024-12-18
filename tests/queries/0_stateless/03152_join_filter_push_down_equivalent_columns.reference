@@ -1,0 +1,90 @@
+-- { echoOn }
+
+EXPLAIN header = 1, indexes = 1
+SELECT name FROM users INNER JOIN users2 USING name WHERE users.name ='Alice';
+Expression ((Project names + (Projection + )))
+Header: name String
+  Join (JOIN FillRightFirst)
+  Header: __table1.name String
+    Filter (( + Change column names to column identifiers))
+    Header: __table1.name String
+      ReadFromMergeTree (default.users)
+      Header: name String
+      Indexes:
+        PrimaryKey
+          Keys: 
+            name
+          Condition: (name in [\'Alice\', \'Alice\'])
+          Parts: 1/3
+          Granules: 1/3
+    Filter (( + Change column names to column identifiers))
+    Header: __table2.name String
+      ReadFromMergeTree (default.users2)
+      Header: name String
+      Indexes:
+        PrimaryKey
+          Keys: 
+            name
+          Condition: (name in [\'Alice\', \'Alice\'])
+          Parts: 1/3
+          Granules: 1/3
+SELECT '--';
+--
+EXPLAIN header = 1, indexes = 1
+SELECT name FROM users LEFT JOIN users2 USING name WHERE users.name ='Alice';
+Expression ((Project names + (Projection + )))
+Header: name String
+  Join (JOIN FillRightFirst)
+  Header: __table1.name String
+    Filter (( + Change column names to column identifiers))
+    Header: __table1.name String
+      ReadFromMergeTree (default.users)
+      Header: name String
+      Indexes:
+        PrimaryKey
+          Keys: 
+            name
+          Condition: (name in [\'Alice\', \'Alice\'])
+          Parts: 1/3
+          Granules: 1/3
+    Filter (( + Change column names to column identifiers))
+    Header: __table2.name String
+      ReadFromMergeTree (default.users2)
+      Header: name String
+      Indexes:
+        PrimaryKey
+          Keys: 
+            name
+          Condition: (name in [\'Alice\', \'Alice\'])
+          Parts: 1/3
+          Granules: 1/3
+SELECT '--';
+--
+EXPLAIN header = 1, indexes = 1
+SELECT name FROM users RIGHT JOIN users2 USING name WHERE users2.name ='Alice';
+Expression ((Project names + (Projection + )))
+Header: name String
+  Join (JOIN FillRightFirst)
+  Header: __table2.name String
+    Filter (( + Change column names to column identifiers))
+    Header: __table1.name String
+      ReadFromMergeTree (default.users)
+      Header: name String
+      Indexes:
+        PrimaryKey
+          Keys: 
+            name
+          Condition: (name in [\'Alice\', \'Alice\'])
+          Parts: 1/3
+          Granules: 1/3
+    Filter (( + Change column names to column identifiers))
+    Header: __table2.name String
+      ReadFromMergeTree (default.users2)
+      Header: name String
+      Indexes:
+        PrimaryKey
+          Keys: 
+            name
+          Condition: (name in [\'Alice\', \'Alice\'])
+          Parts: 1/3
+          Granules: 1/3

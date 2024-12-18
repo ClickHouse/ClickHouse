@@ -1,19 +1,21 @@
-def corrupt_part_data_on_disk(node, table, part_name):
+def corrupt_part_data_on_disk(node, table, part_name, file_ext=".bin", database=None):
     part_path = node.query(
-        "SELECT path FROM system.parts WHERE table = '{}' and name = '{}'".format(
-            table, part_name
+        "SELECT path FROM system.parts WHERE table = '{}' and name = '{}' {}".format(
+            table,
+            part_name,
+            f"AND database = '{database}'" if database is not None else "",
         )
     ).strip()
 
-    corrupt_part_data_by_path(node, part_path)
+    corrupt_part_data_by_path(node, part_path, file_ext)
 
 
-def corrupt_part_data_by_path(node, part_path):
+def corrupt_part_data_by_path(node, part_path, file_ext=".bin"):
     print("Corrupting part", part_path, "at", node.name)
     print(
         "Will corrupt: ",
         node.exec_in_container(
-            ["bash", "-c", "cd {p} && ls *.bin | head -n 1".format(p=part_path)]
+            ["bash", "-c", f"cd {part_path} && ls *{file_ext} | head -n 1"]
         ),
     )
 
@@ -21,9 +23,7 @@ def corrupt_part_data_by_path(node, part_path):
         [
             "bash",
             "-c",
-            "cd {p} && ls *.bin | head -n 1 | xargs -I{{}} sh -c 'echo \"1\" >> $1' -- {{}}".format(
-                p=part_path
-            ),
+            f"cd {part_path} && ls *{file_ext} | head -n 1 | xargs -I{{}} sh -c 'truncate -s -1 $1' -- {{}}",
         ],
         privileged=True,
     )

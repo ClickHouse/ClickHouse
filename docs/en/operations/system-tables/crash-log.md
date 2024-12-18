@@ -7,6 +7,7 @@ Contains information about stack traces for fatal errors. The table does not exi
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date of the event.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Time of the event.
 - `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Timestamp of the event with nanoseconds.
@@ -32,6 +33,7 @@ Result (not full):
 ``` text
 Row 1:
 ──────
+hostname:     clickhouse.eu-central1.internal
 event_date:   2020-10-14
 event_time:   2020-10-14 15:47:40
 timestamp_ns: 1602679660271312710
@@ -47,5 +49,3 @@ build_id:
 
 **See also**
 - [trace_log](../../operations/system-tables/trace_log.md) system table
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/crash-log)

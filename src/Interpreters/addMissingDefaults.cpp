@@ -14,15 +14,15 @@
 namespace DB
 {
 
-ActionsDAGPtr addMissingDefaults(
+ActionsDAG addMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
     ContextPtr context,
     bool null_as_default)
 {
-    auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-    auto & index = actions->getOutputs();
+    ActionsDAG actions(header.getColumnsWithTypeAndName());
+    auto & index = actions.getOutputs();
 
     /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
     /// First, remember the offset columns for all arrays in the block.
@@ -40,7 +40,7 @@ ActionsDAGPtr addMissingDefaults(
             if (group.empty())
                 group.push_back(nullptr);
 
-            group.push_back(actions->getInputs()[i]);
+            group.push_back(actions.getInputs()[i]);
         }
     }
 
@@ -62,11 +62,11 @@ ActionsDAGPtr addMissingDefaults(
         {
             const auto & nested_type = array_type->getNestedType();
             ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(0);
-            const auto & constant = actions->addColumn({nested_column, nested_type, column.name});
+            const auto & constant = actions.addColumn({nested_column, nested_type, column.name});
 
             auto & group = nested_groups[offsets_name];
             group[0] = &constant;
-            index.push_back(&actions->addFunction(func_builder_replicate, group, constant.result_name));
+            index.push_back(&actions.addFunction(func_builder_replicate, group, constant.result_name));
 
             continue;
         }
@@ -75,17 +75,17 @@ ActionsDAGPtr addMissingDefaults(
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
         auto new_column = column.type->createColumnConstWithDefaultValue(0);
-        const auto * col = &actions->addColumn({new_column, column.type, column.name});
-        index.push_back(&actions->materializeNode(*col));
+        const auto * col = &actions.addColumn({new_column, column.type, column.name});
+        index.push_back(&actions.materializeNode(*col));
     }
 
     /// Computes explicitly specified values by default and materialized columns.
-    if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context, true, null_as_default))
-        actions = ActionsDAG::merge(std::move(*actions), std::move(*dag));
+    if (auto dag = evaluateMissingDefaults(actions.getResultColumns(), required_columns, columns, context, true, null_as_default))
+        actions = ActionsDAG::merge(std::move(actions), std::move(*dag));
 
     /// Removes unused columns and reorders result.
-    actions->removeUnusedActions(required_columns.getNames(), false);
-    actions->addMaterializingOutputActions();
+    actions.removeUnusedActions(required_columns.getNames(), false);
+    actions.addMaterializingOutputActions(/*materialize_sparse=*/ false);
 
     return actions;
 }

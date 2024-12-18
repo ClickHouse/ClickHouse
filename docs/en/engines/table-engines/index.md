@@ -61,13 +61,13 @@ Engines in the family:
 - [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md)
 - [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
 - [S3Queue](../../engines/table-engines/integrations/s3queue.md)
+- [TimeSeries](../../engines/table-engines/integrations/time-series.md)
 
 ### Special Engines {#special-engines}
 
 Engines in the family:
 
 - [Distributed](../../engines/table-engines/special/distributed.md#distributed)
-- [MaterializedView](../../engines/table-engines/special/materializedview.md#materializedview)
 - [Dictionary](../../engines/table-engines/special/dictionary.md#dictionary)
 - [Merge](../../engines/table-engines/special/merge.md#merge)
 - [File](../../engines/table-engines/special/file.md#file)

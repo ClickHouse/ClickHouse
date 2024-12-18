@@ -23,32 +23,39 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     {
         PartitionCommand res;
         res.type = DROP_PARTITION;
-        res.partition = command_ast->partition;
+        res.partition = command_ast->partition->clone();
         res.detach = command_ast->detach;
         res.part = command_ast->part;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_DETACHED_PARTITION)
+    if (command_ast->type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
         PartitionCommand res;
         res.type = DROP_DETACHED_PARTITION;
-        res.partition = command_ast->partition;
+        res.partition = command_ast->partition->clone();
         res.part = command_ast->part;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::ATTACH_PARTITION)
+    if (command_ast->type == ASTAlterCommand::FORGET_PARTITION)
+    {
+        PartitionCommand res;
+        res.type = FORGET_PARTITION;
+        res.partition = command_ast->partition->clone();
+        return res;
+    }
+    if (command_ast->type == ASTAlterCommand::ATTACH_PARTITION)
     {
         PartitionCommand res;
         res.type = ATTACH_PARTITION;
-        res.partition = command_ast->partition;
+        res.partition = command_ast->partition->clone();
         res.part = command_ast->part;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::MOVE_PARTITION)
+    if (command_ast->type == ASTAlterCommand::MOVE_PARTITION)
     {
         PartitionCommand res;
         res.type = MOVE_PARTITION;
-        res.partition = command_ast->partition;
+        res.partition = command_ast->partition->clone();
         res.part = command_ast->part;
         switch (command_ast->move_destination_type)
         {
@@ -73,57 +80,56 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
             res.move_destination_name = command_ast->move_destination_name;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::REPLACE_PARTITION)
+    if (command_ast->type == ASTAlterCommand::REPLACE_PARTITION)
     {
         PartitionCommand res;
         res.type = REPLACE_PARTITION;
-        res.partition = command_ast->partition;
+        res.partition = command_ast->partition->clone();
         res.replace = command_ast->replace;
         res.from_database = command_ast->from_database;
         res.from_table = command_ast->from_table;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)
+    if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)
     {
         PartitionCommand res;
         res.type = FETCH_PARTITION;
-        res.partition = command_ast->partition;
+        res.partition = command_ast->partition->clone();
         res.from_zookeeper_path = command_ast->from;
         res.part = command_ast->part;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::FREEZE_PARTITION)
+    if (command_ast->type == ASTAlterCommand::FREEZE_PARTITION)
     {
         PartitionCommand res;
         res.type = FREEZE_PARTITION;
-        res.partition = command_ast->partition;
+        res.partition = command_ast->partition->clone();
         res.with_name = command_ast->with_name;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
+    if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
     {
         PartitionCommand res;
         res.type = PartitionCommand::FREEZE_ALL_PARTITIONS;
         res.with_name = command_ast->with_name;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::UNFREEZE_PARTITION)
+    if (command_ast->type == ASTAlterCommand::UNFREEZE_PARTITION)
     {
         PartitionCommand res;
         res.type = PartitionCommand::UNFREEZE_PARTITION;
-        res.partition = command_ast->partition;
+        res.partition = command_ast->partition->clone();
         res.with_name = command_ast->with_name;
         return res;
     }
-    else if (command_ast->type == ASTAlterCommand::UNFREEZE_ALL)
+    if (command_ast->type == ASTAlterCommand::UNFREEZE_ALL)
     {
         PartitionCommand res;
         res.type = PartitionCommand::UNFREEZE_ALL_PARTITIONS;
         res.with_name = command_ast->with_name;
         return res;
     }
-    else
-        return {};
+    return {};
 }
 
 std::string PartitionCommand::typeToString() const
@@ -147,6 +153,8 @@ std::string PartitionCommand::typeToString() const
             return "DROP DETACHED PART";
         else
             return "DROP DETACHED PARTITION";
+    case PartitionCommand::Type::FORGET_PARTITION:
+        return "FORGET PARTITION";
     case PartitionCommand::Type::FETCH_PARTITION:
         if (part)
             return "FETCH PART";

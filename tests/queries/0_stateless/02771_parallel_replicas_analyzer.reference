@@ -8,5 +8,5 @@
 5935810273536892891
 7885388429666205427
 8124171311239967992
-1	1	-- Simple query with analyzer and pure parallel replicas\nSELECT number\nFROM join_inner_table__fuzz_146_replicated\n    SETTINGS\n    allow_experimental_analyzer = 1,\n    max_parallel_replicas = 2,\n    cluster_for_parallel_replicas = \'test_cluster_one_shard_three_replicas_localhost\',\n    allow_experimental_parallel_reading_from_replicas = 1,\n    use_hedged_requests = 0;
-0	2	SELECT `join_inner_table__fuzz_146_replicated`.`number` AS `number` FROM `default`.`join_inner_table__fuzz_146_replicated` SETTINGS allow_experimental_analyzer = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = \'test_cluster_one_shard_three_replicas_localhost\', allow_experimental_parallel_reading_from_replicas = 1, use_hedged_requests = 0
+1	1	-- Simple query with analyzer and pure parallel replicas\nSELECT number\nFROM join_inner_table__fuzz_146_replicated\n    SETTINGS\n    enable_analyzer = 1,\n    max_parallel_replicas = 2,\n    cluster_for_parallel_replicas = \'test_cluster_one_shard_three_replicas_localhost\',\n    enable_parallel_replicas = 1;
+0	1	SELECT `__table1`.`number` AS `number` FROM `default`.`join_inner_table__fuzz_146_replicated` AS `__table1`

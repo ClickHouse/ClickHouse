@@ -10,13 +10,13 @@
     'background_insert_max_sleep_time_ms',
 ] %}
 drop table if exists dist_{{ table_setting }};
-create table dist_{{ table_setting }} as system.one engine=Distributed(default, system, one) settings {{ table_setting }}=1;
+create table dist_{{ table_setting }} as system.one engine=Distributed(test_shard_localhost, system, one) settings {{ table_setting }}=1;
 show create dist_{{ table_setting }};
 drop table dist_{{ table_setting }};
 {% endfor %}
 
 create table data (key Int) engine=Null();
-create table dist (key Int) engine=Distributed(default, currentDatabase(), data, key);
+create table dist (key Int) engine=Distributed(test_shard_localhost, currentDatabase(), data, key);
 {% for query_setting in [
     'distributed_directory_monitor_sleep_time_ms',
     'distributed_directory_monitor_max_sleep_time_ms',

@@ -38,10 +38,9 @@ static CHJIT & getJITInstance()
     return jit;
 }
 
-static Poco::Logger * getLogger()
+static LoggerPtr getLogger()
 {
-    static Poco::Logger & logger = Poco::Logger::get("ExpressionJIT");
-    return &logger;
+    return ::getLogger("ExpressionJIT");
 }
 
 class CompiledFunctionHolder : public CompiledExpressionCacheEntry
@@ -267,7 +266,7 @@ public:
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
-        auto col = function.execute(args, function.getResultType(), 1);
+        auto col = function.execute(args, function.getResultType(), 1, /* dry_run = */ false);
         col->get(0, value);
     }
 

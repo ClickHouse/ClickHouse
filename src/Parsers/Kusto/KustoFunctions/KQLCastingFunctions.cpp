@@ -4,8 +4,8 @@
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 
 #include <format>
-#include <regex>
 #include <Poco/String.h>
+#include <Common/re2.h>
 
 
 namespace DB
@@ -99,7 +99,7 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         try
         {
-            auto result = kqlCallToExpression("time", {arg}, pos.max_depth);
+            auto result = kqlCallToExpression("time", {arg}, pos.max_depth, pos.max_backtracks);
             out = std::format("{}", result);
         }
         catch (...)
@@ -135,12 +135,12 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
         res = getConvertedArgument(fn_name, pos);
         precision = 17;
     }
-    static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
-    bool is_string = std::any_of(res.begin(), res.end(), ::isalpha) && !(std::regex_match(res, expr));
+    static const re2::RE2 expr("^[0-9]+e[+-]?[0-9]+");
+    bool is_string = std::any_of(res.begin(), res.end(), ::isalpha) && !(re2::RE2::FullMatch(res, expr));
 
     if (is_string)
         out = "NULL";
-    else if (std::regex_match(res, expr))
+    else if (re2::RE2::FullMatch(res, expr))
     {
         auto exponential_pos = res.find('e');
         if (res[exponential_pos + 1] == '+' || res[exponential_pos + 1] == '-')

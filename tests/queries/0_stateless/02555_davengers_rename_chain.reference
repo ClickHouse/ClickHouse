@@ -1,26 +1,38 @@
+ALTER TABLE wrong_metadata RENAME COLUMN a TO a1, RENAME COLUMN b to b1 SETTINGS replication_alter_partitions_sync = 0;
+SELECT * FROM wrong_metadata ORDER BY a1 FORMAT JSONEachRow;
 {"a1":"1","b1":"2","c":"3"}
-~~~~~~~
-{"a1":"1","b1":"2","c":"3"}
-{"a1":"4","b1":"5","c":"6"}
-~~~~~~~
-{"a1":"1","b1":"2","c":"3"}
-{"a1":"4","b1":"5","c":"6"}
-{"a1":"7","b1":"8","c":"9"}
-~~~~~~~
-{"b":"1","a":"2","c":"3"}
-{"b":"4","a":"5","c":"6"}
-{"b":"7","a":"8","c":"9"}
-~~~~~~~
-{"a1":"1","b1":"2","c":"3"}
-~~~~~~~
+INSERT INTO wrong_metadata VALUES (4, 5, 6);
+SELECT * FROM wrong_metadata ORDER BY a1 FORMAT JSONEachRow;
 {"a1":"1","b1":"2","c":"3"}
 {"a1":"4","b1":"5","c":"6"}
-~~~~~~~
+ALTER TABLE wrong_metadata RENAME COLUMN a1 TO b, RENAME COLUMN b1 to a SETTINGS replication_alter_partitions_sync = 0;
+INSERT INTO wrong_metadata VALUES (7, 8, 9);
+SELECT * FROM wrong_metadata ORDER by a1 FORMAT JSONEachRow;
 {"a1":"1","b1":"2","c":"3"}
 {"a1":"4","b1":"5","c":"6"}
 {"a1":"7","b1":"8","c":"9"}
-~~~~~~~
+SYSTEM START MERGES wrong_metadata;
+SYSTEM SYNC REPLICA wrong_metadata;
+SELECT * FROM wrong_metadata order by a FORMAT JSONEachRow;
 {"b":"1","a":"2","c":"3"}
 {"b":"4","a":"5","c":"6"}
 {"b":"7","a":"8","c":"9"}
-~~~~~~~
+ALTER TABLE wrong_metadata_compact RENAME COLUMN a TO a1, RENAME COLUMN b to b1 SETTINGS replication_alter_partitions_sync = 0;
+SELECT * FROM wrong_metadata_compact ORDER BY a1 FORMAT JSONEachRow;
+{"a1":"1","b1":"2","c":"3"}
+INSERT INTO wrong_metadata_compact VALUES (4, 5, 6);
+SELECT * FROM wrong_metadata_compact ORDER BY a1 FORMAT JSONEachRow;
+{"a1":"1","b1":"2","c":"3"}
+{"a1":"4","b1":"5","c":"6"}
+ALTER TABLE wrong_metadata_compact RENAME COLUMN a1 TO b, RENAME COLUMN b1 to a SETTINGS replication_alter_partitions_sync = 0;
+INSERT INTO wrong_metadata_compact VALUES (7, 8, 9);
+SELECT * FROM wrong_metadata_compact ORDER by a1 FORMAT JSONEachRow;
+{"a1":"1","b1":"2","c":"3"}
+{"a1":"4","b1":"5","c":"6"}
+{"a1":"7","b1":"8","c":"9"}
+SYSTEM START MERGES wrong_metadata_compact;
+SYSTEM SYNC REPLICA wrong_metadata_compact;
+SELECT * FROM wrong_metadata_compact order by a FORMAT JSONEachRow;
+{"b":"1","a":"2","c":"3"}
+{"b":"4","a":"5","c":"6"}
+{"b":"7","a":"8","c":"9"}

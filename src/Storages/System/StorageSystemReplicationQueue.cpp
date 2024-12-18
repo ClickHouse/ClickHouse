@@ -17,38 +17,60 @@ namespace DB
 {
 
 
-NamesAndTypesList StorageSystemReplicationQueue::getNamesAndTypes()
+ColumnsDescription StorageSystemReplicationQueue::getColumnsDescription()
 {
-    return {
+    return ColumnsDescription
+    {
         /// Table properties.
-        { "database",                std::make_shared<DataTypeString>() },
-        { "table",                   std::make_shared<DataTypeString>() },
-        { "replica_name",            std::make_shared<DataTypeString>() },
+        { "database",                std::make_shared<DataTypeString>(), "Name of the database."},
+        { "table",                   std::make_shared<DataTypeString>(), "Name of the table."},
+        { "replica_name",            std::make_shared<DataTypeString>(),
+            "Replica name in ClickHouse Keeper. Different replicas of the same table have different names."},
         /// Constant element properties.
-        { "position",                std::make_shared<DataTypeUInt32>() },
-        { "node_name",               std::make_shared<DataTypeString>() },
-        { "type",                    std::make_shared<DataTypeString>() },
-        { "create_time",             std::make_shared<DataTypeDateTime>() },
-        { "required_quorum",         std::make_shared<DataTypeUInt32>() },
-        { "source_replica",          std::make_shared<DataTypeString>() },
-        { "new_part_name",           std::make_shared<DataTypeString>() },
-        { "parts_to_merge",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "is_detach",               std::make_shared<DataTypeUInt8>() },
+        { "position",                std::make_shared<DataTypeUInt32>(), "Position of the task in the queue."},
+        { "node_name",               std::make_shared<DataTypeString>(), "Node name in ClickHouse Keeper."},
+        { "type",                    std::make_shared<DataTypeString>(),
+            "Type of the task in the queue, one of: "
+            "• GET_PART — Get the part from another replica, "
+            "• ATTACH_PART — Attach the part, possibly from our own replica (if found in the detached folder). "
+            "You may think of it as a GET_PART with some optimizations as they're nearly identical, "
+            "• MERGE_PARTS — Merge the parts, "
+            "• DROP_RANGE — Delete the parts in the specified partition in the specified number range. "
+            "• CLEAR_COLUMN — NOTE: Deprecated. Drop specific column from specified partition. "
+            "• CLEAR_INDEX — NOTE: Deprecated. Drop specific index from specified partition. "
+            "• REPLACE_RANGE — Drop a certain range of parts and replace them with new ones. "
+            "• MUTATE_PART — Apply one or several mutations to the part. "
+            "• ALTER_METADATA — Apply alter modification according to global /metadata and /columns paths."
+        },
+        { "create_time",             std::make_shared<DataTypeDateTime>(), "Date and time when the task was submitted for execution."},
+        { "required_quorum",         std::make_shared<DataTypeUInt32>(), "The number of replicas waiting for the task to complete with confirmation of completion. This column is only relevant for the GET_PARTS task."},
+        { "source_replica",          std::make_shared<DataTypeString>(), "Name of the source replica."},
+        { "new_part_name",           std::make_shared<DataTypeString>(), "Name of the new part."},
+        { "parts_to_merge",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of parts to merge or update."},
+        { "is_detach",               std::make_shared<DataTypeUInt8>(), "The flag indicates whether the DETACH_PARTS task is in the queue."},
         /// Processing status of item.
-        { "is_currently_executing",  std::make_shared<DataTypeUInt8>() },
-        { "num_tries",               std::make_shared<DataTypeUInt32>() },
-        { "last_exception",          std::make_shared<DataTypeString>() },
-        { "last_exception_time",     std::make_shared<DataTypeDateTime>() },
-        { "last_attempt_time",       std::make_shared<DataTypeDateTime>() },
-        { "num_postponed",           std::make_shared<DataTypeUInt32>() },
-        { "postpone_reason",         std::make_shared<DataTypeString>() },
-        { "last_postpone_time",      std::make_shared<DataTypeDateTime>() },
-        { "merge_type",              std::make_shared<DataTypeString>() },
+        { "is_currently_executing",  std::make_shared<DataTypeUInt8>(), "The flag indicates whether a specific task is being performed right now."},
+        { "num_tries",               std::make_shared<DataTypeUInt32>(), "The number of failed attempts to complete the task."},
+        { "last_exception",          std::make_shared<DataTypeString>(), "Text message about the last error that occurred (if any)."},
+        { "last_exception_time",     std::make_shared<DataTypeDateTime>(), "Date and time when the last error occurred."},
+        { "last_attempt_time",       std::make_shared<DataTypeDateTime>(), "Date and time when the task was last attempted."},
+        { "num_postponed",           std::make_shared<DataTypeUInt32>(), "The number of postponed tasks."},
+        { "postpone_reason",         std::make_shared<DataTypeString>(), "The reason why the task was postponed."},
+        { "last_postpone_time",      std::make_shared<DataTypeDateTime>(), "Date and time when the task was last postponed."},
+        { "merge_type",              std::make_shared<DataTypeString>(), "Type of the current merge. Empty if it's a mutation."},
     };
 }
 
 
-void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+Block StorageSystemReplicationQueue::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "database" },
+        { {}, std::make_shared<DataTypeString>(), "table" },
+    };
+}
+
+void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -99,7 +121,7 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
             { col_table_to_filter, std::make_shared<DataTypeString>(), "table" },
         };
 
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context);
 
         if (!filtered_block.rows())
             return;

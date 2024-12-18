@@ -8,19 +8,26 @@ on: # yamllint disable-line rule:truthy
   #  schedule:
   #    - cron: '0 0 2 31 1' # never for now
   workflow_call:
+    inputs:
+      data:
+        description: json ci data
+        type: string
+        required: true
+
 jobs:
   BuilderFuzzers:
     uses: ./.github/workflows/reusable_build.yml
     with:
       build_name: fuzzers
+      data: ${{ inputs.data }}
   libFuzzerTest:
     needs: [BuilderFuzzers]
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: libFuzzer tests
       runner_type: func-tester
+      data: ${{ inputs.data }}
       additional_envs: |
         KILL_TIMEOUT=10800
       run_command: |
-        cd "$REPO_COPY/tests/ci"
         python3 libfuzzer_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"

@@ -26,7 +26,7 @@ struct MergeTreePartInfo
     UInt32 level = 0;
     Int64 mutation = 0;   /// If the part has been mutated or contains mutated parts, is equal to mutation version number.
 
-    bool use_leagcy_max_level = false;  /// For compatibility. TODO remove it
+    bool use_legacy_max_level = false;  /// For compatibility. TODO remove it
 
     MergeTreePartInfo() = default;
 
@@ -45,6 +45,13 @@ struct MergeTreePartInfo
         return std::forward_as_tuple(partition_id, min_block, max_block, level, mutation)
             < std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.mutation);
     }
+
+    bool operator>(const MergeTreePartInfo & rhs) const
+    {
+        return std::forward_as_tuple(partition_id, min_block, max_block, level, mutation)
+            > std::forward_as_tuple(rhs.partition_id, rhs.min_block, rhs.max_block, rhs.level, rhs.mutation);
+    }
+
 
     bool operator==(const MergeTreePartInfo & rhs) const
     {
@@ -101,9 +108,8 @@ struct MergeTreePartInfo
 
     bool isFakeDropRangePart() const
     {
-        /// Another max level was previously used for REPLACE/MOVE PARTITION
-        auto another_max_level = std::numeric_limits<decltype(level)>::max();
-        return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
+        /// LEGACY_MAX_LEVEL was previously used for REPLACE/MOVE PARTITION
+        return level == MergeTreePartInfo::MAX_LEVEL || level == MergeTreePartInfo::LEGACY_MAX_LEVEL;
     }
 
     String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;

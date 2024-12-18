@@ -4,9 +4,6 @@ set(LIBUNWIND_CXX_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/libunwind.cpp"
     "${LIBUNWIND_SOURCE_DIR}/src/Unwind-EHABI.cpp"
     "${LIBUNWIND_SOURCE_DIR}/src/Unwind-seh.cpp")
-if (APPLE)
-    set(LIBUNWIND_CXX_SOURCES ${LIBUNWIND_CXX_SOURCES} "${LIBUNWIND_SOURCE_DIR}/src/Unwind_AppleExtras.cpp")
-endif ()
 
 set(LIBUNWIND_C_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/UnwindLevel1.c"
@@ -20,15 +17,7 @@ set(LIBUNWIND_ASM_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/UnwindRegistersRestore.S"
     "${LIBUNWIND_SOURCE_DIR}/src/UnwindRegistersSave.S")
 
-# CMake doesn't pass the correct architecture for Apple prior to CMake 3.19 [1]
-# Workaround these two issues by compiling as C.
-#
-#   [1]: https://gitlab.kitware.com/cmake/cmake/-/issues/20771
-if (APPLE AND CMAKE_VERSION VERSION_LESS 3.19)
-    set_source_files_properties(${LIBUNWIND_ASM_SOURCES} PROPERTIES LANGUAGE C)
-else()
-    enable_language(ASM)
-endif()
+enable_language(ASM)
 
 set(LIBUNWIND_SOURCES
     ${LIBUNWIND_CXX_SOURCES}
@@ -39,7 +28,10 @@ add_library(unwind ${LIBUNWIND_SOURCES})
 set_target_properties(unwind PROPERTIES FOLDER "contrib/libunwind-cmake")
 
 target_include_directories(unwind SYSTEM BEFORE PUBLIC $<BUILD_INTERFACE:${LIBUNWIND_SOURCE_DIR}/include>)
-target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1 -D_DEBUG -D_LIBUNWIND_IS_NATIVE_ONLY)
+target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_NO_HEAP=1)
+target_compile_definitions(unwind PRIVATE -D_LIBUNWIND_REMEMBER_STACK_ALLOC=1)
+# NOTE: from this macros sizeof(unw_context_t)/sizeof(unw_cursor_t) is depends, so it should be set always
+target_compile_definitions(unwind PUBLIC -D_LIBUNWIND_IS_NATIVE_ONLY)
 
 # We should enable optimizations (otherwise it will be too slow in debug)
 # and disable sanitizers (otherwise infinite loop may happen)

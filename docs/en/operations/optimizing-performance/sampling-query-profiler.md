@@ -28,7 +28,7 @@ SETTINGS allow_introspection_functions = 1
 
 In self-managed deployments, to use query profiler:
 
-- Setup the [trace_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
+- Setup the [trace_log](../../operations/server-configuration-parameters/settings.md#trace_log) section of the server configuration.
 
     This section configures the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse does not clean up the table and all the stored virtual memory address may become invalid.
 
@@ -42,7 +42,7 @@ To analyze the `trace_log` system table:
 
 - Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
 
-- Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting.
+- Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting.
 
     For security reasons, introspection functions are disabled by default.
 

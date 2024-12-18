@@ -11,9 +11,9 @@ struct SignImpl
     using ResultType = Int8;
     static constexpr bool allow_string_or_fixed_string = false;
 
-    static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
+    static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
-        if constexpr (is_decimal<A> || std::is_floating_point_v<A>)
+        if constexpr (is_decimal<A> || is_floating_point<A>)
             return a < A(0) ? -1 : a == A(0) ? 0 : 1;
         else if constexpr (is_signed_v<A>)
             return a < 0 ? -1 : a == 0 ? 0 : 1;
@@ -44,7 +44,7 @@ struct FunctionUnaryArithmeticMonotonicity<NameSign>
 
 REGISTER_FUNCTION(Sign)
 {
-    factory.registerFunction<FunctionSign>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionSign>({}, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -21,14 +21,14 @@ sidebar_label: 比较函数
 
 字符串按字节进行比较。较短的字符串小于以其开头并且至少包含一个字符的所有字符串。
 
-## 等于，a=b和a==b 运算符 {#equals-a-b-and-a-b-operator}
+## 等于，a=b和a==b 运算符 {#equals}
 
-## 不等于，a!=b和a&lt;&gt;b 运算符 {#notequals-a-operator-b-and-a-b}
+## 不等于，a!=b和a&lt;&gt;b 运算符 {#notequals}
 
-## 少, &lt; 运算符 {#less-operator}
+## 少, &lt; 运算符 {#less}
 
-## 大于, &gt; 运算符 {#greater-operator}
+## 大于, &gt; 运算符 {#greater}
 
-## 小于等于, &lt;= 运算符 {#lessorequals-operator}
+## 小于等于, &lt;= 运算符 {#lessorequals}
 
-## 大于等于, &gt;= 运算符 {#greaterorequals-operator}
+## 大于等于, &gt;= 运算符 {#greaterorequals}

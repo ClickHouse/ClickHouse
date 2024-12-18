@@ -1,7 +1,7 @@
 #pragma once
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>

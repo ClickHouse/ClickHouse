@@ -1,3 +1,5 @@
+SET allow_suspicious_low_cardinality_types=1;
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
 DROP TABLE IF EXISTS single_column_bloom_filter;
 
@@ -22,6 +24,15 @@ WITH (1, 2) AS liter_prepared_set SELECT COUNT() FROM single_column_bloom_filter
 WITH ((1, 2), (2, 3)) AS liter_prepared_set SELECT COUNT() FROM single_column_bloom_filter WHERE (i32, i32) IN liter_prepared_set SETTINGS max_rows_to_read = 6;
 WITH ((1, 1), (2, 2)) AS liter_prepared_set SELECT COUNT() FROM single_column_bloom_filter WHERE (i32, i64) IN liter_prepared_set SETTINGS max_rows_to_read = 6;
 WITH ((1, (1, 1)), (2, (2, 2))) AS liter_prepared_set SELECT COUNT() FROM single_column_bloom_filter WHERE (i64, (i64, i32)) IN liter_prepared_set SETTINGS max_rows_to_read = 6;
+
+-- Check that indexHint() works (but it doesn't work with COUNT()).
+SELECT SUM(ignore(*) + 1) FROM single_column_bloom_filter WHERE indexHint(i32 in (3, 15, 50));
+
+-- The index doesn't understand expressions like these, but it shouldn't break the query.
+SELECT COUNT() FROM single_column_bloom_filter WHERE (i32 = 200) = (i32 = 200);
+SELECT SUM(ignore(*) + 1) FROM single_column_bloom_filter WHERE indexHint((i32 = 200) != (i32 = 200));
+SELECT COUNT() FROM single_column_bloom_filter WHERE indexOf([10, 20, 30], i32) != 0;
+SELECT COUNT() FROM single_column_bloom_filter WHERE has([100, 200, 300], 200);
 
 DROP TABLE IF EXISTS single_column_bloom_filter;
 
@@ -363,3 +374,10 @@ SELECT id, ary[indexOf(ary, 'value2')] FROM test_bf_indexOf WHERE ary[indexOf(ar
 SELECT id, ary[indexOf(ary, 'value3')] FROM test_bf_indexOf WHERE ary[indexOf(ary, 'value3')] = 'value3' ORDER BY id FORMAT TSV;
 
 DROP TABLE IF EXISTS test_bf_indexOf;
+
+-- Test for bug #65597
+DROP TABLE IF EXISTS test_bf_cast;
+CREATE TABLE test_bf_cast (c Int32, INDEX x1 (c) type bloom_filter) ENGINE = MergeTree ORDER BY c AS SELECT 1;
+SELECT count() FROM test_bf_cast WHERE cast(c = 1 OR c = 9999 AS Bool) SETTINGS use_skip_indexes=0;
+SELECT count() FROM test_bf_cast WHERE cast(c = 1 OR c = 9999 AS Bool) SETTINGS use_skip_indexes=1;
+DROP TABLE test_bf_cast;

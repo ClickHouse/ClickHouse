@@ -2,8 +2,10 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 
-#include <Interpreters/Context.h>
+#include <Common/quoteString.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 #include <IO/WriteHelpers.h>
 

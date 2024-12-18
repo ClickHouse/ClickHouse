@@ -80,7 +80,7 @@ protected:
 
         for (const auto & col : key_columns)
         {
-            if (auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col))
             {
                 actual_columns.push_back(&nullable->getNestedColumn());
                 null_maps.push_back(&nullable->getNullMapColumn());
@@ -96,7 +96,7 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    inline const ColumnRawPtrs & getActualColumns() const
+    const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }
@@ -254,7 +254,7 @@ struct SetVariantsTemplate: public Variant
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
 
-    enum class Type
+    enum class Type : uint8_t
     {
         EMPTY,
 

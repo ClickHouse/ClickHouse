@@ -11,6 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/ShellCommand.h>
+#include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
@@ -52,12 +53,12 @@ class XDBCBridgeHelper : public IXDBCBridgeHelper
 {
 
 public:
-    static constexpr inline auto DEFAULT_PORT = BridgeHelperMixin::DEFAULT_PORT;
-    static constexpr inline auto PING_HANDLER = "/ping";
-    static constexpr inline auto MAIN_HANDLER = "/";
-    static constexpr inline auto COL_INFO_HANDLER = "/columns_info";
-    static constexpr inline auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
-    static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
+    static constexpr auto DEFAULT_PORT = BridgeHelperMixin::DEFAULT_PORT;
+    static constexpr auto PING_HANDLER = "/ping";
+    static constexpr auto MAIN_HANDLER = "/";
+    static constexpr auto COL_INFO_HANDLER = "/columns_info";
+    static constexpr auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
+    static constexpr auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
 
     XDBCBridgeHelper(
             ContextPtr context_,
@@ -65,7 +66,7 @@ public:
             const std::string & connection_string_,
             bool use_connection_pooling_)
         : IXDBCBridgeHelper(context_->getGlobalContext())
-        , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
+        , log(getLogger(BridgeHelperMixin::getName() + "BridgeHelper"))
         , connection_string(connection_string_)
         , use_connection_pooling(use_connection_pooling_)
         , http_timeout(http_timeout_)
@@ -97,8 +98,13 @@ protected:
     {
         try
         {
-            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, getHTTPTimeouts(), credentials);
-            return checkString(PING_OK_ANSWER, buf);
+            auto buf = BuilderRWBufferFromHTTP(getPingURI())
+                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
+                           .withSettings(getContext()->getReadSettings())
+                           .create(credentials);
+
+            return checkString(PING_OK_ANSWER, *buf);
         }
         catch (...)
         {
@@ -123,7 +129,7 @@ protected:
 
     const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
-    Poco::Logger * getLog() const override { return log; }
+    LoggerPtr getLog() const override { return log; }
 
     bool startBridgeManually() const override { return BridgeHelperMixin::startBridgeManually(); }
 
@@ -139,14 +145,14 @@ protected:
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-        getContext()->addBridgeCommand(std::move(cmd));
+       ShellCommandsHolder::instance().addCommand(std::move(cmd));
     }
 
 
 private:
     using Configuration = Poco::Util::AbstractConfiguration;
 
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string connection_string;
     bool use_connection_pooling;
     Poco::Timespan http_timeout;
@@ -159,11 +165,6 @@ private:
     std::optional<bool> is_schema_allowed;
 
     Poco::Net::HTTPBasicCredentials credentials{};
-
-    ConnectionTimeouts getHTTPTimeouts()
-    {
-        return ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), {getContext()->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
-    }
 
 protected:
     using URLParams = std::vector<std::pair<std::string, std::string>>;
@@ -198,10 +199,15 @@ protected:
             uri.addQueryParameter("connection_string", getConnectionString());
             uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
+            auto buf = BuilderRWBufferFromHTTP(uri)
+                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                           .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
+                           .withSettings(getContext()->getReadSettings())
+                           .create(credentials);
 
-            bool res;
-            readBoolText(res, buf);
+            bool res = false;
+            readBoolText(res, *buf);
             is_schema_allowed = res;
         }
 
@@ -220,15 +226,21 @@ protected:
             uri.addQueryParameter("connection_string", getConnectionString());
             uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, getHTTPTimeouts(), credentials);
+            auto buf = BuilderRWBufferFromHTTP(uri)
+                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                           .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
+                           .withSettings(getContext()->getReadSettings())
+                           .create(credentials);
 
             std::string character;
-            readStringBinary(character, buf);
+            readStringBinary(character, *buf);
             if (character.length() > 1)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
                     character, BridgeHelperMixin::serviceAlias());
-            else if (character.length() == 0)
-                quote_style = IdentifierQuotingStyle::None;
+
+            if (character.empty())
+                quote_style = IdentifierQuotingStyle::Backticks;
             else if (character[0] == '`')
                 quote_style = IdentifierQuotingStyle::Backticks;
             else if (character[0] == '"')
@@ -244,7 +256,7 @@ protected:
 
 struct JDBCBridgeMixin
 {
-    static constexpr inline auto DEFAULT_PORT = 9019;
+    static constexpr auto DEFAULT_PORT = 9019;
 
     static String configPrefix()
     {
@@ -275,7 +287,7 @@ struct JDBCBridgeMixin
 
 struct ODBCBridgeMixin
 {
-    static constexpr inline auto DEFAULT_PORT = 9018;
+    static constexpr auto DEFAULT_PORT = 9018;
 
     static String configPrefix()
     {

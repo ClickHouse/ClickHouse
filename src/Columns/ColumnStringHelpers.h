@@ -37,9 +37,9 @@ class WriteHelper
             column.resize(rows);
         else
         {
-            column.getOffsets().reserve(rows);
+            column.getOffsets().reserve_exact(rows);
             /// Using coefficient 2 for initial size is arbitrary.
-            column.getChars().resize(rows * 2);
+            column.getChars().reserve_exact(rows * 2);
         }
         return column;
     }

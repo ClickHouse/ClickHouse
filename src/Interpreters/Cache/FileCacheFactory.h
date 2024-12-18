@@ -6,7 +6,6 @@
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <mutex>
-#include <list>
 
 namespace DB
 {
@@ -17,24 +16,52 @@ namespace DB
 class FileCacheFactory final : private boost::noncopyable
 {
 public:
-    struct FileCacheData
+    class FileCacheData
     {
-        FileCachePtr cache;
-        FileCacheSettings settings;
+        friend class FileCacheFactory;
+    public:
+        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_, const std::string & config_path_);
 
-        FileCacheData() = default;
-        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_) : cache(cache_), settings(settings_) {}
+        FileCacheSettings getSettings() const;
+
+        void setSettings(const FileCacheSettings & new_settings);
+
+        const FileCachePtr cache;
+        const std::string config_path;
+
+    private:
+        FileCacheSettings settings;
+        mutable std::mutex settings_mutex;
     };
+
     using FileCacheDataPtr = std::shared_ptr<FileCacheData>;
     using CacheByName = std::unordered_map<std::string, FileCacheDataPtr>;
 
     static FileCacheFactory & instance();
 
-    FileCachePtr getOrCreate(const std::string & cache_name, const FileCacheSettings & file_cache_settings);
+    FileCachePtr getOrCreate(
+        const std::string & cache_name,
+        const FileCacheSettings & file_cache_settings,
+        const std::string & config_path);
+
+    FileCachePtr get(const std::string & cache_name);
+
+    FileCachePtr create(
+        const std::string & cache_name,
+        const FileCacheSettings & file_cache_settings,
+        const std::string & config_path);
 
     CacheByName getAll();
 
-    FileCacheData getByName(const std::string & cache_name);
+    FileCacheDataPtr getByName(const std::string & cache_name);
+
+    void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config);
+
+    void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
+
+    void remove(FileCachePtr cache);
+
+    void clear();
 
 private:
     std::mutex mutex;

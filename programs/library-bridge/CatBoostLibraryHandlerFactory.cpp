@@ -13,7 +13,7 @@ CatBoostLibraryHandlerFactory & CatBoostLibraryHandlerFactory::instance()
 }
 
 CatBoostLibraryHandlerFactory::CatBoostLibraryHandlerFactory()
-    : log(&Poco::Logger::get("CatBoostLibraryHandlerFactory"))
+    : log(getLogger("CatBoostLibraryHandlerFactory"))
 {
 }
 
@@ -26,17 +26,15 @@ CatBoostLibraryHandlerPtr CatBoostLibraryHandlerFactory::tryGetModel(const Strin
 
     if (found)
         return handler->second;
-    else
+
+    if (create_if_not_found)
     {
-        if (create_if_not_found)
-        {
-            auto new_handler = std::make_shared<CatBoostLibraryHandler>(library_path, model_path);
-            library_handlers.emplace(model_path, new_handler);
-            LOG_DEBUG(log, "Loaded catboost library handler for model path '{}'", model_path);
-            return new_handler;
-        }
-        return nullptr;
+        auto new_handler = std::make_shared<CatBoostLibraryHandler>(library_path, model_path);
+        library_handlers.emplace(model_path, new_handler);
+        LOG_DEBUG(log, "Loaded catboost library handler for model path '{}'", model_path);
+        return new_handler;
     }
+    return nullptr;
 }
 
 void CatBoostLibraryHandlerFactory::removeModel(const String & model_path)

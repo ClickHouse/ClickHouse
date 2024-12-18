@@ -17,11 +17,19 @@
 #include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB
 {
+
+namespace HiveSetting
+{
+    extern const HiveSettingsBool enable_orc_file_minmax_index;
+    extern const HiveSettingsBool enable_orc_stripe_minmax_index;
+    extern const HiveSettingsBool enable_parquet_rowgroup_minmax_index;
+}
 
 namespace ErrorCodes
 {
@@ -44,18 +52,16 @@ Range createRangeFromOrcStatistics(const StatisticsType * stats)
     {
         return Range(FieldType(stats->getMinimum()), true, FieldType(stats->getMaximum()), true);
     }
-    else if (stats->hasMinimum())
+    if (stats->hasMinimum())
     {
         return Range::createLeftBounded(FieldType(stats->getMinimum()), true);
     }
-    else if (stats->hasMaximum())
+    if (stats->hasMaximum())
     {
         return Range::createRightBounded(FieldType(stats->getMaximum()), true);
     }
-    else
-    {
-        return Range::createWholeUniverseWithoutNull();
-    }
+
+    return Range::createWholeUniverseWithoutNull();
 }
 
 template <class FieldType, class StatisticsType>
@@ -122,15 +128,15 @@ Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
     {
         return createRangeFromOrcStatistics<Int64>(int_stats);
     }
-    else if (const auto * double_stats = dynamic_cast<const orc::DoubleColumnStatistics *>(col_stats))
+    if (const auto * double_stats = dynamic_cast<const orc::DoubleColumnStatistics *>(col_stats))
     {
         return createRangeFromOrcStatistics<Float64>(double_stats);
     }
-    else if (const auto * string_stats = dynamic_cast<const orc::StringColumnStatistics *>(col_stats))
+    if (const auto * string_stats = dynamic_cast<const orc::StringColumnStatistics *>(col_stats))
     {
         return createRangeFromOrcStatistics<String>(string_stats);
     }
-    else if (const auto * bool_stats = dynamic_cast<const orc::BooleanColumnStatistics *>(col_stats))
+    if (const auto * bool_stats = dynamic_cast<const orc::BooleanColumnStatistics *>(col_stats))
     {
         auto false_cnt = bool_stats->getFalseCount();
         auto true_cnt = bool_stats->getTrueCount();
@@ -138,11 +144,11 @@ Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
         {
             return Range(UInt8(0), true, UInt8(1), true);
         }
-        else if (false_cnt)
+        if (false_cnt)
         {
             return Range::createLeftBounded(UInt8(0), true);
         }
-        else if (true_cnt)
+        if (true_cnt)
         {
             return Range::createRightBounded(UInt8(1), true);
         }
@@ -163,7 +169,7 @@ void HiveORCFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), arrow::default_memory_pool());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), ArrowMemoryPool::instance());
     THROW_ARROW_NOT_OK(result.status());
     reader = std::move(result).ValueOrDie();
 }
@@ -183,7 +189,7 @@ void HiveORCFile::prepareColumnMapping()
 
 bool HiveORCFile::useFileMinMaxIndex() const
 {
-    return storage_settings->enable_orc_file_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_orc_file_minmax_index];
 }
 
 
@@ -233,7 +239,7 @@ void HiveORCFile::loadFileMinMaxIndexImpl()
 
 bool HiveORCFile::useSplitMinMaxIndex() const
 {
-    return storage_settings->enable_orc_stripe_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_orc_stripe_minmax_index];
 }
 
 
@@ -274,7 +280,7 @@ std::optional<size_t> HiveORCFile::getRowsImpl()
 
 bool HiveParquetFile::useSplitMinMaxIndex() const
 {
-    return storage_settings->enable_parquet_rowgroup_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_parquet_rowgroup_minmax_index];
 }
 
 void HiveParquetFile::prepareReader()
@@ -282,7 +288,7 @@ void HiveParquetFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool(), &reader));
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance(), &reader));
 }
 
 void HiveParquetFile::loadSplitMinMaxIndexesImpl()

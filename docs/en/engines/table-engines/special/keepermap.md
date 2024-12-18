@@ -35,7 +35,7 @@ Engine parameters:
 
 - `root_path` - ZooKeeper path where the `table_name` will be stored.  
 This path should not contain the prefix defined by `<keeper_map_path_prefix>` config because the prefix will be automatically appended to the `root_path`.  
-Additionally, format of `auxiliary_zookeper_cluster_name:/some/path` is also supported where `auxiliary_zookeper_cluster` is a ZooKeeper cluster defined inside `<auxiliary_zookeepers>` config.  
+Additionally, format of `auxiliary_zookeeper_cluster_name:/some/path` is also supported where `auxiliary_zookeeper_cluster` is a ZooKeeper cluster defined inside `<auxiliary_zookeepers>` config.  
 By default, ZooKeeper cluster defined inside `<zookeeper>` config is used.
 - `keys_limit` - number of keys allowed inside the table.  
 This limit is a soft limit and it can be possible that more keys will end up in the table for some edge cases.
@@ -54,7 +54,7 @@ CREATE TABLE keeper_map_table
     `v2` String,
     `v3` Float32
 )
-ENGINE = KeeperMap(/keeper_map_table, 4)
+ENGINE = KeeperMap('/keeper_map_table', 4)
 PRIMARY KEY key
 ```
 

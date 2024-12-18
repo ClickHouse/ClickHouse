@@ -33,4 +33,9 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, uint16_t po
     return socket_address;
 }
 
+Poco::Net::SocketAddress makeSocketAddress(const std::string & host, uint16_t port, LoggerPtr log)
+{
+    return makeSocketAddress(host, port, log.get());
+}
+
 }

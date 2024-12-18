@@ -10,12 +10,14 @@
 
 #if USE_RAPIDJSON
 
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/filewritestream.h"
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/filereadstream.h"
+/// Prevent stack overflow:
+#define RAPIDJSON_PARSE_DEFAULT_FLAGS (kParseIterativeFlag)
+
+#include <rapidjson/document.h>
+#include <rapidjson/writer.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/filereadstream.h>
+#include <rapidjson/error/en.h>
 
 
 namespace DB
@@ -25,23 +27,23 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
 {
-    // select jsonMergePatch('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
+    // select JSONMergePatch('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
     //           ||
     //           \/
     // ┌───────────────────────┐
     // │ {"a":1,"name":"zoey"} │
     // └───────────────────────┘
-    class FunctionjsonMergePatch : public IFunction
+    class FunctionJSONMergePatch : public IFunction
     {
     public:
-        static constexpr auto name = "jsonMergePatch";
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionjsonMergePatch>(); }
+        static constexpr auto name = "JSONMergePatch";
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionJSONMergePatch>(); }
 
         String getName() const override { return name; }
         bool isVariadic() const override { return true; }
@@ -53,7 +55,7 @@ namespace
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             if (arguments.empty())
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires at least one argument.", getName());
 
             for (const auto & arg : arguments)
                 if (!isString(arg.type))
@@ -98,12 +100,20 @@ namespace
                 const char * json = str_ref.data;
 
                 document.Parse(json);
-                if (document.HasParseError() || !document.IsObject())
+
+                if (document.HasParseError())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge: {}", rapidjson::GetParseError_En(document.GetParseError()));
+
+                if (!document.IsObject())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge. Expected JSON object");
             };
 
-            const auto * first_string = typeid_cast<const ColumnString *>(arguments[0].column.get());
-            if (!first_string)
+            const bool is_first_const = isColumnConst(*arguments[0].column);
+            const auto * first_column_arg_string = is_first_const
+                        ? checkAndGetColumnConstData<ColumnString>(arguments[0].column.get())
+                        : checkAndGetColumn<ColumnString>(arguments[0].column.get());
+
+            if (!first_column_arg_string)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
             std::vector<rapidjson::Document> merged_jsons;
@@ -112,19 +122,29 @@ namespace
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto & merged_json = merged_jsons.emplace_back(rapidjson::Type::kObjectType, &allocator);
-                parse_json_document(*first_string, merged_json, i);
+                if (is_first_const)
+                    parse_json_document(*first_column_arg_string, merged_json, 0);
+                else
+                    parse_json_document(*first_column_arg_string, merged_json, i);
             }
 
             for (size_t col_idx = 1; col_idx < arguments.size(); ++col_idx)
             {
-                const auto * column_string = typeid_cast<const ColumnString *>(arguments[col_idx].column.get());
-                if (!column_string)
+                const bool is_const = isColumnConst(*arguments[col_idx].column);
+                const auto * column_arg_string = is_const
+                            ? checkAndGetColumnConstData<ColumnString>(arguments[col_idx].column.get())
+                            : checkAndGetColumn<ColumnString>(arguments[col_idx].column.get());
+
+                if (!column_arg_string)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     rapidjson::Document document(&allocator);
-                    parse_json_document(*column_string, document, i);
+                    if (is_const)
+                        parse_json_document(*column_arg_string, document, 0);
+                    else
+                        parse_json_document(*column_arg_string, document, i);
                     merge_objects(merged_jsons[i], document);
                 }
             }
@@ -148,10 +168,12 @@ namespace
 
 }
 
-REGISTER_FUNCTION(jsonMergePatch)
+REGISTER_FUNCTION(JSONMergePatch)
 {
-    factory.registerFunction<FunctionjsonMergePatch>(FunctionDocumentation{
+    factory.registerFunction<FunctionJSONMergePatch>(FunctionDocumentation{
         .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects."});
+
+    factory.registerAlias("jsonMergePatch", "JSONMergePatch");
 }
 
 }

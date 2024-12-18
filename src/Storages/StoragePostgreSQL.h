@@ -37,11 +37,12 @@ public:
 
     String getName() const override { return "PostgreSQL"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        ContextPtr local_context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
@@ -65,7 +66,7 @@ public:
 
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, bool require_table = true);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
@@ -79,7 +80,7 @@ private:
     String on_conflict;
     postgres::PoolWithFailoverPtr pool;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

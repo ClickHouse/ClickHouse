@@ -32,7 +32,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     bool empty() const override;
 
@@ -50,7 +50,7 @@ private:
 
     mutable SQLitePtr sqlite_db;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     bool checkSQLiteTable(const String & table_name) const;
 

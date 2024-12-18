@@ -14,9 +14,8 @@ namespace ErrorCodes
 
 JSONCompactRowInputFormat::JSONCompactRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(
+    : RowInputFormatWithNamesAndTypes<JSONCompactFormatReader>(
         header_, in_, params_, false, false, false, format_settings_, std::make_unique<JSONCompactFormatReader>(in_, format_settings_))
-    , validate_types_from_metadata(format_settings_.json.validate_types_from_metadata)
 {
 }
 
@@ -24,9 +23,9 @@ void JSONCompactRowInputFormat::readPrefix()
 {
     skipBOMIfExists(*in);
     JSONUtils::skipObjectStart(*in);
-    if (validate_types_from_metadata)
+    if (format_settings.json.validate_types_from_metadata)
     {
-        auto names_and_types = JSONUtils::readMetadataAndValidateHeader(*in, getPort().getHeader());
+        auto names_and_types = JSONUtils::readMetadataAndValidateHeader(*in, getPort().getHeader(), format_settings.json);
         Names column_names;
         for (const auto & [name, type] : names_and_types)
             column_names.push_back(name);
@@ -34,12 +33,12 @@ void JSONCompactRowInputFormat::readPrefix()
     }
     else
     {
-        JSONUtils::readMetadata(*in);
+        JSONUtils::readMetadata(*in, format_settings.json);
         column_mapping->setupByHeader(getPort().getHeader());
     }
 
     JSONUtils::skipComma(*in);
-    if (!JSONUtils::skipUntilFieldInObject(*in, "data"))
+    if (!JSONUtils::skipUntilFieldInObject(*in, "data", format_settings.json))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected field \"data\" with table content");
 
     JSONUtils::skipArrayStart(*in);
@@ -48,7 +47,7 @@ void JSONCompactRowInputFormat::readPrefix()
 void JSONCompactRowInputFormat::readSuffix()
 {
     /// Array end was skipped in JSONCompactFormatReader::checkForSuffix
-    JSONUtils::skipTheRestOfObject(*in);
+    JSONUtils::skipTheRestOfObject(*in, format_settings.json);
 }
 
 void JSONCompactRowInputFormat::syncAfterError()

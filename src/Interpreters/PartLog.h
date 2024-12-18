@@ -26,6 +26,8 @@ struct PartLogElement
         REMOVE_PART = 4,
         MUTATE_PART = 5,
         MOVE_PART = 6,
+        MERGE_PARTS_START = 7,
+        MUTATE_PART_START = 8,
     };
 
     /// Copy of MergeAlgorithm since values are written to disk.
@@ -93,10 +95,9 @@ struct PartLogElement
     static MergeReasonType getMergeReasonType(MergeType merge_type);
     static PartMergeAlgorithm getMergeAlgorithm(MergeAlgorithm merge_algorithm_);
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 class IMergeTreeDataPart;
@@ -136,7 +137,7 @@ public:
 
     static PartLogEntries createPartLogEntries(const MutableDataPartsVector & parts, UInt64 elapsed_ns, ProfileCountersSnapshotPtr profile_counters = {});
 
-    /// Add a record about creation of new part.
+    /// Add a record about creation of a new part.
     static bool addNewPart(ContextPtr context, const PartLogEntry & part,
                            const ExecutionStatus & execution_status = {});
 

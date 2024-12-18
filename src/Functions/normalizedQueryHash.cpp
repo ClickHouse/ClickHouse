@@ -4,9 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/queryNormalization.h>
-#include <base/find_symbols.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/SipHash.h>
 
 
 /** The function returns 64bit hash value that is identical for similar queries.
@@ -30,17 +27,19 @@ struct Impl
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        PaddedPODArray<UInt64> & res_data)
+        PaddedPODArray<UInt64> & res_data,
+        size_t input_rows_count)
     {
-        size_t size = offsets.size();
-        res_data.resize(size);
+        res_data.resize(input_rows_count);
 
         ColumnString::Offset prev_src_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
-            res_data[i] = normalizedQueryHash<keep_names>(
-                reinterpret_cast<const char *>(&data[prev_src_offset]), reinterpret_cast<const char *>(&data[curr_src_offset - 1]));
+            res_data[i] = normalizedQueryHash(
+                reinterpret_cast<const char *>(&data[prev_src_offset]),
+                reinterpret_cast<const char *>(&data[curr_src_offset - 1]),
+                keep_names);
             prev_src_offset = offsets[i];
         }
     }
@@ -74,24 +73,28 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = ColumnUInt64::create();
             typename ColumnUInt64::Container & vec_res = col_res->getData();
-            vec_res.resize(col->size());
-            Impl<keep_names>::vector(col->getChars(), col->getOffsets(), vec_res);
+            vec_res.resize(input_rows_count);
+            Impl<keep_names>::vector(col->getChars(), col->getOffsets(), vec_res, input_rows_count);
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -104,4 +107,3 @@ REGISTER_FUNCTION(NormalizedQueryHash)
 }
 
 }
-

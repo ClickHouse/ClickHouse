@@ -1,5 +1,5 @@
 <clickhouse>
     <merge_tree>
-        <storage_policy>unknown</storage_policy>
+        <storage_policy>hybrid</storage_policy>
     </merge_tree>
 </clickhouse>

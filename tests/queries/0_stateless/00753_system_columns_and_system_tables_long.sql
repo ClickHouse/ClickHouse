@@ -1,4 +1,5 @@
--- Tags: long, no-s3-storage, no-random-merge-tree-settings
+-- Tags: long, no-object-storage, no-random-merge-tree-settings
+SET output_format_pretty_row_numbers = 0;
 
 DROP TABLE IF EXISTS check_system_tables;
 
@@ -23,7 +24,7 @@ FROM system.columns WHERE table = 'check_system_tables' AND database = currentDa
 FORMAT PrettyCompactNoEscapes;
 
 INSERT INTO check_system_tables VALUES (1, 1, 1);
-SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes_uncompressed, total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 
 DROP TABLE IF EXISTS check_system_tables;
 
@@ -134,7 +135,27 @@ DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for Join';
 CREATE TABLE check_system_tables Engine=Join(ANY, LEFT, number) AS SELECT * FROM numbers(50);
-SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes BETWEEN 5000 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables SELECT number+50 FROM numbers(50);
-SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes BETWEEN 5000 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+DROP TABLE check_system_tables;
+
+-- Build MergeTree table for Materialized view
+CREATE TABLE check_system_tables
+  (
+    name1 UInt8,
+    name2 UInt8,
+    name3 UInt8
+  ) ENGINE = MergeTree()
+    ORDER BY name1
+    PARTITION BY name2
+    SAMPLE BY name1
+    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1;
+
+SELECT 'Check total_uncompressed_bytes/total_bytes/total_rows for Materialized views';
+CREATE MATERIALIZED VIEW check_system_tables_mv ENGINE = MergeTree() ORDER BY name2 AS SELECT name1, name2, name3 FROM check_system_tables;
+SELECT total_bytes_uncompressed, total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables_mv' AND database = currentDatabase();
+INSERT INTO check_system_tables VALUES (1, 1, 1);
+SELECT total_bytes_uncompressed > 0, total_bytes > 0, total_rows FROM system.tables WHERE name = 'check_system_tables_mv' AND database = currentDatabase();
+DROP TABLE check_system_tables_mv;
 DROP TABLE check_system_tables;

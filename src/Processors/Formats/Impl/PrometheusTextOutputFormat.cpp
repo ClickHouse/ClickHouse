@@ -12,6 +12,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
+#include "DataTypes/IDataType.h"
 
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -35,9 +36,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 constexpr auto FORMAT_NAME = "Prometheus";
 
-static bool isDataTypeMapString(const DataTypePtr & type)
+bool isDataTypeMapString(const DataTypePtr & type)
 {
     if (!isMap(type))
         return false;
@@ -45,8 +49,8 @@ static bool isDataTypeMapString(const DataTypePtr & type)
     return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
 }
 
-template <typename ResType, typename Pred>
-static void getColumnPos(const Block & header, const String & col_name, Pred pred, ResType & res)
+template <typename ResType>
+void getColumnPos(const Block & header, const String & col_name, bool (*pred)(const DataTypePtr &), ResType & res)
 {
     static_assert(std::is_same_v<ResType, size_t> || std::is_same_v<ResType, std::optional<size_t>>, "Illegal ResType");
 
@@ -71,12 +75,14 @@ static void getColumnPos(const Block & header, const String & col_name, Pred pre
     }
 }
 
-static Float64 tryParseFloat(const String & s)
+Float64 tryParseFloat(const String & s)
 {
     Float64 t = 0;
     ReadBufferFromString buf(s);
     tryReadFloatText(t, buf);
     return t;
+}
+
 }
 
 PrometheusTextOutputFormat::PrometheusTextOutputFormat(
@@ -89,12 +95,12 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
 {
     const Block & header = getPort(PortKind::Main).getHeader();
 
-    getColumnPos(header, "name", isStringOrFixedString<DataTypePtr>, pos.name);
-    getColumnPos(header, "value", isNumber<DataTypePtr>, pos.value);
+    getColumnPos(header, "name", isStringOrFixedString, pos.name);
+    getColumnPos(header, "value", isNumber, pos.value);
 
-    getColumnPos(header, "help", isStringOrFixedString<DataTypePtr>, pos.help);
-    getColumnPos(header, "type", isStringOrFixedString<DataTypePtr>, pos.type);
-    getColumnPos(header, "timestamp", isNumber<DataTypePtr>, pos.timestamp);
+    getColumnPos(header, "help", isStringOrFixedString, pos.help);
+    getColumnPos(header, "type", isStringOrFixedString, pos.type);
+    getColumnPos(header, "timestamp", isNumber, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 }
 
@@ -122,11 +128,11 @@ void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             /// rows with labels at the beginning and then `_sum` and `_count`
             if (lhs_labels_contain_sum && rhs_labels_contain_count)
                 return true;
-            else if (lhs_labels_contain_count && rhs_labels_contain_sum)
+            if (lhs_labels_contain_count && rhs_labels_contain_sum)
                 return false;
-            else if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
+            if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
                 return true;
-            else if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
+            if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
                 return false;
 
             auto lit = lhs.labels.find(bucket_label);
@@ -280,10 +286,10 @@ static void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Cont
 {
     Field field;
     col_map->get(row_num, field);
-    const auto & map_field = field.get<Map>();
+    const auto & map_field = field.safeGet<Map>();
     for (const auto & map_element : map_field)
     {
-        const auto & map_entry = map_element.get<Tuple>();
+        const auto & map_entry = map_element.safeGet<Tuple>();
 
         String entry_key;
         String entry_value;

@@ -10,6 +10,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Planner/TableExpressionData.h>
+#include <Interpreters/SelectQueryOptions.h>
 
 namespace DB
 {
@@ -18,10 +19,31 @@ namespace DB
   *
   * 1. Column identifiers.
   */
+
+class QueryNode;
+class TableNode;
+
+struct FiltersForTableExpression
+{
+    std::optional<ActionsDAG> filter_actions;
+    PrewhereInfoPtr prewhere_info;
+};
+
+using FiltersForTableExpressionMap = std::map<QueryTreeNodePtr, FiltersForTableExpression>;
+
+
 class GlobalPlannerContext
 {
 public:
-    GlobalPlannerContext() = default;
+    GlobalPlannerContext(
+        const QueryNode * parallel_replicas_node_,
+        const TableNode * parallel_replicas_table_,
+        FiltersForTableExpressionMap filters_for_table_expressions_)
+        : parallel_replicas_node(parallel_replicas_node_)
+        , parallel_replicas_table(parallel_replicas_table_)
+        , filters_for_table_expressions(std::move(filters_for_table_expressions_))
+    {
+    }
 
     /** Create column identifier for column node.
       *
@@ -38,17 +60,32 @@ public:
     /// Check if context has column identifier
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
 
+    /// The query which will be executed with parallel replicas.
+    /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
+    const QueryNode * const parallel_replicas_node = nullptr;
+    /// Table which is used with parallel replicas reading. Now, only one table is supported by the protocol.
+    /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
+    const TableNode * const parallel_replicas_table = nullptr;
+
+    const FiltersForTableExpressionMap filters_for_table_expressions;
+
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
 
+class PlannerContext;
+using PlannerContextPtr = std::shared_ptr<PlannerContext>;
+
 class PlannerContext
 {
 public:
     /// Create planner context with query context and global planner context
-    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_);
+    PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_);
+
+    /// Create planner with modified query_context
+    PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_);
 
     /// Get planner context query context
     ContextPtr getQueryContext() const
@@ -136,12 +173,19 @@ public:
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
 
+    /// Returns false if any of following conditions met:
+    /// 1. Query is executed on a follower node.
+    /// 2. ignore_ast_optimizations is set.
+    bool isASTLevelOptimizationAllowed() const { return is_ast_level_optimization_allowed; }
+
 private:
     /// Query context
     ContextMutablePtr query_context;
 
     /// Global planner context
     GlobalPlannerContextPtr global_planner_context;
+
+    bool is_ast_level_optimization_allowed;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;
@@ -152,7 +196,5 @@ private:
     /// Set key to set
     PreparedSets prepared_sets;
 };
-
-using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 }

@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
 }
 
-DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, Poco::Logger * log)
+DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFile & in, LoggerPtr log)
 {
     DistributedAsyncInsertHeader distributed_header;
 

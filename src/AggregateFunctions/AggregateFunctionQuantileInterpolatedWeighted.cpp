@@ -15,6 +15,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
 }
@@ -170,7 +171,8 @@ private:
             }
             else
             {
-                size_t start = 0, end = size - 1;
+                size_t start = 0;
+                size_t end = size - 1;
                 while (start <= end)
                 {
                     size_t mid = start + (end - start) / 2;
@@ -190,8 +192,10 @@ private:
         size_t l = idx;
         size_t u = idx + 1 < size ? idx + 1 : idx;
 
-        Float64 xl = value_weight_pairs[l].second, xr = value_weight_pairs[u].second;
-        UnderlyingType yl = value_weight_pairs[l].first, yr = value_weight_pairs[u].first;
+        Float64 xl = value_weight_pairs[l].second;
+        Float64 xr = value_weight_pairs[u].second;
+        UnderlyingType yl = value_weight_pairs[l].first;
+        UnderlyingType yr = value_weight_pairs[u].first;
 
         if (level < xl)
             yr = yl;
@@ -267,7 +271,8 @@ private:
                 }
                 else
                 {
-                    size_t start = 0, end = size - 1;
+                    size_t start = 0;
+                    size_t end = size - 1;
                     while (start <= end)
                     {
                         size_t mid = start + (end - start) / 2;
@@ -287,8 +292,10 @@ private:
             size_t l = idx;
             size_t u = idx + 1 < size ? idx + 1 : idx;
 
-            Float64 xl = value_weight_pairs[l].second, xr = value_weight_pairs[u].second;
-            UnderlyingType yl = value_weight_pairs[l].first, yr = value_weight_pairs[u].first;
+            Float64 xl = value_weight_pairs[l].second;
+            Float64 xr = value_weight_pairs[u].second;
+            UnderlyingType yl = value_weight_pairs[l].first;
+            UnderlyingType yr = value_weight_pairs[u].first;
 
             if (level < xl)
                 yr = yl;
@@ -320,8 +327,8 @@ template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
-    /// Second argument type check doesn't depend on the type of the first one.
-    Function<void, true>::assertSecondArg(argument_types);
+    if (argument_types.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one argument", name);
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);

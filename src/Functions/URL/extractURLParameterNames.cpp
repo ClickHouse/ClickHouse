@@ -22,13 +22,15 @@ public:
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {}; }
+
     static void checkArguments(const IFunction & func, const ColumnsWithTypeAndName & arguments)
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"URL", &isString<IDataType>, nullptr, "String"},
+            {"URL", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
-        validateFunctionArgumentTypes(func, arguments, mandatory_args);
+        validateFunctionArguments(func, arguments, mandatory_args);
     }
 
     static constexpr auto strings_argument_position = 0uz;
@@ -68,8 +70,7 @@ public:
             pos = find_first_symbols<'=', '&', '#', '?'>(pos, end);
             if (pos == end)
                 return false;
-            else
-                token_end = pos;
+            token_end = pos;
 
             if (*pos == '?')
             {

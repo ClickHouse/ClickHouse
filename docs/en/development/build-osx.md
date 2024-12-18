@@ -3,7 +3,7 @@ slug: /en/development/build-osx
 sidebar_position: 65
 sidebar_label: Build on macOS
 title: How to Build ClickHouse on macOS
-description: How to build ClickHouse on macOS
+description: How to build ClickHouse on macOS for macOS
 ---
 
 :::info You don't have to build ClickHouse yourself!
@@ -37,7 +37,7 @@ sudo xcode-select --install
 
 ``` bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils
+brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils nasm
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
@@ -47,6 +47,9 @@ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 # ...alternatively, you can use https://github.com/ClickHouse/ClickHouse.git as the repo URL.
 ```
 
+Apple uses a case-insensitive file system by default. While this usually does not affect compilation (especially scratch makes will work), it can confuse file operations like `git mv`.
+For serious development on macOS, make sure that the source code is stored on a case-sensitive disk volume, e.g. see [these instructions](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
+
 ## Build ClickHouse {#build-clickhouse}
 
 To build using Homebrew's vanilla Clang compiler (the only **recommended** way):
@@ -55,9 +58,7 @@ To build using Homebrew's vanilla Clang compiler (the only **recommended** way):
 cd ClickHouse
 mkdir build
 export PATH=$(brew --prefix llvm)/bin:$PATH
-export CC=$(brew --prefix llvm)/bin/clang
-export CXX=$(brew --prefix llvm)/bin/clang++
-cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -S . -B build
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -S . -B build
 cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```
