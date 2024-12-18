@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 
 /** The function takes two arrays: scores and labels.
-  * Label can be one of two values: positive and negative.
+  * Label can be one of two values: positive (> 0) and negative (<= 0)
   * Score can be arbitrary number.
   *
   * These values are considered as the output of classifier. We have some true labels for objects.
@@ -32,6 +32,8 @@ namespace ErrorCodes
   * This way classifier may predict positive or negative value correctly - true positive or true negative
   *   or have false positive or false negative result.
   * Verying the threshold we can get different probabilities of false positive or false negatives or true positives, etc...
+  *
+  * ---------------------------------------------------------------------------------------------------------------------
   *
   * We can also calculate the True Positive Rate and the False Positive Rate:
   *
@@ -73,13 +75,53 @@ namespace ErrorCodes
   * threshold = 0.8,  TPR = 0,   FPR = 0,   TPR_raw = 0, FPR_raw = 0
   *
   * The "curve" will be present by a line that moves one step either towards right or top on each threshold change.
+  *
+  * ---------------------------------------------------------------------------------------------------------------------
+  *
+  * We can also calculate the Precision and the Recall ("PR"):
+  *
+  * Precision is the ratio `tp / (tp + fp)` where `tp` is the number of true positives and `fp` the number of false positives.
+  * It represents how often the classifier is correct when giving a positive result.
+  * Precision = P(label = positive | score > threshold)
+  *
+  * Recall is the ratio `tp / (tp + fn)` where `tp` is the number of true positives and `fn` the number of false negatives.
+  * It represents the probability of the classifier to give positive result if the object has positive label.
+  * Recall = P(score > threshold | label = positive)
+  *
+  * We can draw a curve of values of Precision and Recall with different threshold on [0..1] x [0..1] unit square.
+  * This curve is named "Precision Recall curve" (PR).
+  *
+  * For the curve we can calculate, literally, Area Under the Curve, that will be in the range of [0..1].
+  *
+  * Let's look at the example:
+  * arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+  *
+  * 1. We have pairs: (-, 0.1), (-, 0.4), (+, 0.35), (+, 0.8)
+  *
+  * 2. Let's sort by score descending: (+, 0.8), (-, 0.4), (+, 0.35), (-, 0.1)
+  *
+  * 3. Let's draw the points:
+  *
+  * threshold = 0.8,  TP = 0, FP = 0, FN = 2, Recall = 0.0, Precision = 1
+  * threshold = 0.4,  TP = 1, FP = 0, FN = 1, Recall = 0.5, Precision = 1
+  * threshold = 0.35, TP = 1, FP = 1, FN = 1, Recall = 0.5, Precision = 0.5
+  * threshold = 0.1,  TP = 2, FP = 1, FN = 0, Recall = 1.0, Precision = 0.666
+  * threshold = 0,    TP = 2, FP = 2, FN = 0, Recall = 1.0, Precision = 0.5
+  *
+  * This implementation uses the right Riemann sum (see https://en.wikipedia.org/wiki/Riemann_sum) to calculate the AUC.
+  * That is, each increment in area is calculated using `(R_n - R_{n-1}) * P_n`,
+  *   where `R_n` is the Recall at the `n`-th point and `P_n` is the Precision at the `n`-th point.
+  *
+  * This implementation is not interpolated and is different from computing the AUC with the trapezoidal rule,
+  *   which uses linear interpolation and can be too optimistic for the Precision Recall AUC metric.
   */
 
+template <bool PR>
 class FunctionArrayAUC : public IFunction
 {
 public:
-    static constexpr auto name = "arrayAUC";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC>(); }
+    static constexpr auto name = PR ? "arrayAUCPR" : "arrayROCAUC";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<PR>>(); }
 
 private:
     static Float64 apply(
@@ -87,7 +129,7 @@ private:
         const IColumn & labels,
         ColumnArray::Offset current_offset,
         ColumnArray::Offset next_offset,
-        bool scale)
+        [[maybe_unused]] bool scale)
     {
         struct ScoreLabel
         {
@@ -96,52 +138,109 @@ private:
         };
 
         size_t size = next_offset - current_offset;
+
+        if (PR && size == 0)
+            return 0.0;
+
         PODArrayWithStackMemory<ScoreLabel, 1024> sorted_labels(size);
 
         for (size_t i = 0; i < size; ++i)
         {
-            bool label = labels.getFloat64(current_offset + i) > 0;
+            sorted_labels[i].label = labels.getFloat64(current_offset + i) > 0;
             sorted_labels[i].score = scores.getFloat64(current_offset + i);
-            sorted_labels[i].label = label;
         }
 
-        /// Sorting scores in descending order to traverse the ROC curve from left to right
+        /// Sorting scores in descending order to traverse the ROC / Precision-Recall curve from left to right
         std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
-        /// We will first calculate non-normalized area.
-
-        Float64 area = 0.0;
-        Float64 prev_score = sorted_labels[0].score;
-        size_t prev_fp = 0, prev_tp = 0;
-        size_t curr_fp = 0, curr_tp = 0;
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (!PR)
         {
-            /// Only increment the area when the score changes
-            if (sorted_labels[i].score != prev_score)
+            /// We will first calculate non-normalized area.
+            Float64 area = 0.0;
+            Float64 prev_score = sorted_labels[0].score;
+
+            size_t prev_fp = 0;
+            size_t prev_tp = 0;
+            size_t curr_fp = 0;
+            size_t curr_tp = 0;
+
+            for (size_t i = 0; i < size; ++i)
             {
-                area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0; /// Trapezoidal area under curve (might degenerate to zero or to a rectangle)
-                prev_fp = curr_fp;
-                prev_tp = curr_tp;
-                prev_score = sorted_labels[i].score;
+                /// Only increment the area when the score changes
+                if (sorted_labels[i].score != prev_score)
+                {
+                    area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0; /// Trapezoidal area under curve (might degenerate to zero or to a rectangle)
+                    prev_fp = curr_fp;
+                    prev_tp = curr_tp;
+                    prev_score = sorted_labels[i].score;
+                }
+
+                if (sorted_labels[i].label)
+                    curr_tp += 1; /// The curve moves one step up.
+                else
+                    curr_fp += 1; /// The curve moves one step right.
             }
 
-            if (sorted_labels[i].label)
-                curr_tp += 1; /// The curve moves one step up.
-            else
-                curr_fp += 1; /// The curve moves one step right.
+            area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
+
+            /// Then normalize it, if scale is true, dividing by the area to the area of rectangle.
+
+            if (scale)
+            {
+                if (curr_tp == 0 || curr_tp == size)
+                    return std::numeric_limits<Float64>::quiet_NaN();
+                return area / curr_tp / (size - curr_tp);
+            }
+            return area;
         }
-
-        area += (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
-
-        /// Then normalize it, if scale is true, dividing by the area to the area of rectangle.
-
-        if (scale)
+        else
         {
-            if (curr_tp == 0 || curr_tp == size)
-                return std::numeric_limits<Float64>::quiet_NaN();
-            return area / curr_tp / (size - curr_tp);
+            Float64 area = 0.0;
+            Float64 prev_score = sorted_labels[0].score;
+
+            size_t prev_tp = 0;
+            size_t curr_tp = 0; /// True positives predictions (positive label and score > threshold)
+            size_t curr_p = 0; /// Total positive predictions (score > threshold)
+            Float64 curr_precision;
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                if (sorted_labels[i].score != prev_score)
+                {
+                    /* Precision = TP / (TP + FP)
+                     * Recall = TP / (TP + FN)
+                     *
+                     * Instead of calculating
+                     *   d_Area = Precision_n * (Recall_n - Recall_{n-1}),
+                     * we can just calculate
+                     *   d_Area = Precision_n * (TP_n - TP_{n-1})
+                     * and later divide it by (TP + FN).
+                     *
+                     * This can be done because (TP + FN) is constant and equal to total positive labels.
+                     */
+                    curr_precision = static_cast<Float64>(curr_tp) / curr_p; /// curr_p should never be 0 because this if statement isn't executed on the first iteration and the
+                                                                             /// following iterations will have already counted (curr_p += 1) at least one positive prediction
+                    area += curr_precision * (curr_tp - prev_tp);
+                    prev_tp = curr_tp;
+                    prev_score = sorted_labels[i].score;
+                }
+
+                if (sorted_labels[i].label)
+                    curr_tp += 1;
+                curr_p += 1;
+            }
+
+            /// If there were no positive labels, Recall did not change and the area is 0
+            if (curr_tp == 0)
+                return 0.0;
+
+            curr_precision = curr_p > 0 ? static_cast<Float64>(curr_tp) / curr_p : 1.0;
+            area += curr_precision * (curr_tp - prev_tp);
+
+            /// Finally, we divide by (TP + FN) to obtain the Recall
+            /// At this point we've traversed the whole curve and curr_tp = total positive labels (TP + FN)
+            return area / curr_tp;
         }
-        return area;
     }
 
     static void vector(
@@ -166,8 +265,8 @@ private:
 public:
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return PR ? false : true; }
+    size_t getNumberOfArguments() const override { return PR ? 2 : 0; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
@@ -175,10 +274,11 @@ public:
     {
         size_t number_of_arguments = arguments.size();
 
-        if (number_of_arguments < 2 || number_of_arguments > 3)
+        if ((!PR && (number_of_arguments < 2 || number_of_arguments > 3))
+            || (PR && number_of_arguments != 2))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), number_of_arguments);
+                            "Number of arguments for function {} doesn't match: passed {}, should be {}",
+                            getName(), number_of_arguments, PR ? "2" : "2 or 3");
 
         for (size_t i = 0; i < 2; ++i)
         {
@@ -191,7 +291,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot process values of type {}", getName(), nested_type->getName());
         }
 
-        if (number_of_arguments == 3)
+        if (!PR && number_of_arguments == 3)
         {
             if (!isBool(arguments[2].type) || arguments[2].column.get() == nullptr || !isColumnConst(*arguments[2].column))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be of type const Bool.", getName());
@@ -200,10 +300,7 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeFloat64>();
-    }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeFloat64>(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -247,7 +344,10 @@ public:
 
 REGISTER_FUNCTION(ArrayAUC)
 {
-    factory.registerFunction<FunctionArrayAUC>();
+    factory.registerFunction<FunctionArrayAUC<false>>();
+    factory.registerFunction<FunctionArrayAUC<true>>();
+    factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
+    factory.registerAlias("arrayPRAUC", "arrayAUCPR");
 }
 
 }

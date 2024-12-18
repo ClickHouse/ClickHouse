@@ -1041,9 +1041,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (settings[Setting::enforce_strict_identifier_format])
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
+            IAST::FormatSettings enforce_strict_identifier_format_settings(true);
             enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-            ast->format(enforce_strict_identifier_format_settings);
+            ast->format(buf, enforce_strict_identifier_format_settings);
         }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
@@ -1536,8 +1536,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        String format_name = ast_query_with_output->format
-                ? getIdentifierName(ast_query_with_output->format)
+        String format_name = ast_query_with_output->format_ast
+                ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
         if (boost::iequals(format_name, "Null"))
@@ -1747,8 +1747,8 @@ void executeQuery(
                     /* zstd_window_log = */ static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
             }
 
-            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                                    ? getIdentifierName(ast_query_with_output->format)
+            format_name = ast_query_with_output && (ast_query_with_output->format_ast != nullptr)
+                                    ? getIdentifierName(ast_query_with_output->format_ast)
                                     : context->getDefaultFormat();
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(

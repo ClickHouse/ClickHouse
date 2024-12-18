@@ -876,6 +876,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -884,11 +885,10 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
     trySetStorageInTableJoin(right_table_expression, table_join);
 
-    auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
-
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
     {
+        auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
         Names required_column_names;
         for (const auto & result_column : right_table_expression_header)
         {
