@@ -91,6 +91,9 @@ void GroupConcatImpl<has_limit>::add(
 {
     auto & cur_data = this->data(place);
 
+    if (!columns[0])
+        return;
+
     if constexpr (has_limit)
         if (cur_data.num_rows >= limit)
             return;
