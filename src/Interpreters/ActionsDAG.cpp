@@ -3335,7 +3335,7 @@ static MutableColumnPtr deserializeConstant(
         auto column_set = ColumnSet::create(1, nullptr);
         registry.sets[hash].push_back(column_set.get());
 
-        return ColumnConst::create(std::move(column_set), 0);
+        return column_set;
     }
 
     if (WhichDataType(type).isFunction())
@@ -3561,7 +3561,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                 if (const auto * rhs_tuple = typeid_cast<const DataTypeTuple *>(rhs_type.get()))
                     rhs_type = std::make_shared<DataTypeTuple>(rhs_tuple->getElements());
 
-                if (!lhs_type->equals(*lhs_type))
+                if (!lhs_type->equals(*rhs_type))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
                         function_name,
