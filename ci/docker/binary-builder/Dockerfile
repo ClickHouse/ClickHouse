@@ -41,7 +41,7 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     rustup target add powerpc64le-unknown-linux-gnu && \
     rustup target add x86_64-unknown-linux-musl && \
     rustup target add aarch64-unknown-linux-musl && \
-    rustup target add riscv64gc-unknown-linux-gnu \
+    rustup target add riscv64gc-unknown-linux-gnu
 
 # Download toolchain and SDK for Darwin
 RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
