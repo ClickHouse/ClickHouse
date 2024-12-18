@@ -192,16 +192,13 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         {
             requests.push_back(
                 zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
-
-            requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
         }
-        else
+        else if (!zk_client->exists(bucket_lock_id_path))
         {
-            if (!zk_client->exists(bucket_lock_id_path))
-                requests.push_back(zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent));
-
-            requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
+            requests.push_back(zkutil::makeCreateRequest(bucket_lock_id_path, "", zkutil::CreateMode::Persistent));
         }
+
+        requests.push_back(zkutil::makeSetRequest(bucket_lock_id_path, processor_info, -1));
 
         Coordination::Responses responses;
         const auto code = zk_client->tryMulti(requests, responses);
@@ -230,7 +227,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         if (create_if_not_exists_enabled)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", code);
 
-        LOG_INFO(log_, "Bucket lock id path was probably created or removed while acquiring the bucket, will retry");
+        LOG_INFO(log_, "Bucket lock id path was probably created or removed while acquiring the bucket (error code: {}), will retry", code);
     }
 }
 
@@ -257,9 +254,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         }
 
         Coordination::Requests requests;
-        const auto failed_path_doesnt_exist = 0;
+        const auto failed_path_doesnt_exist_idx = 0;
         zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
-        const auto create_processing_path = requests.size();
+        const auto create_processing_path_idx = requests.size();
         requests.push_back(zkutil::makeCreateRequest(processing_node_path, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
 
         bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
@@ -267,22 +264,19 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         {
             requests.push_back(
                 zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
-
-            requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
         }
-        else
+        else if (!zk_client->exists(processing_node_id_path))
         {
-            if (!zk_client->exists(processing_node_id_path))
-                requests.push_back(zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent));
-
-            requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
+            requests.push_back(zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent));
         }
-        const auto set_processing_id = requests.size() - 1;
 
-        std::optional<size_t> check_bucket_version;
+        requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
+        const auto set_processing_id_idx = requests.size() - 1;
+
+        std::optional<size_t> check_bucket_version_idx;
         if (bucket_info)
         {
-            check_bucket_version.emplace(requests.size());
+            check_bucket_version_idx.emplace(requests.size());
             requests.push_back(zkutil::makeCheckRequest(bucket_info->bucket_lock_id_path, bucket_info->bucket_version));
         }
 
@@ -301,18 +295,18 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
         if (code == Coordination::Error::ZOK)
         {
-            const auto * set_response = dynamic_cast<const Coordination::SetResponse *>(responses[set_processing_id].get());
+            const auto * set_response = dynamic_cast<const Coordination::SetResponse *>(responses[set_processing_id_idx].get());
             processing_id_version = set_response->stat.version;
             return {true, FileStatus::State::None};
         }
 
-        if (has_request_failed(failed_path_doesnt_exist))
+        if (has_request_failed(failed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Failed};
 
-        if (has_request_failed(create_processing_path))
+        if (has_request_failed(create_processing_path_idx))
             return {false, FileStatus::State::Processing};
 
-        if (check_bucket_version.has_value() && has_request_failed(*check_bucket_version))
+        if (check_bucket_version_idx.has_value() && has_request_failed(*check_bucket_version_idx))
         {
             LOG_TEST(log, "Version of bucket lock changed: {}. Will retry for file `{}`", code, path);
             continue;
@@ -325,10 +319,10 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         }
 
         if (create_if_not_exists_enabled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", magic_enum::enum_name(code));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 
         /// most likely the processing node id path node was removed or created so let's try again
-        LOG_TRACE(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created");
+        LOG_TRACE(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
     }
 }
 

@@ -44,13 +44,13 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     while (true)
     {
         Coordination::Requests requests;
-        const size_t processed_path_doesnt_exist = 0;
+        const size_t processed_path_doesnt_exist_idx = 0;
         zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
-        const size_t failed_path_doesnt_exist = requests.size();
+        const size_t failed_path_doesnt_exist_idx = requests.size();
         zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
 
 
-        const auto created_processing_path = requests.size();
+        const auto created_processing_path_idx = requests.size();
         requests.push_back(zkutil::makeCreateRequest(processing_node_path, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
 
         bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
@@ -58,18 +58,15 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         {
             requests.push_back(
                 zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
-
-            requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
         }
-        else
+        else if (!zk_client->exists(processing_node_id_path))
         {
-            if (!zk_client->exists(processing_node_id_path))
-                requests.push_back(zkutil::makeCreateRequest(processing_node_id_path, processor_info, zkutil::CreateMode::Persistent));
-
-            requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
+            requests.push_back(zkutil::makeCreateRequest(processing_node_id_path, processor_info, zkutil::CreateMode::Persistent));
         }
 
-        const auto set_processing_id = requests.size() - 1;
+        requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
+
+        const auto set_processing_id_idx = requests.size() - 1;
 
         Coordination::Responses responses;
         const auto code = zk_client->tryMulti(requests, responses);
@@ -77,25 +74,25 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
         if (code == Coordination::Error::ZOK)
         {
-            const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(*responses[set_processing_id].get());
+            const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(*responses[set_processing_id_idx].get());
             processing_id_version = set_response.stat.version;
             return std::pair{true, FileStatus::State::None};
         }
 
-        if (has_request_failed(processed_path_doesnt_exist))
+        if (has_request_failed(processed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Processed};
 
-        if (has_request_failed(failed_path_doesnt_exist))
+        if (has_request_failed(failed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Failed};
 
-        if (has_request_failed(created_processing_path))
+        if (has_request_failed(created_processing_path_idx))
             return {false, FileStatus::State::Processing};
 
         if (create_if_not_exists_enabled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", magic_enum::enum_name(code));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
 
         /// most likely the node was removed so let's try again
-        LOG_TRACE(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created");
+        LOG_TRACE(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
     }
 }
 
