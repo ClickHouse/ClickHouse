@@ -488,7 +488,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
                 Context::getGlobalContextInstance()->isServerCompletelyStarted())
             {
                 throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                    "ASTFunction is not allowed in dictionary definitions. "
+                    "The dictionary definition contains unsupported elements. "
                     "Please update the dictionary definition to remove function usage");
             }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
