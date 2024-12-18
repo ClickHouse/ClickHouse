@@ -74,14 +74,7 @@ public:
         return std::make_shared<ConcurrentHashJoin>(context, table_join_, slots, right_sample_block_, stats_collecting_params);
     }
 
-    void onBuildPhaseFinish() override
-    {
-        for (auto & hash_join : hash_joins)
-        {
-            // It cannot be called concurrently with other IJoin methods
-            hash_join->data->onBuildPhaseFinish();
-        }
-    }
+    void onBuildPhaseFinish() override;
 
 private:
     struct InternalHashJoin
