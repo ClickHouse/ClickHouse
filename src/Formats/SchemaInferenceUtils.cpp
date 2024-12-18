@@ -1645,6 +1645,9 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), true);
     }
 
+    if (which.isObject())
+        return type;
+
     return makeNullableSafe(type);
 }
 
