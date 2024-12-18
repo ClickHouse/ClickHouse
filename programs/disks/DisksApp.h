@@ -25,15 +25,23 @@ using CommandLineOptions = boost::program_options::variables_map;
 class DisksApp : public Poco::Util::Application
 {
 public:
+    void init(const std::vector<String> & common_arguments);
+
+    int main(const std::vector<String> & /*args*/) override;
+
+    void printCommandHelpMessage(String command_name) const;
+    void printCommandHelpMessage(CommandPtr command) const;
+    void printAvailableCommandsHelpMessage() const;
+
+
+    ~DisksApp() override;
+
+private:
     void addOptions();
 
     void processOptions();
 
     bool processQueryText(const String & text);
-
-    void init(const std::vector<String> & common_arguments);
-
-    int main(const std::vector<String> & /*args*/) override;
 
     CommandPtr getCommandByName(const String & command) const;
 
@@ -46,9 +54,6 @@ public:
         CommandLineOptions & options);
 
     void printEntryHelpMessage() const;
-    void printAvailableCommandsHelpMessage() const;
-    void printCommandHelpMessage(String command_name) const;
-    void printCommandHelpMessage(CommandPtr command) const;
     String getCommandLineWithAliases(CommandPtr command) const;
 
 
@@ -56,9 +61,6 @@ public:
 
     std::vector<String> getEmptyCompletion(String command_name) const;
 
-    ~DisksApp() override;
-
-private:
     void runInteractive();
     void runInteractiveReplxx();
     void runInteractiveTestMode();

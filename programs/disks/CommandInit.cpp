@@ -30,12 +30,13 @@ public:
     {
         const auto disk_name = getValueFromCommandLineOptionsThrow<String>(options, "disk");
         const bool switch_to_disk = options.count("switch");
+        const std::optional<String> path = getValueFromCommandLineOptionsWithOptional<String>(options, "path");
 
         client.addDisk(disk_name, std::nullopt);
         if (switch_to_disk)
         {
-            client.switchToDisk(disk_name, std::nullopt);
-        }
+            client.switchToDisk(disk_name, path);
+        } 
     }
 };
 
