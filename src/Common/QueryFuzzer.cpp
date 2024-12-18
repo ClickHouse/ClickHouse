@@ -45,7 +45,6 @@
 #include <pcg_random.hpp>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/SipHash.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -1288,9 +1287,9 @@ void QueryFuzzer::addTableLike(ASTPtr ast)
     if (table_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
         const auto iter = std::next(table_like.begin(), fuzz_rand() % table_like.size());
-        const auto & ast_del = *iter;
-        table_like_map.erase(ast_del.first);
+        const auto ast_del = *iter;
         table_like.erase(iter);
+        table_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();
@@ -1309,9 +1308,9 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
     if (column_like_map.size() > AST_FUZZER_PART_TYPE_CAP)
     {
         const auto iter = std::next(column_like.begin(), fuzz_rand() % column_like.size());
-        const auto & ast_del = *iter;
-        column_like_map.erase(ast_del.first);
+        const auto ast_del = *iter;
         column_like.erase(iter);
+        column_like_map.erase(ast_del.first);
     }
 
     const auto name = ast->formatForErrorMessage();

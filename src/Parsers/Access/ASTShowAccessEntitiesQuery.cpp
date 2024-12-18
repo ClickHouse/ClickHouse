@@ -24,20 +24,20 @@ String ASTShowAccessEntitiesQuery::getID(char) const
     return fmt::format("SHOW {} query", getKeyword());
 }
 
-void ASTShowAccessEntitiesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << getKeyword() << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW " << getKeyword() << (settings.hilite ? hilite_none : "");
 
     if (!short_name.empty())
-        ostr << " " << backQuoteIfNeed(short_name);
+        settings.ostr << " " << backQuoteIfNeed(short_name);
 
     if (database_and_table_name)
     {
         const String & database = database_and_table_name->first;
         const String & table_name = database_and_table_name->second;
-        ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
-        ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
-        ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
+        settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }
 }
 

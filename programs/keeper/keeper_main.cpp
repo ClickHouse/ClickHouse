@@ -19,9 +19,8 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
-#include <base/coverage.h>
 #include <base/phdr_cache.h>
-#include <base/scope_guard.h>
+#include <base/coverage.h>
 
 
 int mainEntryClickHouseKeeper(int argc, char ** argv);
@@ -64,7 +63,7 @@ int printHelp(int, char **)
 }
 
 
-static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
     if (argv.size() >= 2)
@@ -133,7 +132,7 @@ __attribute__((constructor(0))) void init_je_malloc_message() { malloc_message =
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-static bool inside_main = false;
+bool inside_main = false;
 
 int main(int argc_, char ** argv_)
 {

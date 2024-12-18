@@ -17,7 +17,6 @@ int main(int, char **)
             << LocalDate(time(nullptr)) << '\n'
             << 1234567890123456789UL << '\n'
             << DB::flush;
-        buf.finalize();
     }
 
     {
@@ -36,7 +35,6 @@ int main(int, char **)
         DB::WriteBufferFromFileDescriptor buf(STDOUT_FILENO);
         size_t x = 11;
         buf << "Column " << x << ", \n";
-        buf.finalize();
     }
 
     return 0;

@@ -1,6 +1,5 @@
 #include <base/getThreadId.h>
 #include <base/defines.h> /// THREAD_SANITIZER
-#include <base/scope_guard.h>
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 #include <Common/Fiber.h>
