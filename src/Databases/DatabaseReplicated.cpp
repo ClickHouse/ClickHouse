@@ -93,6 +93,7 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int RESTORE_DATABASE_REPLICA_WITH_DIFFRENT_TABLE_METADATA;
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -471,6 +472,9 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
 
         String replica_host_id;
         bool replica_exists_in_zk = current_zookeeper->tryGet(replica_path, replica_host_id);
+        
+        LOG_TEST(log, "replica exists in zk {}", replica_exists_in_zk);
+
         if (replica_exists_in_zk)
         {
             if (replica_host_id == DROPPED_MARK && !is_create_query)
@@ -759,14 +763,13 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             }
 
             if (is_probably_dropped)
-                return;
-
             {
-                std::lock_guard lock{ddl_worker_mutex};
-                ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
-                ddl_worker->startup();
-                ddl_worker_initialized = true;
+                LOG_TRACE(log, "Cannot startup database {} because it is pobably dropped.", getDatabaseName());
+                return;
             }
+
+            std::lock_guard lock{ddl_worker_mutex};
+            initDdlWorker();
         });
     std::scoped_lock lock(mutex);
     startup_replicated_database_task = makeLoadTask(async_loader, {job});
@@ -793,6 +796,97 @@ void DatabaseReplicated::stopLoading()
     }
     stop_startup_replicated_database.reset();
     DatabaseAtomic::stopLoading();
+}
+
+void DatabaseReplicated::initDdlWorker()
+{
+    chassert(!ddl_worker);
+    chassert(!is_probably_dropped.load());
+
+    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+    ddl_worker->startup();
+    ddl_worker_initialized = true;
+}
+
+void DatabaseReplicated::restoreMetadataInZookeeper()
+{
+    std::size_t total_tables = 0;
+    std::size_t restored_tables_metadata = 0;
+    std::size_t already_restored_tables_metadata = 0;
+
+    auto zookeeper = getZooKeeper();
+    auto local_context = getContext();
+
+    for (auto existing_tables_it = getTablesIterator(local_context, {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
+         existing_tables_it->next(), ++total_tables)
+    {
+        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, zookeeper_path, true, "");
+
+        const String table_name = existing_tables_it->name();
+        LOG_TEST(log, "table_name={} was found to restore metadata in zookeeper", table_name);
+
+        assert(!ddl_worker->isCurrentlyActive() || txn);
+
+        const auto ast_create_query_ptr = getCreateTableQuery(table_name, local_context);
+        const auto * create_query = ast_create_query_ptr->as<ASTCreateQuery>();
+        const String statement = getObjectDefinitionFromCreateQuery(create_query->clone());
+
+        const String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(create_query->getTable());
+
+        String table_metadata_zk;
+
+        const bool metadata_exists_in_zk = zookeeper->tryGet(metadata_zk_path, table_metadata_zk);
+        LOG_TEST(log, "table_name={}, metadata_exists_in_zk={}, metadata_zk_path={}", table_name, metadata_exists_in_zk, metadata_zk_path);
+
+        if (metadata_exists_in_zk)
+        {
+            already_restored_tables_metadata++;
+            LOG_DEBUG(
+                log,
+                "Metadata for table={} already exists in keeper by path={}. Possibly RESTORE DATABASE REPLICA was completed on another "
+                "replica.",
+                table_name,
+                metadata_zk_path);
+
+            LOG_TRACE(log, "local metadata={}", statement);
+            LOG_TRACE(log, "metadata in keeper={}", table_metadata_zk);
+            if (table_metadata_zk != statement)
+            {
+                throw Exception(
+                    ErrorCodes::RESTORE_DATABASE_REPLICA_WITH_DIFFRENT_TABLE_METADATA,
+                    "Metadata for table={} in zookeeper is diffrent from local.",
+                    table_name);
+            }
+            continue;
+        }
+
+        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+
+        std::lock_guard lock{metadata_mutex};
+        UInt64 new_digest = tables_metadata_digest;
+        new_digest += DB::getMetadataHash(create_query->getTable(), statement);
+        txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+
+        tables_metadata_digest = new_digest;
+        assert(checkDigestValid(local_context));
+
+        txn->commit();
+        restored_tables_metadata++;
+
+        LOG_DEBUG(log, "Metadata for table={} was restored in zookeeper.", table_name);
+    }
+
+    LOG_DEBUG(log, "Metadata in zookeeper was restored for {}/{} tables in current replica.", restored_tables_metadata, total_tables);
+    LOG_DEBUG(
+        log,
+        "Metadata in zookeeper was already restored for {}/{} tables in another replica.",
+        already_restored_tables_metadata,
+        total_tables);
+
+    if (0 < already_restored_tables_metadata && already_restored_tables_metadata < total_tables)
+    {
+        throw Exception(ErrorCodes::RESTORE_DATABASE_REPLICA_WITH_DIFFRENT_TABLE_METADATA, "Partially restored metadata. It's a bug");
+    }
 }
 
 void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_context) const
@@ -1148,6 +1242,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
 
+    LOG_TEST(log, "got table_name_to_metadata size={}", table_name_to_metadata.size());
+
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
     /// We need to handle renamed tables only.
@@ -1180,6 +1276,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
          existing_tables_it->next(), ++total_tables)
     {
         String name = existing_tables_it->name();
+        LOG_TEST(log, "found table_name={}", name);
+
         UUID local_replicated_id = UUIDHelpers::Nil;
         if (existing_tables_it->table()->supportsReplication())
         {
@@ -1207,6 +1305,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         auto in_zk = table_name_to_metadata.find(name);
         if (in_zk == table_name_to_metadata.end() || in_zk->second != readMetadataFile(name))
         {
+            LOG_DEBUG(log, "table_name={} to tables_to_detach", name);
             /// Local table does not exist in ZooKeeper or has different metadata
             tables_to_detach.emplace_back(std::move(name));
         }
@@ -1374,11 +1473,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
 
-
     /// Create all needed tables in a proper order
     TablesDependencyGraph tables_dependencies("DatabaseReplicated (" + getDatabaseName() + ")");
+
+    LOG_TEST(log, "table_name_to_metadata size={}", table_name_to_metadata.size());
+
     for (const auto & [table_name, create_table_query] : table_name_to_metadata)
     {
+        LOG_TEST(log, "table_name_to_metadata: table_name={}", table_name);
         /// Note that table_name could contain a dot inside (e.g. .inner.1234-1234-1234-1234)
         /// And QualifiedTableName::parseFromString doesn't handle this.
         auto qualified_name = QualifiedTableName{.database = getDatabaseName(), .table = table_name};
@@ -1393,13 +1495,19 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
 
+    LOG_TEST(log, "tables_to_create_by_level size={}", tables_to_create_by_level.size());
+
     for (const auto & tables_to_create : tables_to_create_by_level)
     {
+        LOG_TEST(log, "tables_to_create size={}", tables_to_create.size());
+
         for (const auto & table_id : tables_to_create)
         {
             auto task = [&]()
             {
                 auto table_name = table_id.getTableName();
+                LOG_TEST(log, "tables_to_create: table_name={}", table_name);
+
                 auto metadata_it = table_name_to_metadata.find(table_name);
                 if (metadata_it == table_name_to_metadata.end())
                 {
@@ -1583,6 +1691,38 @@ void DatabaseReplicated::dropReplica(
     {
         /// It was the last replica, remove all metadata
         zookeeper->tryRemoveRecursive(database_zookeeper_path);
+    }
+}
+
+void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
+{
+    waitDatabaseStarted();
+
+    tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::CREATE);
+
+    restoreMetadataInZookeeper();
+
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+
+        if (is_probably_dropped.load())
+        {
+            LOG_TRACE(log, "Flag is_probably_dropped is being reset to restore database metadata in keeper.");
+            is_probably_dropped.store(false);
+        }
+
+        if (ddl_worker)
+        {
+            LOG_TRACE(log, "Ddl_worker will be reseted.");
+            ddl_worker->shutdown();
+            {
+                ddl_worker_initialized = false;
+                ddl_worker = nullptr;
+            }
+        }
+
+        LOG_TRACE(log, "Ddl_worker will be initialized to restore database metadata in keeper.");
+        initDdlWorker();
     }
 }
 

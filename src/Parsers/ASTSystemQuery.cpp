@@ -119,6 +119,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         return ostr;
     };
 
+    auto print_database = [&]() -> WriteBuffer &
+    {
+        chassert(database);
+
+        database->format(ostr, settings, state, frame);
+        ostr << '.';
+        
+        return ostr;
+    };
+
     auto print_drop_replica = [&]
     {
         ostr << " " << quoteString(replica);
@@ -271,6 +281,15 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_DATABASE_REPLICA:
         {
             print_drop_replica();
+            break;
+        }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            if (database)
+            {
+                ostr << ' ';
+                print_database();
+            }
             break;
         }
         case Type::SUSPEND:
