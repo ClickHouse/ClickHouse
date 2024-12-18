@@ -275,7 +275,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 {
     StorageMySQL::Configuration configuration;
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port", "ssl_ca", "ssl_cert", "ssl_key"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
