@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -579,15 +580,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
-    /// For compatibility.
-    "s3queue_processing_threads_num",
-    "s3queue_loading_retries",
-    "s3queue_after_processing",
-    "s3queue_tracked_files_limit",
-    "s3queue_tracked_file_ttl_sec",
-    "s3queue_polling_min_timeout_ms",
-    "s3queue_polling_max_timeout_ms",
-    "s3queue_polling_backoff_ms",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -597,12 +589,6 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
-    /// For compatibility.
-    "s3queue_loading_retries",
-    "s3queue_after_processing",
-    "s3queue_polling_min_timeout_ms",
-    "s3queue_polling_max_timeout_ms",
-    "s3queue_polling_backoff_ms",
 };
 
 static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
@@ -618,30 +604,42 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY SETTING alter is allowed for {}", getName());
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY/RESET SETTING alter is allowed for {}", getName());
     }
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     commands.apply(new_metadata, local_context);
 
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     if (!new_metadata.hasSettingsChanges())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No settings changes");
 
     const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-    const auto & old_changes = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    const SettingsChanges * old_changes = nullptr;
+    if (old_metadata.hasSettingsChanges())
+        old_changes = &old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
     const auto mode = getTableMetadata().getMode();
     for (const auto & changed_setting : new_changes)
     {
-        auto it = std::find_if(
-            old_changes.begin(), old_changes.end(),
-            [&](const SettingChange & change) { return change.name == changed_setting.name; });
+        bool setting_changed = true;
+        if (old_changes)
+        {
+            auto it = std::find_if(
+                old_changes->begin(), old_changes->end(),
+                [&](const SettingChange & change) { return change.name == changed_setting.name; });
 
-        const bool setting_changed = it != old_changes.end() && it->value != changed_setting.value;
+            setting_changed = it != old_changes->end() && it->value != changed_setting.value;
+        }
 
         if (setting_changed)
         {
-            if (!isSettingChangeable(changed_setting.name, mode))
+            SettingChange result_setting(changed_setting);
+            if (result_setting.name.starts_with("s3queue_"))
+                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
+
+            if (!isSettingChangeable(result_setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -661,26 +659,29 @@ void StorageObjectStorageQueue::alter(
     {
         auto table_id = getStorageID();
 
-        StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-        /// At the moment we cannot do ALTER MODIFY/RESET SETTING if there are no settings changes (exception will be thrown),
-        /// so we do not need to check if old_metadata.settings_changes == nullptr.
-        const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         commands.apply(new_metadata, local_context);
         auto new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
-        ObjectStorageQueueSettings default_settings;
-        for (const auto & setting : old_settings)
-        {
-            auto it = std::find_if(
-                new_settings.begin(), new_settings.end(),
-                [&](const SettingChange & change) { return change.name == setting.name; });
+        StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        const SettingsChanges * old_settings = nullptr;
+        if (old_metadata.hasSettingsChanges())
+            old_settings = &old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
-            if (it == new_settings.end())
+        if (old_settings)
+        {
+            ObjectStorageQueueSettings default_settings;
+            for (const auto & setting : *old_settings)
             {
-                /// Setting was reset.
-                new_settings.push_back(SettingChange(setting.name, default_settings.get(setting.name)));
+                auto it = std::find_if(
+                    new_settings.begin(), new_settings.end(),
+                    [&](const SettingChange & change) { return change.name == setting.name; });
+
+                if (it == new_settings.end())
+                {
+                    /// Setting was reset.
+                    new_settings.push_back(SettingChange(setting.name, default_settings.get(setting.name)));
+                }
             }
         }
 
@@ -690,15 +691,23 @@ void StorageObjectStorageQueue::alter(
         const auto mode = getTableMetadata().getMode();
         for (const auto & setting : new_settings)
         {
-            auto it = std::find_if(
-                old_settings.begin(), old_settings.end(),
-                [&](const SettingChange & change) { return change.name == setting.name; });
+            bool setting_changed = true;
+            if (old_settings)
+            {
+                auto it = std::find_if(
+                    old_settings->begin(), old_settings->end(),
+                    [&](const SettingChange & change) { return change.name == setting.name; });
 
-            const bool setting_changed = it == old_settings.end() || it->value != setting.value;
+                setting_changed = it == old_settings->end() || it->value != setting.value;
+            }
             if (!setting_changed)
                 continue;
 
-            if (!isSettingChangeable(setting.name, mode))
+            SettingChange result_setting(setting);
+            if (result_setting.name.starts_with("s3queue_"))
+                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
+
+            if (!isSettingChangeable(result_setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -706,16 +715,14 @@ void StorageObjectStorageQueue::alter(
                     setting.name, magic_enum::enum_name(mode), getName());
             }
 
-            SettingChange result_setting(setting);
-            if (result_setting.name.starts_with("s3queue_"))
-                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
-
             changed_settings.push_back(result_setting);
 
             auto inserted = changed_settings_set.emplace(result_setting.name).second;
             if (!inserted)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", setting.name);
         }
+
+        LOG_TEST(log, "New settings: {}", serializeAST(*new_metadata.settings_changes));
 
         /// Alter settings which are stored in keeper.
         files_metadata->alterSettings(changed_settings);
