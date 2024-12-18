@@ -21,6 +21,8 @@ namespace ErrorCodes
 {
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 namespace
@@ -543,7 +545,8 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
         std::lock_guard lock{mutex};
 
         /// Log all changes in zookeeper nodes in the "stage" folder to make debugging easier.
-        Strings added_zk_nodes, removed_zk_nodes;
+        Strings added_zk_nodes;
+        Strings removed_zk_nodes;
         std::set_difference(new_zk_nodes.begin(), new_zk_nodes.end(), zk_nodes.begin(), zk_nodes.end(), back_inserter(added_zk_nodes));
         std::set_difference(zk_nodes.begin(), zk_nodes.end(), new_zk_nodes.begin(), new_zk_nodes.end(), back_inserter(removed_zk_nodes));
         if (!added_zk_nodes.empty())
@@ -692,7 +695,12 @@ void BackupCoordinationStageSync::cancelQueryIfError()
     if (!exception)
         return;
 
-    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
+    auto code = getExceptionErrorCode(exception);
+    auto cancel_reason = ((code == ErrorCodes::QUERY_WAS_CANCELLED) || (code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT))
+        ? CancelReason::CANCELLED_BY_USER
+        : CancelReason::CANCELLED_BY_ERROR;
+
+    process_list_element->cancelQuery(cancel_reason, exception);
 
     state_changed.notify_all();
 }
@@ -747,7 +755,7 @@ void BackupCoordinationStageSync::cancelQueryIfDisconnectedTooLong()
     /// we don't want the watching thread to try waiting here for retries or a reconnection).
     /// Also we don't set the `state.host_with_error` field here because `state.host_with_error` can only be set
     /// AFTER creating the 'error' node (see the comment for `State`).
-    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
+    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_ERROR, exception);
 
     state_changed.notify_all();
 }
