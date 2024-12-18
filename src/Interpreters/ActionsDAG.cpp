@@ -3262,15 +3262,26 @@ static void serialzieConstant(
 {
     if (WhichDataType(type).isSet())
     {
+        bool is_constant = false;
+
         const IColumn * maybe_set = &value;
         if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_set))
+        {
+            is_constant = true;
             maybe_set = &column_const->getDataColumn();
+        }
 
         const auto * column_set = typeid_cast<const ColumnSet *>(maybe_set);
         if (!column_set)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "ColumnSet is expected for DataTypeSet. Got {}", value.getName());
+
+        UInt8 flags = 0;
+        if (is_constant)
+            flags |= 1;
+
+        writeBinary(flags, out);
 
         auto hash = column_set->getData()->getHash();
         writeBinary(hash, out);
@@ -3329,13 +3340,21 @@ static MutableColumnPtr deserializeConstant(
 {
     if (WhichDataType(type).isSet())
     {
+        UInt8 flags;
+        readBinary(flags, in);
+
+        bool is_constant = flags & 1;
+
         FutureSet::Hash hash;
         readBinary(hash, in);
 
         auto column_set = ColumnSet::create(1, nullptr);
         registry.sets[hash].push_back(column_set.get());
 
-        return column_set;
+        if (!is_constant)
+            return column_set;
+
+        return ColumnConst::create(std::move(column_set), 0);
     }
 
     if (WhichDataType(type).isFunction())
