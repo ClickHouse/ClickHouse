@@ -18,19 +18,7 @@ elseif (COMPILER_CACHE STREQUAL "ccache")
 elseif(COMPILER_CACHE STREQUAL "sccache")
     find_program (CCACHE_EXECUTABLE sccache)
 elseif(COMPILER_CACHE STREQUAL "chcache")
-    list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
-    find_package(Rust REQUIRED)
-
-    include ("${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake/Corrosion.cmake")
-    corrosion_import_crate(
-        MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/utils/chcache/Cargo.toml
-        PROFILE release
-        LOCKED
-        FLAGS --offline
-    )
-    set_target_properties(chcache PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/programs/)
-
-    set(CCACHE_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/programs/chcache)
+    set(CCACHE_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/rust/chcache/chcache)
 elseif(COMPILER_CACHE STREQUAL "disabled")
     message(STATUS "Using *ccache: no (disabled via configuration)")
     return()

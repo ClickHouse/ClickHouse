@@ -1073,12 +1073,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
     ContextPtr context,
+    PreparedSetsPtr prepared_sets,
     const ASTTablesInSelectQueryElement & join_element,
     TableJoin & analyzed_join,
     SelectQueryOptions query_options)
 {
     /// Actions which need to be calculated on joined block.
-    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context);
+    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context, std::move(prepared_sets));
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
@@ -1184,7 +1185,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     if (auto storage = analyzed_join->getStorageJoin())
     {
-        auto joined_block_actions = analyzed_join->createJoinedBlockActions(getContext());
+        auto joined_block_actions = analyzed_join->createJoinedBlockActions(getContext(), getPreparedSets());
         NamesWithAliases required_columns_with_aliases = analyzed_join->getRequiredColumns(
             Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
@@ -1197,7 +1198,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
         return storage->getJoinLocked(analyzed_join, getContext(), original_right_column_names);
     }
 
-    joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
+    joined_plan = buildJoinedPlan(getContext(), getPreparedSets(), join_element, *analyzed_join, query_options);
 
     const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader().getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);

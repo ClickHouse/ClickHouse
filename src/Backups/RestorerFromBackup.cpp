@@ -8,6 +8,7 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Access/AccessBackup.h>
 #include <Access/AccessRights.h>
+#include <Access/ContextAccess.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
@@ -712,11 +713,16 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             insertAtEnd(required_access, access_restorer->getRequiredAccess());
     }
 
-    /// We convert to AccessRights and back to check access rights in a predictable way
-    /// (some elements could be duplicated or not sorted).
-    required_access = AccessRights{required_access}.getElements();
+    /// We convert to AccessRights to check if we have the rights contained in our current access.
+    /// This handles the situation when restoring partial revoked grants:
+    /// GRANT SELECT ON *.*
+    /// REVOKE SELECT FROM systems.*
+    const auto & required_access_rights = AccessRights{required_access};
+    const auto & current_user_access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    if (current_user_access_rights->contains(required_access_rights))
+        return;
 
-    context->checkAccess(required_access);
+    context->checkAccess(required_access_rights.getElements());
 }
 
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const

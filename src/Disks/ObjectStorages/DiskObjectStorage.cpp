@@ -732,6 +732,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
             reader,
             read_settings,
             buffer_size,
+            read_settings.remote_read_min_bytes_for_seek, /// Modified in private repo.
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
 
