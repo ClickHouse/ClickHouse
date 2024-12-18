@@ -14,7 +14,7 @@ if is_arm():
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml"],
+    main_configs=["configs/kafka.xml", "configs/async.xml"],
     with_kafka=True,
 )
 

@@ -173,19 +173,11 @@ void TablesLoader::buildDependencyGraph()
 
         if (!new_ref_dependencies.mv_to_dependency.table.empty())
         {
-            LOG_DEBUG(
-                log,
-                "new_mv_to_dependencies {} for {}", new_ref_dependencies.mv_to_dependency, table_name);
-
-            mv_to_dependencies.addDependencies(table_name, {new_ref_dependencies.mv_to_dependency});
+            mv_to_dependencies.addDependency(StorageID{table_name}, StorageID{new_ref_dependencies.mv_to_dependency});
         }
         if (!new_ref_dependencies.mv_from_dependency.table.empty())
         {
-            LOG_DEBUG(
-                log,
-                "new_mv_from_dependencies {} for {}", new_ref_dependencies.mv_from_dependency, table_name);
-
-            mv_from_dependencies.addDependencies(new_ref_dependencies.mv_from_dependency, {table_name});
+            mv_from_dependencies.addDependency(StorageID{new_ref_dependencies.mv_from_dependency}, StorageID{table_name});
         }
 
         if (!new_loading_dependencies.empty())
