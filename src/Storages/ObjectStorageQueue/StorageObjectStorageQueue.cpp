@@ -210,7 +210,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.settings_changes = engine_args->settings->ptr();
+    if (engine_args->settings)
+        storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -661,6 +662,8 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
 
         StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        /// At the moment we cannot do ALTER MODIFY/RESET SETTING if there are no settings changes (exception will be thrown),
+        /// so we do not need to check if old_metadata.settings_changes == nullptr.
         const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
