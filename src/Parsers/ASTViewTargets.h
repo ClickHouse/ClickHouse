@@ -106,8 +106,6 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     /// Formats information only about a specific target table.
     void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;
     static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame);
@@ -118,6 +116,7 @@ public:
     static std::optional<Keyword> getKeywordForInnerStorage(ViewTarget::Kind kind);
 
 protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
     void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 

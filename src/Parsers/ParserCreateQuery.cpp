@@ -26,6 +26,7 @@
 #include <Parsers/ParserViewTargets.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTOrderByElement.h>
 
 
 namespace DB
@@ -494,6 +495,47 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     return true;
 }
 
+bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserStorageOrderByExpressionList order_list_p(allow_order);
+    ParserStorageOrderByElement order_elem_p(allow_order);
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
+
+    ASTPtr order_by;
+
+    /// Check possible ASC|DESC suffix for single key
+    if (order_elem_p.parse(pos, order_by, expected))
+    {
+        /// This is needed because 'order by (x, y)' is parsed as tuple.
+        /// We can remove ASTStorageOrderByElement if no ASC|DESC suffix was specified.
+        if (const auto * elem = order_by->as<ASTStorageOrderByElement>(); elem && elem->direction > 0)
+            order_by = elem->children.front();
+
+        node = order_by;
+        return true;
+    }
+
+    /// Check possible ASC|DESC suffix for a list of keys
+    if (pos->type == TokenType::BareWord && std::string_view(pos->begin, pos->size()) == "tuple")
+        ++pos;
+
+    if (!s_lparen.ignore(pos, expected))
+        return false;
+
+    if (!order_list_p.parse(pos, order_by, expected))
+        order_by = std::make_shared<ASTExpressionList>();
+
+    if (!s_rparen.ignore(pos, expected))
+        return false;
+
+    auto tuple_function = std::make_shared<ASTFunction>();
+    tuple_function->name = "tuple";
+    tuple_function->arguments = std::move(order_by);
+
+    node = std::move(tuple_function);
+    return true;
+}
 
 bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -508,6 +550,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
+    ParserStorageOrderByClause order_by_p(/*allow_order_*/ true);
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserTTLExpressionList parser_ttl_list;
     ParserStringLiteral string_literal_parser;
@@ -556,7 +599,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!order_by && s_order_by.ignore(pos, expected))
         {
-            if (expression_p.parse(pos, order_by, expected))
+            if (order_by_p.parse(pos, order_by, expected))
             {
                 storage_like = true;
                 continue;

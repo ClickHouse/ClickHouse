@@ -267,7 +267,7 @@
 
     <!-- <listen_backlog>4096</listen_backlog> -->
 
-    <max_connections>4096</max_connections>
+    <!-- <max_connections>4096</max_connections> -->
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
     <keep_alive_timeout>10</keep_alive_timeout>

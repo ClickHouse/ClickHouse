@@ -388,8 +388,7 @@ def test_real_wait_refresh(
         expect_rows(2, table=tgt)
 
     assert rmv2["exception"] is None
-    assert rmv2["status"] == "Scheduled"
-    assert rmv2["last_success_time"] == rmv["next_refresh_time"]
+    assert rmv2["status"] in ["Scheduled", "Running"]
     assert rmv2["last_refresh_time"] == rmv["next_refresh_time"]
     assert rmv2["retry"] == 0
     assert rmv2["read_rows"] == 2

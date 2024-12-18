@@ -293,13 +293,13 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     if (!query.isView())
         query.select = nullptr;
 
-    query.format = nullptr;
+    query.format_ast = nullptr;
     query.out_file = nullptr;
 }
 
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger(logger))
+    : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))
 {
 }
 

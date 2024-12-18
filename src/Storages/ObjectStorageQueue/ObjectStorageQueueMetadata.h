@@ -58,7 +58,8 @@ public:
         const fs::path & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
-        size_t cleanup_interval_max_ms_);
+        size_t cleanup_interval_max_ms_,
+        size_t keeper_multiread_batch_size_);
 
     ~ObjectStorageQueueMetadata();
 
@@ -104,6 +105,7 @@ private:
     const fs::path zookeeper_path;
     const size_t buckets_num;
     const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
+    const size_t keeper_multiread_batch_size;
 
     LoggerPtr log;
 
