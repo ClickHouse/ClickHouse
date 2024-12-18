@@ -157,7 +157,7 @@ public:
             const auto & storage = storage_snapshot->storage;
 
             auto storage_dummy = std::make_shared<StorageDummy>(
-                storage_snapshot->storage.getStorageID(),
+                storage.getStorageID(),
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
                 storage_snapshot,
                 storage.isMergeTree(),
