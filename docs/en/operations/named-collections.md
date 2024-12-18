@@ -554,7 +554,7 @@ For the description of parameters see [Backup and Restore](./backup.md).
 ### DDL example
 
 ```sql
-BACKUP default.test to S3(named_collection_s3_backups, 'directory')
+BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
 ```
 
 ### XML example
@@ -570,6 +570,3 @@ BACKUP default.test to S3(named_collection_s3_backups, 'directory')
     </named_collections>
 </clickhouse>
 ```
-
-
-
