@@ -48,40 +48,11 @@ namespace ErrorCodes
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wbit-int-extension"
-using NewInt128 = signed _BitInt(128);
-using NewUInt128 = unsigned _BitInt(128);
-using NewInt256 = signed _BitInt(256);
-using NewUInt256 = unsigned _BitInt(256);
+using BitInt128 = signed _BitInt(128);
+using BitUInt128 = unsigned _BitInt(128);
+using BitInt256 = signed _BitInt(256);
+using BitUInt256 = unsigned _BitInt(256);
 #pragma clang diagnostic pop
-
-/*
-template <size_t n>
-std::string bitIntToString(signed _BitInt(n) value)
-{
-    bool is_negative = value < 0;
-    if (is_negative)
-        value = -value;
-
-    char buffer[n / 4 + 2];
-    char * ptr = buffer + sizeof(buffer) - 1;
-    *ptr = '\0';
-
-    do
-    {
-        --ptr;
-        *ptr = "0123456789"[value % 10];
-        value /= 10;
-    } while (value != 0);
-
-    if (is_negative)
-    {
-        --ptr;
-        *ptr = '-';
-    }
-
-    return std::string(ptr);
-}
-*/
 
 // static std::string toString(NewInt256 value)
 // {
@@ -89,13 +60,11 @@ std::string bitIntToString(signed _BitInt(n) value)
 //     return std::to_string(ptr[3]) + ":" + std::to_string(ptr[2]) + ":" + std::to_string(ptr[1]) + ":" + std::to_string(ptr[0]);
 // }
 
-/*
-static std::string toString(NewInt128 value)
-{
-    uint64_t * ptr = reinterpret_cast<uint64_t *>(&value);
-    return std::to_string(ptr[1]) + ":" + std::to_string(ptr[0]);
-}
-*/
+// static std::string toString(NewInt128 value)
+// {
+//     uint64_t * ptr = reinterpret_cast<uint64_t *>(&value);
+//     return std::to_string(ptr[1]) + ":" + std::to_string(ptr[0]);
+// }
 
 // static NewInt256 divideInt256(NewInt256 left, NewInt256 right)
 // {
@@ -120,52 +89,45 @@ static std::string toString(NewInt128 value)
 //     return left / right;
 // }
 
-/*
-static NewInt256 addInt256(NewInt256 left, NewInt256 right)
-{
-    auto res = left + right;
-    std::cout << "add left:" << toString(Field{*reinterpret_cast<const Int256 *>(&left)})
-              << " right:" << toString(Field{*reinterpret_cast<const Int256 *>(&right)})
-              << " result:" << toString(Field{*reinterpret_cast<const Int256 *>(&res)}) << std::endl;
-    return res;
-}
-*/
+// static NewInt256 addInt256(NewInt256 left, NewInt256 right)
+// {
+//     auto res = left + right;
+//     std::cout << "add left:" << toString(Field{*reinterpret_cast<const Int256 *>(&left)})
+//               << " right:" << toString(Field{*reinterpret_cast<const Int256 *>(&right)})
+//               << " result:" << toString(Field{*reinterpret_cast<const Int256 *>(&res)}) << std::endl;
+//     return res;
+// }
 
-/*
-static NewInt256 multiplyInt256(NewInt256 left, NewInt256 right)
-{
-    auto res = left * right;
-    std::cout << "multiply left:" << toString(Field{*reinterpret_cast<const Int256 *>(&left)})
-              << " right:" << toString(Field{*reinterpret_cast<const Int256 *>(&right)})
-              << " result:" << toString(Field{*reinterpret_cast<const Int256 *>(&res)}) << std::endl;
-    return res;
-}
-*/
+// static NewInt256 multiplyInt256(NewInt256 left, NewInt256 right)
+// {
+//     auto res = left * right;
+//     std::cout << "multiply left:" << toString(Field{*reinterpret_cast<const Int256 *>(&left)})
+//               << " right:" << toString(Field{*reinterpret_cast<const Int256 *>(&right)})
+//               << " result:" << toString(Field{*reinterpret_cast<const Int256 *>(&res)}) << std::endl;
+//     return res;
+// }
 
-/*
-static NewInt256 moduloInt256(NewInt256 left, NewInt256 right)
-{
-    return left % right;
-}
-*/
+// static NewInt256 moduloInt256(NewInt256 left, NewInt256 right)
+// {
+//     return left % right;
+// }
 
-
-static NewInt128 divideInt128(NewInt128 left, NewInt128 right)
+static BitInt128 divideInt128(BitInt128 left, BitInt128 right)
 {
     return left / right;
 }
 
-static NewInt128 moduloInt128(NewInt128 left, NewInt128 right)
+static BitInt128 moduloInt128(BitInt128 left, BitInt128 right)
 {
     return left % right;
 }
 
-static NewInt128 castDoubleToInt128(double from)
+static BitInt128 castDoubleToInt128(double from)
 {
-    return static_cast<NewInt128>(from);
+    return static_cast<BitInt128>(from);
 }
 
-static double castInt128ToDouble(NewInt128 from)
+static double castInt128ToDouble(BitInt128 from)
 {
     return static_cast<double>(from);
 }
