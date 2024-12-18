@@ -50,6 +50,8 @@ struct RowRefList : RowRef
             : next(parent)
         {}
 
+        explicit Batch(Batch * parent, RowRef && row_ref) : size(1), next(parent) { row_refs[0] = std::move(row_ref); }
+
         bool full() const { return size == MAX_SIZE; }
 
         Batch * insert(RowRef && row_ref, Arena & pool)
@@ -57,8 +59,7 @@ struct RowRefList : RowRef
             if (full())
             {
                 auto * batch = pool.alloc<Batch>();
-                *batch = Batch(this);
-                batch->insert(std::move(row_ref), pool);
+                *batch = Batch(this, std::move(row_ref));
                 return batch;
             }
 
@@ -126,13 +127,14 @@ struct RowRefList : RowRef
     /// insert element after current one
     void insert(RowRef && row_ref, Arena & pool)
     {
-        if (!next)
+        rows++;
+        if (likely(next))
+            next = next->insert(std::move(row_ref), pool);
+        else
         {
             next = pool.alloc<Batch>();
-            *next = Batch(nullptr);
+            *next = Batch(nullptr, std::move(row_ref));
         }
-        next = next->insert(std::move(row_ref), pool);
-        ++rows;
     }
 
 private:
