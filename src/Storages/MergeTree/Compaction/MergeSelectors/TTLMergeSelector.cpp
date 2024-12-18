@@ -153,7 +153,7 @@ TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs &
 
 time_t TTLRecompressMergeSelector::getTTLForPart(const PartProperties & part) const
 {
-    return part.recompression_ttl_info->next_max_recompress_border;
+    return part.recompression_ttl_info->next_recompress_ttl;
 }
 
 bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) const
@@ -161,15 +161,7 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     if (!part.shall_participate_in_merges)
         return false;
 
-    if (!part.recompression_ttl_info.has_value())
-        return false;
-
-    if (!part.recompression_ttl_info->next_recompression_codec.has_value())
-        /// All TTL satisfied
-        return false;
-
-    /// Allow to choose part only if recompression changes codec. Otherwise there will be not difference in memory consumption.
-    return part.recompression_ttl_info->next_recompression_codec.value() == part.part_compression_codec;
+    return part.recompression_ttl_info.has_value();
 }
 
 }

@@ -47,23 +47,31 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
     if (!metadata_snapshot->hasAnyRecompressionTTL())
         return std::nullopt;
 
-    time_t next_max_recompress_border = part->ttl_infos.getMinimalMaxRecompressionTTL();
-    auto next_recompression_codec = [&]() -> std::optional<std::string>
+    const auto & recompression_ttls = metadata_snapshot->getRecompressionTTLs();
+    const auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part->ttl_infos.recompression_ttl, current_time, true);
+
+    if (ttl_description)
     {
-        const auto & recompression_ttls = metadata_snapshot->getRecompressionTTLs();
-        auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part->ttl_infos.recompression_ttl, current_time, true);
+        const std::string next_codec = astToString(ttl_description->recompression_codec);
+        const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
 
-        if (ttl_description)
-            return astToString(ttl_description->recompression_codec);
+        /// Allow part recompression only if it will change codec. Otherwise there will be no difference in bytes size.
+        if (next_codec != current_codec)
+            return PartProperties::RecompressTTLInfo{ .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL() };
+    }
 
-        return std::nullopt;
-    }();
+    return std::nullopt;
+}
 
-    return PartProperties::RecompressTTLInfo
-    {
-        .next_max_recompress_border = next_max_recompress_border,
-        .next_recompression_codec = std::move(next_recompression_codec),
-    };
+std::set<std::string> getCalculatedProjectionNames(MergeTreeData::DataPartPtr part)
+{
+    std::set<std::string> projection_names;
+
+    for (auto && [name, projection_part] : part->getProjectionParts())
+        if (!projection_part->is_broken)
+            projection_names.insert(name);
+
+    return projection_names;
 }
 
 PartProperties buildPartProperties(
@@ -75,8 +83,9 @@ PartProperties buildPartProperties(
 {
     return PartProperties
     {
+        .name = part->name,
         .part_info = part->info,
-        .part_compression_codec = astToString(part->default_codec->getFullCodecDesc()),
+        .projection_names = getCalculatedProjectionNames(part),
         .shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true,
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
         .size = part->getExistingBytesOnDisk(),

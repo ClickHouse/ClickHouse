@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <set>
 
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 
@@ -9,8 +10,10 @@ namespace DB
 
 struct PartProperties
 {
+    const std::string name;
     const MergeTreePartInfo part_info;
-    const std::string part_compression_codec;
+    const std::set<std::string> projection_names;
+
     const bool shall_participate_in_merges = true;
     const bool all_ttl_calculated_if_any = false;
 
@@ -32,8 +35,7 @@ struct PartProperties
     /// Information about recompression TTL for part. Used by Recompress Merge Selector.
     struct RecompressTTLInfo
     {
-        const time_t next_max_recompress_border = 0;
-        const std::optional<std::string> next_recompression_codec;
+        const time_t next_recompress_ttl = 0;
     };
     const std::optional<RecompressTTLInfo> recompression_ttl_info;
 };
