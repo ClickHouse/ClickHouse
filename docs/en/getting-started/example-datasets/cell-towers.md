@@ -101,9 +101,9 @@ ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 ```
 
 3. Insert the dataset:
+
 ```sql
-INSERT INTO cell_towers SELECT *
-FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
 ```
 
 </TabItem>
