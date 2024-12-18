@@ -54,12 +54,13 @@ public:
 
     struct Action
     {
-        // Since action could be updated between threads, we need a lock.
-        // But we recomment to make multiple ExpressionActions instance, make sure that every thread only takes
-        // one of them to execute.
-        mutable std::shared_mutex mutex;
         const Node * node;
         Arguments arguments;
+        // After reorder, original argument at position a will placed at position b. We use this vector
+        // to find the original position a by b quickly.
+        std::vector<size_t> original_arguments_pos;
+        // reference to its parents in `ExpressionActions::actions`.
+        std::vector<size_t> parents_pos;
         size_t result_position;
 
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
@@ -67,7 +68,6 @@ public:
         bool is_lazy_executed;
         bool is_short_circuit_node;
         bool could_reorder_arguments;
-        std::vector<size_t> reordered_arguments_original_pos;
         Action(const Node * node_,
             const Arguments & arguments_,
             size_t result_position_,
@@ -82,51 +82,19 @@ public:
             could_reorder_arguments(could_reorder_arguments_)
         {
             for (size_t i = 0; i < arguments.size(); ++i)
-                reordered_arguments_original_pos.emplace_back(i);
-        }
-        Action(const Action & b)
-        {
-            node = b.node;
-            {
-                std::shared_lock lock(b.mutex);
-                arguments = b.arguments;
-                reordered_arguments_original_pos = b.reordered_arguments_original_pos;
-            }
-            result_position = b.result_position;
-            is_lazy_executed = b.is_lazy_executed;
-            is_short_circuit_node = b.is_short_circuit_node;
-            could_reorder_arguments = b.could_reorder_arguments;
-            elapsed_ns = b.elapsed_ns;
-            input_rows = b.input_rows;
-            short_circuit_selected_rows = b.short_circuit_selected_rows;
-        }
-        Action & operator=(const Action & b)
-        {
-            if (this == &b)
-                return *this;
-            std::unique_lock this_lock(mutex);
-            node = b.node;
-            {
-                std::shared_lock lock(b.mutex);
-                arguments = b.arguments;
-                reordered_arguments_original_pos = b.reordered_arguments_original_pos;
-            }
-            result_position = b.result_position;
-            is_lazy_executed = b.is_lazy_executed;
-            is_short_circuit_node = b.is_short_circuit_node;
-            could_reorder_arguments = b.could_reorder_arguments;
-            elapsed_ns = b.elapsed_ns;
-            input_rows = b.input_rows;
-            short_circuit_selected_rows = b.short_circuit_selected_rows;
-            return *this;
+                original_arguments_pos.emplace_back(i);
         }
 
         /// Following is used for reordering arguments of short-circuit nodes
-        /// Rank value is calculated as elapsed_ns/input_rows/(1-short_circuit_selected_rows/input_rows)
-        /// Smaller rank value is better
+        /// Rank value is calculated as elapsed_ns/calculated_rows/(1-short_circuit_selected_rows/calculated_rows)
+        /// Smaller rank value is better.
+        /// After each `reorder_short_circuit_arguments_every_rows`, these values are reset.
         size_t elapsed_ns = 0;
-        size_t input_rows = 0;
+        size_t calculated_rows = 0;
         size_t short_circuit_selected_rows = 0;
+        // If has_high_selectivity = true, a lazy executed node will not be lazy executed.
+        bool has_high_selectivity = false;
+        size_t current_round_calcuated_rows = 0;
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -155,9 +123,12 @@ private:
     ExpressionActionsSettings settings;
 
     static const size_t reorder_short_circuit_arguments_every_rows;
-    size_t current_profile_rows = 0;
+    size_t current_round_profile_rows = 0;
 
 public:
+    // If enable_adaptive_short_circuit = true, ExpressionActions is not thread safe, since it will have state
+    // updated during `execute`. You could make multiple ExpressionActions and make sure each instance only be
+    // executed by one thread at the same time, like `ExpressionStep` and `FilterStep` do.
     explicit ExpressionActions(
         ActionsDAG actions_dag_,
         const ExpressionActionsSettings & settings_ = {},
@@ -213,10 +184,18 @@ private:
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 
-    void executeAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input);
+    void executeAction(Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input);
+    void executeCommonDescendantsLazyAction(Action & action,
+        ColumnWithTypeAndName & res_column,
+        ColumnsWithTypeAndName & arguments,
+        ExecutionContext & execution_context,
+        bool dry_run);
 
     void updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
-    void tryReorderShortCircuitArguments(size_t current_bach_rows);
+    void tryScheduleLazyExecution(size_t current_batch_rows);
+    void reorderShortCircuitArguments();
+    void updateLazyNodesSelecivity();
+    void updateNodeSelectivity(Action & action);
 };
 
 

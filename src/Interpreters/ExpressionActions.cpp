@@ -518,6 +518,15 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         required_columns.push_back({input->result_name, input->result_type});
         input_positions[input->result_name].emplace_back(pos);
     }
+
+    for (size_t i = 0; i < actions.size(); ++i)
+    {
+        const auto & action = actions[i];
+        for (const auto & arg : action.arguments)
+        {
+            actions[arg.actions_pos].parents_pos.push_back(i);
+        }
+    }
 }
 
 
@@ -629,7 +638,7 @@ struct ExecutionContext
     size_t num_rows = 0;
 };
 
-void ExpressionActions::executeAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
+void ExpressionActions::executeAction(Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -662,7 +671,6 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
             ColumnsWithTypeAndName arguments(action.arguments.size());
             if (enable_adaptive_short_circuit)
             {
-                std::shared_lock lock(action.mutex);
                 for (size_t i = 0; i < arguments.size(); ++i)
                 {
                     const auto & action_arg = action.arguments[i];
@@ -685,9 +693,14 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
             }
 
 
-            if (action.is_lazy_executed && !action.has_high_short_circuit_selectivity)
+            if (action.is_lazy_executed)
             {
-                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
+                if (action.has_high_selectivity && action.parents_pos.size() > 1)
+                {
+                    executeCommonDescendantsLazyAction(action, res_column, arguments, execution_context, dry_run);
+                }
+                else
+                    res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
             }
             else
             {
@@ -800,6 +813,35 @@ void ExpressionActions::executeAction(ExpressionActions::Action & action, Execut
     }
 }
 
+void ExpressionActions::executeCommonDescendantsLazyAction(
+    Action & action,
+    ColumnWithTypeAndName & res_column,
+    ColumnsWithTypeAndName & arguments,
+    ExecutionContext & execution_context,
+    bool dry_run)
+{
+    auto & num_rows = execution_context.num_rows;
+    size_t n = 0;
+    for (const auto & pos : action.parents_pos)
+        n += actions[pos].has_high_selectivity;
+    // When there are at least two parents have high selectivity, execute this function immediately
+    if (n > 1)
+    {
+        if (!action.is_short_circuit_node)
+        {
+            for (auto & argument : arguments)
+            {
+                if (const auto * func_col = typeid_cast<const ColumnFunction *>(argument.column.get()))
+                    argument.column = func_col->reduce().column;
+            }
+        }
+        res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+    }
+    else
+        res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
+}
+
+
 void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
 {
     size_t block_rows = block.rows();
@@ -844,7 +886,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
             throw;
         }
     }
-    tryReorderShortCircuitArguments(block_rows);
+    tryScheduleLazyExecution(block_rows);
 
     if (project_inputs)
     {
@@ -908,60 +950,106 @@ void ExpressionActions::assertDeterministic() const
 
 void ExpressionActions::updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile)
 {
-    std::unique_lock lock(action.mutex);
     action.elapsed_ns += profile.elapsed_ns;
-    action.input_rows += profile.input_rows;
+    action.calculated_rows += profile.input_rows;
+    action.current_round_calcuated_rows += profile.input_rows;
     action.short_circuit_selected_rows += profile.short_circuit_selected_rows;
     for (const auto & arg_profile : profile.arguments_profiles)
     {
-        size_t arg_pos = action.reordered_arguments_original_pos[arg_profile.first];
+        size_t arg_pos = action.original_arguments_pos[arg_profile.first];
         auto & arg_action = actions[action.arguments[arg_pos].actions_pos];
         updateActionsProfile(arg_action, arg_profile.second);
     }
 }
 
 const size_t ExpressionActions::reorder_short_circuit_arguments_every_rows = 20000;
-void ExpressionActions::tryReorderShortCircuitArguments(size_t current_bach_rows)
+
+void ExpressionActions::tryScheduleLazyExecution(size_t current_batch_rows)
 {
     if (!enable_adaptive_short_circuit)
         return;
-    current_profile_rows += current_bach_rows;
-    if (current_profile_rows < reorder_short_circuit_arguments_every_rows)
+    current_round_profile_rows += current_batch_rows;
+    if (current_round_profile_rows < reorder_short_circuit_arguments_every_rows)
         return;
 
+    reorderShortCircuitArguments();
+    updateLazyNodesSelecivity();
+
+    current_round_profile_rows = 0;
+}
+
+void ExpressionActions::reorderShortCircuitArguments()
+{
     for (auto & action : actions)
     {
         if (!action.could_reorder_arguments)
             continue;
         std::vector<std::pair<size_t, double>> rank_values;
+        for (size_t i = 0; i < action.arguments.size(); ++i)
         {
-            std::shared_lock lock(action.mutex);
-            for (size_t i = 0; i < action.arguments.size(); ++i)
-            {
-                const auto & arg = action.arguments[i];
-                const auto & arg_action = actions[arg.actions_pos];
-                double rank_value = arg_action.input_rows ?
-                    (arg_action.elapsed_ns * 1.0 / arg_action.input_rows/(1.000001 - arg_action.short_circuit_selected_rows/arg_action.input_rows))
-                    : 0.0;
-                rank_values.push_back(std::make_pair(i, rank_value));
-            }
+            const auto & arg = action.arguments[i];
+            const auto & arg_action = actions[arg.actions_pos];
+            double rank_value = arg_action.calculated_rows ?
+                (static_cast<double>(arg_action.elapsed_ns)/ arg_action.calculated_rows/(1.000001 - static_cast<double>(arg_action.short_circuit_selected_rows)/arg_action.calculated_rows))
+                : 0.0;
+            rank_values.push_back(std::make_pair(i, rank_value));
         }
         ::sort(rank_values.begin(), rank_values.end(), [](const auto & a, const auto & b) { return a.second < b.second; });
         LOG_TRACE(getLogger("ExpressionActions"), "try to reorder node's arguments: {}", action.node->result_name);
+        // We cannot replace Action::arguments directly, since `required_columns` will be overwritten once the column is no longer needed.
+        action.original_arguments_pos.clear();
+        for (size_t i = 0; i < action.arguments.size(); ++i)
         {
-            // We cannot replace Action::arguments directly, since `result_positions` will be overwritten once the column is no longer needed.
-            std::unique_lock lock(action.mutex);
-            action.reordered_arguments_original_pos.clear();
-            for (size_t i = 0; i < action.arguments.size(); ++i)
-            {
-                const auto & rank_value = rank_values[i];
-                action.arguments[rank_value.first].reordered_arg_pos = i;
-                action.reordered_arguments_original_pos.emplace_back(rank_value.first);
-                LOG_TRACE(getLogger("ExceptionActions"), "Move arg {} to {}", rank_value.first, i);
-            }
+            const auto & rank_value = rank_values[i];
+            action.arguments[rank_value.first].reordered_arg_pos = i;
+            action.original_arguments_pos.emplace_back(rank_value.first);
+            LOG_TRACE(getLogger("ExceptionActions"), "Move arg {} to {}", rank_value.first, i);
         }
     }
-    current_profile_rows = 0;
+    #if 0
+    for (auto & action : actions)
+    {
+        action.elapsed_ns = 0;
+        action.calculated_rows = 0;
+        action.short_circuit_selected_rows = 0;
+    }
+    #endif
+}
+
+void ExpressionActions::updateLazyNodesSelecivity()
+{
+    for (auto & action : actions)
+    {
+        action.has_high_selectivity = false;
+    }
+    for (auto & action : actions)
+    {
+        if (!action.is_lazy_executed || action.has_high_selectivity)
+            continue;
+        updateNodeSelectivity(action);
+    }
+    for (auto & action : actions)
+        action.current_round_calcuated_rows = 0;
+}
+
+void ExpressionActions::updateNodeSelectivity(Action & action)
+{
+    action.has_high_selectivity = false;
+    for (const auto & pos : action.parents_pos)
+    {
+        auto & parent_action = actions[pos];
+        if (parent_action.is_short_circuit_node)
+        {
+            action.has_high_selectivity |= action.current_round_calcuated_rows > (current_round_profile_rows/2);
+        }
+        else
+        {
+            updateNodeSelectivity(parent_action);
+            action.has_high_selectivity |= parent_action.has_high_selectivity;
+        }
+        if (action.has_high_selectivity)
+            break;
+    }
 }
 
 NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
