@@ -20,6 +20,15 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
 }
 
+/// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
+/// This value is chosen to not allow big merges to eat all free space. Thus allowing small merges to proceed.
+constexpr static double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
+
+/// To do merge, reserve amount of space equals to sum size of parts times specified coefficient.
+/// Must be strictly less than DISK_USAGE_COEFFICIENT_TO_SELECT,
+/// because between selecting parts to merge and doing merge, amount of free space could have decreased.
+constexpr static double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
+
 UInt64 CompactionStatistics::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted)
 {
     size_t bytes_size = 0;
@@ -39,6 +48,17 @@ UInt64 CompactionStatistics::estimateNeededDiskSpace(const MergeTreeData::DataPa
     }
 
     return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_RESERVE);
+}
+
+UInt64 CompactionStatistics::estimateAtLeastAvailableSpace(const PartsRanges & ranges)
+{
+    size_t bytes_size = 0;
+
+    for (const auto & range : ranges)
+        for (const auto & part : range)
+            bytes_size += part.size;
+
+    return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_SELECT);
 }
 
 UInt64 CompactionStatistics::getMaxSourcePartsSizeForMerge(const MergeTreeData & data)

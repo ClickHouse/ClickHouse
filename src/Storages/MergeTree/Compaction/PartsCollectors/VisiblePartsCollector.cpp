@@ -48,13 +48,16 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
         return std::nullopt;
 
     time_t next_max_recompress_border = part->ttl_infos.getMinimalMaxRecompressionTTL();
-    std::optional<std::string> next_recompression_codec;
+    auto next_recompression_codec = [&]() -> std::optional<std::string>
+    {
+        const auto & recompression_ttls = metadata_snapshot->getRecompressionTTLs();
+        auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part->ttl_infos.recompression_ttl, current_time, true);
 
-    const auto & recompression_ttls = metadata_snapshot->getRecompressionTTLs();
-    auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part->ttl_infos.recompression_ttl, current_time, true);
+        if (ttl_description)
+            return astToString(ttl_description->recompression_codec);
 
-    if (ttl_description)
-        next_recompression_codec = astToString(ttl_description->recompression_codec);
+        return std::nullopt;
+    }();
 
     return PartProperties::RecompressTTLInfo
     {

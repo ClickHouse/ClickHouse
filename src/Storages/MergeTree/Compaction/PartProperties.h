@@ -29,6 +29,7 @@ struct PartProperties
     };
     const std::optional<GeneralTTLInfo> general_ttl_info;
 
+    /// Information about recompression TTL for part. Used by Recompress Merge Selector.
     struct RecompressTTLInfo
     {
         const time_t next_max_recompress_border = 0;

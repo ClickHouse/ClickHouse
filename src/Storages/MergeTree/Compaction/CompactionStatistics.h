@@ -1,26 +1,23 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 
 namespace DB
 {
-
-/// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
-/// This value is chosen to not allow big merges to eat all free space. Thus allowing small merges to proceed.
-constexpr double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
-
-/// To do merge, reserve amount of space equals to sum size of parts times specified coefficient.
-/// Must be strictly less than DISK_USAGE_COEFFICIENT_TO_SELECT,
-/// because between selecting parts to merge and doing merge, amount of free space could have decreased.
-constexpr double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 class CompactionStatistics
 {
 public:
     CompactionStatistics() = delete;
 
-    /// Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
+    /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
+      */
     static UInt64 estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted = false);
+
+    /** Estimate approximate amount of disk space needed to be free before schedule such merge.
+      */
+    static UInt64 estimateAtLeastAvailableSpace(const PartsRanges & ranges);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
