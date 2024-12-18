@@ -436,6 +436,10 @@ But keep in mind that:
 - If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 :::
 
+## Using Named Collections
+
+Named collections can be used for `BACKUP/RESTORE` parameters. See [here](./named-collections.md#named-collections-for-backups) for an example.
+
 ## Alternatives
 
 ClickHouse stores data on disk, and there are many ways to backup disks.  These are some alternatives that have been used in the past, and that may fit in well in your environment.
