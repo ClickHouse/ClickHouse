@@ -4397,7 +4397,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 
 Note 1: In ClickHouse versions earlier than v23.4, `%f` prints a single zero (0) if the formatted value is a Date, Date32 or DateTime (which have no fractional seconds) or a DateTime64 with a precision of 0. The previous behavior can be restored using setting `formatdatetime_f_prints_single_zero = 1`.
 
-Note 2: In ClickHouse versions earlier than v25.1, `%f` prints as many digits as specified by the scale of the Date, Date32, or DateTime instead of fixed 6 digits (documented behavior). The previous behavior can be restored using setting `formatdatetime_f_prints_scale_only = 1`.
+Note 2: In ClickHouse versions earlier than v25.1, `%f` prints as many digits as specified by the scale of the DateTime64 instead of fixed 6 digits. The previous behavior can be restored using setting `formatdatetime_f_prints_scale_number_of_digits= 1`.
 
 Note 3: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
 

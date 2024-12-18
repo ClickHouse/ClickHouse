@@ -61,7 +61,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"25.1",
         {
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
-
+            {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
         }
     },
     {"24.12",

@@ -1,14 +1,17 @@
--- %f (default settings)
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 8, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=0;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 6, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=0;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 4, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=0;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 2, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=0;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 1, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=0;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 0, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=0;
--- %f (setting before issue #72879 fix - printing the digits of the scale only)
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 8, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=1;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 6, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=1;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 4, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=1;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 2, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=1;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 1, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=1;
-select formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 0, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_only=1;
+-- Test for issue #72879
+
+SELECT 'Default settings';
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.12345678', 8, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 0;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 6, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 0;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.1234', 4, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 0;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.12', 2, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 0;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.1', 1, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 0;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00', 0, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 0;
+
+SELECT 'Compatibility settings';
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.12345678', 8, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 1;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.123456', 6, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 1;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.1234', 4, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 1;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.12', 2, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 1;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00.1', 1, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 1;
+SELECT formatDateTime(toDateTime64('1970-01-01 00:00:00', 0, 'UTC'), '%f') SETTINGS formatdatetime_f_prints_scale_number_of_digits = 1;
