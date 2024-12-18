@@ -374,6 +374,7 @@ def main():
             leftCH.terminate()
             # wait for termination
             time.sleep(2)
+            Shell.check("ps -ef | grep clickhouse")
             return res_
 
         commands = [
