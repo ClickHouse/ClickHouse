@@ -35,7 +35,7 @@ namespace DB
 
 struct Settings;
 
-enum class StatisticsFunctionKind : uint8_t
+enum class StatisticsFunctionKind
 {
     varPop, varSamp,
     stddevPop, stddevSamp,

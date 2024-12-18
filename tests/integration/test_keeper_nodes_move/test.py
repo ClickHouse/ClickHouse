@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 
+import pytest
+from helpers.cluster import ClickHouseCluster
 import os
 import time
 from multiprocessing.dummy import Pool
-
-import pytest
-from kazoo.client import KazooClient, KazooState
-
-import helpers.keeper_utils as keeper_utils
-from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
+import helpers.keeper_utils as keeper_utils
+from kazoo.client import KazooClient, KazooState
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")

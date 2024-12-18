@@ -1,18 +1,15 @@
 import logging
-import os
 import time
+import os
 import uuid
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import SafeThread, generate_values, replace_config
-from helpers.wait_for_helpers import (
-    wait_for_delete_empty_parts,
-    wait_for_delete_inactive_parts,
-    wait_for_merges,
-)
+from helpers.mock_servers import start_s3_mock, start_mock_servers
+from helpers.utility import generate_values, replace_config, SafeThread
+from helpers.wait_for_helpers import wait_for_delete_inactive_parts
+from helpers.wait_for_helpers import wait_for_delete_empty_parts
+from helpers.wait_for_helpers import wait_for_merges
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -735,15 +732,6 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     check_no_objects_after_drop(cluster)
 
-    # Restore
-    replace_config(
-        config_path,
-        "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
-        "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
-    )
-
-    node.query("SYSTEM RELOAD CONFIG")
-
 
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_no_delete_objects(cluster, node_name):
@@ -869,9 +857,9 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     error = node.query_and_get_error(
         "OPTIMIZE TABLE test_merge_canceled_by_s3_errors FINAL",
     )
-    assert "ExpectedError Message: mock s3 injected unretryable error" in error, error
+    assert "ExpectedError Message: mock s3 injected error" in error, error
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
 
     table_uuid = node.query(
         "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_merge_canceled_by_s3_errors' LIMIT 1"
@@ -879,7 +867,7 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
 
     node.query("SYSTEM FLUSH LOGS")
     error_count_in_blob_log = node.query(
-        f"SELECT count() FROM system.blob_storage_log WHERE query_id like '{table_uuid}::%' AND error like '%mock s3 injected unretryable error%'"
+        f"SELECT count() FROM system.blob_storage_log WHERE query_id like '{table_uuid}::%' AND error like '%mock s3 injected error%'"
     ).strip()
     assert int(error_count_in_blob_log) > 0, node.query(
         f"SELECT * FROM system.blob_storage_log WHERE query_id like '{table_uuid}::%' FORMAT PrettyCompactMonoBlock"
@@ -923,7 +911,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected error")
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count
@@ -963,10 +951,10 @@ def test_s3_engine_heavy_write_check_mem(
     )
 
     broken_s3.setup_fake_multpartuploads()
-    slow_responses = 10
+    slow_responces = 10
     slow_timeout = 15
     broken_s3.setup_slow_answers(
-        10 * 1024 * 1024, timeout=slow_timeout, count=slow_responses
+        10 * 1024 * 1024, timeout=slow_timeout, count=slow_responces
     )
 
     query_id = f"INSERT_INTO_S3_ENGINE_QUERY_ID_{in_flight}"
@@ -974,7 +962,7 @@ def test_s3_engine_heavy_write_check_mem(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS "
         f" max_memory_usage={2*memory}"
-        ", max_threads=1, optimize_trivial_insert_select=1"  # ParallelFormattingOutputFormat consumption depends on it
+        f", max_threads=1"  # ParallelFormattingOutputFormat consumption depends on it
         f", s3_max_inflight_parts_for_one_file={in_flight}",
         query_id=query_id,
     )
@@ -992,7 +980,7 @@ def test_s3_engine_heavy_write_check_mem(
     assert int(memory_usage) > 0.8 * memory
 
     # The more in_flight value is the less time CH waits.
-    assert int(wait_inflight) / 1000 / 1000 > slow_responses * slow_timeout / in_flight
+    assert int(wait_inflight) / 1000 / 1000 > slow_responces * slow_timeout / in_flight
 
     check_no_objects_after_drop(cluster, node_name=node_name)
 
@@ -1013,22 +1001,18 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
         " SETTINGS"
         " storage_policy='broken_s3'",
     )
-
-    uuid = node.query("SELECT uuid FROM system.tables WHERE name='s3_test'")
-
     node.query("SYSTEM STOP MERGES s3_test")
 
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=10, count=50)
 
-    query_id = f"INSERT_INTO_S3_DISK_QUERY_ID_{uuid}"
+    query_id = f"INSERT_INTO_S3_DISK_QUERY_ID"
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS max_memory_usage={2*memory}"
-        ", max_insert_block_size=50000000"
-        ", min_insert_block_size_rows=50000000"
-        ", min_insert_block_size_bytes=1000000000000"
-        ", optimize_trivial_insert_select=1",
+        f", max_insert_block_size=50000000"
+        f", min_insert_block_size_rows=50000000"
+        f", min_insert_block_size_bytes=1000000000000",
         query_id=query_id,
     )
 

@@ -20,7 +20,6 @@
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
 
-
 namespace Aws::Http::Standard
 {
 class StandardHttpResponse;
@@ -28,20 +27,18 @@ class StandardHttpResponse;
 
 namespace DB
 {
+
 class Context;
 }
 
-
 namespace DB::S3
 {
-
 class ClientFactory;
 class PocoHTTPClient;
 
-
 struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
-    std::function<ProxyConfiguration()> per_request_configuration;
+    std::function<DB::ProxyConfiguration()> per_request_configuration;
     String force_region;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
@@ -57,13 +54,13 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
 
-    std::function<void(const ProxyConfiguration &)> error_report;
+    std::function<void(const DB::ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
 
 private:
     PocoHTTPClientConfiguration(
-        std::function<ProxyConfiguration()> per_request_configuration_,
+        std::function<DB::ProxyConfiguration()> per_request_configuration_,
         const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
@@ -73,12 +70,12 @@ private:
         bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,
-        std::function<void(const ProxyConfiguration &)> error_report_);
+        std::function<void(const DB::ProxyConfiguration &)> error_report_
+    );
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
     friend ClientFactory;
 };
-
 
 class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
 {
@@ -119,12 +116,10 @@ private:
     Aws::Utils::Stream::ResponseStream body_stream;
 };
 
-
 class PocoHTTPClient : public Aws::Http::HttpClient
 {
 public:
     explicit PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration);
-    explicit PocoHTTPClient(const Aws::Client::ClientConfiguration & client_configuration);
     ~PocoHTTPClient() override = default;
 
     std::shared_ptr<Aws::Http::HttpResponse> MakeRequest(
@@ -140,7 +135,7 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
-    enum class S3MetricType : uint8_t
+    enum class S3MetricType
     {
         Microseconds,
         Count,
@@ -151,7 +146,7 @@ private:
         EnumSize,
     };
 
-    enum class S3MetricKind : uint8_t
+    enum class S3MetricKind
     {
         Read,
         Write,
@@ -161,6 +156,7 @@ private:
 
     void makeRequestInternalImpl(
         Aws::Http::HttpRequest & request,
+        const DB::ProxyConfiguration & proxy_configuration,
         std::shared_ptr<PocoHTTPResponse> & response,
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
@@ -171,14 +167,14 @@ protected:
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
 
-    std::function<ProxyConfiguration()> per_request_configuration;
-    std::function<void(const ProxyConfiguration &)> error_report;
+    std::function<DB::ProxyConfiguration()> per_request_configuration;
+    std::function<void(const DB::ProxyConfiguration &)> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int s3_max_redirects = 0;
+    unsigned int s3_max_redirects;
     bool s3_use_adaptive_timeouts = true;
-    bool enable_s3_requests_logging = false;
-    bool for_disk_s3 = false;
+    bool enable_s3_requests_logging;
+    bool for_disk_s3;
 
     /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
     /// (i.e. throttles GetObject, HeadObject)

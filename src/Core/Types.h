@@ -21,7 +21,7 @@ namespace DB
 /// comparison which is used for nullable KeyCondition.
 struct Null
 {
-    enum class Value : int8_t
+    enum class Value
     {
         NegativeInfinity = -1,
         Null = 0,

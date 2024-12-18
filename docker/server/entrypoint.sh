@@ -162,7 +162,7 @@ if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
         tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
         while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
             if [ "$tries" -le "0" ]; then
-                echo >&2 'ClickHouse init process timeout.'
+                echo >&2 'ClickHouse init process failed.'
                 exit 1
             fi
             tries=$(( tries-1 ))

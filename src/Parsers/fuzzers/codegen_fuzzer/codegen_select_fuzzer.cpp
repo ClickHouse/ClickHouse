@@ -27,8 +27,7 @@ DEFINE_BINARY_PROTO_FUZZER(const Sentence& main)
         DB::ParserQueryWithOutput parser(input.data() + input.size());
         try
         {
-            DB::ASTPtr ast
-                = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, DB::DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
             DB::WriteBufferFromOStream out(std::cerr, 4096);
             DB::formatAST(*ast, out);

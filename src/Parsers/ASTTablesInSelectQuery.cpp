@@ -61,29 +61,6 @@ ASTPtr ASTTableJoin::clone() const
     return res;
 }
 
-void ASTTableJoin::forEachPointerToChild(std::function<void(void **)> f)
-{
-    IAST * new_using_expression_list = using_expression_list.get();
-    f(reinterpret_cast<void **>(&new_using_expression_list));
-    if (new_using_expression_list != using_expression_list.get())
-    {
-        if (new_using_expression_list)
-            using_expression_list = new_using_expression_list->ptr();
-        else
-            using_expression_list.reset();
-    }
-
-    IAST * new_on_expression = on_expression.get();
-    f(reinterpret_cast<void **>(&new_on_expression));
-    if (new_on_expression != on_expression.get())
-    {
-        if (new_on_expression)
-            on_expression = new_on_expression->ptr();
-        else
-            on_expression.reset();
-    }
-}
-
 void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(kind);
@@ -258,13 +235,7 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
     else if (on_expression)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
-        /// If there is an alias for the whole expression parens should be added, otherwise it will be invalid syntax
-        bool on_has_alias = !on_expression->tryGetAlias().empty();
-        if (on_has_alias)
-            settings.ostr << "(";
         on_expression->formatImpl(settings, state, frame);
-        if (on_has_alias)
-            settings.ostr << ")";
     }
 }
 
@@ -272,7 +243,7 @@ void ASTTableJoin::formatImplAfterTable(const FormatSettings & settings, FormatS
 void ASTTableJoin::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     formatImplBeforeTable(settings, state, frame);
-    settings.ostr << " ...";
+    settings.ostr << " ... ";
     formatImplAfterTable(settings, state, frame);
 }
 
@@ -314,6 +285,8 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
 
 void ASTTablesInSelectQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
     for (const auto & child : children)
         child->formatImpl(settings, state, frame);
 }

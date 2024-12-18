@@ -84,8 +84,7 @@ struct NormalizeUTF8Impl
     static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
         UErrorCode err = U_ZERO_ERROR;
 
@@ -93,7 +92,8 @@ struct NormalizeUTF8Impl
         if (U_FAILURE(err))
             throw Exception(ErrorCodes::CANNOT_NORMALIZE_STRING, "Normalization failed (getNormalizer): {}", u_errorName(err));
 
-        res_offsets.resize(input_rows_count);
+        size_t size = offsets.size();
+        res_offsets.resize(size);
 
         res_data.reserve(data.size() * 2);
 
@@ -103,7 +103,7 @@ struct NormalizeUTF8Impl
         PODArray<UChar> from_uchars;
         PODArray<UChar> to_uchars;
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             size_t from_size = offsets[i] - current_from_offset - 1;
 
@@ -157,7 +157,7 @@ struct NormalizeUTF8Impl
         res_data.resize(current_to_offset);
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot apply function normalizeUTF8 to fixed string.");
     }

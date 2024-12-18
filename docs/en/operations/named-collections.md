@@ -5,10 +5,6 @@ sidebar_label: "Named collections"
 title: "Named collections"
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge />
-
 Named collections provide a way to store collections of key-value pairs to be
 used to configure integrations with external sources. You can use named collections with
 dictionaries, tables, table functions, and object storage.
@@ -70,31 +66,6 @@ To manage named collections with DDL a user must have the `named_control_collect
 :::tip
 In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
 :::
-
-### Storage for named collections
-
-Named collections can either be stored on local disk or in ZooKeeper/Keeper. By default local storage is used.
-They can also be stored using encryption with the same algorithms used for [disk encryption](storing-data#encrypted-virtual-file-system),
-where `aes_128_ctr` is used by default.
-
-To configure named collections storage you need to specify a `type`. This can be either `local` or `keeper`/`zookeeper`. For encrypted storage,
-you can use `local_encrypted` or `keeper_encrypted`/`zookeeper_encrypted`.
-
-To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keeper, where named collections will be stored) to
-`named_collections_storage` section in configuration file. The following example uses encryption and ZooKeeper/Keeper:
-```
-<clickhouse>
-  <named_collections_storage>
-    <type>zookeeper_encrypted</type>
-    <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
-    <algorithm>aes_128_ctr</algorithm>
-    <path>/named_collections_path/</path>
-    <update_timeout_ms>1000</update_timeout_ms>
-  </named_collections_storage>
-</clickhouse>
-```
-
-An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
 
 ## Storing named collections in configuration files
 
@@ -315,22 +286,8 @@ SELECT dictGet('dict', 'B', 2);
 
 ## Named collections for accessing PostgreSQL database
 
-The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md). Additionally, there are aliases:
+The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md).
 
-- `username` for `user`
-- `db` for `database`.
-
-Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
-
-```sql
-CASE
-    WHEN collection['addresses_expr'] != '' THEN collection['addresses_expr']
-    WHEN collection['host'] != ''           THEN collection['host'] || ':' || if(collection['port'] != '', collection['port'], '5432')
-    WHEN collection['hostname'] != ''       THEN collection['hostname'] || ':' || if(collection['port'] != '', collection['port'], '5432')
-END
-```
-
-Example of creation:
 ```sql
 CREATE NAMED COLLECTION mypg AS
 user = 'pguser',
@@ -338,7 +295,7 @@ password = 'jw8s0F4',
 host = '127.0.0.1',
 port = 5432,
 database = 'test',
-schema = 'test_schema'
+schema = 'test_schema',
 ```
 
 Example of configuration:
@@ -390,10 +347,6 @@ SELECT * FROM mypgtable;
 │ 3 │
 └───┘
 ```
-
-:::note
-PostgreSQL copies data from the named collection when the table is being created. A change in the collection does not affect the existing tables.
-:::
 
 ### Example of using named collections with database with engine PostgreSQL
 
@@ -489,60 +442,4 @@ SELECT dictGet('dict', 'b', 1);
 ┌─dictGet('dict', 'b', 1)─┐
 │ a                       │
 └─────────────────────────┘
-```
-
-## Named collections for accessing Kafka
-
-The description of parameters see [Kafka](../engines/table-engines/integrations/kafka.md).
-
-### DDL example
-
-```sql
-CREATE NAMED COLLECTION my_kafka_cluster AS
-kafka_broker_list = 'localhost:9092',
-kafka_topic_list = 'kafka_topic',
-kafka_group_name = 'consumer_group',
-kafka_format = 'JSONEachRow',
-kafka_max_block_size = '1048576';
-
-```
-### XML example
-
-```xml
-<clickhouse>
-    <named_collections>
-        <my_kafka_cluster>
-            <kafka_broker_list>localhost:9092</kafka_broker_list>
-            <kafka_topic_list>kafka_topic</kafka_topic_list>
-            <kafka_group_name>consumer_group</kafka_group_name>
-            <kafka_format>JSONEachRow</kafka_format>
-            <kafka_max_block_size>1048576</kafka_max_block_size>
-        </my_kafka_cluster>
-    </named_collections>
-</clickhouse>
-```
-
-### Example of using named collections with a Kafka table
-
-Both of the following examples use the same named collection `my_kafka_cluster`:
-
-
-```sql
-CREATE TABLE queue
-(
-    timestamp UInt64,
-    level String,
-    message String
-)
-ENGINE = Kafka(my_kafka_cluster)
-
-CREATE TABLE queue
-(
-    timestamp UInt64,
-    level String,
-    message String
-)
-ENGINE = Kafka(my_kafka_cluster)
-SETTINGS kafka_num_consumers = 4,
-         kafka_thread_per_consumer = 1;
 ```

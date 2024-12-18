@@ -14,7 +14,7 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ShellCommand.h>
 #include <Common/re2.h>
 #include <base/find_symbols.h>
@@ -233,7 +233,7 @@ struct Commit
 };
 
 
-enum class FileChangeType : uint8_t
+enum class FileChangeType
 {
     Add,
     Delete,
@@ -243,7 +243,7 @@ enum class FileChangeType : uint8_t
     Type,
 };
 
-static void writeText(FileChangeType type, WriteBuffer & out)
+void writeText(FileChangeType type, WriteBuffer & out)
 {
     switch (type)
     {
@@ -291,7 +291,7 @@ struct FileChange
 };
 
 
-enum class LineType : uint8_t
+enum class LineType
 {
     Empty,
     Comment,
@@ -299,7 +299,7 @@ enum class LineType : uint8_t
     Code,
 };
 
-static void writeText(LineType type, WriteBuffer & out)
+void writeText(LineType type, WriteBuffer & out)
 {
     switch (type)
     {
@@ -429,7 +429,7 @@ using CommitDiff = std::map<std::string /* path */, FileDiff>;
 
 /** Parsing helpers */
 
-static void skipUntilWhitespace(ReadBuffer & buf)
+void skipUntilWhitespace(ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -444,7 +444,7 @@ static void skipUntilWhitespace(ReadBuffer & buf)
     }
 }
 
-static void skipUntilNextLine(ReadBuffer & buf)
+void skipUntilNextLine(ReadBuffer & buf)
 {
     while (!buf.eof())
     {
@@ -462,7 +462,7 @@ static void skipUntilNextLine(ReadBuffer & buf)
     }
 }
 
-static void readStringUntilNextLine(std::string & s, ReadBuffer & buf)
+void readStringUntilNextLine(std::string & s, ReadBuffer & buf)
 {
     s.clear();
     while (!buf.eof())
@@ -528,13 +528,6 @@ struct ResultWriter
                 writeChar('\n', out);
             }
         }
-    }
-
-    void finalize()
-    {
-        commits.finalize();
-        file_changes.finalize();
-        line_changes.finalize();
     }
 };
 
@@ -680,7 +673,7 @@ using Snapshot = std::map<std::string /* path */, FileBlame>;
   * - the author, time and commit of the previous change to every found line (blame).
   * And update the snapshot.
   */
-static void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & file_changes)
+void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & file_changes)
 {
     /// Renames and copies.
     for (auto & elem : file_changes)
@@ -755,7 +748,7 @@ static void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDif
   */
 using DiffHashes = std::unordered_set<UInt128>;
 
-static UInt128 diffHash(const CommitDiff & file_changes)
+UInt128 diffHash(const CommitDiff & file_changes)
 {
     SipHash hasher;
 
@@ -791,7 +784,7 @@ static UInt128 diffHash(const CommitDiff & file_changes)
   * :100644 100644 828dedf6b5 828dedf6b5 R100       dbms/src/Functions/GeoUtils.h   dbms/src/Functions/PolygonUtils.h
   * according to the output of 'git show --raw'
   */
-static void processFileChanges(
+void processFileChanges(
     ReadBuffer & in,
     const Options & options,
     Commit & commit,
@@ -883,7 +876,7 @@ static void processFileChanges(
   * - we expect some specific format of the diff; but it may actually depend on git config;
   * - non-ASCII file names are not processed correctly (they will not be found and will be ignored).
   */
-static void processDiffs(
+void processDiffs(
     ReadBuffer & in,
     std::optional<size_t> size_limit,
     Commit & commit,
@@ -1055,7 +1048,7 @@ static void processDiffs(
 
 /** Process the "git show" result for a single commit. Append the result to tables.
   */
-static void processCommit(
+void processCommit(
     ReadBuffer & in,
     const Options & options,
     size_t commit_num,
@@ -1123,7 +1116,7 @@ static void processCommit(
 /** Runs child process and allows to read the result.
   * Multiple processes can be run for parallel processing.
   */
-static auto gitShow(const std::string & hash)
+auto gitShow(const std::string & hash)
 {
     std::string command = fmt::format(
         "git show --raw --pretty='format:%ct%x00%aN%x00%P%x00%s%x00' --patch --unified=0 {}",
@@ -1135,7 +1128,7 @@ static auto gitShow(const std::string & hash)
 
 /** Obtain the list of commits and process them.
   */
-static void processLog(const Options & options)
+void processLog(const Options & options)
 {
     ResultWriter result;
 
@@ -1185,8 +1178,6 @@ static void processLog(const Options & options)
         if (i + num_threads < num_commits)
             show_commands[i % num_threads] = gitShow(hashes[i + num_threads]);
     }
-
-    result.finalize();
 }
 
 

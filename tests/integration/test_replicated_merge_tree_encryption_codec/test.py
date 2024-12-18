@@ -1,9 +1,8 @@
+import pytest
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry, TSV
 import os
 
-import pytest
-
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
@@ -100,8 +99,8 @@ def test_different_keys():
     # After "SYSTEM SYNC REPLICA" we expect node1 and node2 here both having a part for (1, 'str1') encrypted with "key_a",
     # and a part for (2, 'str2') encrypted with "key_b".
     # So the command "SELECT * from tbl" must fail on both nodes because each node has only one encryption key.
-    assert "OPENSSL_ERROR" in node1.query_and_get_error("SELECT * FROM tbl")
-    assert "OPENSSL_ERROR" in node2.query_and_get_error("SELECT * FROM tbl")
+    assert "BAD_DECRYPT" in node1.query_and_get_error("SELECT * FROM tbl")
+    assert "BAD_DECRYPT" in node2.query_and_get_error("SELECT * FROM tbl")
 
     # Hang?
     # optimize_table()

@@ -14,9 +14,10 @@ namespace
     {
         if (!unencrypted_file_size)
             return copy_encrypted ? disk->getEncryptedFileSize(file_path) : disk->getFileSize(file_path);
-        if (copy_encrypted)
+        else if (copy_encrypted)
             return disk->getEncryptedFileSize(*unencrypted_file_size);
-        return *unencrypted_file_size;
+        else
+            return *unencrypted_file_size;
     }
 }
 

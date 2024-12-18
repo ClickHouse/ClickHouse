@@ -7,16 +7,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/Utils.h>
-
-#include <Core/Settings.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_uniq_to_count;
-}
 
 namespace
 {
@@ -127,7 +120,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_uniq_to_count])
+        if (!getSettings().optimize_uniq_to_count)
             return;
 
         auto * query_node = node->as<QueryNode>();
@@ -191,8 +184,11 @@ public:
         /// Replace uniq of initial query to count
         if (match_subquery_with_distinct() || match_subquery_with_group_by())
         {
+            AggregateFunctionProperties properties;
+            auto aggregate_function = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
+
             function_node->getArguments().getNodes().clear();
-            resolveAggregateFunctionNodeByName(*function_node, "count");
+            function_node->resolveAsAggregateFunction(std::move(aggregate_function));
         }
     }
 };

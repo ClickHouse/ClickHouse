@@ -1,5 +1,4 @@
 -- Tags: no-parallel
--- no-parallel: Slows down query_log
 
 DROP TABLE IF EXISTS slow_log;
 DROP TABLE IF EXISTS expected_times;

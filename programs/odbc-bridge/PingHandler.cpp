@@ -10,7 +10,7 @@ void PingHandler::handleRequest(HTTPServerRequest & /* request */, HTTPServerRes
 {
     try
     {
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
         const char * data = "Ok.\n";
         response.sendBuffer(data, strlen(data));
     }

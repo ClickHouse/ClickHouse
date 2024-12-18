@@ -42,8 +42,6 @@ public:
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     void finalize() override;
 
-    void cancel() noexcept override;
-
     /// Sets compression method and level.
     /// Changing them will affect next file in the archive.
     //void setCompression(const String & compression_method_, int compression_level_) override;
@@ -70,7 +68,7 @@ private:
     void startWritingFile();
     void endWritingFile();
 
-    std::unique_ptr<StreamInfo> stream_info TSA_GUARDED_BY(mutex);
+    std::unique_ptr<StreamInfo> stream_info TSA_GUARDED_BY(mutex) = nullptr;
     bool is_writing_file TSA_GUARDED_BY(mutex) = false;
     bool finalized TSA_GUARDED_BY(mutex) = false;
     mutable std::mutex mutex;

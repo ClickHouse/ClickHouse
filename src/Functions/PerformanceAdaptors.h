@@ -4,10 +4,7 @@
 
 #include <Common/TargetSpecific.h>
 #include <Common/Stopwatch.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
-
-#include <pcg_random.hpp>
 
 #include <mutex>
 #include <random>
@@ -18,10 +15,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsString function_implementation;
-}
 
 namespace ErrorCodes
 {
@@ -255,7 +248,7 @@ public:
         if (isArchSupported(Arch))
         {
             // TODO(dakovalkov): make this option better.
-            const auto & choose_impl = getContext()->getSettingsRef()[Setting::function_implementation].value;
+            const auto & choose_impl = getContext()->getSettingsRef().function_implementation.value;
             if (choose_impl.empty() || choose_impl == detail::getImplementationTag<FunctionImpl>(Arch))
             {
                 implementations.emplace_back(std::make_shared<FunctionImpl>(std::forward<Args>(args)...));

@@ -75,8 +75,6 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"data_version",                                std::make_shared<DataTypeUInt64>(),    "Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than data_version)."},
         {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values."},
         {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for primary key values."},
-        {"index_granularity_bytes_in_memory",           std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by index granularity values."},
-        {"index_granularity_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for index granularity values."},
         {"is_frozen",                                   std::make_shared<DataTypeUInt8>(),     "Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. "},
 
         {"database",                                    std::make_shared<DataTypeString>(),    "Name of the database."},
@@ -143,7 +141,7 @@ void StorageSystemParts::processNextStorage(
         auto part_state = all_parts_state[part_number];
 
         ColumnSize columns_size = part->getTotalColumnsSize();
-        ColumnSize secondary_indexes_size = part->getTotalSecondaryIndicesSize();
+        ColumnSize secondary_indexes_size = part->getTotalSeconaryIndicesSize();
 
         size_t src_index = 0, res_index = 0;
         if (columns_mask[src_index++])
@@ -218,10 +216,6 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->getIndexSizeInBytes());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getIndexSizeInAllocatedBytes());
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getIndexGranularityBytes());
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getIndexGranularityAllocatedBytes());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->is_frozen.load(std::memory_order_relaxed));
 
