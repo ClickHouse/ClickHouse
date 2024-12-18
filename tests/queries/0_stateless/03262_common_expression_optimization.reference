@@ -1040,20 +1040,27 @@ QUERY id: 0
     LIST id: 13, nodes: 1
       COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
   HAVING
-    FUNCTION id: 14, function_name: and, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 14, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 15, nodes: 2
-          FUNCTION id: 4, function_name: max, function_type: aggregate, result_type: UInt8
-            ARGUMENTS
-              LIST id: 5, nodes: 1
-                COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
-          FUNCTION id: 16, function_name: or, function_type: ordinary, result_type: UInt8
+          FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 17, nodes: 2
+                FUNCTION id: 4, function_name: max, function_type: aggregate, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 5, nodes: 1
+                      COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
                 FUNCTION id: 7, function_name: max, function_type: aggregate, result_type: UInt8
                   ARGUMENTS
                     LIST id: 8, nodes: 1
                       COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 18, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 19, nodes: 2
+                FUNCTION id: 4, function_name: max, function_type: aggregate, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 5, nodes: 1
+                      COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
                 FUNCTION id: 10, function_name: max, function_type: aggregate, result_type: UInt8
                   ARGUMENTS
                     LIST id: 11, nodes: 1
@@ -1066,7 +1073,7 @@ SELECT
     max(__table1.C) AS mC
 FROM default.x AS __table1
 GROUP BY __table1.x
-HAVING max(__table1.A) AND (max(__table1.B) OR max(__table1.C))
+HAVING (max(__table1.A) AND max(__table1.B)) OR (max(__table1.A) AND max(__table1.C))
 -9220160771238933596	1	1	1
 -9154303869107404275	1	1	1
 -9137658153367139416	1	1	1
@@ -1138,25 +1145,25 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.x
   QUALIFY
-    FUNCTION id: 28, function_name: and, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 28, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 29, nodes: 2
-          FUNCTION id: 4, function_name: max, function_type: window, result_type: UInt8
-            ARGUMENTS
-              LIST id: 5, nodes: 1
-                COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
-            WINDOW
-              WINDOW id: 7, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
-                PARTITION BY
-                  LIST id: 8, nodes: 1
-                    FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: Int32
-                      ARGUMENTS
-                        LIST id: 10, nodes: 2
-                          COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
-                          CONSTANT id: 11, constant_value: UInt64_1000, constant_value_type: UInt16
-          FUNCTION id: 30, function_name: or, function_type: ordinary, result_type: UInt8
+          FUNCTION id: 30, function_name: and, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 31, nodes: 2
+                FUNCTION id: 4, function_name: max, function_type: window, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 5, nodes: 1
+                      COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+                  WINDOW
+                    WINDOW id: 7, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                      PARTITION BY
+                        LIST id: 8, nodes: 1
+                          FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: Int32
+                            ARGUMENTS
+                              LIST id: 10, nodes: 2
+                                COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 11, constant_value: UInt64_1000, constant_value_type: UInt16
                 FUNCTION id: 12, function_name: max, function_type: window, result_type: UInt8
                   ARGUMENTS
                     LIST id: 13, nodes: 1
@@ -1170,6 +1177,22 @@ QUERY id: 0
                               LIST id: 18, nodes: 2
                                 COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
                                 CONSTANT id: 19, constant_value: UInt64_1000, constant_value_type: UInt16
+          FUNCTION id: 32, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 33, nodes: 2
+                FUNCTION id: 4, function_name: max, function_type: window, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 5, nodes: 1
+                      COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+                  WINDOW
+                    WINDOW id: 7, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                      PARTITION BY
+                        LIST id: 8, nodes: 1
+                          FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: Int32
+                            ARGUMENTS
+                              LIST id: 10, nodes: 2
+                                COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 11, constant_value: UInt64_1000, constant_value_type: UInt16
                 FUNCTION id: 20, function_name: max, function_type: window, result_type: UInt8
                   ARGUMENTS
                     LIST id: 21, nodes: 1
@@ -1190,4 +1213,4 @@ SELECT
     max(__table1.B) OVER (PARTITION BY __table1.x % 1000) AS mB,
     max(__table1.C) OVER (PARTITION BY __table1.x % 1000) AS mC
 FROM default.x AS __table1
-QUALIFY max(__table1.A) OVER (PARTITION BY (__table1.x % 1000)) AND (max(__table1.B) OVER (PARTITION BY (__table1.x % 1000)) OR max(__table1.C) OVER (PARTITION BY (__table1.x % 1000)))
+QUALIFY (max(__table1.A) OVER (PARTITION BY (__table1.x % 1000)) AND max(__table1.B) OVER (PARTITION BY (__table1.x % 1000))) OR (max(__table1.A) OVER (PARTITION BY (__table1.x % 1000)) AND max(__table1.C) OVER (PARTITION BY (__table1.x % 1000)))
