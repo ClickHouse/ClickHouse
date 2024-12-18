@@ -352,9 +352,9 @@ bool ColumnMap::dynamicStructureEquals(const IColumn & rhs) const
     return false;
 }
 
-ColumnPtr ColumnMap::compress(bool force_compression) const
+ColumnPtr ColumnMap::compress() const
 {
-    auto compressed = nested->compress(force_compression);
+    auto compressed = nested->compress();
     const auto byte_size = compressed->byteSize();
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state

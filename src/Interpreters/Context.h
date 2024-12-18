@@ -89,7 +89,6 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
-class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
@@ -146,7 +145,7 @@ struct Settings;
 struct SettingChange;
 class SettingsChanges;
 struct SettingsConstraintsAndProfileIDs;
-struct AlterSettingsProfileElements;
+class SettingsProfileElements;
 class RemoteHostFilter;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -499,8 +498,6 @@ public:
 
         KitchenSink & operator=(const KitchenSink & rhs)
         {
-            if (&rhs == this)
-                return *this;
             analyze_counter = rhs.analyze_counter.load();
             return *this;
         }
@@ -588,7 +585,6 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
-    std::shared_ptr<IDisk> getDatabaseDisk() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -869,7 +865,7 @@ public:
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source);
+    void checkSettingsConstraints(const SettingsProfileElements & profile_elements, SettingSource source);
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
@@ -888,7 +884,7 @@ public:
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
-    void tryCreateEmbeddedDictionaries() const;
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void waitForDictionariesLoad() const;
 
@@ -1080,11 +1076,6 @@ public:
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
-    void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
-    void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
-    void clearPrimaryIndexCache() const;
-
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
@@ -1126,7 +1117,6 @@ public:
     size_t getPrefetchThreadpoolSize() const;
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
-    ThreadPool & getIcebergCatalogThreadpool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -1421,7 +1411,7 @@ private:
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
+    void checkSettingsConstraintsWithLock(const SettingsProfileElements & profile_elements, SettingSource source);
 
     void checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source);
 
@@ -1430,9 +1420,6 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
-    void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
-
-    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
@@ -1470,7 +1457,7 @@ public:
     ThrottlerPtr getLocalReadThrottler() const;
     ThrottlerPtr getLocalWriteThrottler() const;
 
-    ThrottlerPtr getBackupsThrottler(std::optional<UInt64> max_backup_bandwidth) const;
+    ThrottlerPtr getBackupsThrottler() const;
 
     ThrottlerPtr getMutationsThrottler() const;
     ThrottlerPtr getMergesThrottler() const;

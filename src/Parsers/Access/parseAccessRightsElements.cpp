@@ -117,9 +117,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             if (!parseAccessFlagsWithColumns(pos, expected, access_and_columns))
                 return false;
 
-            String database_name;
-            String table_name;
-            String parameter;
+            String database_name, table_name, parameter;
 
             size_t is_global_with_parameter = 0;
             for (const auto & elem : access_and_columns)

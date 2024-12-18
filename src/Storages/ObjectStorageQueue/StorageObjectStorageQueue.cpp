@@ -227,7 +227,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata), table_id_);
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
@@ -259,7 +259,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
 void StorageObjectStorageQueue::drop()
 {
-    ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
+    ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -744,20 +744,13 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-std::shared_ptr<StorageObjectStorageQueue::FileIterator>
-StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
+std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
     auto settings = configuration->getQuerySettings(local_context);
     auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, getVirtualsList(), local_context,
-        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
+        object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 
-    const auto & table_metadata = getTableMetadata();
-    bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
-        && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
-
-    return std::make_shared<FileIterator>(
-        files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);
+    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const

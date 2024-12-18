@@ -15,19 +15,12 @@ groupConcat[(delimiter [, limit])](expression);
 
 **Arguments**
 
-- `expression` — The expression or column name that outputs strings to be concatenated.
-- `delimiter` — A [string](../../../sql-reference/data-types/string.md) that will be used to separate concatenated values. This parameter is optional and defaults to an empty string or delimiter from parameters if not specified.
-
-
-**Parameters**
-
+- `expression` — The expression or column name that outputs strings to be concatenated..
 - `delimiter` — A [string](../../../sql-reference/data-types/string.md) that will be used to separate concatenated values. This parameter is optional and defaults to an empty string if not specified.
 - `limit` — A positive [integer](../../../sql-reference/data-types/int-uint.md) specifying the maximum number of elements to concatenate. If more elements are present, excess elements are ignored. This parameter is optional.
 
 :::note
 If delimiter is specified without limit, it must be the first parameter. If both delimiter and limit are specified, delimiter must precede limit.
-
-Also, if different delimiters are specified as parameters and arguments, the delimiter from arguments will be used only.
 :::
 
 **Returned value**
@@ -40,9 +33,9 @@ Input table:
 
 ``` text
 ┌─id─┬─name─┐
-│  1 │ John │
-│  2 │ Jane │
-│  3 │ Bob  │
+│ 1  │  John│
+│ 2  │  Jane│
+│ 3  │   Bob│
 └────┴──────┘
 ```
 
@@ -69,12 +62,6 @@ Query:
 
 ``` sql
 SELECT groupConcat(', ')(Name)  FROM Employees;
-```
-
-or
-
-``` sql
-SELECT groupConcat(Name, ', ')  FROM Employees;
 ```
 
 Result:

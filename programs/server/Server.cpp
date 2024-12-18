@@ -15,7 +15,6 @@
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
 #include <Common/ErrorHandlers.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <base/getMemoryAmount.h>
 #include <base/getAvailableMemoryAmount.h>
 #include <base/errnoToString.h>
@@ -60,7 +59,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -282,12 +280,7 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
-    extern const ServerSettingsString primary_index_cache_policy;
-    extern const ServerSettingsUInt64 primary_index_cache_size;
-    extern const ServerSettingsDouble primary_index_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
-    extern const ServerSettingsBool dictionaries_lazy_load;
-    extern const ServerSettingsBool wait_dictionaries_load_at_startup;
 }
 
 }
@@ -300,7 +293,6 @@ namespace CurrentMetrics
     extern const Metric MergesMutationsMemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
-    extern const Metric StartupScriptsExecutionState;
 }
 
 namespace ProfileEvents
@@ -369,14 +361,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
 }
-
-
-enum StartupScriptsExecutionState : CurrentMetrics::Value
-{
-    NotFinished = 0,
-    Success = 1,
-    Failure = 2,
-};
 
 
 static std::string getCanonicalPath(std::string && path)
@@ -795,12 +779,9 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             startup_context->makeQueryContext();
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
-
-        CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Success);
     }
     catch (...)
     {
-        CurrentMetrics::set(CurrentMetrics::StartupScriptsExecutionState, StartupScriptsExecutionState::Failure);
         tryLogCurrentException(log, "Failed to parse startup scripts file");
     }
 }
@@ -940,8 +921,6 @@ try
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
-
-    QueryPlanStepRegistry::registerPlanSteps();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -1396,23 +1375,6 @@ try
         setOOMScore(oom_score, log);
 #endif
 
-    std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
-
-    SCOPE_EXIT({
-        if (cancellation_task)
-            CancellationChecker::getInstance().terminateThread();
-    });
-
-    if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
-    {
-        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
-            "CancellationChecker",
-            [] { CancellationChecker::getInstance().workerFunction(); }
-        );
-        cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
-        (*cancellation_task)->activateAndSchedule();
-    }
-
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());
 
@@ -1600,16 +1562,6 @@ try
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
-
-    String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
-    size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
-    double primary_index_cache_size_ratio = server_settings[ServerSetting::primary_index_cache_size_ratio];
-    if (primary_index_cache_size > max_cache_size)
-    {
-        primary_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
-    }
-    global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
     size_t page_cache_size = server_settings[ServerSetting::page_cache_size];
     if (page_cache_size != 0)
@@ -1945,7 +1897,6 @@ try
 
             global_context->updateUncompressedCacheConfiguration(*config);
             global_context->updateMarkCacheConfiguration(*config);
-            global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
@@ -2412,7 +2363,7 @@ try
         {
             global_context->loadOrReloadDictionaries(config());
 
-            if (!server_settings[ServerSetting::dictionaries_lazy_load] && server_settings[ServerSetting::wait_dictionaries_load_at_startup])
+            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
                 global_context->waitForDictionariesLoad();
         }
         catch (...)
@@ -2424,7 +2375,7 @@ try
         /// try to load embedded dictionaries immediately, throw on error and die
         try
         {
-            global_context->tryCreateEmbeddedDictionaries();
+            global_context->tryCreateEmbeddedDictionaries(config());
         }
         catch (...)
         {
