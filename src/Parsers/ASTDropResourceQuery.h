@@ -18,11 +18,12 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropResourceQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

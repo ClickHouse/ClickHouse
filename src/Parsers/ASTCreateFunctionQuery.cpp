@@ -40,7 +40,7 @@ void ASTCreateFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
     formatOnCluster(ostr, settings);
 
     ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
-    function_core->formatImpl(ostr, settings, state, frame);
+    function_core->format(ostr, settings, state, frame);
 }
 
 String ASTCreateFunctionQuery::getFunctionName() const
