@@ -137,6 +137,52 @@ Result:
 └───┘
 ```
 
+## isNullOrEmpty
+
+Returns whether the [Array](/docs/en/sql-reference/data-types/array.md) argument is not [NULL](../../sql-reference/syntax.md#null-literal).
+If it's not [NULL](../../sql-reference/syntax.md#null-literal), the function checks if the [Array](/docs/en/sql-reference/data-types/array.md) is empty.
+
+
+``` sql
+isNullOrEmpty(x)
+```
+
+**Arguments:**
+
+- `x` — An [array](/docs/en/sql-reference/data-types/array.md).
+
+**Returned value**
+
+- `0` if `x` is not `NULL` and not empty.
+- `1` if `x` is `NULL` or empty.
+
+**Example**
+
+Table:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │  []  │
+│ 3 │ [23] │
+└───┴──────┘
+```
+
+Query:
+
+``` sql
+SELECT x FROM t_null WHERE isNullOrEmpty(y);
+```
+
+Result:
+
+``` text
+┌─x─┐
+│ 1 │
+│ 2 │
+└───┘
+```
+
 ## isNotDistinctFrom
 
 Performs null-safe comparison. Used to compare JOIN keys which contain NULL values in the JOIN ON section.
