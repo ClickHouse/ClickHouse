@@ -3,6 +3,7 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
+#include <cmath>
 
 #include <boost/noncopyable.hpp>
 
@@ -370,6 +371,9 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
+
+    double (*fmod_ptr)(double, double) = &fmod;
+    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_ptr));
 }
 
 CHJIT::~CHJIT() = default;
