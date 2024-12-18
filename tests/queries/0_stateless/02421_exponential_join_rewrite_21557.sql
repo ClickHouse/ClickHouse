@@ -332,6 +332,7 @@ CREATE TABLE item
 )
 ENGINE = MergeTree ORDER BY i_item_sk;
 
+SET join_algorithm = 'hash';
 EXPLAIN SYNTAX
 WITH
     cs_ui AS

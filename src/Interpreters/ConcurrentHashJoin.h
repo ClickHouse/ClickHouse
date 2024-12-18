@@ -74,6 +74,8 @@ public:
         return std::make_shared<ConcurrentHashJoin>(context, table_join_, slots, right_sample_block_, stats_collecting_params);
     }
 
+    void onBuildPhaseFinish() override;
+
 private:
     struct InternalHashJoin
     {
@@ -86,6 +88,7 @@ private:
     size_t slots;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
+    bool two_level_map_used = false;
 
     StatsCollectingParams stats_collecting_params;
 
