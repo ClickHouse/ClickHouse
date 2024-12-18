@@ -38,8 +38,8 @@ public:
         );
     }
 
-    explicit FunctionIsNullOrEmpty(bool use_analyzer_) 
-        : use_analyzer(use_analyzer_) 
+    explicit FunctionIsNullOrEmpty(bool use_analyzer_)
+        : use_analyzer(use_analyzer_)
     {}
 
     std::string getName() const override
@@ -47,24 +47,24 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override 
-    { 
-        return 1; 
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
     }
 
-    bool useDefaultImplementationForNulls() const override 
-    { 
-        return false; 
+    bool useDefaultImplementationForNulls() const override
+    {
+        return false;
     }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override 
-    { 
-        return false; 
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return false;
     }
 
-    bool useDefaultImplementationForConstants() const override 
-    { 
-        return true; 
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(
@@ -74,9 +74,9 @@ public:
     }
 
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(
-        size_t /*number_of_arguments*/) const override 
-    { 
-        return {0}; 
+        size_t /*number_of_arguments*/) const override
+    {
+        return {0};
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*args*/) const override
@@ -85,7 +85,7 @@ public:
     }
 
     ColumnPtr getConstantResultForNonConstArguments(
-        const ColumnsWithTypeAndName & arguments, 
+        const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type
     ) const override
     {
@@ -104,8 +104,8 @@ public:
     }
 
     ColumnPtr executeImpl(
-        const ColumnsWithTypeAndName & arguments, 
-        const DataTypePtr &, 
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr &,
         size_t /*input_rows_count*/
     ) const override
     {
@@ -201,7 +201,7 @@ public:
         }
 
         //
-        // 4) If it’s not an array and not nullable => "empty" doesn’t apply; check if it’s "onlyNull" or not. 
+        // 4) If it’s not an array and not nullable => "empty" doesn’t apply; check if it’s "onlyNull" or not.
         //    For typical columns (e.g., Int32, String, etc.), there's no "empty" concept. So the result is always 0.
         //
         return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
