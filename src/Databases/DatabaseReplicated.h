@@ -173,7 +173,7 @@ private:
     std::atomic_bool is_probably_dropped = false;
     std::atomic_bool is_recovering = false;
     std::atomic_bool ddl_worker_initialized = false;
-    std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker; // TSA_GUARDED_BY(ddl_worker_mutex);
+    std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     mutable std::mutex ddl_worker_mutex;
     UInt32 max_log_ptr_at_creation = 0;
 
