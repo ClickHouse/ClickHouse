@@ -3,6 +3,14 @@
 
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
+#include <IO/CompressionMethod.h>
+#include <IO/WriteBuffer.h>
+#include <Common/DNSResolver.h>
+#include <Common/InterruptListener.h>
+#include <Common/ProgressIndication.h>
+#include <Common/QueryFuzzer.h>
+#include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -11,12 +19,7 @@
 #include <Poco/SimpleFileChannel.h>
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/Application.h>
-#include <Common/DNSResolver.h>
-#include <Common/InterruptListener.h>
-#include <Common/ProgressIndication.h>
-#include <Common/QueryFuzzer.h>
-#include <Common/ShellCommand.h>
-#include <Common/Stopwatch.h>
+
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/SelectQueryInfo.h>
@@ -208,6 +211,9 @@ private:
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
+    void startKeystrokeInterceptorIfExists();
+    void stopKeystrokeInterceptorIfExists();
+
 protected:
 
     class QueryInterruptHandler : private boost::noncopyable
@@ -310,7 +316,7 @@ protected:
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in;
     /// Console output.
-    WriteBufferFromFileDescriptor std_out;
+    AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
@@ -325,9 +331,11 @@ protected:
     /// /dev/tty if accessible or std::cerr - for progress bar.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
+    std::mutex tty_mutex;
 
     String home_path;
     String history_file; /// Path to a file containing command history.
+    UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     String current_profile;
 
@@ -340,6 +348,7 @@ protected:
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
+    bool progress_table_toggle_enabled = true;
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
@@ -392,9 +401,6 @@ protected:
     std::atomic_bool cancelled_printed = false;
 
     /// Unpacked descriptors and streams for the ease of use.
-    int in_fd = STDIN_FILENO;
-    int out_fd = STDOUT_FILENO;
-    int err_fd = STDERR_FILENO;
     std::istream & input_stream;
     std::ostream & output_stream;
     std::ostream & error_stream;

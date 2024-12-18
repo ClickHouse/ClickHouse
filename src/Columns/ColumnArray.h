@@ -159,7 +159,11 @@ public:
     /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
     MutableColumnPtr getDataInRange(size_t start, size_t length) const;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
+
+    ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+    void rollback(const ColumnCheckpoint & checkpoint) override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
@@ -191,6 +195,13 @@ public:
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+
+    bool dynamicStructureEquals(const IColumn & rhs) const override
+    {
+        if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
+            return data->dynamicStructureEquals(*rhs_concrete->data);
+        return false;
+    }
 
 private:
     WrappedPtr data;

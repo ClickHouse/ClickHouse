@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <unordered_map>
 #include <IO/WriteSettings.h>
 #include <Core/Block.h>
@@ -25,6 +26,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
 namespace zkutil
@@ -77,7 +79,8 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using Index = std::shared_ptr<const Columns>;
+    using Index = Columns;
+    using IndexPtr = std::shared_ptr<const Index>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
@@ -176,9 +179,20 @@ public:
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
-    void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
 
     void loadRowsCountFileForUnexpectedPart();
+
+    /// Loads marks and saves them into mark cache for specified columns.
+    virtual void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const = 0;
+
+    /// Removes marks from cache for all columns in part.
+    virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
+
+    /// Removes data related to data part from mark and primary index caches.
+    void clearCaches();
+
+    /// Returns true if data related to data part may be stored in mark and primary index caches.
+    bool mayStoreDataInCaches() const;
 
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
@@ -318,7 +332,7 @@ public:
 
     /// Amount of rows between marks
     /// As index always loaded into memory
-    MergeTreeIndexGranularity index_granularity;
+    MergeTreeIndexGranularityPtr index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
@@ -368,15 +382,20 @@ public:
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
 
-    Index getIndex() const;
-    void setIndex(const Columns & cols_);
-    void setIndex(Columns && cols_);
+    IndexPtr getIndex() const;
+    IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
+    void moveIndexToCache(PrimaryIndexCache & index_cache);
+    void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
+
+    void setIndex(Columns index_columns);
     void unloadIndex();
     bool isIndexLoaded() const;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
+    UInt64 getIndexGranularityBytes() const;
+    UInt64 getIndexGranularityAllocatedBytes() const;
     UInt64 getMarksCount() const;
     UInt64 getIndexSizeFromFile() const;
 
@@ -393,7 +412,7 @@ public:
     auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
-    void renameToDetached(const String & prefix);
+    void renameToDetached(const String & prefix, bool ignore_error = false);
 
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
@@ -423,11 +442,18 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
+    /// This method ignores current tmp prefix of part and returns
+    /// the name of part when it was or will be in Active state.
+    String getRelativePathOfActivePart() const;
+
     bool isProjectionPart() const { return parent_part != nullptr; }
+
+    /// Check if the part is in the `/moving` directory
+    bool isMovingPart() const;
 
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
     String getParentPartName() const { return parent_part_name; }
@@ -593,8 +619,7 @@ protected:
     /// Lazily loaded in RAM. Contains each index_granularity-th value of primary key tuple.
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     mutable std::mutex index_mutex;
-    mutable Index index TSA_GUARDED_BY(index_mutex);
-    mutable bool index_loaded TSA_GUARDED_BY(index_mutex) = false;
+    mutable IndexPtr index;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -624,11 +649,11 @@ protected:
 
     mutable PartMetadataManagerPtr metadata_manager;
 
-    void removeIfNeeded();
+    void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const = 0;
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -674,24 +699,19 @@ private:
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
-    static void appendFilesOfUUID(Strings & files);
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
-    static void appendFilesOfColumns(Strings & files);
-
-    static void appendFilesOfChecksums(Strings & files);
-
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
 
-    virtual void appendFilesOfIndexGranularity(Strings & files) const;
-
     /// Loads the index file.
-    void loadIndex() const TSA_REQUIRES(index_mutex);
+    std::shared_ptr<Index> loadIndex() const;
 
-    void appendFilesOfIndex(Strings & files) const;
+    /// Optimize index. Drop useless columns from suffix of primary key.
+    template <typename Columns>
+    void optimizeIndexColumns(size_t marks_count, Columns & index_columns) const;
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
@@ -701,20 +721,14 @@ private:
     /// if load_existing_rows_count_for_old_parts and exclude_deleted_rows_for_part_size_in_merge are both enabled.
     void loadExistingRowsCount();
 
-    static void appendFilesOfRowsCount(Strings & files);
-
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
 
-    static void appendFilesOfTTLInfos(Strings & files);
-
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk();
+    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
 
     void calculateSecondaryIndicesSizesOnDisk();
-
-    void appendFilesOfPartitionAndMinMaxIndex(Strings & files) const;
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without
@@ -727,10 +741,6 @@ private:
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
-    static void appendFilesOfDefaultCompressionCodec(Strings & files);
-
-    static void appendFilesOfMetadataVersion(Strings & files);
-
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
@@ -742,6 +752,9 @@ private:
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
+
+    /// If it's true then data related to this part is cleared from mark and index caches.
+    mutable std::atomic_bool cleared_data_in_caches = false;
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;

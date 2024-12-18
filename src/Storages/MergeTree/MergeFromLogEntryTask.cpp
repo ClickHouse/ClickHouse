@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -371,6 +372,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     part = merge_task->getFuture().get();
+    auto cached_marks = merge_task->releaseCachedMarks();
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
@@ -443,6 +445,16 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
      */
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
+
+    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
+
+    if (auto mark_cache = storage.getMarkCacheToPrewarm(bytes_uncompressed))
+        addMarksToCache(*part, cached_marks, mark_cache.get());
+
+    /// Move index to cache and reset it here because we need
+    /// a correct part name after rename for a key of cache entry.
+    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
+        part->moveIndexToCache(*index_cache);
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

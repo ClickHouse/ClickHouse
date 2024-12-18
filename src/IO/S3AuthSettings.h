@@ -55,8 +55,11 @@ struct S3AuthSettings
     bool hasUpdates(const S3AuthSettings & other) const;
     void updateIfChanged(const S3AuthSettings & settings);
     bool canBeUsedByUser(const String & user) const { return users.empty() || users.contains(user); }
+    HTTPHeaderEntries getHeaders() const;
 
     HTTPHeaderEntries headers;
+    HTTPHeaderEntries access_headers;
+
     std::unordered_set<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
 

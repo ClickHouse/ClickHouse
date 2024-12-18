@@ -381,10 +381,10 @@ void ObjectStorageQueueOrderedFileMetadata::setProcessedImpl()
     /// In one zookeeper transaction do the following:
     enum RequestType
     {
-        SET_MAX_PROCESSED_PATH = 0,
-        CHECK_PROCESSING_ID_PATH = 1, /// Optional.
-        REMOVE_PROCESSING_ID_PATH = 2, /// Optional.
-        REMOVE_PROCESSING_PATH = 3, /// Optional.
+        CHECK_PROCESSING_ID_PATH = 0,
+        REMOVE_PROCESSING_ID_PATH = 1,
+        REMOVE_PROCESSING_PATH = 2,
+        SET_MAX_PROCESSED_PATH = 3,
     };
 
     const auto zk_client = getZooKeeper();
@@ -409,8 +409,18 @@ void ObjectStorageQueueOrderedFileMetadata::setProcessedImpl()
             return;
         }
 
+        bool unexpected_error = false;
         if (Coordination::isHardwareError(code))
             failure_reason = "Lost connection to keeper";
+        else if (is_request_failed(CHECK_PROCESSING_ID_PATH))
+            failure_reason = "Version of processing id node changed";
+        else if (is_request_failed(REMOVE_PROCESSING_PATH))
+        {
+            /// Remove processing_id node should not actually fail
+            /// because we just checked in a previous keeper request that it exists and has a certain version.
+            unexpected_error = true;
+            failure_reason = "Failed to remove processing id path";
+        }
         else if (is_request_failed(SET_MAX_PROCESSED_PATH))
         {
             LOG_TRACE(log, "Cannot set file {} as processed. "
@@ -418,12 +428,11 @@ void ObjectStorageQueueOrderedFileMetadata::setProcessedImpl()
                       "Will retry.", path, code);
             continue;
         }
-        else if (is_request_failed(CHECK_PROCESSING_ID_PATH))
-            failure_reason = "Version of processing id node changed";
-        else if (is_request_failed(REMOVE_PROCESSING_PATH))
-            failure_reason = "Failed to remove processing path";
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
+
+        if (unexpected_error)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", failure_reason);
 
         LOG_WARNING(log, "Cannot set file {} as processed: {}. Reason: {}", path, code, failure_reason);
         return;

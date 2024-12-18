@@ -49,6 +49,7 @@ public:
 
     void cancelImpl() noexcept override
     {
+        Base::cancelImpl();
         out->cancel();
     }
 

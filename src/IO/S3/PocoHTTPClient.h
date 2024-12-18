@@ -57,6 +57,10 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
     size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
 
+    UInt64 http_max_fields = 1000000;
+    UInt64 http_max_field_name_size = 128 * 1024;
+    UInt64 http_max_field_value_size = 128 * 1024;
+
     std::function<void(const ProxyConfiguration &)> error_report;
 
     void updateSchemeAndRegion();
@@ -177,6 +181,9 @@ protected:
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects = 0;
     bool s3_use_adaptive_timeouts = true;
+    const UInt64 http_max_fields = 1000000;
+    const UInt64 http_max_field_name_size = 128 * 1024;
+    const UInt64 http_max_field_value_size = 128 * 1024;
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
 

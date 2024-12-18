@@ -55,7 +55,7 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 ## Materialized View
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE]
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
@@ -154,16 +154,17 @@ This feature is deprecated and will be removed in the future.
 
 For your convenience, the old documentation is located [here](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Refreshable Materialized View [Experimental] {#refreshable-materialized-view}
+## Refreshable Materialized View {#refreshable-materialized-view}
 
 ```sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 REFRESH EVERY|AFTER interval [OFFSET interval]
-RANDOMIZE FOR interval
-DEPENDS ON [db.]name [, [db.]name [, ...]]
-SETTINGS name = value [, name = value [, ...]]
+[RANDOMIZE FOR interval]
+[DEPENDS ON [db.]name [, [db.]name [, ...]]]
+[SETTINGS name = value [, name = value [, ...]]]
 [APPEND]
-[TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
+[TO[db.]name] [(columns)] [ENGINE = engine] 
+[EMPTY]
 AS SELECT ...
 [COMMENT 'comment']
 ```
@@ -281,7 +282,7 @@ This replaces *all* refresh parameters at once: schedule, dependencies, settings
 
 The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
-To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|CANCEL VIEW`](../system.md#refreshable-materialized-views).
+To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|WAIT|CANCEL VIEW`](../system.md#refreshable-materialized-views).
 
 To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refreshable-materialized-views). In particular, useful for waiting for initial refresh after creating a view.
 

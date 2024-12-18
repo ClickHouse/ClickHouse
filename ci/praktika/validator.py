@@ -1,13 +1,10 @@
 import glob
-import sys
 from itertools import chain
 from pathlib import Path
 
-from praktika import Workflow
-from praktika._settings import GHRunners
-from praktika.mangle import _get_workflows
-from praktika.settings import Settings
-from praktika.utils import ContextManager
+from . import Workflow
+from .mangle import _get_workflows
+from .settings import GHRunners, Settings
 
 
 class Validator:
@@ -22,6 +19,33 @@ class Validator:
             cls.validate_file_paths_in_digest_configs(workflow)
             cls.validate_requirements_txt_files(workflow)
             cls.validate_dockers(workflow)
+
+            if workflow.event == Workflow.Event.SCHEDULE:
+                cls.evaluate_check(
+                    workflow.cron_schedules
+                    and isinstance(workflow.cron_schedules, list),
+                    f".crone_schedules str must be non-empty list of cron strings .event===SCHEDULE, provided value [{workflow.cron_schedules}]",
+                    workflow.name,
+                )
+                for cron_schedule in workflow.cron_schedules:
+                    cls.evaluate_check(
+                        len(cron_schedule.split(" ")) == 5,
+                        f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * *', provided value [{cron_schedule}]",
+                        workflow.name,
+                    )
+                    for cron_token in cron_schedule.split(" ")[:-1]:
+                        cls.evaluate_check(
+                            cron_token == "*" or str.isdigit(cron_token),
+                            f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1,3', provided value [{cron_schedule}], invalid part [{cron_token}]",
+                            workflow.name,
+                        )
+                    days_of_weak = cron_schedule.split(" ")[-1]
+                    cls.evaluate_check(
+                        days_of_weak == "*"
+                        or any([str.isdigit(v) for v in days_of_weak.split(",")]),
+                        f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1,3', provided value [{cron_schedule}], invalid part [{days_of_weak}]",
+                        workflow.name,
+                    )
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
@@ -119,61 +143,56 @@ class Validator:
     def validate_file_paths_in_run_command(cls, workflow: Workflow.Config) -> None:
         if not Settings.VALIDATE_FILE_PATHS:
             return
-        with ContextManager.cd():
-            for job in workflow.jobs:
-                run_command = job.command
-                command_parts = run_command.split(" ")
-                for part in command_parts:
-                    if ">" in part:
-                        return
-                    if "/" in part:
-                        assert (
-                            Path(part).is_file() or Path(part).is_dir()
-                        ), f"Apparently run command [{run_command}] for job [{job}] has invalid path [{part}]. Setting to disable check: VALIDATE_FILE_PATHS"
+        for job in workflow.jobs:
+            run_command = job.command
+            command_parts = run_command.split(" ")
+            for part in command_parts:
+                if ">" in part:
+                    return
+                if "/" in part:
+                    assert (
+                        Path(part).is_file() or Path(part).is_dir()
+                    ), f"Apparently run command [{run_command}] for job [{job}] has invalid path [{part}]. Setting to disable check: VALIDATE_FILE_PATHS"
 
     @classmethod
     def validate_file_paths_in_digest_configs(cls, workflow: Workflow.Config) -> None:
         if not Settings.VALIDATE_FILE_PATHS:
             return
-        with ContextManager.cd():
-            for job in workflow.jobs:
-                if not job.digest_config:
-                    continue
-                for include_path in chain(
-                    job.digest_config.include_paths, job.digest_config.exclude_paths
-                ):
-                    if "*" in include_path:
-                        assert glob.glob(
-                            include_path, recursive=True
-                        ), f"Apparently file glob [{include_path}] in job [{job.name}] digest_config [{job.digest_config}] invalid, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
-                    else:
-                        assert (
-                            Path(include_path).is_file() or Path(include_path).is_dir()
-                        ), f"Apparently file path [{include_path}] in job [{job.name}] digest_config [{job.digest_config}] invalid, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
+        for job in workflow.jobs:
+            if not job.digest_config:
+                continue
+            for include_path in chain(
+                job.digest_config.include_paths, job.digest_config.exclude_paths
+            ):
+                if "*" in include_path:
+                    assert glob.glob(
+                        include_path, recursive=True
+                    ), f"Apparently file glob [{include_path}] in job [{job.name}] digest_config [{job.digest_config}] invalid, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
+                else:
+                    assert (
+                        Path(include_path).is_file() or Path(include_path).is_dir()
+                    ), f"Apparently file path [{include_path}] in job [{job.name}] digest_config [{job.digest_config}] invalid, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
 
     @classmethod
     def validate_requirements_txt_files(cls, workflow: Workflow.Config) -> None:
-        with ContextManager.cd():
-            for job in workflow.jobs:
-                if job.job_requirements:
-                    if job.job_requirements.python_requirements_txt:
-                        path = Path(job.job_requirements.python_requirements_txt)
-                        message = f"File with py requirement [{path}] does not exist"
-                        if job.name in (
-                            Settings.DOCKER_BUILD_JOB_NAME,
-                            Settings.CI_CONFIG_JOB_NAME,
-                            Settings.FINISH_WORKFLOW_JOB_NAME,
-                        ):
-                            message += '\n  If all requirements already installed on your runners - add setting INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS""'
-                            message += "\n  If requirements needs to be installed - add requirements file (Settings.INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS):"
-                            message += "\n      echo jwt==1.3.1 > ./ci/requirements.txt"
-                            message += (
-                                "\n      echo requests==2.32.3 >> ./ci/requirements.txt"
-                            )
-                            message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
-                        cls.evaluate_check(
-                            path.is_file(), message, job.name, workflow.name
+        for job in workflow.jobs:
+            if job.job_requirements:
+                if job.job_requirements.python_requirements_txt:
+                    path = Path(job.job_requirements.python_requirements_txt)
+                    message = f"File with py requirement [{path}] does not exist"
+                    if job.name in (
+                        Settings.DOCKER_BUILD_JOB_NAME,
+                        Settings.CI_CONFIG_JOB_NAME,
+                        Settings.FINISH_WORKFLOW_JOB_NAME,
+                    ):
+                        message += '\n  If all requirements already installed on your runners - add setting INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS""'
+                        message += "\n  If requirements needs to be installed - add requirements file (Settings.INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS):"
+                        message += "\n      echo jwt==1.3.1 > ./ci/requirements.txt"
+                        message += (
+                            "\n      echo requests==2.32.3 >> ./ci/requirements.txt"
                         )
+                        message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
+                    cls.evaluate_check(path.is_file(), message, job.name, workflow.name)
 
     @classmethod
     def validate_dockers(cls, workflow: Workflow.Config):
@@ -205,4 +224,4 @@ class Validator:
             )
             for message in messages:
                 print(" ||  " + message)
-            sys.exit(1)
+            raise

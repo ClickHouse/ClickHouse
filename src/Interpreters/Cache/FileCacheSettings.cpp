@@ -62,6 +62,9 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
     if (has("background_download_queue_size_limit"))
         background_download_queue_size_limit = get_uint("background_download_queue_size_limit");
 
+    if (has("background_download_max_file_segment_size"))
+        background_download_max_file_segment_size = get_uint("background_download_max_file_segment_size");
+
     if (has("load_metadata_threads"))
         load_metadata_threads = get_uint("load_metadata_threads");
 

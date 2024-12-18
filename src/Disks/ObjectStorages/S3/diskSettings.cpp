@@ -177,7 +177,7 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings[S3AuthSetting::secret_access_key],
         auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
         auth_settings.server_side_encryption_kms_config,
-        auth_settings.headers,
+        auth_settings.getHeaders(),
         credentials_configuration,
         auth_settings[S3AuthSetting::session_token]);
 }

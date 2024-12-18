@@ -12,12 +12,6 @@
 #include <Common/filesystemHelpers.h>
 
 #include <filesystem>
-#include <memory>
-#include <optional>
-#include <tuple>
-#include <unordered_set>
-#include <Poco/Timestamp.h>
-
 
 namespace DB
 {
@@ -203,7 +197,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
 {
     auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto object = StoredObject(object_key.serialize());
-    metadata_storage.object_storage->removeObject(object);
+    metadata_storage.object_storage->removeObjectIfExists(object);
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
@@ -211,13 +205,28 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     if (metadata_storage.object_storage->isWriteOnce())
     {
         for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-            metadata_storage.object_storage->removeObject(StoredObject(it->path()));
+            metadata_storage.object_storage->removeObjectIfExists(StoredObject(it->path()));
     }
     else
     {
         addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
             normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage, metadata_storage.getMetadataKeyPrefix()));
     }
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    addOperation(
+        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getPathMap(), object_storage));
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(
+    const std::string & path, ObjectStorageKey /*object_key*/, uint64_t /* size_in_bytes */)
+{
+    createEmptyMetadataFile(path);
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
@@ -252,12 +261,6 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::
         metadata_storage.getMetadataKeyPrefix()));
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
-    const std::string &, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */)
-{
-    /// Noop, local metadata files is only one file, it is the metadata file itself.
-}
-
 UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string & path)
 {
     /// The record has become stale, remove it from cache.
@@ -269,8 +272,11 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
         metadata_storage.object_metadata_cache->remove(hash.get128());
     }
 
-    /// No hardlinks, so will always remove file.
-    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+    auto result = std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+    if (!metadata_storage.object_storage->isWriteOnce())
+        addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
+            path, *metadata_storage.getPathMap(), object_storage));
+    return result;
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::commit()

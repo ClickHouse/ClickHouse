@@ -62,6 +62,7 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
     , settings(std::move(settings_))
     , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), binlog_client_, settings.get())
 {
+    createDirectories();
 }
 
 DatabaseMaterializedMySQL::~DatabaseMaterializedMySQL() = default;
@@ -184,11 +185,11 @@ void DatabaseMaterializedMySQL::alterTable(ContextPtr context_, const StorageID 
 void DatabaseMaterializedMySQL::drop(ContextPtr context_)
 {
     LOG_TRACE(log, "Dropping MaterializeMySQL database");
+
     /// Remove metadata info
     fs::path metadata(getMetadataPath() + "/.metadata");
 
-    if (fs::exists(metadata))
-        (void)fs::remove(metadata);
+    db_disk->removeFileIfExists(metadata);
 
     DatabaseAtomic::drop(context_);
 }

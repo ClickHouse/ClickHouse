@@ -24,7 +24,7 @@ class DatabaseReplicatedDDLWorker : public DDLWorker
 public:
     DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_);
 
-    String enqueueQuery(DDLLogEntry & entry) override;
+    String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &) override;
 
     String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context);
 
@@ -38,9 +38,14 @@ public:
     UInt32 getLogPointer() const;
 
     UInt64 getCurrentInitializationDurationMs() const;
+
 private:
     bool initializeMainThread() override;
-    void initializeReplication();
+    void initializeReplication() override;
+
+    void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override { }
+    void markReplicasActive(bool) override { }
+
     void initializeLogPointer(const String & processed_entry_name);
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run) override;

@@ -56,6 +56,9 @@ private:
 
     using NamesAndPaddings = std::vector<String>;
     NamesAndPaddings names_and_paddings;
+
+    std::vector<UInt8> is_number;
+    bool color;
 };
 
 }

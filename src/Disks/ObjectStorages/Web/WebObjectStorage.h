@@ -47,10 +47,6 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void removeObject(const StoredObject & object) override;
-
-    void removeObjects(const StoredObjects &  objects) override;
-
     void removeObjectIfExists(const StoredObject & object) override;
 
     void removeObjectsIfExist(const StoredObjects & objects) override;

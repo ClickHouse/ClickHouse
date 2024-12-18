@@ -52,7 +52,10 @@ namespace
         {AccessType::HDFS, "HDFS"},
         {AccessType::S3, "S3"},
         {AccessType::HIVE, "Hive"},
-        {AccessType::AZURE, "AzureBlobStorage"}
+        {AccessType::AZURE, "AzureBlobStorage"},
+        {AccessType::KAFKA, "Kafka"},
+        {AccessType::NATS, "NATS"},
+        {AccessType::RABBITMQ, "RabbitMQ"}
     };
 
 
@@ -351,7 +354,8 @@ void ContextAccess::setUser(const UserPtr & user_) const
     user_name = user->getName();
     trace_log = getLogger("ContextAccess (" + user_name + ")");
 
-    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    std::vector<UUID> current_roles;
+    std::vector<UUID> current_roles_with_admin_option;
     if (params.use_default_roles)
     {
         current_roles = user->granted_roles.findGranted(user->default_roles);
@@ -361,6 +365,13 @@ void ContextAccess::setUser(const UserPtr & user_) const
     {
         current_roles = user->granted_roles.findGranted(*params.current_roles);
         current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(*params.current_roles);
+    }
+
+    if (params.external_roles && !params.external_roles->empty())
+    {
+        current_roles.insert(current_roles.end(), params.external_roles->begin(), params.external_roles->end());
+        auto new_granted_with_admin_option = user->granted_roles.findGrantedWithAdminOption(*params.external_roles);
+        current_roles_with_admin_option.insert(current_roles_with_admin_option.end(), new_granted_with_admin_option.begin(), new_granted_with_admin_option.end());
     }
 
     subscription_for_roles_changes.reset();
@@ -512,7 +523,6 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
     return getQuota()->getUsage();
 }
-
 
 SettingsChanges ContextAccess::getDefaultSettings() const
 {
@@ -701,15 +711,17 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
         const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
         const AccessFlags function_ddl = AccessType::CREATE_FUNCTION | AccessType::DROP_FUNCTION;
+        const AccessFlags workload_ddl = AccessType::CREATE_WORKLOAD | AccessType::DROP_WORKLOAD;
+        const AccessFlags resource_ddl = AccessType::CREATE_RESOURCE | AccessType::DROP_RESOURCE;
         const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
         const AccessFlags table_and_dictionary_and_function_ddl = table_ddl | dictionary_ddl | function_ddl;
         const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
         const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
-        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
+        const AccessFlags not_readonly_flags = write_table_access | table_and_dictionary_and_function_ddl | workload_ddl | resource_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY;
         const AccessFlags not_readonly_1_flags = AccessType::CREATE_TEMPORARY_TABLE;
 
-        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl;
+        const AccessFlags ddl_flags = table_ddl | dictionary_ddl | function_ddl | workload_ddl | resource_ddl;
         const AccessFlags introspection_flags = AccessType::INTROSPECTION;
     };
     static const PrecalculatedFlags precalc;

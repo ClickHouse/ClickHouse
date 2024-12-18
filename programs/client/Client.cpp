@@ -192,6 +192,10 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
+        if (config.has(prefix + ".history_max_entries"))
+        {
+            config.setUInt("history_max_entries", history_max_entries);
+        }
         if (config.has(prefix + ".accept-invalid-certificate"))
             config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }
@@ -216,7 +220,7 @@ std::vector<String> Client::loadWarningMessages()
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &client_context->getSettingsRef(),
-                          &client_context->getClientInfo(), false, {});
+                          &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -427,7 +431,7 @@ catch (const Exception & e)
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
-    return e.code() ? e.code() : -1;
+    return static_cast<UInt8>(e.code()) ? e.code() : -1;
 }
 catch (...)
 {
@@ -476,6 +480,17 @@ void Client::connect()
                 connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
             config().setString("host", connection_parameters.host);
             config().setInt("port", connection_parameters.port);
+
+            /// Apply setting changes received from server, but with lower priority than settings
+            /// changed from command line.
+            SettingsChanges settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
+            const Settings & settings = global_context->getSettingsRef();
+            std::erase_if(settings_from_server, [&](const SettingChange & change)
+            {
+                return settings.isChanged(change.name);
+            });
+            global_context->applySettingsChanges(settings_from_server);
+
             break;
         }
         catch (const Exception & e)
@@ -1386,7 +1401,8 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        return 1;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -1395,7 +1411,8 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 1;
+        std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }

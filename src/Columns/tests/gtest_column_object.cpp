@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Common/Arena.h>
+#include "Core/Field.h"
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -348,4 +349,66 @@ TEST(ColumnObject, SkipSerializedInArena)
     pos = col2->skipSerializedInArena(pos);
     pos = col2->skipSerializedInArena(pos);
     ASSERT_EQ(pos, end);
+}
+
+TEST(ColumnObject, rollback)
+{
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=2, a.a UInt32, a.b UInt32)");
+    auto col = type->createColumn();
+    auto & col_object = assert_cast<ColumnObject &>(*col);
+    const auto & typed_paths = col_object.getTypedPaths();
+    const auto & dynamic_paths = col_object.getDynamicPaths();
+    const auto & shared_data = col_object.getSharedDataColumn();
+
+    auto assert_sizes = [&](size_t size)
+    {
+        for (const auto & [name, column] : typed_paths)
+            ASSERT_EQ(column->size(), size);
+
+        for (const auto & [name, column] : dynamic_paths)
+            ASSERT_EQ(column->size(), size);
+
+        ASSERT_EQ(shared_data.size(), size);
+    };
+
+    auto checkpoint = col_object.getCheckpoint();
+
+    col_object.insert(Object{{"a.a", Field{1u}}});
+    col_object.updateCheckpoint(*checkpoint);
+
+    col_object.insert(Object{{"a.b", Field{2u}}});
+    col_object.insert(Object{{"a.a", Field{3u}}});
+
+    col_object.rollback(*checkpoint);
+
+    assert_sizes(1);
+    ASSERT_EQ(typed_paths.size(), 2);
+    ASSERT_EQ(dynamic_paths.size(), 0);
+
+    ASSERT_EQ((*typed_paths.at("a.a"))[0], Field{1u});
+    ASSERT_EQ((*typed_paths.at("a.b"))[0], Field{0u});
+
+    col_object.insert(Object{{"a.c", Field{"ccc"}}});
+
+    checkpoint = col_object.getCheckpoint();
+
+    col_object.insert(Object{{"a.d", Field{"ddd"}}});
+    col_object.insert(Object{{"a.e", Field{"eee"}}});
+
+    assert_sizes(4);
+    ASSERT_EQ(typed_paths.size(), 2);
+    ASSERT_EQ(dynamic_paths.size(), 2);
+
+    ASSERT_EQ((*typed_paths.at("a.a"))[0], Field{1u});
+    ASSERT_EQ((*dynamic_paths.at("a.c"))[1], Field{"ccc"});
+    ASSERT_EQ((*dynamic_paths.at("a.d"))[2], Field{"ddd"});
+
+    col_object.rollback(*checkpoint);
+
+    assert_sizes(2);
+    ASSERT_EQ(typed_paths.size(), 2);
+    ASSERT_EQ(dynamic_paths.size(), 1);
+
+    ASSERT_EQ((*typed_paths.at("a.a"))[0], Field{1u});
+    ASSERT_EQ((*dynamic_paths.at("a.c"))[1], Field{"ccc"});
 }

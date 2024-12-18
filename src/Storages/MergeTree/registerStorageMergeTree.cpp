@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 
@@ -37,6 +38,9 @@ namespace Setting
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool create_table_empty_primary_key_by_default;
     extern const SettingsUInt64 database_replicated_allow_replicated_engine_arguments;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
 }
 
 namespace MergeTreeSetting
@@ -515,7 +519,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
         // '\t' and '\n' will interrupt parsing 'source replica' in ReplicatedMergeTreeLogEntryData::readText
-        if (zookeeper_info.replica_name.find('\t') != String::npos || zookeeper_info.replica_name.find('\n') != String::npos)
+        if (zookeeper_info.replica_name.contains('\t') || zookeeper_info.replica_name.contains('\n'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must not contain '\\t' or '\\n'");
 
         arg_cnt = engine_args.size(); /// Update `arg_cnt` here because extractZooKeeperPathAndReplicaNameFromEngineArgs() could add arguments.
@@ -831,6 +835,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
 
+        ZooKeeperRetriesInfo create_query_zk_retries_info{
+            local_settings[Setting::keeper_max_retries],
+            local_settings[Setting::keeper_retry_initial_backoff_ms],
+            local_settings[Setting::keeper_retry_max_backoff_ms],
+            args.getLocalContext()->getProcessListElementSafe()};
+
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_info,
             args.mode,
@@ -841,8 +851,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             date_column_name,
             merging_params,
             std::move(storage_settings),
-            need_check_table_structure);
+            need_check_table_structure,
+            create_query_zk_retries_info);
     }
+
     return std::make_shared<StorageMergeTree>(
         args.table_id,
         args.relative_data_path,

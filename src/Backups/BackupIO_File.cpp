@@ -106,16 +106,36 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 void BackupWriterFile::removeFile(const String & file_name)
 {
     (void)fs::remove(root_path / file_name);
-    if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        (void)fs::remove(root_path);
 }
 
 void BackupWriterFile::removeFiles(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
         (void)fs::remove(root_path / file_name);
-    if (fs::is_directory(root_path) && fs::is_empty(root_path))
-        (void)fs::remove(root_path);
+}
+
+void BackupWriterFile::removeEmptyDirectories()
+{
+    removeEmptyDirectoriesImpl(root_path);
+}
+
+void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
+{
+    if (!fs::is_directory(current_dir))
+        return;
+
+    if (fs::is_empty(current_dir))
+    {
+        (void)fs::remove(current_dir);
+        return;
+    }
+
+    /// Backups are not too deep, so recursion is good enough here.
+    for (const auto & it : std::filesystem::directory_iterator{current_dir})
+        removeEmptyDirectoriesImpl(it.path());
+
+    if (fs::is_empty(current_dir))
+        (void)fs::remove(current_dir);
 }
 
 void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,

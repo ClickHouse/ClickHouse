@@ -66,6 +66,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         # Twice as large
         set (RLIMIT_DATA 10000000000)
         set (RLIMIT_AS 20000000000)
+        set (RLIMIT_CPU 2000)
     endif()
 
     # For some files currently building RISCV64/LOONGARCH64 might be too slow.
@@ -589,6 +590,20 @@ if (FUZZER)
 endif()
 
 include (cmake/sanitize_targets.cmake)
+
+if (COMPILER_CACHE STREQUAL "chcache")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+
+    get_all_targets(all_targets)
+    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+    foreach(target ${all_targets})
+        if (target IN_LIST chcache_targets)
+            continue()
+        endif()
+
+        add_dependencies(${target} cargo-build_chcache)
+    endforeach()
+endif()
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)

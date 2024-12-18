@@ -27,8 +27,9 @@ public:
     }
 
     /// Write progress table with metrics.
-    void writeTable(WriteBufferFromFileDescriptor & message, bool show_table, bool toggle_enabled);
-    void clearTableOutput(WriteBufferFromFileDescriptor & message);
+    void writeTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock,
+            bool show_table, bool toggle_enabled);
+    void clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
     void writeFinalTable();
 
     /// Update the metric values. They can be updated from:
@@ -87,6 +88,7 @@ private:
     };
 
     size_t tableSize() const;
+    size_t getColumnDocumentationWidth(size_t terminal_width) const;
 
     using MetricName = String;
 
@@ -110,7 +112,7 @@ private:
     static constexpr std::string_view COLUMN_DOCUMENTATION_NAME = "Documentation";
     static constexpr size_t COLUMN_VALUE_WIDTH = 20;
     static constexpr size_t COLUMN_PROGRESS_WIDTH = 20;
-    static constexpr size_t COLUMN_DOCUMENTATION_WIDTH = 100;
+    static constexpr size_t COLUMN_DOCUMENTATION_MIN_WIDTH = COLUMN_DOCUMENTATION_NAME.size();
 
     std::ostream & output_stream;
     int in_fd;
