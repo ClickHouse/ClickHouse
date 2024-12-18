@@ -1012,6 +1012,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     auto allow_parallel_replicas_for_table_expression = [](const QueryTreeNodePtr & join_tree_node)
                     {
+                        if (join_tree_node->as<CrossJoinNode>())
+                            return false;
+
                         const JoinNode * join_node = join_tree_node->as<JoinNode>();
                         if (!join_node)
                             return true;

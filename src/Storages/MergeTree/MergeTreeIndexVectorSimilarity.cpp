@@ -8,6 +8,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
@@ -295,16 +296,9 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
     auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
 
-    auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row, ThreadGroupPtr thread_group)
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "VectorSimIndex");
+    auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
-
         /// add is thread-safe
         auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]);
         if (!result)
@@ -322,11 +316,10 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     for (size_t row = 0; row < rows; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        auto task = [group = CurrentThread::getGroup(), &add_vector_to_index, key, row] { add_vector_to_index(key, row, group); };
-        thread_pool.scheduleOrThrowOnError(task);
+        runner([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
     }
 
-    thread_pool.wait();
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 }
