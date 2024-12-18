@@ -32,7 +32,7 @@ struct RowRef
         : block(block_)
         , row_num(static_cast<SizeT>(row_num_))
     {}
-};
+} __attribute__((packed));
 
 /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
 struct RowRefList : RowRef
@@ -40,7 +40,7 @@ struct RowRefList : RowRef
     /// Portion of RowRefs, 16 * (MAX_SIZE + 1) bytes sized.
     struct Batch
     {
-        static constexpr size_t MAX_SIZE = 7; /// Adequate values are 3, 7, 15, 31.
+        static constexpr size_t MAX_SIZE = 9;
 
         SizeT size = 0; /// It's smaller than size_t but keeps align in Arena.
         Batch * next;
@@ -68,15 +68,12 @@ struct RowRefList : RowRef
         }
     };
 
+    static_assert(sizeof(Batch) <= 128);
+
     class ForwardIterator
     {
     public:
-        explicit ForwardIterator(const RowRefList * begin)
-            : root(begin)
-            , first(true)
-            , batch(root->next)
-            , position(0)
-        {}
+        explicit ForwardIterator(const RowRefList * begin) : position(0), first(true), root(begin), batch(root->next) { }
 
         const RowRef * operator -> () const
         {
@@ -114,10 +111,10 @@ struct RowRefList : RowRef
         bool ok() const { return first || batch; }
 
     private:
-        const RowRefList * root;
-        bool first;
-        Batch * batch;
         size_t position;
+        bool first;
+        const RowRefList * root;
+        Batch * batch;
     };
 
     RowRefList() {} /// NOLINT
@@ -138,10 +135,11 @@ struct RowRefList : RowRef
         ++rows;
     }
 
-public:
-    SizeT rows = 0;
 private:
     Batch * next = nullptr;
+
+public:
+    SizeT rows = 0;
 };
 
 /**
