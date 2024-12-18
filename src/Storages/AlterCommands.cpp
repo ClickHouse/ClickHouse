@@ -859,6 +859,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == RESET_SETTING)
     {
+        if (!metadata.settings_changes)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
+
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & setting_name : settings_resets)
         {
@@ -1552,6 +1555,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
             }
+        }
+        else if (command.type == AlterCommand::RESET_SETTING)
+        {
+            if (metadata.settings_changes == nullptr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
