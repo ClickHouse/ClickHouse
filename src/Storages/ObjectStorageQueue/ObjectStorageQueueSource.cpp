@@ -503,6 +503,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
         auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
         const auto & path = reader.getObjectInfo()->getPath();
+        last_started_file = file_metadata;
+
+        LOG_TEST(log, "Processing file: {}", last_started_file->getPath());
 
         if (isCancelled())
         {
@@ -657,6 +660,12 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
 void ObjectStorageQueueSource::commit(bool success, const std::string & exception_message)
 {
+    if (last_started_file
+        && (processed_files.empty() || processed_files.back()->getPath() != last_started_file->getPath()))
+    {
+        processed_files.push_back(last_started_file);
+    }
+
     LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
              processed_files.size(), success ? "Processed" : "Failed", failed_during_read_files.size());
 

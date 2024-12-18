@@ -1813,7 +1813,6 @@ def test_exception_during_insert(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 10
 
     create_table(
         started_cluster,
@@ -1826,14 +1825,37 @@ def test_exception_during_insert(started_cluster):
         },
     )
     node.rotate_logs()
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-    )
 
+    node.query("system stop merges")
     create_mv(node, table_name, dst_table_name)
 
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    def wait_for_rows(expected_rows):
+        for _ in range(20):
+            if expected_rows == get_count():
+                break
+            time.sleep(1)
+        assert expected_rows == get_count()
+
+    expected_rows = [0]
+    def generate(check_inserted):
+        files_to_generate = 10
+        total_values = generate_random_files(
+            started_cluster, files_path, files_to_generate, start_ind=0, row_num=1, use_random_names=1
+        )
+        expected_rows[0] += files_to_generate
+        if check_inserted:
+            wait_for_rows(expected_rows[0])
+
+    generate(True)
+    generate(True)
+    generate(True)
+    generate(False)
+
     node.wait_for_log_line(
-        "Failed to process data: Code: 252. DB::Exception: Too many parts"
+        "Merges are processing significantly slower than inserts: while pushing to view default.test_exception_during_insert_"
     )
 
     time.sleep(2)
@@ -1842,32 +1864,10 @@ def test_exception_during_insert(started_cluster):
     )
     assert "Too many parts" in exception
 
-    original_parts_to_throw_insert = 0
-    modified_parts_to_throw_insert = 10
-    node.replace_in_config(
-        "/etc/clickhouse-server/config.d/merge_tree.xml",
-        f"parts_to_throw_insert>{original_parts_to_throw_insert}",
-        f"parts_to_throw_insert>{modified_parts_to_throw_insert}",
-    )
-    try:
-        node.restart_clickhouse()
+    node.query("system start merges")
+    node.query(f"optimize table {dst_table_name} final")
 
-        def get_count():
-            return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-        expected_rows = 10
-        for _ in range(20):
-            if expected_rows == get_count():
-                break
-            time.sleep(1)
-        assert expected_rows == get_count()
-    finally:
-        node.replace_in_config(
-            "/etc/clickhouse-server/config.d/merge_tree.xml",
-            f"parts_to_throw_insert>{modified_parts_to_throw_insert}",
-            f"parts_to_throw_insert>{original_parts_to_throw_insert}",
-        )
-        node.restart_clickhouse()
+    wait_for_rows(expected_rows[0])
 
 
 def test_commit_on_limit(started_cluster):

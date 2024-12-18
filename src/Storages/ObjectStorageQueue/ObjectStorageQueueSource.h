@@ -156,6 +156,7 @@ private:
     LoggerPtr log;
 
     std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> processed_files;
+    ObjectStorageQueueMetadata::FileMetadataPtr last_started_file;
     std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> failed_during_read_files;
 
     Source::ReaderHolder reader;
