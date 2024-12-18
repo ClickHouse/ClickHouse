@@ -388,12 +388,12 @@ size_t HashJoin::getTotalRowCount() const
     }
     else
     {
-        // auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
-        // for (const auto & map : data->maps)
-        // {
-        //     joinDispatch(
-        //         kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
-        // }
+        auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+        for (const auto & map : data->maps)
+        {
+            joinDispatch(
+                kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
+        }
     }
     return res;
 }
@@ -440,16 +440,16 @@ size_t HashJoin::getTotalByteCount() const
 
     if (data->type != Type::CROSS)
     {
-        // auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
-        // for (const auto & map : data->maps)
-        // {
-        //     joinDispatch(
-        //         kind,
-        //         strictness,
-        //         map,
-        //         prefer_use_maps_all,
-        //         [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
-        // }
+        auto prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+        for (const auto & map : data->maps)
+        {
+            joinDispatch(
+                kind,
+                strictness,
+                map,
+                prefer_use_maps_all,
+                [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
+        }
     }
     return res;
 }
