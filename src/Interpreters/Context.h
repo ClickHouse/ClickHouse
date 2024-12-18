@@ -1470,7 +1470,7 @@ public:
     ThrottlerPtr getLocalReadThrottler() const;
     ThrottlerPtr getLocalWriteThrottler() const;
 
-    ThrottlerPtr getBackupsThrottler() const;
+    ThrottlerPtr getBackupsThrottler(std::optional<UInt64> max_backup_bandwidth) const;
 
     ThrottlerPtr getMutationsThrottler() const;
     ThrottlerPtr getMergesThrottler() const;
