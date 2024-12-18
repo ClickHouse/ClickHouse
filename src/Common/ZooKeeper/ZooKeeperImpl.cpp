@@ -670,6 +670,10 @@ void ZooKeeper::receiveHandshake()
         read(read_only);
 }
 
+ZooKeeper::RequestInfo::RequestInfo()
+{
+    stacktrace.emplace();
+}
 
 void ZooKeeper::sendAuth(const String & scheme, const String & data)
 {
@@ -770,7 +774,7 @@ void ZooKeeper::sendThread()
                     info.request->write(getWriteBuffer(), use_xid_64);
                     flushWriteBuffer();
 
-                    logOperationIfNeeded(info.request);
+                    logOperationIfNeeded(info.request, nullptr, false, 0, &info.stacktrace.value());
 
                     /// We sent close request, exit
                     if (info.request->xid == close_xid)
@@ -1630,7 +1634,12 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 }
 
 #ifdef ZOOKEEPER_LOG
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
+void ZooKeeper::logOperationIfNeeded(
+    const ZooKeeperRequestPtr & request,
+    const ZooKeeperResponsePtr & response,
+    bool finalize,
+    UInt64 elapsed_microseconds,
+    StackTrace * stacktrace)
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
     if (!maybe_zk_log)
@@ -1645,6 +1654,14 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     {
         request->createLogElements(elems);
         log_type = ZooKeeperLogElement::REQUEST;
+        if (stacktrace)
+        {
+            const auto & frame_pointers = stacktrace->getFramePointers();
+            for (size_t i = 0; i < stacktrace->getSize(); ++i)
+            {
+                elems.back().trace.push_back(reinterpret_cast<uint64_t>(frame_pointers[i]));
+            }
+        }
     }
     else
     {
