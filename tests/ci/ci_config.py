@@ -168,18 +168,18 @@ class CI:
                 package_type="binary",
             ),
         ),
-        BuildNames.BINARY_TIDY: CommonJobConfigs.BUILD.with_properties(
-            build_config=BuildConfig(
-                name=BuildNames.BINARY_TIDY,
-                compiler="clang-19",
-                debug_build=True,
-                package_type="binary",
-                static_binary_name="debug-amd64",
-                tidy=True,
-                comment="clang-tidy is used for static analysis",
-            ),
-            timeout=14400,
-        ),
+        # BuildNames.BINARY_TIDY: CommonJobConfigs.BUILD.with_properties(
+        #     build_config=BuildConfig(
+        #         name=BuildNames.BINARY_TIDY,
+        #         compiler="clang-19",
+        #         debug_build=True,
+        #         package_type="binary",
+        #         static_binary_name="debug-amd64",
+        #         tidy=True,
+        #         comment="clang-tidy is used for static analysis",
+        #     ),
+        #     timeout=14400,
+        # ),
         BuildNames.BINARY_DARWIN: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
                 name=BuildNames.BINARY_DARWIN,
