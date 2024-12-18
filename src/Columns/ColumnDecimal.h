@@ -140,7 +140,7 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
