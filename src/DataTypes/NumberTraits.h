@@ -205,7 +205,7 @@ struct ResultOfIf
             ConstructedType, Error>>>;
 };
 
-/** Before applying operator `%` and bitwise operations, operands are cast to whole numbers. */
+/** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */
 template <typename A> struct ToInteger
 {
     using Type = typename Construct<

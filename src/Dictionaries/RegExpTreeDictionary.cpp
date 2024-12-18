@@ -248,8 +248,7 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
 
 #if USE_VECTORSCAN
         String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix;
+        bool is_trivial, required_substring_is_prefix;
         std::vector<std::string> alternatives;
 
         if (use_vectorscan)
@@ -888,8 +887,7 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
             const auto & node = it->second;
             col_pid->insert(node->parent_id);
             col_regex->insert(node->regex);
-            std::vector<Field> keys;
-            std::vector<Field> values;
+            std::vector<Field> keys, values;
             for (const auto & [key, attr] : node->attributes)
             {
                 keys.push_back(key);

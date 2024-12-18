@@ -44,7 +44,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [JOIN clause](../../../sql-reference/statements/select/join.md)
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
-- [WINDOW clause](../../../sql-reference/window-functions/index.md)
 - [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
 - [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
@@ -165,9 +164,7 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 - `max_rows_in_join`
 - `max_bytes_in_join`
 - `max_bytes_before_external_sort`
-- `max_bytes_ratio_before_external_sort`
 - `max_bytes_before_external_group_by`
-- `max_bytes_ratio_before_external_group_by`
 
 For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 

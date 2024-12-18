@@ -1,4 +1,3 @@
-import argparse
 import math
 import multiprocessing
 import os
@@ -246,18 +245,8 @@ def check_file_names(files):
     return ""
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
-    # parser.add_argument("--param", help="Optional job start stage", default=None)
-    parser.add_argument("--test", help="Optional test name pattern", default="")
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
     results = []
-    args = parse_args()
-    testpattern = args.test
-
     stop_watch = Utils.Stopwatch()
 
     all_files = Utils.traverse_paths(
@@ -307,111 +296,87 @@ if __name__ == "__main__":
         )
     )
 
-    testname = "Whitespace Check"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_whitespaces,
-                files=cpp_files,
-            )
+    results.append(
+        run_check_concurrent(
+            check_name="Whitespace Check",
+            check_function=check_whitespaces,
+            files=cpp_files,
         )
-    testname = "YamlLint Check"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_yamllint,
-                files=yaml_workflow_files,
-            )
+    )
+    results.append(
+        run_check_concurrent(
+            check_name="YamlLint Check",
+            check_function=check_yamllint,
+            files=yaml_workflow_files,
         )
-    testname = "XmlLint Check"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_xmllint,
-                files=xml_files,
-            )
+    )
+    results.append(
+        run_check_concurrent(
+            check_name="XmlLint Check",
+            check_function=check_xmllint,
+            files=xml_files,
         )
-    testname = "Functional Tests scripts smoke check"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_functional_test_cases,
-                files=functional_test_files,
-            )
+    )
+    results.append(
+        run_check_concurrent(
+            check_name="Functional Tests scripts smoke check",
+            check_function=check_functional_test_cases,
+            files=functional_test_files,
         )
-    testname = "Check Tests Numbers"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_gaps_in_tests_numbers,
-                command_args=[functional_test_files],
-            )
+    )
+    results.append(
+        Result.create_from_command_execution(
+            name="Check Tests Numbers",
+            command=check_gaps_in_tests_numbers,
+            command_args=[functional_test_files],
         )
-    testname = "Check Broken Symlinks"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_broken_links,
-                command_kwargs={
-                    "path": "./",
-                    "exclude_paths": ["contrib/", "metadata/", "programs/server/data"],
-                },
-            )
+    )
+    results.append(
+        Result.create_from_command_execution(
+            name="Check Broken Symlinks",
+            command=check_broken_links,
+            command_kwargs={
+                "path": "./",
+                "exclude_paths": ["contrib/", "metadata/", "programs/server/data"],
+            },
         )
-    testname = "Check CPP code"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_cpp_code,
-            )
+    )
+    results.append(
+        Result.create_from_command_execution(
+            name="Check CPP code",
+            command=check_cpp_code,
         )
-    testname = "Check Submodules"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_repo_submodules,
-            )
+    )
+    results.append(
+        Result.create_from_command_execution(
+            name="Check Submodules",
+            command=check_repo_submodules,
         )
-    testname = "Check File Names"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_file_names,
-                command_args=[all_files],
-            )
+    )
+    results.append(
+        Result.create_from_command_execution(
+            name="Check File Names",
+            command=check_file_names,
+            command_args=[all_files],
         )
-    testname = "Check Many Different Things"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_other,
-            )
+    )
+    results.append(
+        Result.create_from_command_execution(
+            name="Check Many Different Things",
+            command=check_other,
         )
-    testname = "Check Codespell"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_codespell,
-            )
+    )
+    results.append(
+        Result.create_from_command_execution(
+            name="Check Codespell",
+            command=check_codespell,
         )
-    testname = "Check Aspell"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_aspell,
-            )
+    )
+    results.append(
+        Result.create_from_command_execution(
+            name="Check Aspell",
+            command=check_aspell,
         )
+    )
 
     Result.create_from(results=results, stopwatch=stop_watch).complete_job()

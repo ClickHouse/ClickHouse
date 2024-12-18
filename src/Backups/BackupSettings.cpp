@@ -7,7 +7,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
 
 namespace DB
 {
@@ -41,8 +40,7 @@ namespace ErrorCodes
     M(Bool, write_access_entities_dependents) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(OptionalUUID, backup_uuid) \
-    M(OptionalUInt64, max_backup_bandwidth)
+    M(OptionalUUID, backup_uuid)
     /// M(Int64, compression_level)
 
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)

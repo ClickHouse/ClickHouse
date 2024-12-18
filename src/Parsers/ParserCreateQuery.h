@@ -88,17 +88,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserStorageOrderByClause : public IParserBase
-{
-public:
-    explicit ParserStorageOrderByClause(bool allow_order_) : allow_order(allow_order_) {}
-
-protected:
-    bool allow_order;
-
-    const char * getName() const override { return "storage order by clause"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase

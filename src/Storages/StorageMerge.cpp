@@ -10,7 +10,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Common/quoteString.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
@@ -1265,8 +1264,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
     const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
 
-    NamesAndTypesList added;
-    NamesAndTypesList deleted;
+    NamesAndTypesList added, deleted;
     sample_block_columns.getDifference(required_columns, added, deleted);
     if (!deleted.empty() || added.size() != 1)
     {

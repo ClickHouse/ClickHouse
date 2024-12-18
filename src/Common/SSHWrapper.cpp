@@ -91,8 +91,6 @@ SSHKey::SSHKey(SSHKey && other) noexcept
 
 SSHKey & SSHKey::operator=(const SSHKey & other)
 {
-    if (&other == this)
-        return *this;
     ssh_key_free(key);
     key = ssh_key_dup(other.key);
     return *this;
@@ -129,8 +127,7 @@ String SSHKey::signString(std::string_view input) const
 
 bool SSHKey::verifySignature(std::string_view signature, std::string_view original) const
 {
-    SSHString sig(signature);
-    SSHString orig(original);
+    SSHString sig(signature), orig(original);
     int rc = pki_verify_string(key, sig.get(), orig.get());
     return rc == SSH_OK;
 }

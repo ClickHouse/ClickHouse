@@ -15,8 +15,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
 
-#include <base/scope_guard.h>
-
 #include <arrow/status.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/column_reader.h>
