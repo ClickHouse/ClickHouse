@@ -483,11 +483,11 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     std::vector<std::pair<DiskPtr, std::optional<String>>> disks_with_path;
 
-    for (const auto & [_, disk_ptr] : disk_selector->getDisksMap())
-    {
-        disks_with_path.emplace_back(
-            disk_ptr, (disk_ptr->getName() == "local") ? std::optional{fs::current_path().string()} : std::nullopt);
-    }
+    // for (const auto & [_, disk_ptr]) // : disk_selector->getDisksMap())
+    // {
+    //     disks_with_path.emplace_back(
+    //         disk_ptr, (disk_ptr->getName() == "local") ? std::optional{fs::current_path().string()} : std::nullopt);
+    // }
 
 
     client = std::make_unique<DisksClient>(std::move(disks_with_path), main_disk);
