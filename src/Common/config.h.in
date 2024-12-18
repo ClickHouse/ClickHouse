@@ -8,6 +8,7 @@
 #cmakedefine01 USE_SSH
 #cmakedefine01 USE_HDFS
 #cmakedefine01 USE_AWS_S3
+#cmakedefine01 USE_GOOGLE_CLOUD
 #cmakedefine01 USE_AZURE_BLOB_STORAGE
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_CASSANDRA
