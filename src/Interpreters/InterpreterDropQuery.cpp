@@ -456,7 +456,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             }
         };
 
-        auto prepare_tables = [&](std::vector<StoragePtr> & tables) {
+        auto prepare_tables = [&](std::vector<StoragePtr> & tables)
+        {
             /// Prepare tables for shutdown in parallel.
             ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
             for (StoragePtr & table_ptr : tables)
