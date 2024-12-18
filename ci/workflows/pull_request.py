@@ -9,7 +9,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        Jobs.style_check_job,
+        Jobs.style_check_job.copy(),
         Jobs.fast_test_job,
         *Jobs.build_jobs,
         *Jobs.stateless_tests_jobs,
