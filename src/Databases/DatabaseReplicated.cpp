@@ -1711,6 +1711,16 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
             is_probably_dropped.store(false);
         }
 
+        if (ddl_worker)
+        {
+            LOG_TRACE(log, "Ddl_worker will be reseted.");
+            ddl_worker->shutdown();
+            {
+                ddl_worker_initialized = false;
+                ddl_worker = nullptr;
+            }
+        }
+
         LOG_TRACE(log, "Ddl_worker will be initialized to restore database metadata in keeper.");
         initDdlWorker();
     }
