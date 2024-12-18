@@ -10,6 +10,7 @@
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupCoordinationOnCluster.h>
 #include <Backups/BackupCoordinationLocal.h>
+#include <Backups/BackupInMemory.h>
 #include <Backups/RestoreCoordinationOnCluster.h>
 #include <Backups/RestoreCoordinationLocal.h>
 #include <Backups/RestoreSettings.h>
