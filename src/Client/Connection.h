@@ -215,6 +215,7 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
+    UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;
     SettingsChanges settings_from_server;

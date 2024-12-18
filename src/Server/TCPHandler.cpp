@@ -1864,6 +1864,11 @@ void TCPHandler::sendHello()
             session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
     }
 
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
+    {
+        writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATIONL_VERSION, *out);
+    }
+
     out->next();
 }
 

@@ -61,8 +61,12 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
-    void serialize(WriteBuffer & out) const;
+    struct SerializationFlags;
+
+    void serialize(WriteBuffer & out, size_t max_supported_version) const;
+    void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
 
     static void resolveReadFromTable(QueryPlan & plan, const ContextPtr & context);
     static QueryPlan resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context);

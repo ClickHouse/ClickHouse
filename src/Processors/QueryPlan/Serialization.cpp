@@ -35,6 +35,7 @@
 #include <Planner/Utils.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageSet.h>
+#include <Core/ProtocolDefines.h>
 
 #include <stack>
 
@@ -58,6 +59,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
     extern const int CANNOT_PARSE_TEXT;
@@ -103,7 +105,7 @@ enum class SetSerializationKind : UInt8
     SubqueryPlan = 3,
 };
 
-static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out)
+static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags)
 {
     writeVarUInt(registry.sets.size(), out);
     for (const auto & [hash, set] : registry.sets)
@@ -157,7 +159,7 @@ static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out)
             if (!plan)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
 
-            plan->serialize(out);
+            plan->serialize(out, flags);
         }
         else
         {
@@ -167,7 +169,12 @@ static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out)
     }
 }
 
-QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
+static QueryPlanAndSets deserializeSets(
+    QueryPlan plan,
+    DeserializedSetsRegistry & registry,
+    ReadBuffer & in,
+    const ContextPtr & context,
+    const QueryPlan::SerializationFlags & flags)
 {
     UInt64 num_sets;
     readVarUInt(num_sets, in);
@@ -220,7 +227,7 @@ QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & regi
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
-            auto plan_for_set = QueryPlan::deserialize(in, context);
+            auto plan_for_set = QueryPlan::deserialize(in, context, flags);
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
                 {hash, std::move(columns)},
@@ -238,7 +245,21 @@ QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & regi
     return res;
 }
 
-void QueryPlan::serialize(WriteBuffer & out) const
+/// Nothing is here for now
+struct QueryPlan::SerializationFlags
+{
+};
+
+void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
+{
+    UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATIONL_VERSION);
+    writeVarUInt(version, out);
+
+    SerializationFlags flags;
+    serialize(out, flags);
+}
+
+void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) const
 {
     checkInitialized();
 
@@ -294,10 +315,24 @@ void QueryPlan::serialize(WriteBuffer & out) const
         node->step->serialize(ctx);
     }
 
-    serializeSets(registry, out);
+    serializeSets(registry, out, flags);
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
+{
+    UInt64 version;
+    readVarUInt(version, in);
+
+    if (version > DBMS_QUERY_PLAN_SERIALIZATIONL_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan serialization version {} is not supported. The last supported version is {}",
+            version, DBMS_QUERY_PLAN_SERIALIZATIONL_VERSION);
+
+    SerializationFlags flags;
+    return deserialize(in, context, flags);
+}
+
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags)
 {
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
@@ -367,7 +402,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         stack.pop();
     }
 
-    return deserializeSets(std::move(plan), sets_registry, in, context);
+    return deserializeSets(std::move(plan), sets_registry, in, context, flags);
 }
 
 static Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
