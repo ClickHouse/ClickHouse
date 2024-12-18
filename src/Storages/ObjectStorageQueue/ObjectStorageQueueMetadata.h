@@ -55,6 +55,7 @@ public:
     using Processor = std::string;
 
     ObjectStorageQueueMetadata(
+        ObjectStorageType storage_type_,
         const fs::path & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
@@ -71,6 +72,8 @@ public:
         const ContextPtr & context,
         bool is_attach,
         LoggerPtr log);
+
+    ObjectStorageType getType() const { return storage_type; }
 
     void registerIfNot(const StorageID & storage_id);
     size_t unregister(const StorageID & storage_id);
@@ -101,6 +104,7 @@ private:
     void cleanupThreadFuncImpl();
 
     ObjectStorageQueueTableMetadata table_metadata;
+    const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
     const fs::path zookeeper_path;
     const size_t buckets_num;
