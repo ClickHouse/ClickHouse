@@ -31,7 +31,9 @@ class MergeTreeDataMergerMutator
 public:
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
 
-    /// Useful to quickly get a list of partitions that contain parts that we may want to merge.
+    /** Useful to quickly get a list of partitions that contain parts that we may want to merge.
+      * Used to reduce ZooKeeper requests during merge predicate construction for RMT.
+      */
     PartitionIdsHint getPartitionsThatMayBeMerged(
         const PartsCollectorPtr & parts_collector,
         const AllowedMergingPredicate & can_merge,
@@ -90,7 +92,8 @@ public:
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");
 
-    /// Mutate a single data part with the specified commands. Will create and return a temporary part.
+    /** Mutate a single data part with the specified commands. Will create and return a temporary part.
+      */
     MutateTaskPtr mutatePartToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
         StorageMetadataPtr metadata_snapshot,

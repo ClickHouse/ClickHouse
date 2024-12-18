@@ -67,8 +67,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
         }
         else
         {
-            /// If we cannot merge with previous part we had to start new parts
-            /// interval (in the same partition)
+            /// If we cannot merge with previous part we had to start new parts interval
             if (!can_merge(prev_part, &part, out_disable_reason))
             {
                 /// Now we have no previous part
@@ -85,7 +84,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
                 if (!can_merge(nullptr, &part, out_disable_reason))
                     continue;
 
-                /// Starting new interval in the same partition
+                /// Starting new interval
                 mergeable_range.emplace_back();
             }
         }
@@ -109,7 +108,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
     return mergeable_range;
 }
 
-PartsRanges getPossibleMergeRanges(PartsRanges && ranges, const AllowedMergingPredicate & can_merge, PreformattedMessage & out_disable_reason)
+PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPredicate & can_merge, PreformattedMessage & out_disable_reason)
 {
     Stopwatch ranges_for_merge_timer;
 
@@ -164,25 +163,23 @@ std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions
     return stats;
 }
 
-String getBestPartitionToOptimizeEntire(const MergeTreeData & data, const std::unordered_map<String, PartitionStatistics> & stats, const LoggerPtr & log)
+String getBestPartitionToOptimizeEntire(
+    const ContextPtr & context, const MergeTreeSettingsPtr & settings, const std::unordered_map<String, PartitionStatistics> & stats, const LoggerPtr & log)
 {
-    const auto & data_settings = data.getSettings();
-
-    if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
+    if (!(*settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
         return {};
 
-    if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
+    if (!(*settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
         return {};
 
     size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
-    size_t max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
-    if (occupied > 1 && max_tasks_count - occupied < (*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition])
+    size_t max_tasks_count = context->getMergeMutateExecutor()->getMaxTasksCount();
+    if (occupied > 1 && max_tasks_count - occupied < (*settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition])
     {
         LOG_INFO(
             log,
             "Not enough idle threads to execute optimizing entire partition. See settings "
-            "'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' "
-            "and 'background_pool_size'");
+            "'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' and 'background_pool_size'");
 
         return {};
     }
@@ -206,7 +203,7 @@ String getBestPartitionToOptimizeEntire(const MergeTreeData & data, const std::u
 
     const size_t best_partition_min_age = static_cast<size_t>(best_partition_it->second.min_age);
     const size_t best_partition_parts_count = best_partition_it->second.parts_count;
-    if (best_partition_min_age < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds] || best_partition_parts_count == 1)
+    if (best_partition_min_age < (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds] || best_partition_parts_count == 1)
         return {};
 
     return best_partition_it->first;
@@ -245,7 +242,8 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     /// Needed for internal functions only
     PreformattedMessage out_reason;
 
-    const auto data_settings = data.getSettings();
+    const auto context = data.getContext();
+    const auto settings = data.getSettings();
     const auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
@@ -255,7 +253,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     if (ranges.empty())
         return {};
 
-    ranges = getPossibleMergeRanges(std::move(ranges), can_merge, out_reason);
+    ranges = splitByMergePredicate(std::move(ranges), can_merge, out_reason);
     if (ranges.empty())
         return {};
 
@@ -271,7 +269,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
         auto merge_choice = selector.chooseMergeFrom(
             ranges_in_partition,
             metadata_snapshot,
-            data_settings,
+            settings,
             next_delete_ttl_merge_times_by_partition,
             next_recompress_ttl_merge_times_by_partition,
             can_use_ttl_merges,
@@ -288,9 +286,8 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
                 partition_id, ReadableSize(selector.max_total_size_to_merge), ranges_in_partition.size(), out_reason.text);
     }
 
-    String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(data, partitions_stats, log);
-    if (!best_partition_id_to_optimize.empty())
-        partitions_hint.insert(std::move(best_partition_id_to_optimize));
+    if (auto best = getBestPartitionToOptimizeEntire(context, settings, partitions_stats, log); !best.empty())
+        partitions_hint.insert(std::move(best));
 
     LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
               "(max_total_size_to_merge={}, merge_with_ttl_allowed={}, can_use_ttl_merges={})",
@@ -307,7 +304,8 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
     const std::optional<PartitionIdsHint> & partitions_hint,
     PreformattedMessage & out_disable_reason)
 {
-    const auto data_settings = data.getSettings();
+    const auto context = data.getContext();
+    const auto settings = data.getSettings();
     const auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
@@ -320,7 +318,7 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
         return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
     }
 
-    ranges = getPossibleMergeRanges(std::move(ranges), can_merge, out_disable_reason);
+    ranges = splitByMergePredicate(std::move(ranges), can_merge, out_disable_reason);
     if (ranges.empty())
     {
         out_disable_reason = PreformattedMessage::create("No parts satisfy preconditions for merge");
@@ -330,7 +328,7 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
     auto merge_choice = selector.chooseMergeFrom(
         ranges,
         metadata_snapshot,
-        data_settings,
+        settings,
         next_delete_ttl_merge_times_by_partition,
         next_recompress_ttl_merge_times_by_partition,
         can_use_ttl_merges,
@@ -340,20 +338,19 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
 
     if (merge_choice.has_value())
     {
-        updateTTLMergeTimes(merge_choice.value(), current_time + (*data_settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout]);
+        updateTTLMergeTimes(merge_choice.value(), current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout]);
         return std::move(merge_choice.value());
     }
 
     const auto partitions_stats = calculateStatisticsForPartitions(ranges);
 
-    String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(data, partitions_stats, log);
-    if (!best_partition_id_to_optimize.empty())
+    if (auto best = getBestPartitionToOptimizeEntire(context, settings, partitions_stats, log); !best.empty())
     {
         return selectAllPartsToMergeWithinPartition(
             metadata_snapshot,
             parts_collector,
             can_merge,
-            best_partition_id_to_optimize,
+            /*partition_id=*/best,
             /*final=*/true,
             /*optimize_skip_merged_partitions=*/true,
             /*out_disable_reason=*/out_disable_reason);
@@ -375,7 +372,11 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
     bool optimize_skip_merged_partitions,
     PreformattedMessage & out_disable_reason)
 {
-    PartsRanges ranges = parts_collector->collectPartsToUse(metadata_snapshot, data.getStoragePolicy(), std::time(nullptr), /*partitions_hint=*/PartitionIdsHint{partition_id});
+    /// time is not important in this context, since the parts will not be passed through the merge selector.
+    const time_t current_time = std::time(nullptr);
+    const auto storage_policy = data.getStoragePolicy();
+
+    PartsRanges ranges = parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, PartitionIdsHint{partition_id});
     if (ranges.empty())
     {
         out_disable_reason = PreformattedMessage::create("There are no parts inside partition");
@@ -384,13 +385,11 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
 
     if (ranges.size() > 1)
     {
-        out_disable_reason = PreformattedMessage::create("Already produced: {} non-mergable ranges, but needs only one", ranges.size());
+        out_disable_reason = PreformattedMessage::create("Already produced: {} mergable ranges, but only one is required.", ranges.size());
         return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
     }
 
-    const PartsRange & parts = ranges.front();
-
-    if (!final && parts.size() == 1)
+    if (!final && ranges.front().size() == 1)
     {
         out_disable_reason = PreformattedMessage::create("There is only one part inside partition");
         return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
@@ -398,9 +397,9 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
 
     /// If final, optimize_skip_merged_partitions is true and we have only one part in partition with level > 0
     /// than we don't select it to merge. But if there are some expired TTL then merge is needed
-    if (final && optimize_skip_merged_partitions && parts.size() == 1)
+    if (final && optimize_skip_merged_partitions && ranges.front().size() == 1)
     {
-        const PartProperties & part = parts.front();
+        const PartProperties & part = ranges.front().front();
 
         /// FIXME? Probably we should check expired ttls here, not only calculated.
         if (part.part_info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
@@ -410,39 +409,30 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
         }
     }
 
-    auto it = parts.begin();
-    auto prev_it = it;
-
-    UInt64 sum_bytes = 0;
-    while (it != parts.end())
+    ranges = splitByMergePredicate(std::move(ranges), can_merge, out_disable_reason);
+    if (ranges.size() != 1)
     {
-        /// For the case of one part, we check that it can be merged "with itself".
-        if ((it != parts.begin() || parts.size() == 1) && !can_merge(&*prev_it, &*it, out_disable_reason))
-            return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
-
-        sum_bytes += it->size;
-
-        prev_it = it;
-        ++it;
+        out_disable_reason = PreformattedMessage::create("Parts were divided into {} ranges after applying merge predicate, but only one is required.", ranges.size());
+        return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
     }
 
-    auto available_disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
+    const auto & parts = ranges.front();
+
     /// Enough disk space to cover the new merge with a margin.
-    auto required_disk_space = sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT;
+    const auto required_disk_space = CompactionStatistics::estimateAtLeastAvailableSpace(ranges);
+    const auto available_disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     if (available_disk_space <= required_disk_space)
     {
-        time_t now = time(nullptr);
-        if (now - disk_space_warning_time > 3600)
+        if (time_t now = time(nullptr); now - disk_space_warning_time > 3600)
         {
             disk_space_warning_time = now;
             LOG_WARNING(log,
-                "Won't merge parts from {} to {} because not enough free space: {} free and unreserved"
-                ", {} required now (+{}% on overhead); suppressing similar warnings for the next hour",
+                "Won't merge parts from {} to {} because not enough free space: "
+                "{} free and unreserved, {} required now; suppressing similar warnings for the next hour",
                 parts.front().part_info.getPartNameForLogs(),
                 parts.back().part_info.getPartNameForLogs(),
                 ReadableSize(available_disk_space),
-                ReadableSize(sum_bytes),
-                static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100));
+                ReadableSize(required_disk_space));
         }
 
         out_disable_reason = PreformattedMessage::create("Insufficient available disk space, required {}", ReadableSize(required_disk_space));
