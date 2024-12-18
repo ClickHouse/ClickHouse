@@ -1596,7 +1596,7 @@ def test_hive_partitioning_with_one_parameter(cluster, use_hive_partitioning):
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values}",
         settings={
             "azure_truncate_on_insert": 1,
-            "use_hive_partitioning": use_hive_partitioning
+            "use_hive_partitioning": use_hive_partitioning,
         },
     )
 
@@ -1638,7 +1638,7 @@ def test_hive_partitioning_with_all_parameters(cluster, use_hive_partitioning):
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
         settings={
             "azure_truncate_on_insert": 1,
-            "use_hive_partitioning": use_hive_partitioning
+            "use_hive_partitioning": use_hive_partitioning,
         },
     )
 
@@ -1668,7 +1668,7 @@ def test_hive_partitioning_without_setting(cluster, use_hive_partitioning):
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
         settings={
             "azure_truncate_on_insert": 1,
-            "use_hive_partitioning": use_hive_partitioning
+            "use_hive_partitioning": use_hive_partitioning,
         },
     )
 
