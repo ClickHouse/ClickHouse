@@ -204,10 +204,7 @@ void RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadl
     {
         std::unique_lock lock(mutex);
         for (const auto & [_, list] : tasks)
-            for (const auto & task : list)
-                /// Don't wait with locked mutex.
-                if (!task->tryJoinBackgroundTask(std::chrono::steady_clock::now()))
-                    remaining_tasks.push_back(task);
+            remaining_tasks.insert(remaining_tasks.end(), list.begin(), list.end());
     }
     std::erase_if(remaining_tasks, [&](const auto & t)
         {
