@@ -752,7 +752,7 @@ def test_virtual_columns_2(started_cluster, use_hive_partitioning):
     )
     node1.query(
         f"insert into table function {table_function} SELECT 1, 'kek'",
-        settings={"use_hive_partitioning":use_hive_partitioning},
+        settings={"use_hive_partitioning": use_hive_partitioning},
     )
 
     result = node1.query(f"SELECT _path FROM {table_function}")
