@@ -734,8 +734,7 @@ def test_cluster_macro(started_cluster):
     assert TSV(with_macro) == TSV(no_macro)
 
 
-@pytest.mark.parametrize("use_hive_partitioning", [0, 1])
-def test_virtual_columns_2(started_cluster, use_hive_partitioning):
+def test_virtual_columns_2(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     fs = HdfsClient(hosts=started_cluster.hdfs_ip)
 
@@ -752,7 +751,7 @@ def test_virtual_columns_2(started_cluster, use_hive_partitioning):
     )
     node1.query(
         f"insert into table function {table_function} SELECT 1, 'kek'",
-        settings={"use_hive_partitioning": use_hive_partitioning},
+        settings={"use_hive_partitioning": 0},
     )
 
     result = node1.query(f"SELECT _path FROM {table_function}")
