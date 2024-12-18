@@ -16,6 +16,10 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
     """
     res = []
 
+    if not Path(Settings.WORKFLOWS_DIRECTORY).is_dir():
+        Utils.raise_with_error(
+            f"Workflow directory does not exist [{Settings.WORKFLOWS_DIRECTORY}]. cd to the repo's root?"
+        )
     directory = Path(Settings.WORKFLOWS_DIRECTORY)
     for py_file in directory.glob("*.py"):
         if file and file not in str(py_file):
@@ -61,7 +65,12 @@ def _update_workflow_artifacts(workflow):
         for artifact_name in job.provides:
             artifact_job[artifact_name] = job.name
     for artifact in workflow.artifacts:
-        artifact._provided_by = artifact_job[artifact.name]
+        if artifact.name in artifact_job:
+            artifact._provided_by = artifact_job[artifact.name]
+        else:
+            print(
+                f"WARNING: Artifact [{artifact.name}] in workflow [{workflow.name}] has no job that provides it"
+            )
 
 
 def _update_workflow_with_native_jobs(workflow):
