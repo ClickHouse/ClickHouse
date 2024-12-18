@@ -377,6 +377,9 @@ done
 # collect minio audit and server logs
 # wait for minio to flush its batch if it has any
 sleep 1
+# remove the webhook so it doesn't spam with errors once we stop ClickHouse
+./mc admin config reset clickminio logger_webhook:ch_server_webhook
+./mc admin config reset clickminio audit_webhook:ch_audit_webhook
 clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE" ||:
 clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow" ||:
 clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow" ||:
