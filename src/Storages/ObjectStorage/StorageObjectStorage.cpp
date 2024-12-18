@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/parseGlobs.h>
 #include "Databases/LoadingStrictnessLevel.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
@@ -633,6 +634,12 @@ bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
 std::string StorageObjectStorage::Configuration::getPathInArchive() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath());
+}
+
+bool StorageObjectStorage::Configuration::pathHasExactlyOneBracketsExpansion() const
+{
+    auto path = getPath();
+    return path.find_first_of("*?") == String::npos && std::count(path.begin(), path.end(), '{') == 1 && !isRangeGlob(path);
 }
 
 void StorageObjectStorage::Configuration::assertInitialized() const
