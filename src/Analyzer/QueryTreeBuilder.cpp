@@ -126,7 +126,7 @@ private:
 
     ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
 
-    QueryTreeNodePtr setFirstArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const;
+    QueryTreeNodePtr setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const;
 
     ASTPtr query;
     QueryTreeNodePtr query_tree_node;
@@ -655,7 +655,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                     [&](const std::string &s) { return Poco::toLower(s) == Poco::toLower(function->name); })
                 && function->arguments && function->arguments->children.size() == 2)
             {
-                result = setFirstArgumentAsParameter(function, context);
+                result = setSecondArgumentAsParameter(function, context);
             }
             else
             {
@@ -1120,30 +1120,30 @@ QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context)
     return builder.getQueryTreeNode();
 }
 
-QueryTreeNodePtr QueryTreeBuilder::setFirstArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const
+QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const
 {
-    const auto * first_arg_ast = function->arguments->children[0].get();
-    const auto * first_arg_literal = first_arg_ast->as<ASTLiteral>();
+    const auto * second_arg_ast = function->arguments->children[1].get();
+    const auto * second_arg_literal = second_arg_ast->as<ASTLiteral>();
 
-    if (!first_arg_literal)
+    if (!second_arg_literal)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "If groupConcat is used with two arguments, the first argument must be a constant String");
+            "If groupConcat is used with two arguments, the second argument must be a constant String");
     }
 
-    if (first_arg_literal->value.getType() != Field::Types::String)
+    if (second_arg_literal->value.getType() != Field::Types::String)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "If groupConcat is used with two arguments, the first argument must be a constant String");
+            "If groupConcat is used with two arguments, the second argument must be a constant String");
     }
 
-    ASTPtr second_arg = function->arguments->children[1]->clone();
+    ASTPtr first_arg = function->arguments->children[0]->clone();
 
     auto function_node = std::make_shared<FunctionNode>(function->name);
     function_node->setNullsAction(function->nulls_action);
 
-    function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[0], context)); // Separator
-    function_node->getArguments().getNodes().push_back(buildExpression(second_arg, context)); // Column to concatenate
+    function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[1], context)); // Separator
+    function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
 
     if (function->is_window_function)
     {
