@@ -3262,6 +3262,16 @@ static void serialzieConstant(
 {
     if (WhichDataType(type).isSet())
     {
+        /// Apparently, it is important whether the set is inside constant column or not.
+        /// If the set was made from tuple, we can apply constant folding.
+        /// Also, constants affect function return type (e.g. for LowCardinality).
+        /// However, we cannot always use constant columns because the sets from subquery are not ready yet.
+        /// So, here we keep this information in the flag.
+        ///
+        /// Technically, this information can be restored from the set type.
+        /// For now, only sets from subqueries are not constants.
+        /// But we cannot get the set type before we deserialize it (this is done after the main plan).
+        /// Also, we cannot serialize sets before the main plan, because they are registered lazily on serialization.
         bool is_constant = false;
 
         const IColumn * maybe_set = &value;
