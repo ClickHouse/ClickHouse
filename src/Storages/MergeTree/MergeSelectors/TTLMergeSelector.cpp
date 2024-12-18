@@ -34,7 +34,7 @@ const String & getPartitionIdForPart(const ITTLMergeSelector::Part & part_info)
 }
 
 
-IMergeSelector::PartsRange ITTLMergeSelector::select(
+IMergeSelector::PartsRange ITTLMergeSelector::selectBest(
     const PartsRanges & parts_ranges,
     size_t max_total_size_to_merge)
 {

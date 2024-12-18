@@ -7,7 +7,6 @@
 
 #include <cmath>
 #include <cassert>
-#include <iostream>
 #include <random>
 
 
@@ -39,6 +38,10 @@ struct Estimator
 {
     using Iterator = SimpleMergeSelector::PartsRange::const_iterator;
 
+    explicit Estimator(size_t top_n_ranges_)
+        : top_n_ranges(top_n_ranges_)
+    {}
+
     void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
@@ -56,17 +59,36 @@ struct Estimator
             while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
                 --end;
 
-        if (min_score == 0.0 || current_score < min_score)
-        {
-            min_score = current_score;
-            best_begin = begin;
-            best_end = end;
-        }
+        while (best_ranges.size() > top_n_ranges)
+            best_ranges.pop();
+
+        best_ranges.push(ScoredRange{current_score, begin, end});
     }
 
     SimpleMergeSelector::PartsRange getBest() const
     {
-        return SimpleMergeSelector::PartsRange(best_begin, best_end);
+        if (!best_ranges.empty())
+        {
+            const auto & top = best_ranges.top();
+            return SimpleMergeSelector::PartsRange(top.begin, top.end);
+        }
+        return SimpleMergeSelector::PartsRange{};
+    }
+
+    SimpleMergeSelector::PartsRanges getUpToTopN() const
+    {
+        SimpleMergeSelector::PartsRanges result;
+        result.reserve(best_ranges.size());
+        while (!best_ranges.empty())
+        {
+            const auto & top_range = best_ranges.top();
+            result.push_back(SimpleMergeSelector::PartsRange(top_range.begin, top_range.end));
+            best_ranges.pop();
+        }
+        if (result.empty())
+            result.push_back(SimpleMergeSelector::PartsRange{});
+
+        return result;
     }
 
     static double score(double count, double sum_size, double sum_size_fixed_cost)
@@ -89,9 +111,21 @@ struct Estimator
         return (sum_size + sum_size_fixed_cost * count) / (count - 1.9);
     }
 
-    double min_score = 0.0;
-    Iterator best_begin {};
-    Iterator best_end {};
+    struct ScoredRange
+    {
+        double score = 0.0;
+        Iterator begin {};
+        Iterator end {};
+
+        bool operator>(const ScoredRange & other) const
+        {
+            return score > other.score;
+        }
+    };
+
+
+    mutable std::priority_queue<ScoredRange, std::vector<ScoredRange>, std::greater<>> best_ranges;
+    size_t top_n_ranges;
 };
 
 
@@ -248,11 +282,11 @@ void selectWithinPartition(
 }
 
 
-SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
+SimpleMergeSelector::PartsRange SimpleMergeSelector::selectBest(
     const PartsRanges & parts_ranges,
     size_t max_total_size_to_merge)
 {
-    Estimator estimator;
+    Estimator estimator(1);
 
     /// Precompute logarithm of settings boundaries, because log function is quite expensive in terms of performance
     const double min_size_to_lower_base_log = log(1 + settings.min_size_to_lower_base);
@@ -263,5 +297,22 @@ SimpleMergeSelector::PartsRange SimpleMergeSelector::select(
 
     return estimator.getBest();
 }
+
+SimpleMergeSelector::PartsRanges SimpleMergeSelector::selectUpToTopN(
+    const PartsRanges & parts_ranges,
+    size_t max_total_size_to_merge, size_t top_n_ranges)
+{
+    Estimator estimator(top_n_ranges);
+    /// Precompute logarithm of settings boundaries, because log function is quite expensive in terms of performance
+    const double min_size_to_lower_base_log = log(1 + settings.min_size_to_lower_base);
+    const double max_size_to_lower_base_log = log(1 + settings.max_size_to_lower_base);
+
+    for (const auto & part_range : parts_ranges)
+        selectWithinPartition(part_range, max_total_size_to_merge, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
+
+    return estimator.getUpToTopN();
+
+}
+
 
 }
