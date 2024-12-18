@@ -19,6 +19,11 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
 }
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
 
