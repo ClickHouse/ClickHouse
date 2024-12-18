@@ -252,6 +252,89 @@ struct CommonExpressionExtractionResult
     QueryTreeNodes common_expressions;
 };
 
+// Optimize disjuctions by extracting common expressions in disjuncts.
+// Example: A or B or (B and C)
+// Result: A or B
+std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
+{
+    std::vector<QueryTreeNodePtrWithHashSet> disjunct_sets;
+    disjunct_sets.reserve(disjuncts.size());
+    for (const auto & disjunct : disjuncts)
+    {
+        QueryTreeNodePtrWithHashSet disjunct_set;
+
+        auto * disjunct_function = disjunct->as<FunctionNode>();
+        if (disjunct_function != nullptr && disjunct_function->getFunctionName() == "and")
+        {
+            auto & arguments = disjunct_function->getArguments();
+            std::copy(arguments.begin(), arguments.end(), std::inserter(disjunct_set, disjunct_set.end()));
+        }
+        else
+        {
+            disjunct_set.insert(disjunct);
+        }
+        disjunct_sets.emplace_back(std::move(disjunct_set));
+    }
+
+    std::vector<bool> should_keep(disjuncts.size(), true);
+    size_t removed = 0;
+
+    for (size_t i = 0; i < disjuncts.size(); ++i)
+    {
+        if (!should_keep[i])
+            continue;
+
+        const auto & current_set = disjunct_sets[i];
+        for (size_t j = 0; j < disjuncts.size(); ++j)
+        {
+            if (i == j || !should_keep[j])
+                continue;
+
+            bool is_subset = true;
+            for (auto const & elem : current_set)
+            {
+                if (!disjunct_sets[j].contains(elem))
+                {
+                    is_subset = false;
+                    break;
+                }
+            }
+
+            if (is_subset)
+            {
+                should_keep[j] = false;
+                ++removed;
+            }
+        }
+    }
+
+    if (removed == 0)
+        return {};
+
+    if (removed == disjuncts.size() - 1)
+    {
+        for (size_t i = 0; i < disjuncts.size(); ++i)
+        {
+            if (should_keep[i])
+                return CommonExpressionExtractionResult{ .new_node = nullptr, .common_expressions = { disjuncts[i] } };
+        }
+    }
+
+    QueryTreeNodes new_disjuncts;
+    new_disjuncts.reserve(disjuncts.size() - removed);
+    for (size_t i = 0; i < disjuncts.size(); ++i)
+    {
+        if (should_keep[i])
+            new_disjuncts.emplace_back(disjuncts[i]);
+    }
+
+    auto new_or_node = std::make_shared<FunctionNode>("or");
+    new_or_node->getArguments().getNodes() = std::move(new_disjuncts);
+
+    resolveOrdinaryFunctionNodeByName(*new_or_node, "or", context);
+    return CommonExpressionExtractionResult{ .new_node = new_or_node, .common_expressions = {} };
+}
+
 std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * or_node = node->as<FunctionNode>();
@@ -275,7 +358,10 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     {
         auto * and_node = maybe_and_node->as<FunctionNode>();
         if (!and_node || and_node->getFunctionName() != "and")
-            return {}; // one of the nodes is not an "AND", thus there is no common expression to extract
+        {
+            // There are no common expressions, but we can try to optimize disjuncts
+            return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, context);
+        }
 
         auto flattened_and_node = getFlattenedLogicalExpression(*and_node, context);
         if (flattened_and_node)
@@ -309,7 +395,10 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
             common_exprs = std::move(new_common_exprs);
 
             if (common_exprs.empty())
-                return {}; // There are no common expressions
+            {
+                // There are no common expressions, but we can try to optimize disjuncts
+                return tryExtractCommonExpressionsInDisjunction(or_argument_nodes, context);
+            }
         }
     }
 
@@ -363,6 +452,12 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     // There are at least two arguments in the passed-in OR expression, thus we either completely eliminated at least one arguments, or there should be at least 2 remaining arguments.
     // The complete elimination is handled above, so at this point we can be sure there are at least 2 arguments.
     chassert(new_or_arguments.size() >= 2);
+
+    if (auto optimized_disjunction =  tryExtractCommonExpressionsInDisjunction(new_or_arguments, context))
+    {
+        auto new_disjunction_node = optimized_disjunction->new_node ? optimized_disjunction->new_node : optimized_disjunction->common_expressions[0];
+        return CommonExpressionExtractionResult{ .new_node = std::move(new_disjunction_node), .common_expressions = std::move(common_exprs) };
+    }
 
     auto new_or_node = std::make_shared<FunctionNode>("or");
     new_or_node->getArguments().getNodes() = std::move(new_or_arguments);
@@ -774,10 +869,13 @@ public:
             tryOptimizeCommonExpressions(maybe_node, *function_node, getContext());
         };
 
+        // TODO: This optimization can also be applied to HAVING and QUALIFY clauses,
+        // but it can be allowed if and only if every logical expression is optimized.
+        // Example:
+        // SELECT a FROM t GROUP BY <logical_expression> as a HAVING a
+        // All the references of `a` should be optimized to produce a valid query.
         try_optimize_if_function(query_node->getWhere());
         try_optimize_if_function(query_node->getPrewhere());
-        try_optimize_if_function(query_node->getHaving());
-        try_optimize_if_function(query_node->getQualify());
     }
 
 private:
