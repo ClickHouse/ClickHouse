@@ -38,7 +38,7 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::UIn
     PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & /*logical_type*/)
 {
     return std::make_shared<NumberDictionaryReader<DataTypeUInt64, Int64>>(
-        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt64>());
+        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt64>());
 }
 
 template <>
@@ -46,7 +46,7 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::UIn
     PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & /*logical_type*/)
 {
     return std::make_shared<NumberColumnDirectReader<DataTypeUInt64, Int64>>(
-        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt64>());
+        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt64>());
 }
 
 template <>
@@ -205,7 +205,7 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::UIn
     PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType &)
 {
     return std::make_shared<NumberColumnDirectReader<DataTypeUInt16, Int32>>(
-        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt8>());
+        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt16>());
 }
 
 template <>
@@ -390,7 +390,11 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY,
         throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "ParquetColumnReaderFactory: unsupported precision {}", precision);
 }
 
-
+ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::isOptional(const bool is_optional)
+{
+    is_optional_ = is_optional;
+    return *this;
+}
 
 ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::columnDescriptor(const parquet::ColumnDescriptor * columnDescr)
 {
@@ -598,7 +602,7 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
             magic_enum::enum_name(target_type));
     }
     if (nullable_)
-        return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader);
+        return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader, is_optional_);
     else
         return leaf_reader;
 }
@@ -702,6 +706,7 @@ SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodeP
 
         auto leaf_reader = ParquetColumnReaderFactory::builder()
             .nullable(!is_key && (target_type->isNullable() || node->is_optional() || column_desc->max_definition_level() > 0))
+            .isOptional(node->is_optional())
             .dictionary(context.row_group_meta->ColumnChunk(column_idx)->has_dictionary_page())
             .columnDescriptor(column_desc)
             .pageReader(creator)

@@ -30,7 +30,8 @@ public:
     public:
         Builder& dictionary(bool dictionary);
         Builder& nullable(bool nullable);
-        Builder& columnDescriptor(const parquet::ColumnDescriptor * columnDescr);
+        Builder& isOptional(bool is_optional);
+        Builder& columnDescriptor(const parquet::ColumnDescriptor * column_descr);
         Builder& filter(const ColumnFilterPtr & filter);
         Builder& targetType(const DataTypePtr & target_type);
         Builder& pageReader(PageReaderCreator page_reader_creator);
@@ -38,6 +39,8 @@ public:
     private:
         bool dictionary_ = false;
         bool nullable_ = false;
+        // is optional data in parquet file
+        bool is_optional_ = false;
         const parquet::ColumnDescriptor * column_descriptor_ = nullptr;
         DataTypePtr target_type_ = nullptr;
         PageReaderCreator page_reader_creator = nullptr;
