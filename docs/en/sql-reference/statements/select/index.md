@@ -44,6 +44,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [JOIN clause](../../../sql-reference/statements/select/join.md)
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
+- [WINDOW clause](../../../sql-reference/window-functions/index.md)
 - [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
 - [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
