@@ -695,6 +695,15 @@ Type: Bool
 
 Default: 0
 
+## table_engines_require_grant
+
+If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
+By default, for backward compatibility creating table with a specific table engine ignores grant, however you can change this behaviour by setting this to true.
+
+Type: Bool
+
+Default: false
+
 ## temporary_data_in_cache
 
 With this option, temporary data will be stored in the cache for the particular disk.
@@ -3267,6 +3276,14 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 - [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
 
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Type: Bool
+
+Default value: `true`.
+
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 The maximum number of authentication methods a user can be created with or altered to.
@@ -3287,7 +3304,6 @@ Controls if the user can change settings related to the different feature tiers.
 2 - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
 
 This is equivalent to setting a readonly constraint on all EXPERIMENTAL / BETA features.
-```
 
 Type: UInt32
 
