@@ -1893,14 +1893,14 @@ def test_partition_pruning(started_cluster, storage_type):
     execute_spark_query(
         f"""
             CREATE TABLE {TABLE_NAME} (
-                id INT,
+                tag INT,
                 date DATE,
                 date2 DATE,
                 ts TIMESTAMP,
                 ts2 TIMESTAMP
             )
             USING iceberg
-            PARTITIONED BY (days(date), years(date2), hours(ts), months(ts2))
+            PARTITIONED BY (identity(tag), days(date), years(date2), hours(ts), months(ts2))
             OPTIONS('format-version'='2')
         """
     )
@@ -1912,9 +1912,9 @@ def test_partition_pruning(started_cluster, storage_type):
         TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00'),
         (2, DATE '2024-01-30', DATE '2024-01-30',
         TIMESTAMP '2024-03-20 15:00:00', TIMESTAMP '2024-03-20 15:00:00'),
-        (3, DATE '2024-02-20', DATE '2024-02-20',
+        (1, DATE '2024-02-20', DATE '2024-02-20',
         TIMESTAMP '2024-03-20 20:00:00', TIMESTAMP '2024-03-20 20:00:00'),
-        (4, DATE '2025-01-20', DATE '2025-01-20',
+        (2, DATE '2025-01-20', DATE '2025-01-20',
         TIMESTAMP '2024-04-30 14:00:00', TIMESTAMP '2024-04-30 14:00:00');
     """
     )
@@ -2008,6 +2008,20 @@ def test_partition_pruning(started_cluster, storage_type):
             f"SELECT * FROM {creation_expression} WHERE ts2 <= timestamp('2024-03-20 14:00:00.000000') ORDER BY ALL"
         )
         == 1
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE tag == 1 ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE tag <= 1 ORDER BY ALL"
+        )
+        == 2
     )
 
     execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN date TO date3")
