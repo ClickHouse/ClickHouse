@@ -1594,7 +1594,10 @@ def test_hive_partitioning_with_one_parameter(cluster, use_hive_partitioning):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values}",
-        settings={"azure_truncate_on_insert": 1, "use_hive_partitioning": use_hive_partitioning},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": use_hive_partitioning
+        },
     )
 
     query = (
@@ -1633,7 +1636,10 @@ def test_hive_partitioning_with_all_parameters(cluster, use_hive_partitioning):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={"azure_truncate_on_insert": 1, "use_hive_partitioning": use_hive_partitioning},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": use_hive_partitioning
+        },
     )
 
     query = (
@@ -1660,7 +1666,10 @@ def test_hive_partitioning_without_setting(cluster, use_hive_partitioning):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={"azure_truncate_on_insert": 1, "use_hive_partitioning": use_hive_partitioning},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": use_hive_partitioning
+        },
     )
 
     query = (
