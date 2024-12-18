@@ -177,7 +177,6 @@ def started_cluster():
                 "configs/users.xml",
             ],
             with_installed_binary=True,
-            use_old_analyzer=True,
         )
         cluster.add_instance(
             "instance2_24.5",
@@ -193,7 +192,6 @@ def started_cluster():
                 "configs/users.xml",
             ],
             with_installed_binary=True,
-            use_old_analyzer=True,
         )
         cluster.add_instance(
             "node_cloud_mode",
@@ -2606,6 +2604,7 @@ def test_upgrade_3(started_cluster):
     """
         )
     )
+    node.query(f"DROP TABLE {table_name} SYNC")
 
 
 def test_migration(started_cluster):
@@ -2782,3 +2781,5 @@ def test_migration(started_cluster):
 
     metadata = json.loads(zk.get(f"{keeper_path}/metadata/")[0])
     assert buckets_num == metadata["buckets"]
+
+    node.query(f"DROP TABLE r.{table_name} SYNC")
