@@ -14,18 +14,17 @@
 
 #include <Common/Exception.h>
 #include <Poco/String.h>
-#include <algorithm>
 #include <base/sort.h>
 
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int UNSUPPORTED_COLLATION_LOCALE;
-        extern const int COLLATION_COMPARISON_FAILED;
-        extern const int SUPPORT_IS_DISABLED;
-    }
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_COLLATION_LOCALE;
+    extern const int COLLATION_COMPARISON_FAILED;
+    extern const int SUPPORT_IS_DISABLED;
+}
 }
 
 
