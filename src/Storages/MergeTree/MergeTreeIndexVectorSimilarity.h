@@ -145,7 +145,6 @@ public:
 private:
     std::optional<VectorSearchParameters> parameters;
     const unum::usearch::metric_kind_t metric_kind;
-    const size_t max_limit_for_ann_queries;
     const size_t expansion_search;
 };
 

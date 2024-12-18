@@ -62,6 +62,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
         {
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
 
+            {"query_plan_try_use_vector_search", false, true, "New setting."},
         }
     },
     {"24.12",

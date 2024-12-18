@@ -43,7 +43,7 @@ static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & node
     return true;
 }
 
-size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.size() != 1)
         return 0;
