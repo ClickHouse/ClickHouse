@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
 import logging
-import math
 import os
+import math
 import subprocess
 from tempfile import NamedTemporaryFile
-
 import pytest
 
 

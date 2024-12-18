@@ -4,12 +4,12 @@ import logging
 import random
 import string
 import time
-from multiprocessing.dummy import Pool
 
-import minio
 import pytest
-
+from multiprocessing.dummy import Pool
 from helpers.cluster import ClickHouseCluster
+import minio
+
 
 cluster = ClickHouseCluster(__file__)
 

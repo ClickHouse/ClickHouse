@@ -1,12 +1,11 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
-#include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <TableFunctions/ITableFunction.h>
 #include "config.h"
+#include <TableFunctions/ITableFunction.h>
+#include <Formats/FormatFactory.h>
+#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
@@ -15,7 +14,6 @@ class Context;
 class StorageS3Configuration;
 class StorageAzureConfiguration;
 class StorageHDFSConfiguration;
-class StorageLocalConfiguration;
 struct S3StorageSettings;
 struct AzureStorageSettings;
 struct HDFSStorageSettings;
@@ -54,54 +52,6 @@ struct HDFSDefinition
 {
     static constexpr auto name = "hdfs";
     static constexpr auto storage_type_name = "HDFS";
-};
-
-struct LocalDefinition
-{
-    static constexpr auto name = "local";
-    static constexpr auto storage_type_name = "Local";
-};
-
-struct IcebergDefinition
-{
-    static constexpr auto name = "iceberg";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct IcebergS3Definition
-{
-    static constexpr auto name = "icebergS3";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct IcebergAzureDefinition
-{
-    static constexpr auto name = "icebergAzure";
-    static constexpr auto storage_type_name = "Azure";
-};
-
-struct IcebergLocalDefinition
-{
-    static constexpr auto name = "icebergLocal";
-    static constexpr auto storage_type_name = "Local";
-};
-
-struct IcebergHDFSDefinition
-{
-    static constexpr auto name = "icebergHDFS";
-    static constexpr auto storage_type_name = "HDFS";
-};
-
-struct DeltaLakeDefinition
-{
-    static constexpr auto name = "deltaLake";
-    static constexpr auto storage_type_name = "S3";
-};
-
-struct HudiDefinition
-{
-    static constexpr auto name = "hudi";
-    static constexpr auto storage_type_name = "S3";
 };
 
 template <typename Definition, typename Configuration>
@@ -177,28 +127,5 @@ using TableFunctionAzureBlob = TableFunctionObjectStorage<AzureDefinition, Stora
 
 #if USE_HDFS
 using TableFunctionHDFS = TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
-#endif
-
-using TableFunctionLocal = TableFunctionObjectStorage<LocalDefinition, StorageLocalConfiguration>;
-
-
-#if USE_AVRO
-#    if USE_AWS_S3
-using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageS3IcebergConfiguration>;
-using TableFunctionIcebergS3 = TableFunctionObjectStorage<IcebergS3Definition, StorageS3IcebergConfiguration>;
-#    endif
-#    if USE_AZURE_BLOB_STORAGE
-using TableFunctionIcebergAzure = TableFunctionObjectStorage<IcebergAzureDefinition, StorageAzureIcebergConfiguration>;
-#    endif
-#    if USE_HDFS
-using TableFunctionIcebergHDFS = TableFunctionObjectStorage<IcebergHDFSDefinition, StorageHDFSIcebergConfiguration>;
-#    endif
-using TableFunctionIcebergLocal = TableFunctionObjectStorage<IcebergLocalDefinition, StorageLocalIcebergConfiguration>;
-#endif
-#if USE_AWS_S3
-#    if USE_PARQUET
-using TableFunctionDeltaLake = TableFunctionObjectStorage<DeltaLakeDefinition, StorageS3DeltaLakeConfiguration>;
-#    endif
-using TableFunctionHudi = TableFunctionObjectStorage<HudiDefinition, StorageS3HudiConfiguration>;
 #endif
 }

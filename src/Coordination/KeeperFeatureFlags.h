@@ -12,7 +12,6 @@ enum class KeeperFeatureFlag : size_t
     MULTI_READ,
     CHECK_NOT_EXISTS,
     CREATE_IF_NOT_EXISTS,
-    REMOVE_RECURSIVE,
 };
 
 class KeeperFeatureFlags

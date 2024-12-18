@@ -1,6 +1,6 @@
 import difflib
-import logging
 import time
+import logging
 from io import IOBase
 
 

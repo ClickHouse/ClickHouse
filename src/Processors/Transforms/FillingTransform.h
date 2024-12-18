@@ -84,7 +84,6 @@ private:
     SortDescription sort_prefix;
     const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
 
-    bool running_with_staleness = false; /// True if STALENESS clause was used.
     FillingRow filling_row; /// Current row, which is used to fill gaps.
     FillingRow next_row; /// Row to which we need to generate filling rows.
     bool filling_row_inserted = false;

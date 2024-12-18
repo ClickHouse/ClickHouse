@@ -46,7 +46,7 @@ void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
     std::vector<UUID> to_users = RolesOrUsersSet{*query.to_users, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
     RolesOrUsersSet roles_from_query{*query.roles, access_control};
 
-    auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
+    auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
         auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
         updateUserSetDefaultRoles(*updated_user, roles_from_query);

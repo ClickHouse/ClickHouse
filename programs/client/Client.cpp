@@ -56,12 +56,6 @@ using namespace std::literals;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsDialect dialect;
-    extern const SettingsBool use_client_time_zone;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -192,10 +186,6 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
                 history_file = home_path + "/" + history_file.substr(1);
             config.setString("history_file", history_file);
         }
-        if (config.has(prefix + ".history_max_entries"))
-        {
-            config.setUInt("history_max_entries", history_max_entries);
-        }
         if (config.has(prefix + ".accept-invalid-certificate"))
             config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
     }
@@ -220,7 +210,7 @@ std::vector<String> Client::loadWarningMessages()
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &client_context->getSettingsRef(),
-                          &client_context->getClientInfo(), false, {}, {});
+                          &client_context->getClientInfo(), false, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -317,9 +307,9 @@ void Client::initialize(Poco::Util::Application & self)
         config().setString("password", env_password);
 
     /// settings and limits could be specified in config file, but passed settings has higher priority
-    for (const auto & setting : global_context->getSettingsRef().getUnchangedNames())
+    for (const auto & setting : global_context->getSettingsRef().allUnchanged())
     {
-        String name{setting};
+        const auto & name = setting.getName();
         if (config().has(name))
             global_context->setSetting(name, config().getString(name));
     }
@@ -350,9 +340,7 @@ try
 
     processConfig();
     adjustSettings();
-    initTTYBuffer(toProgressOption(config().getString("progress", "default")),
-        toProgressOption(config().getString("progress-table", "default")));
-    initKeystrokeInterceptor();
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
     ASTAlterCommand::setFormatAlterCommandsWithParentheses(true);
 
     {
@@ -431,7 +419,7 @@ catch (const Exception & e)
     bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
     std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
-    return static_cast<UInt8>(e.code()) ? e.code() : -1;
+    return e.code() ? e.code() : -1;
 }
 catch (...)
 {
@@ -484,23 +472,27 @@ void Client::connect()
         }
         catch (const Exception & e)
         {
-            /// This problem can't be fixed with reconnection so it is not attempted
             if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
-                throw;
-
-            if (attempted_address_index == hosts_and_ports.size() - 1)
-                throw;
-
-            if (is_interactive)
             {
-                std::cerr << "Connection attempt to database at "
-                          << connection_parameters.host << ":" << connection_parameters.port
-                          << " resulted in failure"
-                          << std::endl
-                          << getExceptionMessage(e, false)
-                          << std::endl
-                          << "Attempting connection to the next provided address"
-                          << std::endl;
+                /// This problem can't be fixed with reconnection so it is not attempted
+                throw;
+            }
+            else
+            {
+                if (attempted_address_index == hosts_and_ports.size() - 1)
+                    throw;
+
+                if (is_interactive)
+                {
+                    std::cerr << "Connection attempt to database at "
+                              << connection_parameters.host << ":" << connection_parameters.port
+                              << " resulted in failure"
+                              << std::endl
+                              << getExceptionMessage(e, false)
+                              << std::endl
+                              << "Attempting connection to the next provided address"
+                              << std::endl;
+                }
             }
         }
     }
@@ -516,7 +508,6 @@ void Client::connect()
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
-#ifndef CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 
@@ -532,10 +523,9 @@ void Client::connect()
                         << "It may indicate that the server is out of date and can be upgraded." << std::endl
                         << std::endl;
         }
-#endif
     }
 
-    if (!client_context->getSettingsRef()[Setting::use_client_time_zone])
+    if (!client_context->getSettingsRef().use_client_time_zone)
     {
         const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
         if (!time_zone.empty())
@@ -740,7 +730,7 @@ bool Client::processWithFuzzing(const String & full_query)
     }
 
     // Kusto is not a subject for fuzzing (yet)
-    if (client_context->getSettingsRef()[Setting::dialect] == DB::Dialect::kusto)
+    if (client_context->getSettingsRef().dialect == DB::Dialect::kusto)
     {
         return true;
     }
@@ -776,7 +766,7 @@ bool Client::processWithFuzzing(const String & full_query)
         else
             this_query_runs = 1;
     }
-    else if (const auto * /*insert*/ _ = orig_ast->as<ASTInsertQuery>())
+    else if (const auto * insert = orig_ast->as<ASTInsertQuery>())
     {
         this_query_runs = 1;
         queries_for_fuzzed_tables = fuzzer.getInsertQueriesForFuzzedTables(full_query);
@@ -1083,7 +1073,17 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     /// Copy settings-related program options to config.
     /// TODO: Is this code necessary?
-    global_context->getSettingsRef().addToClientOptions(config(), options, allow_repeated_settings);
+    for (const auto & setting : global_context->getSettingsRef().all())
+    {
+        const auto & name = setting.getName();
+        if (options.count(name))
+        {
+            if (allow_repeated_settings)
+                config().setString(name, options[name].as<Strings>().back());
+            else
+                config().setString(name, options[name].as<String>());
+        }
+    }
 
     if (options.count("config-file") && options.count("config"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more configuration files referenced in arguments");
@@ -1164,9 +1164,6 @@ void Client::processOptions(const OptionsDescription & options_description,
     /// (There is no need to copy the context because clickhouse-client has no background tasks so it won't use that context in parallel.)
     client_context = global_context;
     initClientContext();
-
-    /// Allow to pass-through unknown settings to the server.
-    client_context->getAccessControl().allowAllSettings();
 }
 
 
@@ -1390,8 +1387,7 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        auto code = DB::getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
+        return 1;
     }
     catch (const boost::program_options::error & e)
     {
@@ -1400,8 +1396,7 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
-        auto code = DB::getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
+        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
+        return 1;
     }
 }

@@ -60,21 +60,22 @@ CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
 
     if (std::string::npos != list.find("zstd"))
         return CompressionMethod::Zstd;
-    if (std::string::npos != list.find("br"))
+    else if (std::string::npos != list.find("br"))
         return CompressionMethod::Brotli;
-    if (std::string::npos != list.find("lz4"))
+    else if (std::string::npos != list.find("lz4"))
         return CompressionMethod::Lz4;
-    if (std::string::npos != list.find("snappy"))
+    else if (std::string::npos != list.find("snappy"))
         return CompressionMethod::Snappy;
-    if (std::string::npos != list.find("gzip"))
+    else if (std::string::npos != list.find("gzip"))
         return CompressionMethod::Gzip;
-    if (std::string::npos != list.find("deflate"))
+    else if (std::string::npos != list.find("deflate"))
         return CompressionMethod::Zlib;
-    if (std::string::npos != list.find("xz"))
+    else if (std::string::npos != list.find("xz"))
         return CompressionMethod::Xz;
-    if (std::string::npos != list.find("bz2"))
+    else if (std::string::npos != list.find("bz2"))
         return CompressionMethod::Bzip2;
-    return CompressionMethod::None;
+    else
+        return CompressionMethod::None;
 }
 
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint)

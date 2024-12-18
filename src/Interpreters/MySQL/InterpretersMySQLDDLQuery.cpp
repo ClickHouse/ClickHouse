@@ -55,10 +55,12 @@ static inline String resolveDatabase(
             /// USE replica_mysql_database; CREATE TABLE replica_mysql_database.table_name;
             return replica_clickhouse_database;
         }
-
-        /// USE other_database_name; CREATE TABLE other_database_name.table_name;
-        /// USE replica_mysql_database; CREATE TABLE other_database_name.table_name;
-        return "";
+        else
+        {
+            /// USE other_database_name; CREATE TABLE other_database_name.table_name;
+            /// USE replica_mysql_database; CREATE TABLE other_database_name.table_name;
+            return "";
+        }
     }
 
     /// When USE other_database_name; CREATE TABLE table_name;

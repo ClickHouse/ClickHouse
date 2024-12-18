@@ -276,7 +276,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
-        case Type::PREWARM_MARK_CACHE:
         {
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
@@ -422,7 +421,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
 
         case Type::REFRESH_VIEW:
-        case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::STOP_VIEW:
         case Type::CANCEL_VIEW:

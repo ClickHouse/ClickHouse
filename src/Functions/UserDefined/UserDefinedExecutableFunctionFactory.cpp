@@ -10,9 +10,10 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Formats/formatBlock.h>
 
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>

@@ -256,8 +256,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
-    if (refresh_strategy)
-        res->set(res->refresh_strategy, refresh_strategy->clone());
     if (as_table_function)
         res->set(res->as_table_function, as_table_function->clone());
     if (comment)
@@ -425,19 +423,9 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
     };
 
-    bool should_add_clone = is_clone_as;
-    auto add_clone_if_needed = [&]
-    {
-        if (!should_add_clone)
-            return;
-        should_add_clone = false;
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CLONE" << (settings.hilite ? hilite_none : "");
-    };
-
     if (!as_table.empty())
     {
         add_empty_if_needed();
-        add_clone_if_needed();
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
@@ -456,7 +444,6 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         }
 
         add_empty_if_needed();
-        add_clone_if_needed();
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
         as_table_function->formatImpl(settings, state, frame);
     }

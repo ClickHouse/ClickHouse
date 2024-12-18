@@ -17,7 +17,6 @@ def process_result(result_folder):
         "shellcheck",
         "style",
         "pylint",
-        "isort",
         "black",
         "flake8",
         "mypy",

@@ -23,8 +23,6 @@ public:
         const std::string host;
         const std::string user;
         const std::string password;
-        const std::string proto_send_chunked;
-        const std::string proto_recv_chunked;
         const std::string quota_key;
         const std::string db;
         const std::string table;
