@@ -46,6 +46,7 @@ public:
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return false; }
+    bool isComparableForEquality() const override { return false; }
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
