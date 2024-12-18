@@ -1840,10 +1840,16 @@ def test_exception_during_insert(started_cluster):
         assert expected_rows == get_count()
 
     expected_rows = [0]
+
     def generate(check_inserted):
         files_to_generate = 10
         total_values = generate_random_files(
-            started_cluster, files_path, files_to_generate, start_ind=0, row_num=1, use_random_names=1
+            started_cluster,
+            files_path,
+            files_to_generate,
+            start_ind=0,
+            row_num=1,
+            use_random_names=1,
         )
         expected_rows[0] += files_to_generate
         if check_inserted:
