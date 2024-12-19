@@ -32,8 +32,8 @@ namespace DB
 namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 aggregation_in_order_max_block_bytes;
-    extern const QueryPlanSerializationSettingsUInt64 aggregation_in_order_memory_bound_merging;
-    extern const QueryPlanSerializationSettingsUInt64 aggregation_sort_result_by_bucket_number;
+    extern const QueryPlanSerializationSettingsBool aggregation_in_order_memory_bound_merging;
+    extern const QueryPlanSerializationSettingsBool aggregation_sort_result_by_bucket_number;
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_aggregation;
     extern const QueryPlanSerializationSettingsBool compile_aggregate_expressions;
     extern const QueryPlanSerializationSettingsBool empty_result_for_aggregation_by_empty_set;

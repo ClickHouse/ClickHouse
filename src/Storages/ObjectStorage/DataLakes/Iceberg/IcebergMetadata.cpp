@@ -23,10 +23,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-extern const SettingsBool allow_data_lake_dynamic_schema;
-}
 
 namespace ErrorCodes
 {

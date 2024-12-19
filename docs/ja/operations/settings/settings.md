@@ -3803,18 +3803,6 @@ HTTP_NOT_FOUND エラーを伴うグローブ用の URL をスキップします
 
 可能な値: 1 から 9 の数値。
 
-## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
-
-タイプ: Bool
-
-デフォルト値: 0
-
-Iceberg テーブルエンジンでスキーマの進化を無視し、テーブル作成時に指定されたスキーマまたはメタデータから解析された最新スキーマを使用してすべてのデータを読み取ることを許可します。
-
-:::note
-この設定を有効にすると、進化したスキーマのすべてのデータファイルが同じスキーマを使用して読み込まれるため、誤った結果につながる場合があります。
-:::
-
 ## idle_connection_timeout {#idle_connection_timeout}
 
 タイプ: UInt64
