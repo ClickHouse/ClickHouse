@@ -111,7 +111,7 @@ private:
         ContextPtr local_context,
         bool commit_once_processed);
 
-    bool hasDependencies(const StorageID & table_id);
+    size_t getDependencies() const;
     bool streamToViews();
     void threadFunc();
 };

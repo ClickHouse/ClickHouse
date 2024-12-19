@@ -68,7 +68,8 @@ public:
 
     struct NodeMetadata
     {
-        std::string file_path; UInt64 last_processed_timestamp = 0;
+        std::string file_path;
+        UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
         std::string processing_id; /// For ephemeral processing node.
