@@ -250,7 +250,7 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
         if (filter_dag)
         {

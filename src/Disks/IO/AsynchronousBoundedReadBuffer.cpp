@@ -47,12 +47,14 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     IAsynchronousReader & reader_,
     const ReadSettings & settings_,
     size_t buffer_size_,
+    size_t min_bytes_for_seek_,
     AsyncReadCountersPtr async_read_counters_,
     FilesystemReadPrefetchesLogPtr prefetches_log_)
     : ReadBufferFromFileBase(0, nullptr, 0)
     , impl(std::move(impl_))
     , read_settings(settings_)
     , buffer_size(buffer_size_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
     , reader(reader_)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
@@ -337,7 +339,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     * Note: we read in range [file_offset_of_buffer_end, read_until_position).
     */
     if (!impl->isSeekCheap() && file_offset_of_buffer_end && read_until_position && new_pos < *read_until_position
-        && new_pos > file_offset_of_buffer_end && new_pos < file_offset_of_buffer_end + read_settings.remote_read_min_bytes_for_seek)
+        && new_pos > file_offset_of_buffer_end && new_pos < file_offset_of_buffer_end + min_bytes_for_seek)
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
         bytes_to_ignore = new_pos - file_offset_of_buffer_end;

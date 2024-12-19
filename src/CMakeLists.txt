@@ -431,6 +431,10 @@ dbms_target_link_libraries (
         Poco::Redis
 )
 
+if (USE_MONGODB)
+    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
+endif()
+
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
         PUBLIC
