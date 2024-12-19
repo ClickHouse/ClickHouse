@@ -19,24 +19,27 @@ SETTINGS add_minmax_index_for_numeric_columns = true, add_minmax_index_for_strin
 
 INSERT INTO tbl1 VALUES (1,1,1), (2,2,2), (3,3,3);
 
-SELECT 'tbl1 with add_minmax_index_for_numeric_columns and add_minmax_index_for_string_columns enabled';
+SELECT 'Check skipping indices after table creation';
+-- Expect x_idx and two implicit minmax indices
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
 
+-- Settings 'add_minmax_index_for_numeric_columns' and 'add_minmax_index_for_string_columns' cannot be changed after table creation
 ALTER TABLE tbl1 MODIFY SETTING add_minmax_index_for_numeric_columns = false; -- { serverError READONLY_SETTING }
 ALTER TABLE tbl1 MODIFY SETTING add_minmax_index_for_string_columns = false; -- { serverError READONLY_SETTING }
 ALTER TABLE tbl1 RESET SETTING add_minmax_index_for_numeric_columns; -- { serverError READONLY_SETTING }
 ALTER TABLE tbl1 RESET SETTING add_minmax_index_for_string_columns; -- { serverError READONLY_SETTING }
 
 SELECT 'Add numeric column';
-ALTER TABLE tbl1 ADD COLUMN w Int;
+ALTER TABLE tbl1 ADD COLUMN n Int;
+-- the implicitly minmax index is only created but not materialized
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
 
 SELECT 'After materialize';
-ALTER TABLE tbl1 MATERIALIZE INDEX auto_minmax_index_w;
+ALTER TABLE tbl1 MATERIALIZE INDEX auto_minmax_index_n;
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
 
 SELECT 'Drop numeric column';
-ALTER TABLE tbl1 DROP COLUMN w;
+ALTER TABLE tbl1 DROP COLUMN n;
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
 
 SELECT 'Add string column';
@@ -51,9 +54,11 @@ SELECT 'Drop string column t';
 ALTER TABLE tbl1 DROP COLUMN t;
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
 
-SELECT 'Rename column s to ss';
-ALTER TABLE tbl1 RENAME COLUMN s to ss;
+SELECT 'Rename column s to t';
+ALTER TABLE tbl1 RENAME COLUMN s to t;
 SELECT name, type, expr, data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl1' AND database = currentDatabase();
+
+-- Check that users cannot create explicit minmax indices with the names of internal minmax indices
 
 CREATE TABLE tbl2
 (
@@ -71,9 +76,9 @@ CREATE TABLE tbl2
     key Int,
     x Int,
     y Int,
-    INDEX auto_minmax_index_x x TYPE minmax
+    INDEX auto_minmax_index_x x TYPE minmax -- fine, add_minmax_index_for_numeric_columns isn't set
 )
-    ENGINE=MergeTree()
+ENGINE=MergeTree()
 ORDER BY key;
 
 CREATE TABLE tbl3
@@ -93,7 +98,7 @@ CREATE TABLE tbl4
     x Int,
     y Int
 )
-    ENGINE=MergeTree()
+ENGINE=MergeTree()
 ORDER BY key
 SETTINGS add_minmax_index_for_string_columns = true;
 

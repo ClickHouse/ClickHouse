@@ -147,7 +147,7 @@ Enables or disables execution of `ORDER BY` clauses in external memory. See [ORD
 - 0 — `ORDER BY` in external memory disabled.
 
 :::note
-- You cannot use this setting and `mqx_bytes_ratio_before_external_sort` at the same time
+- You cannot use this setting and `max_bytes_ratio_before_external_sort` at the same time
 :::
 
 Default value: 0.
