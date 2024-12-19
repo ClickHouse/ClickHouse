@@ -3566,6 +3566,19 @@ def parse_args():
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
+        "--replace-mt-with-rmt",
+        action="store_true",
+        default=os.environ.get("REPLACE_MT_WITH_RMT", False),
+        help="Replace ordinary MergeTree engine with ReplicatedMergeTree",
+    )
+    parser.add_argument(
+        "--replace-log-with-rmt",
+        action="store_true",
+        default=os.environ.get("REPLACE_LOG_WITH_RMT", False),
+        help="Replace Log, TinyLog and Memory engine with ReplicatedMergeTree",
+    )
+
+    parser.add_argument(
         "--client-log",
         default="./client.fatal.log",
         help="Path to file for fatal logs from client",
