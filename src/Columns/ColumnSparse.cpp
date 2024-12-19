@@ -488,6 +488,25 @@ int ColumnSparse::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int null
     return values->compareAt(getValueIndex(n), m, rhs_, null_direction_hint);
 }
 
+bool ColumnSparse::equalsAt(size_t n, size_t m, const IColumn & rhs_) const
+{
+    size_t value_index = getValueIndex(n);
+
+    if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs_))
+    {
+        size_t rhs_value_index = rhs_sparse->getValueIndex(m);
+        bool is_default = value_index == 0;
+        bool rhs_is_default = rhs_value_index == 0;
+
+        if (likely(is_default || rhs_is_default))
+            return is_default && rhs_is_default;
+
+        return values->equalsAt(value_index, rhs_value_index, rhs_sparse->getValuesColumn());
+    }
+
+    return values->equalsAt(value_index, m, rhs_);
+}
+
 void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                     int direction, int nan_direction_hint) const
@@ -537,7 +556,7 @@ bool ColumnSparse::hasEqualValues() const
     /// Check that probably all non-default values are equal.
     /// It's suboptiomal, but it's a rare case.
     for (size_t i = 2; i < values->size(); ++i)
-        if (values->compareAt(1, i, *values, 1) != 0)
+        if (!values->equalsAt(1, i, *values))
             return false;
 
     return true;
