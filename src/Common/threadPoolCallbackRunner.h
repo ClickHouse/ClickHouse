@@ -4,6 +4,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <exception>
 #include <future>
 
 namespace DB
@@ -12,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int CANNOT_SCHEDULE_TASK;
 }
 
 /// High-order function to run callbacks (functions with 'void()' signature) somewhere asynchronously.
@@ -104,6 +106,35 @@ class ThreadPoolCallbackRunnerLocal
         }
     }
 
+    /// Set promise result for non-void callbacks
+    template <typename Function, typename FunctionResult>
+    static void executeCallback(std::promise<FunctionResult> & promise, Function & callback)
+    {
+        try
+        {
+            promise.set_value(callback());
+        }
+        catch (...)
+        {
+            promise.set_exception(std::current_exception());
+        }
+    }
+
+    /// Set promise result for void callbacks
+    template <typename Function>
+    static void executeCallback(std::promise<void> & promise, Function & callback)
+    {
+        try
+        {
+            callback();
+            promise.set_value();
+        }
+        catch (...)
+        {
+            promise.set_exception(std::current_exception());
+        }
+    }
+
 public:
     ThreadPoolCallbackRunnerLocal(PoolT & pool_, const std::string & thread_name_)
         : pool(pool_)
@@ -121,8 +152,9 @@ public:
     {
         auto & task = tasks.emplace_back(std::make_shared<Task>());
 
-        auto task_func = std::make_shared<std::packaged_task<Result()>>(
-        [task, thread_group = CurrentThread::getGroup(), my_thread_name = thread_name, my_callback = std::move(callback)]() mutable -> Result
+        std::shared_ptr<std::promise<Result>> promise = std::make_shared<std::promise<Result>>();
+
+        auto task_func = [task, thread_group = CurrentThread::getGroup(), my_thread_name = thread_name, my_callback = std::move(callback), promise]() mutable -> void
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))
@@ -157,14 +189,22 @@ public:
 
             setThreadName(my_thread_name.data());
 
-            return my_callback();
-        });
+            executeCallback(*promise, my_callback);
+        };
 
-        task->future = task_func->get_future();
+        task->future = promise->get_future();
 
-        /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
-        /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
-        pool.scheduleOrThrowOnError([my_task = std::move(task_func)]{ (*my_task)(); }, priority);
+        try
+        {
+            /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
+            /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
+            pool.scheduleOrThrowOnError(std::move(task_func), priority);
+        }
+        catch (...)
+        {
+            promise->set_exception(std::current_exception());
+            throw;
+        }
     }
 
     void waitForAllToFinish()
