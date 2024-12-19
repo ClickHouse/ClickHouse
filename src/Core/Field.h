@@ -302,6 +302,16 @@ concept not_field_or_bool_or_stringlike
 static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
 
 
+template<std::size_t len, class... Types>
+struct AlignedUnion
+{
+    static constexpr std::size_t alignment_value = std::max({alignof(Types)...});
+    struct Type
+    {
+        alignas(alignment_value) char s[std::max({len, sizeof(Types)...})];
+    };
+};
+
 /** Discriminated union of several types.
   * Made for replacement of `boost::variant`
   *  is not generalized,
@@ -672,7 +682,7 @@ public:
     static Field restoreFromDump(std::string_view dump_);
 
 private:
-    std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+    AlignedUnion<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
