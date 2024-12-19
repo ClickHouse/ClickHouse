@@ -53,26 +53,26 @@ auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, s
 
                 connection->connect();
                 shared_pool->online = true;
-                LOG_DEBUG(logger, "Reestablishing connection to {} has succeeded.", connection->getInfoForLog());
+                LOG_INFO(logger, "Reestablishing connection to {} has succeeded.", connection->getInfoForLog());
             }
             catch (const pqxx::broken_connection & pqxx_error)
             {
                 if (interval_milliseconds >= 1000)
-                    LOG_ERROR(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
+                    LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
                 shared_pool->online = false;
                 shared_pool->pool->returnObject(std::move(connection));
             }
             catch (const Poco::Exception & e)
             {
                 if (interval_milliseconds >= 1000)
-                    LOG_ERROR(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), e.displayText());
+                    LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), e.displayText());
                 shared_pool->online = false;
                 shared_pool->pool->returnObject(std::move(connection));
             }
             catch (...)
             {
                 if (interval_milliseconds >= 1000)
-                    LOG_ERROR(logger, "Reestablishing connection to {} has failed.", connection->getInfoForLog());
+                    LOG_WARNING(logger, "Reestablishing connection to {} has failed.", connection->getInfoForLog());
                 shared_pool->online = false;
                 shared_pool->pool->returnObject(std::move(connection));
             }
