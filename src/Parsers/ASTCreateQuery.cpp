@@ -487,7 +487,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
-        aliases_list->format(ostr, settings, state, frame_nested);
+        aliases_list->formatImpl(ostr, settings, state, frame_nested);
         ostr << (settings.one_line ? ")" : "\n)");
     }
 
