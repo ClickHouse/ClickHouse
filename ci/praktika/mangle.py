@@ -1,18 +1,25 @@
 import copy
 import importlib.util
 from pathlib import Path
+from typing import List
 
-from praktika import Job
-from praktika.settings import Settings
-from praktika.utils import Utils
+from praktika import Workflow
+
+from . import Job
+from .settings import Settings
+from .utils import Utils
 
 
-def _get_workflows(name=None, file=None):
+def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
     """
     Gets user's workflow configs
     """
     res = []
 
+    if not Path(Settings.WORKFLOWS_DIRECTORY).is_dir():
+        Utils.raise_with_error(
+            f"Workflow directory does not exist [{Settings.WORKFLOWS_DIRECTORY}]. cd to the repo's root?"
+        )
     directory = Path(Settings.WORKFLOWS_DIRECTORY)
     for py_file in directory.glob("*.py"):
         if file and file not in str(py_file):
@@ -58,12 +65,17 @@ def _update_workflow_artifacts(workflow):
         for artifact_name in job.provides:
             artifact_job[artifact_name] = job.name
     for artifact in workflow.artifacts:
-        artifact._provided_by = artifact_job[artifact.name]
+        if artifact.name in artifact_job:
+            artifact._provided_by = artifact_job[artifact.name]
+        else:
+            print(
+                f"WARNING: Artifact [{artifact.name}] in workflow [{workflow.name}] has no job that provides it"
+            )
 
 
 def _update_workflow_with_native_jobs(workflow):
     if workflow.dockers:
-        from praktika.native_jobs import _docker_build_job
+        from .native_jobs import _docker_build_job
 
         print(f"Enable native job [{_docker_build_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_docker_build_job)
@@ -85,7 +97,7 @@ def _update_workflow_with_native_jobs(workflow):
         or workflow.enable_report
         or workflow.enable_merge_ready_status
     ):
-        from praktika.native_jobs import _workflow_config_job
+        from .native_jobs import _workflow_config_job
 
         print(f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_workflow_config_job)
@@ -96,7 +108,7 @@ def _update_workflow_with_native_jobs(workflow):
             job.requires.append(aux_job.name)
 
     if workflow.enable_merge_ready_status:
-        from praktika.native_jobs import _final_job
+        from .native_jobs import _final_job
 
         print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_final_job)

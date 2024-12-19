@@ -9,6 +9,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
@@ -50,6 +52,9 @@ public:
     virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
+
+    using Hash = CityHash_v1_0_2::uint128;
+    virtual Hash getHash() const = 0;
 };
 
 using FutureSetPtr = std::shared_ptr<FutureSet>;
@@ -59,13 +64,15 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    explicit FutureSetFromStorage(SetPtr set_);
+    explicit FutureSetFromStorage(Hash hash_, SetPtr set_);
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
+    Hash getHash() const override;
 
 private:
+    Hash hash;
     SetPtr set;
 };
 
@@ -76,14 +83,16 @@ using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 class FutureSetFromTuple final : public FutureSet
 {
 public:
-    FutureSetFromTuple(Block block, const Settings & settings);
+    FutureSetFromTuple(Hash hash_, ColumnsWithTypeAndName block, bool transform_null_in, SizeLimits size_limits);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     DataTypes getTypes() const override;
+    Hash getHash() const override;
 
 private:
+    Hash hash;
     SetPtr set;
     SetKeyColumns set_key_columns;
 };
@@ -106,21 +115,26 @@ class FutureSetFromSubquery final : public FutureSet
 {
 public:
     FutureSetFromSubquery(
-        String key,
+        Hash hash_,
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table_,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
-        const Settings & settings);
+        bool transform_null_in,
+        SizeLimits size_limits,
+        size_t max_size_for_index);
 
     FutureSetFromSubquery(
-        String key,
+        Hash hash_,
         QueryTreeNodePtr query_tree_,
-        const Settings & settings);
+        bool transform_null_in,
+        SizeLimits size_limits,
+        size_t max_size_for_index);
 
     ~FutureSetFromSubquery() override;
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
+    Hash getHash() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
@@ -130,6 +144,7 @@ public:
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
 private:
+    Hash hash;
     SetAndKeyPtr set_and_key;
     StoragePtr external_table;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
@@ -156,7 +171,7 @@ public:
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
     FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_);
-    FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, ColumnsWithTypeAndName block, const Settings & settings);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
@@ -183,6 +198,7 @@ public:
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);
+    static SizeLimits getSizeLimitsForSet(const Settings & settings);
 
 private:
     SetsFromTuple sets_from_tuple;

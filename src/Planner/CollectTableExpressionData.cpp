@@ -135,6 +135,7 @@ public:
         if (!column_source)
             return false;
         return column_source->getNodeType() != QueryTreeNodeType::JOIN &&
+               column_source->getNodeType() != QueryTreeNodeType::CROSS_JOIN &&
                column_source->getNodeType() != QueryTreeNodeType::ARRAY_JOIN;
     }
 

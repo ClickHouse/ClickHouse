@@ -418,9 +418,10 @@ WeakHash32 ColumnAggregateFunction::getWeakHash32() const
 
 void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 {
-    /// Fallback to per-element hashing, as there is no faster way
-    for (size_t i = 0; i < size(); ++i)
-        updateHashWithValue(i, hash);
+    WriteBufferFromOwnString wbuf;
+    const ColumnAggregateFunction::Container & vec = getData();
+    func->serializeBatch(vec, 0, size(), wbuf);
+    hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
 /// The returned size is less than real size. The reason is that some parts of

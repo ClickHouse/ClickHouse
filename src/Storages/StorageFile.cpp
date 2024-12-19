@@ -1159,7 +1159,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
     {
@@ -1866,7 +1866,7 @@ private:
         write_buf.reset();
     }
 
-    void cancelBuffers()
+    void cancelBuffers() noexcept
     {
         if (writer)
             writer->cancel();
@@ -2113,6 +2113,11 @@ void StorageFile::truncate(
     }
 }
 
+void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
+        args[0] = std::make_shared<ASTLiteral>(format_name);
+}
 
 void registerStorageFile(StorageFactory & factory)
 {

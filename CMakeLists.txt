@@ -7,6 +7,9 @@ option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
    but is not possible to satisfy" ON)
 
+# This allows to compile some code conditionally in the private build while having byte-identical source files.
+set (CLICKHOUSE_CLOUD 0)
+
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
@@ -66,6 +69,7 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
         # Twice as large
         set (RLIMIT_DATA 10000000000)
         set (RLIMIT_AS 20000000000)
+        set (RLIMIT_CPU 2000)
     endif()
 
     # For some files currently building RISCV64/LOONGARCH64 might be too slow.
@@ -88,7 +92,6 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
-option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
     # Also set WITH_COVERAGE=1 for better fuzzing process
@@ -347,10 +350,11 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-if (NOT ENABLE_TESTS AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
+if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
     # https://clang.llvm.org/docs/ThinLTO.html
     # Applies to clang and linux only.
     # Disabled when building with tests or sanitizers.
+    # Also disabled with clang-tidy where we don't care about linking
     option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
 endif()
 
@@ -590,6 +594,20 @@ if (FUZZER)
 endif()
 
 include (cmake/sanitize_targets.cmake)
+
+if (COMPILER_CACHE STREQUAL "chcache")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+
+    get_all_targets(all_targets)
+    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
+    foreach(target ${all_targets})
+        if (target IN_LIST chcache_targets)
+            continue()
+        endif()
+
+        add_dependencies(${target} cargo-build_chcache)
+    endforeach()
+endif()
 
 # Build native targets if necessary
 get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)

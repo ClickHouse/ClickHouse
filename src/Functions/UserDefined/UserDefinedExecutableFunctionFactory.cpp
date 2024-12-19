@@ -4,6 +4,7 @@
 
 #include <Common/filesystemHelpers.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
