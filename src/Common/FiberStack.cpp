@@ -182,7 +182,7 @@ private:
     std::atomic_uint16_t idx = 0;
 };
 
-FixedSizeFiberStackWithCache::FixedSizeFiberStackWithCache(size_t /*stack_size_*/) 
+FixedSizeFiberStackWithCache::FixedSizeFiberStackWithCache(size_t /*stack_size_*/)
     : cache(&FiberStackCacheManager::instance().getCacheForCurrentThread())
     , fallback_allocator(&FiberStackCacheManager::instance().getBaseAllocator())
 {
