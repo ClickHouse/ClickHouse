@@ -53,6 +53,7 @@ namespace DB::ErrorCodes
     extern const int TOO_DEEP_RECURSION; // I'm 14 and this is deep
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::Parquet
@@ -464,15 +465,19 @@ void prepareColumnTuple(
 {
     const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
+    size_t num_elements = type_tuple->getElements().size();
+
+    if (num_elements == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parquet doesn't support empty tuples");
 
     auto & tuple_schema = schemas.emplace_back();
     tuple_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
     tuple_schema.__set_name(name);
-    tuple_schema.__set_num_children(static_cast<Int32>(type_tuple->getElements().size()));
+    tuple_schema.__set_num_children(static_cast<Int32>(num_elements));
 
     size_t child_states_begin = states.size();
 
-    for (size_t i = 0; i < type_tuple->getElements().size(); ++i)
+    for (size_t i = 0; i < num_elements; ++i)
         prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
