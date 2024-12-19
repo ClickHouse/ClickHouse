@@ -54,6 +54,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_qualify(Keyword::QUALIFY);
     ParserKeyword s_order_by(Keyword::ORDER_BY);
     ParserKeyword s_limit(Keyword::LIMIT);
+    ParserKeyword s_inrange(Keyword::INRANGE); // maybe IN_RANGE/IN RANGE/RANGE or even without this keyword?
+    ParserKeyword s_to(Keyword::TO);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_by(Keyword::BY);
     ParserKeyword s_rollup(Keyword::ROLLUP);
@@ -103,6 +105,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_length;
     ASTPtr top_length;
     ASTPtr settings;
+    ASTPtr limit_inrange_from_expression;
+    ASTPtr limit_inrange_to_expression;
+    ASTPtr limit_inrange_window;
 
     /// WITH expr_list
     {
@@ -339,9 +344,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool has_offset_clause = false;
     bool offset_clause_has_sql_standard_row_or_rows = false; /// OFFSET offset_row_count {ROW | ROWS}
 
-    /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
-    if (s_limit.ignore(pos, expected))
+    auto parseLimitClause = [&](bool limit_after_inrange = false) -> bool
     {
+        if (limit_after_inrange && !s_limit.ignore(pos, expected))
+            return true;
+
+        /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
         ParserToken s_comma(TokenType::Comma);
 
         if (!exp_elem.parse(pos, limit_length, expected))
@@ -397,29 +405,86 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (top_length && limit_length)
             throw Exception(ErrorCodes::TOP_AND_LIMIT_TOGETHER, "Can not use TOP and LIMIT together");
-    }
-    else if (s_offset.ignore(pos, expected))
+
+        return true;
+    };
+
+    auto parseOffsetExpression = [&]() -> bool
     {
-        /// OFFSET without LIMIT
-
-        has_offset_clause = true;
-
-        if (!exp_elem.parse(pos, limit_offset, expected))
-            return false;
-
-        /// SQL standard OFFSET N ROW[S] ...
-
-        if (s_row.ignore(pos, expected))
-            offset_clause_has_sql_standard_row_or_rows = true;
-
-        if (s_rows.ignore(pos, expected))
+        if (s_offset.ignore(pos, expected))
         {
-            if (offset_clause_has_sql_standard_row_or_rows)
-                throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
+            /// OFFSET without LIMIT
 
-            offset_clause_has_sql_standard_row_or_rows = true;
+            has_offset_clause = true;
+
+            if (!exp_elem.parse(pos, limit_offset, expected))
+                return false;
+
+            /// SQL standard OFFSET N ROW[S] ...
+
+            if (s_row.ignore(pos, expected))
+                offset_clause_has_sql_standard_row_or_rows = true;
+
+            if (s_rows.ignore(pos, expected))
+            {
+                if (offset_clause_has_sql_standard_row_or_rows)
+                    throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
+
+                offset_clause_has_sql_standard_row_or_rows = true;
+            }
         }
+
+        return true;
+    };
+
+    bool limit_after_inrange = false;
+
+    /// LIMIT INRANGE FROM expr | LIMIT INRANGE TO expr | LIMIT INRANGE FROM expr TO expr
+    if (s_limit.ignore(pos, expected))
+    {
+        if (s_inrange.ignore(pos, expected))
+        {
+            bool from_occured = false;
+            bool to_occured = false;
+
+            if (s_from.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_inrange_from_expression, expected))
+                    return false;
+                from_occured = true;
+            }
+
+            if (s_to.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_inrange_to_expression, expected))
+                    return false;
+                to_occured = true;
+            }
+
+            ParserToken s_comma(TokenType::Comma);
+
+            if (s_comma.ignore(pos, expected))
+            {
+                if (!exp_elem.parse(pos, limit_inrange_window, expected))
+                    return false;
+            }
+
+            if (!from_occured && !to_occured)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "LIMIT INRANGE requires at least a FROM or TO expression");
+
+            // additional limit
+
+            limit_after_inrange = true;
+            if (!parseLimitClause(limit_after_inrange))
+                return false;
+            if (!parseOffsetExpression())
+                return false;
+        }
+        else if (!parseLimitClause())
+            return false;
     }
+    else if (!parseOffsetExpression())
+        return false;
 
     /// SQL standard FETCH (either following SQL standard OFFSET or following ORDER BY)
     if ((!has_offset_clause || offset_clause_has_sql_standard_row_or_rows)
@@ -529,6 +594,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::WINDOW, std::move(window_list));
     select_query->setExpression(ASTSelectQuery::Expression::QUALIFY, std::move(qualify_expression));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_FROM, std::move(limit_inrange_from_expression));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_TO, std::move(limit_inrange_to_expression));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_WINDOW, std::move(limit_inrange_window));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));

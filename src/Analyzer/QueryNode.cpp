@@ -244,6 +244,30 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getLimitByOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasLimitInrangeFrom() && hasLimitInrangeTo())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT INRANGE FROM\n";
+        getLimitInrangeFrom()->dumpTreeImpl(buffer, format_state, indent + 4);
+        buffer << '\n' << std::string(indent + 2, ' ') << "TO\n";
+        getLimitInrangeTo()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+    else if (hasLimitInrangeFrom())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT INRANGE FROM\n";
+        getLimitInrangeFrom()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+    else if (hasLimitInrangeTo())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT INRANGE TO\n";
+        getLimitInrangeTo()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasInrangeWindow())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "INRANGE WINDOW\n";
+        getInrangeWindow()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
     if (hasLimitBy())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "LIMIT BY\n";
@@ -463,6 +487,15 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasLimitByOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, getLimitByOffset()->toAST(options));
+
+    if (hasLimitInrangeFrom())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_FROM, getLimitInrangeFrom()->toAST(options));
+
+    if (hasLimitInrangeTo())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_TO, getLimitInrangeTo()->toAST(options));
+
+    if (hasInrangeWindow())
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_INRANGE_WINDOW, getInrangeWindow()->toAST(options));
 
     if (hasLimitBy())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, getLimitBy().toAST(options));
