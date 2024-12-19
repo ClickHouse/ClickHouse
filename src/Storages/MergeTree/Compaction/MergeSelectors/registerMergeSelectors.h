@@ -2,5 +2,7 @@
 
 namespace DB
 {
+
 void registerMergeSelectors();
+
 }
