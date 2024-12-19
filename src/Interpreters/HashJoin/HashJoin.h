@@ -231,6 +231,16 @@ public:
         M(key_string)                          \
         M(key_fixed_string)
 
+    /// Used in ConcurrentHashJoin
+    #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M) \
+        M(two_level_key32)            \
+        M(two_level_key64)            \
+        M(two_level_key_string)       \
+        M(two_level_key_fixed_string) \
+        M(two_level_keys128)          \
+        M(two_level_keys256)          \
+        M(two_level_hashed)
+
     enum class Type : uint8_t
     {
         EMPTY,
@@ -240,13 +250,18 @@ public:
         #undef M
     };
 
-    bool isFixedSizeType(Type type) const
+    bool twoLevelMapIsUsed() const
     {
-        switch (type)
+        switch (data->type)
         {
-            case Type::key8:
-            case Type::key16:
+
+        #define M(NAME) \
+            case Type::NAME: \
                 return true;
+
+            APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
+        #undef M
+
             default:
                 return false;
         }

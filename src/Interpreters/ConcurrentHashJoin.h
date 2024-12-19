@@ -76,19 +76,18 @@ public:
 
     void onBuildPhaseFinish() override;
 
-private:
     struct InternalHashJoin
     {
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
     };
 
+private:
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     size_t slots;
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
-    bool two_level_map_used = false;
 
     StatsCollectingParams stats_collecting_params;
 
