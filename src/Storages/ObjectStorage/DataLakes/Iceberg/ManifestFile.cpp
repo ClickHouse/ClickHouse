@@ -9,6 +9,7 @@
 
 
 #include <Columns/ColumnTuple.h>
+#include <Poco/JSON/Parser.h>
 #include "DataTypes/DataTypeTuple.h"
 
 
@@ -30,6 +31,20 @@ const std::vector<DataFileEntry> & ManifestFileContent::getDataFiles() const
 Int32 ManifestFileContent::getSchemaId() const
 {
     return impl->schema_id;
+}
+
+const std::vector<DB::ColumnPtr> & ManifestFileContent::getPartitionColumns() const
+{
+    return impl->partition_columns;
+}
+
+const std::vector<PartitionTransform> & ManifestFileContent::getPartitionTransforms() const
+{
+    return impl->partition_transforms;
+}
+const std::vector<Int32> & ManifestFileContent::getPartitionSourceIds() const
+{
+    return impl->partition_source_ids;
 }
 
 ManifestFileContent::ManifestFileContent(std::unique_ptr<ManifestFileContentImpl> impl_) : impl(std::move(impl_))
@@ -159,6 +174,44 @@ ManifestFileContentImpl::ManifestFileContentImpl(
 
         const auto file_path = data_path.substr(pos);
         this->data_files.push_back({file_path, status, content_type});
+    }
+
+    Poco::JSON::Parser parser;
+
+    ColumnPtr big_partition_column = data_file_tuple_column->getColumnPtr(data_file_tuple_type.getPositionByName("partition"));
+    if (big_partition_column->getDataType() != TypeIndex::Tuple)
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "The parsed column from Avro file of `file_path` field should be Tuple type, got {}",
+            columns.at(1)->getFamilyName());
+    }
+    const auto * big_partition_tuple = assert_cast<const ColumnTuple *>(big_partition_column.get());
+
+    auto avro_metadata = manifest_file_reader_->metadata();
+
+    std::vector<uint8_t> partition_spec_json_bytes = avro_metadata["partition-spec"];
+    String partition_spec_json_string
+        = String(reinterpret_cast<char *>(partition_spec_json_bytes.data()), partition_spec_json_bytes.size());
+    Poco::Dynamic::Var partition_spec_json = parser.parse(partition_spec_json_string);
+    const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
+
+    for (size_t i = 0; i != partition_specification->size(); ++i)
+    {
+        auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
+
+        auto source_id = current_field->getValue<Int32>("source-id");
+        PartitionTransform transform = getTransform(current_field->getValue<String>("transform"));
+
+        if (transform == PartitionTransform::Unsupported)
+        {
+            continue;
+        }
+        auto partition_name = current_field->getValue<String>("name");
+
+        this->partition_columns.push_back(big_partition_tuple->getColumnPtr(i));
+        this->partition_transforms.push_back(transform);
+        this->partition_source_ids.push_back(source_id);
     }
 }
 
