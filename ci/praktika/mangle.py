@@ -16,6 +16,10 @@ def _get_workflows(name=None, file=None) -> List[Workflow.Config]:
     """
     res = []
 
+    if not Path(Settings.WORKFLOWS_DIRECTORY).is_dir():
+        Utils.raise_with_error(
+            f"Workflow directory does not exist [{Settings.WORKFLOWS_DIRECTORY}]. cd to the repo's root?"
+        )
     directory = Path(Settings.WORKFLOWS_DIRECTORY)
     for py_file in directory.glob("*.py"):
         if file and file not in str(py_file):

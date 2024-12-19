@@ -210,12 +210,10 @@ class Runner:
                         info = f"ERROR: Job killed, exit code [{exit_code}]  - set status to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
-                        result.set_files([Settings.RUN_LOG])
                     else:
                         info = f"ERROR: Invalid status [{result.status}] for exit code [{exit_code}]  - switch to [{Result.Status.ERROR}]"
                         print(info)
                         result.set_status(Result.Status.ERROR).set_info(info)
-                        result.set_files([Settings.RUN_LOG])
             result.dump()
 
         return exit_code
@@ -268,6 +266,9 @@ class Runner:
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
         result.update_duration().dump()
+
+        if result.is_error():
+            result.set_files([Settings.RUN_LOG])
 
         if run_exit_code == 0:
             providing_artifacts = []
