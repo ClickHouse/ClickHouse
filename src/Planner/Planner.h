@@ -22,17 +22,20 @@ class Planner
 public:
     /// Initialize planner with query tree after analysis phase
     Planner(const QueryTreeNodePtr & query_tree_,
-        SelectQueryOptions & select_query_options_);
+        SelectQueryOptions & select_query_options_,
+        const char * label_);
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,
         SelectQueryOptions & select_query_options_,
-        GlobalPlannerContextPtr global_planner_context_);
+        GlobalPlannerContextPtr global_planner_context_,
+        const char * label_);
 
     /// Initialize planner with query tree after query analysis phase and planner context
     Planner(const QueryTreeNodePtr & query_tree_,
         SelectQueryOptions & select_query_options_,
-        PlannerContextPtr planner_context_);
+        PlannerContextPtr planner_context_,
+        const char * label_);
 
     const QueryPlan & getQueryPlan() const
     {
@@ -82,6 +85,7 @@ private:
     StorageLimitsList storage_limits;
     std::set<std::string> used_row_policies;
     QueryNodeToPlanStepMapping query_node_to_plan_step_mapping;
+    const char * label;
 };
 
 }

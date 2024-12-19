@@ -239,7 +239,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     }
 
     SelectQueryOptions select_query_options;
-    Planner planner(updated_query_tree, select_query_options);
+    Planner planner(updated_query_tree, select_query_options, "collectFiltersForAnalysis");
     planner.buildQueryPlanIfNeeded();
 
     auto & result_query_plan = planner.getQueryPlan();
@@ -1156,7 +1156,8 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}),
+            "addBuildSubqueriesForSetsStepIfNeeded");
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
@@ -1254,7 +1255,8 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_)
+    SelectQueryOptions & select_query_options_,
+    const char * label_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options,
@@ -1262,25 +1264,48 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options))))
+    , label(label_)
 {
+    const auto * parallel_replicas_node = planner_context->getGlobalPlannerContext()->parallel_replicas_node;
+    if (parallel_replicas_node)
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Parallel replicas node:\n{}", parallel_replicas_node->dumpTree());
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+    }
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     SelectQueryOptions & select_query_options_,
-    GlobalPlannerContextPtr global_planner_context_)
+    GlobalPlannerContextPtr global_planner_context_,
+    const char * label_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree_, select_query_options, std::move(global_planner_context_)))
+    , label(label_)
 {
+    const auto * parallel_replicas_node = planner_context->getGlobalPlannerContext()->parallel_replicas_node;
+    if (parallel_replicas_node)
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Parallel replicas node:\n{}", parallel_replicas_node->dumpTree());
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+    }
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     SelectQueryOptions & select_query_options_,
-    PlannerContextPtr planner_context_)
+    PlannerContextPtr planner_context_,
+    const char * label_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(std::move(planner_context_))
+    , label(label_)
 {
+    const auto * parallel_replicas_node = planner_context->getGlobalPlannerContext()->parallel_replicas_node;
+    if (parallel_replicas_node)
+    {
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Parallel replicas node:\n{}", parallel_replicas_node->dumpTree());
+        LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "\n{}", StackTrace().toString());
+    }
 }
 
 void Planner::buildQueryPlanIfNeeded()
@@ -1290,9 +1315,9 @@ void Planner::buildQueryPlanIfNeeded()
 
     LOG_TRACE(
         getLogger("Planner"),
-        "Query to stage {}{}",
+        "Query to stage {}{}. Label: {}\n{}",
         QueryProcessingStage::toString(select_query_options.to_stage),
-        select_query_options.only_analyze ? " only analyze" : "");
+        select_query_options.only_analyze ? " only analyze" : "", label, StackTrace().toString());
 
     if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
         buildPlanForUnionNode();
@@ -1336,7 +1361,7 @@ void Planner::buildPlanForUnionNode()
 
     for (const auto & query_node : union_queries_nodes)
     {
-        Planner query_planner(query_node, select_query_options, planner_context->getGlobalPlannerContext());
+        Planner query_planner(query_node, select_query_options, planner_context->getGlobalPlannerContext(), "Union query");
 
         query_planner.buildQueryPlanIfNeeded();
         for (const auto & row_policy : query_planner.getUsedRowPolicies())
@@ -1556,15 +1581,25 @@ void Planner::buildPlanForQueryNode()
     auto & mapping = join_tree_query_plan.query_node_to_plan_step_mapping;
     query_node_to_plan_step_mapping.insert(mapping.begin(), mapping.end());
 
-    LOG_TRACE(
-        getLogger("Planner"),
-        "Query from stage {} to stage {}{}",
-        QueryProcessingStage::toString(from_stage),
-        QueryProcessingStage::toString(select_query_options.to_stage),
-        select_query_options.only_analyze ? " only analyze" : "");
+    if (from_stage == QueryProcessingStage::WithMergeableState)
+        LOG_TRACE(
+            getLogger("Planner"),
+            "Query from stage {} to stage {}{}\n{}",
+            QueryProcessingStage::toString(from_stage),
+            QueryProcessingStage::toString(select_query_options.to_stage),
+            select_query_options.only_analyze ? " only analyze" : "",
+            StackTrace().toString());
+    else
+        LOG_TRACE(
+            getLogger("Planner"),
+            "Query from stage {} to stage {}{}",
+            QueryProcessingStage::toString(from_stage),
+            QueryProcessingStage::toString(select_query_options.to_stage),
+            select_query_options.only_analyze ? " only analyze" : "");
 
     if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
         return;
+
 
     PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
     QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
