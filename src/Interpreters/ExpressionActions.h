@@ -99,6 +99,7 @@ public:
         bool has_high_selectivity = false;
         // Before next `tryScheduleLazyExecution` call, how many rows are executed in this action.
         size_t current_round_calcuated_rows = 0;
+        size_t current_round_elapsed_ns = 0;
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -199,6 +200,8 @@ private:
 
     void updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
     void tryScheduleLazyExecution(size_t current_batch_rows);
+    void propagateCSELazyNodesElapsed();
+    void propagateCSELazyNodeElapsed(const Action & action, size_t extra_elapsed);
     void reorderShortCircuitArguments();
     void updateLazyNodesSelecivity();
     void updateNodeSelectivity(Action & action);
