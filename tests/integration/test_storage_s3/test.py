@@ -722,7 +722,7 @@ def test_s3_trivial_glob_should_not_list(started_cluster):
         bucket,
         table_format,
     )
-    query_id = "validate_no_s3_list_requests"
+    query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
     assert run_query(instance, query, query_id=query_id).splitlines() == [
         "11\t11\t11\t11"
     ]
