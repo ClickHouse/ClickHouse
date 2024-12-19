@@ -80,7 +80,6 @@ public:
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void setProcessedImpl() = 0;
-    virtual void resetProcessingImpl();
     void setFailedNonRetriable();
     void setFailedRetriable();
 
