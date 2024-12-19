@@ -1,4 +1,5 @@
--- Tags: zookeeper, no-parallel
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree
+# no-shared-merge-tree: quorum logic is specifit to replicated tables
 
 DROP TABLE IF EXISTS quorum1;
 DROP TABLE IF EXISTS quorum2;
