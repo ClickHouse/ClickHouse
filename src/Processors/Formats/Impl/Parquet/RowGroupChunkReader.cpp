@@ -37,10 +37,7 @@ RowGroupChunkReader::RowGroupChunkReader(
 
     for (const auto & col_with_name : parquet_reader->header)
     {
-        if (!parquetReader->parquet_columns.contains(col_with_name.name))
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", col_with_name.name);
-
-        const auto & node = parquetReader->parquet_columns.at(col_with_name.name);
+        const auto & node = parquetReader->getParquetColumn(col_with_name.name);
         SelectiveColumnReaderPtr column_reader;
         auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
         column_reader = builder->buildReader(node, col_with_name.type, 0, 0);
@@ -126,10 +123,6 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                     reader->read(column, select_result.set, rows_to_read);
                     if (select_result.set)
                         select_result.set->setOffset(0);
-//                    if (select_result.valid_count != column->size())
-//                    {
-//                        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Failed to read column {}, expect {} rows, but got {}", name, select_result.valid_count, column->size());
-//                    }
                     columns.emplace_back(std::move(column));
                 }
             }

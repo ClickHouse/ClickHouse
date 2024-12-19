@@ -64,14 +64,14 @@ public:
     {
         return properties;
     }
+    parquet::schema::NodePtr getParquetColumn(const String & column_name);
+
 private:
     std::unique_ptr<parquet::ParquetFileReader> file_reader;
     std::mutex file_mutex;
     SeekableReadBuffer& file;
     parquet::ArrowReaderProperties arrow_properties;
-
     Block header;
-
     std::unique_ptr<SubRowGroupRangeReader> chunk_reader;
 
     UInt64 max_block_size;
@@ -85,6 +85,7 @@ private:
     std::vector<std::shared_ptr<ExpressionFilter>> expression_filters;
     std::unordered_set<String> condition_columns;
     std::shared_ptr<ThreadPool> io_pool;
+    bool case_insensitive = false;
 };
 
 }

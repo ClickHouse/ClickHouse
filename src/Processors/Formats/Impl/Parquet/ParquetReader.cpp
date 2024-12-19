@@ -1,6 +1,7 @@
 #include "ParquetReader.h"
 #include <IO/SharedThreadPools.h>
 #include <Common/ThreadPool.h>
+#include <DataTypes/NestedUtils.h>
 #include <arrow/io/util_internal.h>
 
 namespace CurrentMetrics
@@ -67,10 +68,12 @@ ParquetReader::ParquetReader(
         for (int i = 0; i < meta_data->num_row_groups(); i++)
             row_groups_indices.push_back(i);
     const auto * root = meta_data->schema()->group_node();
+    case_insensitive = format_settings.parquet.case_insensitive_column_matching;
     for (int i = 0; i < root->field_count(); ++i)
     {
         const auto & node = root->field(i);
-        parquet_columns.emplace(node->name(), node);
+        auto name = case_insensitive ? Poco::toLower(node->name()) : node->name();
+        parquet_columns.emplace(name, node);
     }
     chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
 //    if (!io_pool)
@@ -142,6 +145,45 @@ void ParquetReader::addExpressionFilter(std::shared_ptr<ExpressionFilter> filter
         condition_columns.insert(item);
     }
     expression_filters.emplace_back(filter);
+}
+parquet::schema::NodePtr ParquetReader::getParquetColumn(const String & column_name)
+{
+    auto normalized_name = case_insensitive? Poco::toLower(column_name) : column_name;
+    if (parquet_columns.contains(normalized_name))
+        return parquet_columns[normalized_name];
+//    auto parts = Nested::splitName(normalized_name);
+//    // not nested column
+//    if (parts.second.empty())
+//    {
+//        if (!parquet_columns.contains(normalized_name))
+//            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", column_name);
+//        return parquet_columns[normalized_name];
+//    }
+//    auto node = parquet_columns[parts.first];
+//    while (!parts.second.empty())
+//    {
+//        auto child = parts.second;
+//        parts = Nested::splitName(child);
+//        chassert(node->is_group());
+//        auto group = std::static_pointer_cast<parquet::schema::GroupNode>(node);
+//        auto first_name = case_insensitive ? Poco::toLower(child) : child;
+//        bool found = false;
+//        for (int i = 0; i < group->field_count(); ++i)
+//        {
+//            auto child_node = group->field(i);
+//            auto child_name = case_insensitive? Poco::toLower(child_node->name()) : child_node->name();
+//            if (child_name == first_name)
+//            {
+//                node = child_node;
+//                found = true;
+//                break;
+//            }
+//        }
+//        if (!found) break;
+//        if (parts.second.empty())
+//            return node;
+//    }
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", column_name);
 }
 
 
