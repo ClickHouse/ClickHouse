@@ -20,16 +20,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableNameLength : public IFunction, WithContext
+class FunctionGetMaxTableNameLengthForDatabase : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
     static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionGetMaxTableNameLength>(context_);
+        return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(context_);
     }
 
-    explicit FunctionGetMaxTableNameLength(ContextPtr context_) : WithContext(context_)
+    explicit FunctionGetMaxTableNameLengthForDatabase(ContextPtr context_) : WithContext(context_)
     {
     }
 
@@ -92,37 +92,20 @@ private:
 
 REGISTER_FUNCTION(getMaxTableName)
 {
-    factory.registerFunction<FunctionGetMaxTableNameLength>(FunctionDocumentation{
-        .description=R"(
-Returns the maximum table name length in a specified database.
-
-Syntax:
-getMaxTableNameLengthForDatabase(database_name)
-
-Arguments:
-database_name — The name of the specified database. String.
-
-Returned value:
-Returns the length of the maximum table name.
-
-Example:
-[example:typical]
-)",
+    factory.registerFunction<FunctionGetMaxTableNameLengthForDatabase>(FunctionDocumentation{
+        .description=R"(Returns the maximum table name length in a specified database.)",
+        .syntax=R"(getMaxTableNameLengthForDatabase(database_name))",
+        .arguments={{"database_name", "The name of the specified database. String."}},
+        .returned_value=R"(Returns the length of the maximum table name, an Integer)",
         .examples{
-            {"typical", R"(
-Query:
-```
-SELECT getMaxTableNameLengthForDatabase('default');
-```
-
-Result:
-```
-┌─getMaxTableNameLengthForDatabase('default')─┐
-│                                         206 │
-└─────────────────────────────────────────────┘
-```
-)", ""}},
-        .categories{"String"}});
-}
+            {"typical",
+            "SELECT getMaxTableNameLengthForDatabase('default');",
+            R"(
+            ┌─getMaxTableNameLengthForDatabase('default')─┐
+            │                                         206 │
+            └─────────────────────────────────────────────┘
+            )"
+        }}
+   
 
 }
