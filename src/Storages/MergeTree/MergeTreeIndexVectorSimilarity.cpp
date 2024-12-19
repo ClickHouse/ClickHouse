@@ -1,4 +1,4 @@
-z#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 
 #if USE_USEARCH
 
