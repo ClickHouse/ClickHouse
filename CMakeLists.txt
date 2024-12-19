@@ -467,6 +467,9 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
+# Ensure that we always use the dummy launchers for our own code.
+set_dummy_launchers()
+
 if (NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
 endif ()

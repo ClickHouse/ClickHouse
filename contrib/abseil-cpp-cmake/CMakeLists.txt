@@ -1,6 +1,10 @@
 set(ABSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
 set(ABSL_COMMON_INCLUDE_DIRS "${ABSL_ROOT_DIR}")
 
+# Use the original launchers instead of dummy ones for clang-tidy builds
+# because we need protoc, and this is a dependency.
+set_original_launchers()
+
 # To avoid errors "'X' does not refer to a value" while using `offsetof` function.
 set(CMAKE_CXX_STANDARD 17)
 
@@ -3606,3 +3610,5 @@ absl_cc_library(
 add_library(_abseil_swiss_tables INTERFACE)
 target_include_directories (_abseil_swiss_tables SYSTEM BEFORE INTERFACE ${ABSL_ROOT_DIR})
 add_library(ch_contrib::abseil_swiss_tables ALIAS _abseil_swiss_tables)
+
+set_dummy_launchers()

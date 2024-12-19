@@ -1,5 +1,13 @@
 # Setup integration with ccache to speed up builds, see https://ccache.dev/
 
+include(cmake/utils.cmake)
+
+# Early return to avoid configuring any cache if we've set dummy launchers
+if(${USING_DUMMY_LAUNCHERS})
+    message(STATUS "Skipping cache integration because dummy launchers are in use")
+    return()
+endif()
+
 # Matches both ccache and sccache
 if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MATCHES "ccache")
     # custom compiler launcher already defined, most likely because cmake was invoked with like "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" or
