@@ -7,6 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Common/intExp.h>
+#include <Core/DecimalFunctions.h>
 
 
 namespace DB

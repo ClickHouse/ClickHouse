@@ -2,13 +2,14 @@
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
 
-
 namespace DB
 {
 
 using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>;
 using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
+extern template class FunctionComparison<GreaterOp, NameGreater>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(GreaterOrEquals)
 {

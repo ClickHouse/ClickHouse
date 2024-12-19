@@ -14,8 +14,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
-#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/checkDataPart.h>
+
 
 namespace DB
 {
@@ -229,7 +230,7 @@ try
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
-        size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
+        size_t rows_to_read = data_part->index_granularity->getMarkRows(current_mark);
         bool continue_reading = (current_mark != 0);
 
         const auto & sample = reader->getColumns();
@@ -271,7 +272,7 @@ try
 
             auto result = Chunk(std::move(res_columns), rows_read);
             if (add_part_level)
-                result.getChunkInfos().add(std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
+                result.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
             return result;
         }
     }

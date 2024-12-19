@@ -30,8 +30,8 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
         {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Name of a column to which access is granted."},
         {"is_partial_revoke", std::make_shared<DataTypeUInt8>(),
             "Logical value. It shows whether some privileges have been revoked. Possible values: "
-            "0 — The row describes a partial revoke, "
-            "1 — The row describes a grant."
+            "0 — The row describes a grant, "
+            "1 — The row describes a partial revoke."
         },
         {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
     };

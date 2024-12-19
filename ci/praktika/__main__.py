@@ -1,19 +1,19 @@
 import argparse
 import sys
 
-from praktika.html_prepare import Html
-from praktika.utils import Utils
-from praktika.validator import Validator
-from praktika.yaml_generator import YamlGenerator
+from .html_prepare import Html
+from .utils import Utils
+from .validator import Validator
+from .yaml_generator import YamlGenerator
 
 
 def create_parser():
-    parser = argparse.ArgumentParser(prog="python3 -m praktika")
+    parser = argparse.ArgumentParser(prog="praktika")
 
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
     run_parser = subparsers.add_parser("run", help="Job Runner")
-    run_parser.add_argument("--job", help="Job Name", type=str, required=True)
+    run_parser.add_argument("job", help="Job Name", type=str)
     run_parser.add_argument(
         "--workflow",
         help="Workflow Name (required if job name is not uniq per config)",
@@ -38,6 +38,30 @@ def create_parser():
         default=None,
     )
     run_parser.add_argument(
+        "--test",
+        help="Custom parameter to pass into a job script, it's up to job script how to use it, for local test",
+        type=str,
+        default="",
+    )
+    run_parser.add_argument(
+        "--pr",
+        help="PR number. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run in that PR",
+        type=int,
+        default=None,
+    )
+    run_parser.add_argument(
+        "--sha",
+        help="Commit sha. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run on that sha, head sha will be used if not set",
+        type=str,
+        default=None,
+    )
+    run_parser.add_argument(
+        "--branch",
+        help="Commit sha. Optional parameter for local run. Set if you want an required artifact to be uploaded from CI run on that branch, main branch name will be used if not set",
+        type=str,
+        default=None,
+    )
+    run_parser.add_argument(
         "--ci",
         help="When not set - dummy env will be generated, for local test",
         action="store_true",
@@ -51,7 +75,8 @@ def create_parser():
     return parser
 
 
-if __name__ == "__main__":
+def main():
+    sys.path.append(".")
     parser = create_parser()
     args = parser.parse_args()
 
@@ -61,8 +86,8 @@ if __name__ == "__main__":
     elif args.command == "html":
         Html.prepare()
     elif args.command == "run":
-        from praktika.mangle import _get_workflows
-        from praktika.runner import Runner
+        from .mangle import _get_workflows
+        from .runner import Runner
 
         workflows = _get_workflows(name=args.workflow or None)
         job_workflow_pairs = []
@@ -85,10 +110,18 @@ if __name__ == "__main__":
                 workflow=workflow,
                 job=job,
                 docker=args.docker,
-                dummy_env=not args.ci,
+                local_run=not args.ci,
                 no_docker=args.no_docker,
                 param=args.param,
+                test=args.test,
+                pr=args.pr,
+                branch=args.branch,
+                sha=args.sha,
             )
     else:
         parser.print_help()
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

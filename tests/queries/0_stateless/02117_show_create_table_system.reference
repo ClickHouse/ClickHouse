@@ -485,6 +485,8 @@ CREATE TABLE system.parts
     `data_version` UInt64,
     `primary_key_bytes_in_memory` UInt64,
     `primary_key_bytes_in_memory_allocated` UInt64,
+    `index_granularity_bytes_in_memory` UInt64,
+    `index_granularity_bytes_in_memory_allocated` UInt64,
     `is_frozen` UInt8,
     `database` String,
     `table` String,

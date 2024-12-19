@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnSet.h>
@@ -391,6 +392,9 @@ public:
 
                     if (sort_node.hasFillStep())
                         buffer << " STEP " << calculateActionNodeName(sort_node.getFillStep());
+
+                    if (sort_node.hasFillStaleness())
+                        buffer << " STALENESS " << calculateActionNodeName(sort_node.getFillStaleness());
                 }
 
                 if (i + 1 != order_by_nodes_size)
@@ -775,12 +779,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     lambda_actions_dag.getOutputs().push_back(actions_stack.back().getNodeOrThrow(lambda_expression_node_name));
     lambda_actions_dag.removeUnusedActions(Names(1, lambda_expression_node_name));
 
-    auto expression_actions_settings = ExpressionActionsSettings::fromContext(planner_context->getQueryContext(), CompileExpressions::yes);
-    auto lambda_actions = std::make_shared<ExpressionActions>(std::move(lambda_actions_dag), expression_actions_settings);
-
     Names captured_column_names;
     ActionsDAG::NodeRawConstPtrs lambda_children;
-    Names required_column_names = lambda_actions->getRequiredColumns();
+    Names required_column_names = lambda_actions_dag.getRequiredColumnsNames();
 
     actions_stack.pop_back();
     levels.reset(actions_stack.size());
@@ -799,9 +800,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         }
     }
 
+    auto expression_actions_settings = ExpressionActionsSettings::fromContext(planner_context->getQueryContext(), CompileExpressions::yes);
     auto lambda_node_name = calculateActionNodeName(node, *planner_context);
     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
-        lambda_actions, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name);
+        std::move(lambda_actions_dag), expression_actions_settings, captured_column_names, lambda_arguments_names_and_types, lambda_node.getExpression()->getResultType(), lambda_expression_node_name, true);
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
     const auto * actions_node = actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
@@ -863,7 +865,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             PreparedSets::toString(set_key, set_element_types));
 
     ColumnWithTypeAndName column;
-    column.name = planner_context->createSetKey(in_first_argument->getResultType(), in_second_argument);
+    column.name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
     column.type = std::make_shared<DataTypeSet>();
 
     bool set_is_created = set->get() != nullptr;
@@ -923,6 +925,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
+
     if (function_node.getFunctionName() == "indexHint")
         return visitIndexHintFunction(node);
 

@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2984
+personal_ws-1.1 en 2985
 AArch
 ACLs
 ALTERs
@@ -49,6 +49,8 @@ AutoML
 Autocompletion
 AvroConfluent
 AzureQueue
+Azurite
+BFloat
 BIGINT
 BIGSERIAL
 BORO
@@ -186,7 +188,6 @@ ComplexKeyCache
 ComplexKeyDirect
 ComplexKeyHashed
 Composable
-composable
 ConcurrencyControlAcquired
 ConcurrencyControlSoftLimit
 Config
@@ -246,6 +247,7 @@ DefaultTableEngine
 DelayedInserts
 DeliveryTag
 DeltaLake
+Deltalake
 Denormalize
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
@@ -379,6 +381,7 @@ HorizontalDivide
 Hostname
 HouseOps
 Hudi
+HudiCluster
 HyperLogLog
 Hypot
 IANA
@@ -402,15 +405,16 @@ IPTrie
 IProcessor
 IPv
 ITION
+IcebergCluster
 Identifiant
 IdentifierQuotingRule
 IdentifierQuotingStyle
-Incrementing
-IndexesAreNeighbors
-InfluxDB
 InJodaSyntax
 InJodaSyntaxOrNull
 InJodaSyntaxOrZero
+Incrementing
+IndexesAreNeighbors
+InfluxDB
 Instana
 IntN
 Integrations
@@ -1226,6 +1230,7 @@ argMin
 argmax
 argmin
 arrayAUC
+arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -1268,6 +1273,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
@@ -1381,7 +1387,6 @@ bools
 boringssl
 boundingRatio
 bozerkins
-broadcasted
 brotli
 bson
 bsoneachrow
@@ -1407,7 +1412,6 @@ cardinalities
 cardinality
 cartesian
 cassandra
-casted
 catboost
 catboostEvaluate
 categoricalInformationValue
@@ -1474,6 +1478,7 @@ collapsingmergetree
 combinator
 combinators
 comparising
+composable
 composable
 compressability
 concat
@@ -1610,9 +1615,11 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
 deltaLake
+deltaLakeCluster
 deltaSum
 deltaSumTimestamp
 deltalake
+deltalakeCluster
 deltasum
 deltasumtimestamp
 demangle
@@ -1811,11 +1818,13 @@ geocode
 geohash
 geohashDecode
 geohashEncode
+geohashes
 geohashesInBox
 geoip
 geospatial
 getClientHTTPHeader
 getMacro
+getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1930,10 +1939,13 @@ html
 http
 https
 hudi
+hudi
+hudiCluster
 hyperscan
 hypot
 hyvor
 iTerm
+icebergCluster
 icosahedron
 icudata
 idempotency
@@ -1946,6 +1958,7 @@ ilike
 incrementing
 indexHint
 indexOf
+indexOfAssumeSorted
 inequal
 infi
 inflight
@@ -1995,6 +2008,7 @@ jbod
 jdbc
 jemalloc
 jeprof
+joda
 joinGet
 joinGetOrNull
 json
@@ -2355,6 +2369,7 @@ parsedatetime
 parsers
 partitionID
 partitionId
+partsupp
 pathFull
 pclmulqdq
 pcre
@@ -2816,6 +2831,7 @@ summapwithoverflow
 summingmergetree
 sumwithoverflow
 superaggregates
+superset
 supertype
 supremum
 symlink

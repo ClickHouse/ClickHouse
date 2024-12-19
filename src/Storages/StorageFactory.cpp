@@ -69,7 +69,8 @@ StoragePtr StorageFactory::get(
     const ConstraintsDescription & constraints,
     LoadingStrictnessLevel mode) const
 {
-    String name, comment;
+    String name;
+    String comment;
 
     ASTStorage * storage_def = query.storage;
 
@@ -233,7 +234,7 @@ StoragePtr StorageFactory::get(
     {
         /// Storage creator modified empty arguments list, so we should modify the query
         assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
-        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();
+        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();  /// NOLINT(clang-analyzer-core.NullDereference)
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
     }

@@ -757,6 +757,26 @@ bool ColumnTuple::hasDynamicStructure() const
     return false;
 }
 
+bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
+    {
+        const size_t tuple_size = columns.size();
+        if (tuple_size != rhs_tuple->columns.size())
+            return false;
+
+        for (size_t i = 0; i < tuple_size; ++i)
+            if (!columns[i]->dynamicStructureEquals(*rhs_tuple->columns[i]))
+                return false;
+
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     std::vector<Columns> nested_source_columns;
@@ -776,7 +796,7 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
 }
 
 
-ColumnPtr ColumnTuple::compress() const
+ColumnPtr ColumnTuple::compress(bool force_compression) const
 {
     if (columns.empty())
     {
@@ -792,7 +812,7 @@ ColumnPtr ColumnTuple::compress() const
     compressed.reserve(columns.size());
     for (const auto & column : columns)
     {
-        auto compressed_column = column->compress();
+        auto compressed_column = column->compress(force_compression);
         byte_size += compressed_column->byteSize();
         compressed.emplace_back(std::move(compressed_column));
     }
