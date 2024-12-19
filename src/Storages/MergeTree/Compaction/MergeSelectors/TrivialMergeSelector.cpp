@@ -1,11 +1,9 @@
-#include <Storages/MergeTree/MergeSelectors/TrivialMergeSelector.h>
-#include <Storages/MergeTree/MergeSelectors/MergeSelectorFactory.h>
-
 #include <algorithm>
-#include <numeric>
 
 #include <Common/thread_local_rng.h>
 
+#include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
 {
@@ -18,9 +16,9 @@ void registerTrivialMergeSelector(MergeSelectorFactory & factory)
     });
 }
 
-TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
+PartsRange TrivialMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge) const
 {
     size_t num_partitions = parts_ranges.size();
     if (num_partitions == 0)
@@ -78,7 +76,7 @@ TrivialMergeSelector::PartsRange TrivialMergeSelector::select(
 
         ++right;
 
-        if (right < partition.size() && partition[right].level < partition[left].level)
+        if (right < partition.size() && partition[right].part_info.level < partition[left].part_info.level)
             left = right;
     }
 
