@@ -183,7 +183,7 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
 void BackupEntriesCollector::checkIsQueryCancelled() const
 {
     if (process_list_element)
-        process_list_element->checkTimeLimit();
+        process_list_element->checkIfKilledAndThrow();
 }
 
 /// Calculates the root path for collecting backup entries,

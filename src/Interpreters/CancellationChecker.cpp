@@ -8,8 +8,19 @@
 #include <mutex>
 
 
+namespace ProfileEvents
+{
+    extern const Event OverflowBreak;
+    extern const Event OverflowThrow;
+}
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 QueryToTrack::QueryToTrack(
     std::shared_ptr<QueryStatus> query_,
@@ -48,9 +59,17 @@ void CancellationChecker::cancelTask(QueryToTrack task)
     if (task.query)
     {
         if (task.overflow_mode == OverflowMode::THROW)
+        {
             task.query->cancelQuery(CancelReason::TIMEOUT);
+            ProfileEvents::increment(ProfileEvents::OverflowThrow);
+        }
+        else if (task.overflow_mode == OverflowMode::BREAK)
+        {
+            task.query->checkIfKilledAndThrow();
+            ProfileEvents::increment(ProfileEvents::OverflowBreak);
+        }
         else
-            task.query->checkTimeLimit();
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
     }
 }
 
