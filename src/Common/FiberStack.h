@@ -29,7 +29,7 @@ class FiberStack
 private:
     size_t stack_size;
     size_t page_size = 0;
-    
+
     /// The real number of pages and bytes allocated for the stack.
     size_t num_pages = 0;
     size_t num_bytes = 0;
