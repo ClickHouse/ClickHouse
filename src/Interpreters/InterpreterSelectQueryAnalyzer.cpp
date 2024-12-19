@@ -12,6 +12,7 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -37,11 +38,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace
@@ -225,6 +228,9 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
+    planner.buildQueryPlanIfNeeded();
+    checkParallelReplicasSettings(planner.getQueryPlan());
+
     auto pipeline_builder = buildQueryPipeline();
 
     BlockIO result;
@@ -234,6 +240,47 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
         result.pipeline.setQuota(context->getQuota());
 
     return result;
+}
+
+void InterpreterSelectQueryAnalyzer::checkParallelReplicasSettings(const QueryPlan & query_plan) const
+{
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY ||
+        !context->canUseTaskBasedParallelReplicas())
+        return;
+
+    bool found_read_from_parallel_replicas = false;
+    std::unordered_set<const QueryPlan::Node *> visited;
+    std::vector<const QueryPlan::Node *> stack;
+    stack.push_back(query_plan.getRootNode());
+    visited.insert(query_plan.getRootNode());
+    while (!stack.empty())
+    {
+        const QueryPlan::Node * node = stack.back();
+        stack.pop_back();
+        if (typeid_cast<ReadFromParallelRemoteReplicasStep *>(node->step.get()))
+        {
+            found_read_from_parallel_replicas = true;
+            break;
+        }
+        for (const auto & child : node->children)
+            if (visited.insert(child).second)
+                stack.push_back(child);
+    }
+
+    if (!found_read_from_parallel_replicas)
+    {
+        if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
+        {
+            LOG_DEBUG(getLogger("Planner"), "Query will be executed without parallel replicas.");
+        }
+        else if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+        {
+            /// We try to produce better error messages at in a few places in Planner code, saying
+            /// which part of the query is not supported. This is a fallback error for cases
+            /// not covered by the good error messages.
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Parallel replicas can't be used for this query");
+        }
+    }
 }
 
 QueryPlan & InterpreterSelectQueryAnalyzer::getQueryPlan()
