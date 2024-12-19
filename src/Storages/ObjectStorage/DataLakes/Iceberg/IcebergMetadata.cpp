@@ -412,12 +412,6 @@ IcebergMetadata::getSpecificPartitionInfo(const ManifestFileEntry & manifest_fil
         }
         Int32 source_id = manifest_file_entry.getContent().getPartitionSourceIds()[i];
         NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_version, source_id);
-        LOG_DEBUG(
-            &Poco::Logger::get("Form specific info"),
-            "Added schema: {}, source id: {}, name_and_type: {}",
-            schema_version,
-            source_id,
-            name_and_type.dump());
         size_t column_size = manifest_file_entry.getContent().getPartitionColumns()[i]->size();
         if (specific_info.ranges.empty())
         {
@@ -448,21 +442,6 @@ std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & mani
     }
     SpecificSchemaPartitionInfo specific_info = getSpecificPartitionInfo(manifest_file_entry, current_schema_id);
     std::vector<bool> pruning_mask(specific_info.ranges.size(), true);
-    LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Name and types size: {}", specific_info.partition_names_and_types.size());
-
-    for (const auto & name_and_type : specific_info.partition_names_and_types)
-    {
-        LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Name and type: {}", name_and_type.dump());
-    }
-
-    for (const auto & range : specific_info.ranges)
-    {
-        LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "New data file");
-        for (const auto & field_range : range)
-        {
-            LOG_DEBUG(&Poco::Logger::get("In pruning mask"), "Field range: {}", field_range.toString());
-        }
-    }
 
     if (!specific_info.partition_names_and_types.empty())
     {
@@ -475,22 +454,11 @@ std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & mani
             if (!partition_key_condition.checkInHyperrectangle(specific_info.ranges[j], specific_info.partition_names_and_types.getTypes())
                      .can_be_true)
             {
-                LOG_DEBUG(
-                    &Poco::Logger::get("Partition pruning"),
-                    "Partition pruning in manifest {} was successful for file number {}",
-                    manifest_file_entry.getName(),
-                    j);
-
                 ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
                 pruning_mask[j] = false;
             }
             else
             {
-                LOG_DEBUG(
-                    &Poco::Logger::get("Partition pruning"),
-                    "Partition pruning in manifest {} failed for file number {}",
-                    manifest_file_entry.getName(),
-                    j);
                 pruning_mask[j] = true;
             }
         }
@@ -545,7 +513,6 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 
 Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
 {
-    LOG_DEBUG(&Poco::Logger::get("Make partition pruning"), "Make partition pruning");
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
     {
@@ -553,7 +520,6 @@ Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
     }
     return getDataFilesImpl(&filter_dag);
 }
-
 }
 
 #endif
