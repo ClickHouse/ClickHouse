@@ -973,11 +973,46 @@ void ExpressionActions::tryScheduleLazyExecution(size_t current_batch_rows)
     current_round_profile_rows += current_batch_rows;
     if (current_round_profile_rows < reorder_short_circuit_arguments_every_rows)
         return;
-
+    propagateCSELazyNodesElapsed();
     reorderShortCircuitArguments();
     updateLazyNodesSelecivity();
 
     current_round_profile_rows = 0;
+}
+
+void ExpressionActions::propagateCSELazyNodesElapsed()
+{
+    for (const auto & action : actions)
+    {
+        if (action.is_lazy_executed && action.has_high_selectivity && action.parents_pos.size() > 1)
+        {
+            propagateCSELazyNodeElapsed(action, action.elapsed_ns);
+        }
+    }
+}
+
+void ExpressionActions::propagateCSELazyNodeElapsed(const Action & action, size_t extra_elapsed)
+{
+    if (!extra_elapsed)
+        return;
+    size_t total_rows = 0;
+    for (const auto & pos : action.parents_pos)
+    {
+        total_rows += actions[pos].current_round_calcuated_rows;
+    }
+    if (!total_rows)
+        return;
+    for (const auto & pos : action.parents_pos)
+    {
+        auto & parent_action = actions[pos];
+        size_t sub_elapsed = static_cast<size_t>(extra_elapsed * parent_action.current_round_calcuated_rows / total_rows);
+        parent_action.elapsed_ns += sub_elapsed;
+        // If the parent is not lazy executed in current round, stop propagation.
+        if (parent_action.is_lazy_executed && (!parent_action.has_high_selectivity || parent_action.parents_pos.size() <= 1))
+        {
+            propagateCSELazyNodeElapsed(parent_action, sub_elapsed);
+        }
+    }
 }
 
 // let selectivity = short circuit selected rows / input rows

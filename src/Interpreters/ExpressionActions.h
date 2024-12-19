@@ -199,6 +199,8 @@ private:
 
     void updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
     void tryScheduleLazyExecution(size_t current_batch_rows);
+    void propagateCSELazyNodesElapsed();
+    void propagateCSELazyNodeElapsed(const Action & action, size_t extra_elapsed);
     void reorderShortCircuitArguments();
     void updateLazyNodesSelecivity();
     void updateNodeSelectivity(Action & action);
