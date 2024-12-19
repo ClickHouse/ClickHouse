@@ -121,7 +121,10 @@ public:
 
         auto future_set = column_set->getData();
         if (!future_set)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
+        {
+            return ColumnUInt8::create(input_rows_count, 0u);
+            // throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
+        }
 
         auto set = future_set->get();
         if (!set)

@@ -13,7 +13,7 @@ InterpreterShowPrivilegesQuery::InterpreterShowPrivilegesQuery(const ASTPtr & qu
 
 BlockIO InterpreterShowPrivilegesQuery::execute()
 {
-    return executeQuery("SELECT * FROM system.privileges", context, QueryFlags{ .internal = true }).second;
+    return executeQuery("SELECT * FROM system.privileges", nullptr, context, QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory)
