@@ -113,6 +113,10 @@ Using the ‘any’ value lets you run an approximation of GROUP BY. The quality
 
 Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
 
+:::note
+- You cannot use this setting and `max_bytes_ratio_before_external_group_by` at the same time
+:::
+
 Possible values:
 
 - Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operation.
@@ -128,12 +132,12 @@ The ratio of available memory that is allowed for `GROUP BY`, once reached, uses
 
 For example, if set to `0.6`, `GROUP BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external aggregation.
 
-Default value: `0.0`.
-
 :::note
-- You cannot use both `max_bytes_ratio_before_external_group_by` and `max_bytes_before_external_group_by`
-- **The algorithm is experimental and subject to change**
+- You cannot use this setting and `max_bytes_before_external_group_by` at the same time
+- **The setting is experimental and subject to change**
 :::
+
+Default value: `0.0`.
 
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
@@ -141,6 +145,10 @@ Enables or disables execution of `ORDER BY` clauses in external memory. See [ORD
 
 - Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation. Recommended value is half of available system memory
 - 0 — `ORDER BY` in external memory disabled.
+
+:::note
+- You cannot use this setting and `max_bytes_ratio_before_external_sort` at the same time
+:::
 
 Default value: 0.
 
@@ -152,12 +160,12 @@ The ratio of available memory that is allowed for `ORDER BY`, once reached, uses
 
 For example, if set to `0.6`, `ORDER BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
 
-Default value: `0.0`.
-
 :::note
-- You cannot use both `max_bytes_ratio_before_external_sort` and `max_bytes_before_external_sort`
-- **The algorithm is experimental and subject to change**
+- You cannot use this setting and `max_bytes_before_external_sort` at the same time
+- The setting is experimental and subject to change
 :::
+
+Default value: `0.0`.
 
 ## max_rows_to_sort {#max-rows-to-sort}
 
