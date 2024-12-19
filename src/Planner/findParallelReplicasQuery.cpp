@@ -164,7 +164,7 @@ public:
                 storage.supportsReplication());
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());
-            if (table_node->hasTableExpressionModifiers())
+            if (table_node && table_node->hasTableExpressionModifiers())
                 dummy_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
 
             dummy_table_node->setAlias(node->getAlias());
