@@ -118,6 +118,10 @@ void MySQLWithFailoverSource::onStart()
                 throw;
             }
         }
+        catch (mysqlxx::ConnectionFailed & ecl)  /// Replica is probably down - try next.
+        {
+            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, settings->default_num_tries_on_connection_loss, ecl.displayText());
+        }
         catch (const mysqlxx::BadQuery & e)
         {
             LOG_ERROR(log, "Error processing query '{}': {}", query_str, e.displayText());
