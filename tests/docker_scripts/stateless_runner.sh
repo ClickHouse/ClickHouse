@@ -302,6 +302,11 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
+    if [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
+      # increase test coverage
+      ADDITIONAL_OPTIONS+=('--replace-log-with-mt')
+    fi
+
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
