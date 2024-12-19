@@ -101,6 +101,11 @@ UInt64 BloomFilter::isEmpty() const
     return true;
 }
 
+size_t BloomFilter::memoryUsageBytes() const
+{
+    return filter.capacity() * sizeof(UnderType);
+}
+
 bool operator== (const BloomFilter & a, const BloomFilter & b)
 {
     for (size_t i = 0; i < a.words; ++i)
