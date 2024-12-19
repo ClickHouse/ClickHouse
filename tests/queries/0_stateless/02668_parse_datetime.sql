@@ -197,7 +197,7 @@ select parseDateTime(''); -- { serverError NOT_ENOUGH_SPACE }
 
 select parseDateTime64(''); -- { serverError NOT_ENOUGH_SPACE }
 select parseDateTime64('2021-01-04 23:12:34.118'); -- { serverError NOT_ENOUGH_SPACE }
-select parseDateTime64('2177-10-09 10:30:10.123'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64('2177-10-09 10:30:10.123'); -- { serverError NOT_ENOUGH_SPACE }
 select parseDateTime64('2021-01-04 23:12:34.118112') = toDateTime64('2021-01-04 23:12:34.118112', 6);
 select parseDateTime64('2021-01-04 23:12:34.118112', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2021-01-04 23:12:34.118112', 6);
 select parseDateTime64('2021-01-04 23:12:34.118', '%Y-%m-%d %H:%i:%s.%f'); -- { serverError NOT_ENOUGH_SPACE }
