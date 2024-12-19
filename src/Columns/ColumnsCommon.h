@@ -142,4 +142,10 @@ ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, 
     template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
+
+#define INSTANTIATE_INDEX_TEMPLATE_IMPL(ColumnTemplate) \
+    template ColumnPtr ColumnTemplate<UInt8>::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const; \
+    template ColumnPtr ColumnTemplate<UInt16>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \
+    template ColumnPtr ColumnTemplate<UInt32>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const; \
+    template ColumnPtr ColumnTemplate<UInt64>::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
 }

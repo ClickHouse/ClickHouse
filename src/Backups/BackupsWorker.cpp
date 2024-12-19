@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 using OperationID = BackupOperationID;
@@ -90,14 +91,14 @@ namespace
 
     BackupStatus getBackupStatusFromCurrentException()
     {
-        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED || getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
             return BackupStatus::BACKUP_CANCELLED;
         return BackupStatus::BACKUP_FAILED;
     }
 
     BackupStatus getRestoreStatusFromCurrentException()
     {
-        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED || getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
             return BackupStatus::RESTORE_CANCELLED;
         return BackupStatus::RESTORE_FAILED;
     }
@@ -119,8 +120,8 @@ namespace
     ReadSettings getReadSettingsForBackup(const ContextPtr & context, const BackupSettings & backup_settings)
     {
         auto read_settings = context->getReadSettings();
-        read_settings.remote_throttler = context->getBackupsThrottler();
-        read_settings.local_throttler = context->getBackupsThrottler();
+        read_settings.remote_throttler = context->getBackupsThrottler(backup_settings.max_backup_bandwidth);
+        read_settings.local_throttler = context->getBackupsThrottler(backup_settings.max_backup_bandwidth);
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
         return read_settings;
@@ -133,11 +134,11 @@ namespace
         return write_settings;
     }
 
-    ReadSettings getReadSettingsForRestore(const ContextPtr & context)
+    ReadSettings getReadSettingsForRestore(const ContextPtr & context, std::optional<UInt64> max_backup_bandwidth)
     {
         auto read_settings = context->getReadSettings();
-        read_settings.remote_throttler = context->getBackupsThrottler();
-        read_settings.local_throttler = context->getBackupsThrottler();
+        read_settings.remote_throttler = context->getBackupsThrottler(max_backup_bandwidth);
+        read_settings.local_throttler = context->getBackupsThrottler(max_backup_bandwidth);
         read_settings.enable_filesystem_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         return read_settings;
@@ -848,7 +849,7 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     backup_open_params.allow_s3_native_copy = restore_settings.allow_s3_native_copy;
     backup_open_params.use_same_s3_credentials_for_base_backup = restore_settings.use_same_s3_credentials_for_base_backup;
     backup_open_params.use_same_password_for_base_backup = restore_settings.use_same_password_for_base_backup;
-    backup_open_params.read_settings = getReadSettingsForRestore(context);
+    backup_open_params.read_settings = getReadSettingsForRestore(context, restore_settings.max_backup_bandwidth);
     backup_open_params.write_settings = getWriteSettingsForRestore(context);
     backup_open_params.is_internal_backup = restore_settings.internal;
     auto backup = BackupFactory::instance().createBackup(backup_open_params);

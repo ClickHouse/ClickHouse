@@ -17,7 +17,7 @@ To declare a column of `Dynamic` type, use the following syntax:
 Where `N` is an optional parameter between `0` and `254` indicating how many different data types can be stored as separate subcolumns inside a column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). If this limit is exceeded, all values with new types will be stored together in a special shared data structure in binary form. Default value of `max_types` is `32`.
 
 :::note
-The Dynamic data type is an experimental feature. To use it, set `allow_experimental_dynamic_type = 1`.
+The Dynamic data type is a beta feature. To use it, set `enable_dynamic_type = 1`.
 :::
 
 ## Creating Dynamic
@@ -54,7 +54,7 @@ SELECT 'Hello, World!'::Dynamic as d, dynamicType(d);
 Using CAST from `Variant` column:
 
 ```sql
-SET allow_experimental_variant_type = 1, use_variant_as_common_type = 1;
+SET enable_variant_type = 1, use_variant_as_common_type = 1;
 SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NULL)::Dynamic AS d, dynamicType(d) FROM numbers(3)
 ```
 

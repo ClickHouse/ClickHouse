@@ -29,10 +29,6 @@ struct ScopeAliases
 
     std::unordered_map<std::string, DataTypePtr> alias_name_to_expression_type;
 
-    /// Names which are aliases from ARRAY JOIN.
-    /// This is needed to properly qualify columns from matchers and avoid name collision.
-    std::unordered_set<std::string> array_join_aliases;
-
     std::unordered_map<std::string, QueryTreeNodePtr> & getAliasMap(IdentifierLookupContext lookup_context)
     {
         switch (lookup_context)

@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-fasttest
 
 set allow_experimental_dynamic_type = 1;
 set allow_experimental_json_type = 1;
@@ -10,10 +10,10 @@ insert into test select number, '{"a" : 42, "b" : "Hello, World"}' from numbers(
 
 SELECT
     `table`,
-    formatReadableQuantity(sum(rows)) AS rows,
-    formatReadableSize(sum(data_uncompressed_bytes)) AS data_size_uncompressed,
-    formatReadableSize(sum(data_compressed_bytes)) AS data_size_compressed,
-    formatReadableSize(sum(bytes_on_disk)) AS total_size_on_disk
+    sum(rows) AS rows,
+    floor(sum(data_uncompressed_bytes) / (1024 * 1024)) AS data_size_uncompressed,
+    floor(sum(data_compressed_bytes) / (1024 * 1024)) AS data_size_compressed,
+    floor(sum(bytes_on_disk) / (1024 * 1024)) AS total_size_on_disk
 FROM system.parts
 WHERE active AND (database = currentDatabase()) AND (`table` = 'test')
 GROUP BY `table`

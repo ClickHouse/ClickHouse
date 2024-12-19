@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2984
+personal_ws-1.1 en 2985
 AArch
 ACLs
 ALTERs
@@ -49,6 +49,9 @@ AutoML
 Autocompletion
 AvroConfluent
 AzureQueue
+Azurite
+arrayNormalizedGini
+BFloat
 BIGINT
 BIGSERIAL
 BORO
@@ -245,6 +248,7 @@ DefaultTableEngine
 DelayedInserts
 DeliveryTag
 DeltaLake
+Deltalake
 Denormalize
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
@@ -347,6 +351,7 @@ GetResolution
 GetUnidirectionalEdge
 GetUnidirectionalEdgeBoundary
 GetUnidirectionalEdgesFromHexagon
+Gini
 GitLab
 GlobalThread
 GlobalThreadActive
@@ -378,6 +383,7 @@ HorizontalDivide
 Hostname
 HouseOps
 Hudi
+HudiCluster
 HyperLogLog
 Hypot
 IANA
@@ -401,6 +407,7 @@ IPTrie
 IProcessor
 IPv
 ITION
+IcebergCluster
 Identifiant
 IdentifierQuotingRule
 IdentifierQuotingStyle
@@ -1225,6 +1232,7 @@ argMin
 argmax
 argmin
 arrayAUC
+arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -1267,6 +1275,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
@@ -1380,7 +1389,6 @@ bools
 boringssl
 boundingRatio
 bozerkins
-broadcasted
 brotli
 bson
 bsoneachrow
@@ -1406,7 +1414,6 @@ cardinalities
 cardinality
 cartesian
 cassandra
-casted
 catboost
 catboostEvaluate
 categoricalInformationValue
@@ -1610,9 +1617,11 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
 deltaLake
+deltaLakeCluster
 deltaSum
 deltaSumTimestamp
 deltalake
+deltalakeCluster
 deltasum
 deltasumtimestamp
 demangle
@@ -1817,6 +1826,7 @@ geoip
 geospatial
 getClientHTTPHeader
 getMacro
+getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1931,10 +1941,13 @@ html
 http
 https
 hudi
+hudi
+hudiCluster
 hyperscan
 hypot
 hyvor
 iTerm
+icebergCluster
 icosahedron
 icudata
 idempotency
@@ -1947,6 +1960,7 @@ ilike
 incrementing
 indexHint
 indexOf
+indexOfAssumeSorted
 inequal
 infi
 inflight
@@ -1996,6 +2010,7 @@ jbod
 jdbc
 jemalloc
 jeprof
+joda
 joinGet
 joinGetOrNull
 json
@@ -2818,6 +2833,7 @@ summapwithoverflow
 summingmergetree
 sumwithoverflow
 superaggregates
+superset
 supertype
 supremum
 symlink

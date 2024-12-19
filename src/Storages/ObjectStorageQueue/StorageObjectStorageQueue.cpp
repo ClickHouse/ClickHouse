@@ -2,11 +2,13 @@
 
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -39,6 +41,11 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 keeper_multiread_batch_size;
 }
 
 namespace ObjectStorageQueueSetting
@@ -204,7 +211,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.settings_changes = engine_args->settings->ptr();
+    if (engine_args->settings)
+        storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -213,10 +221,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
-    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        zk_path, std::move(table_metadata), (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms], (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
+    ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
+    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
+        storage_type,
+        zk_path,
+        std::move(table_metadata),
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
+
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata), table_id_);
 
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
@@ -248,7 +263,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
 void StorageObjectStorageQueue::drop()
 {
-    ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
+    ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -568,15 +583,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
-    /// For compatibility.
-    "s3queue_processing_threads_num",
-    "s3queue_loading_retries",
-    "s3queue_after_processing",
-    "s3queue_tracked_files_limit",
-    "s3queue_tracked_file_ttl_sec",
-    "s3queue_polling_min_timeout_ms",
-    "s3queue_polling_max_timeout_ms",
-    "s3queue_polling_backoff_ms",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -586,12 +592,6 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
-    /// For compatibility.
-    "s3queue_loading_retries",
-    "s3queue_after_processing",
-    "s3queue_polling_min_timeout_ms",
-    "s3queue_polling_max_timeout_ms",
-    "s3queue_polling_backoff_ms",
 };
 
 static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
@@ -607,30 +607,42 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY SETTING alter is allowed for {}", getName());
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY/RESET SETTING alter is allowed for {}", getName());
     }
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     commands.apply(new_metadata, local_context);
 
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     if (!new_metadata.hasSettingsChanges())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No settings changes");
 
     const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-    const auto & old_changes = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    const SettingsChanges * old_changes = nullptr;
+    if (old_metadata.hasSettingsChanges())
+        old_changes = &old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
     const auto mode = getTableMetadata().getMode();
     for (const auto & changed_setting : new_changes)
     {
-        auto it = std::find_if(
-            old_changes.begin(), old_changes.end(),
-            [&](const SettingChange & change) { return change.name == changed_setting.name; });
+        bool setting_changed = true;
+        if (old_changes)
+        {
+            auto it = std::find_if(
+                old_changes->begin(), old_changes->end(),
+                [&](const SettingChange & change) { return change.name == changed_setting.name; });
 
-        const bool setting_changed = it != old_changes.end() && it->value != changed_setting.value;
+            setting_changed = it != old_changes->end() && it->value != changed_setting.value;
+        }
 
         if (setting_changed)
         {
-            if (!isSettingChangeable(changed_setting.name, mode))
+            SettingChange result_setting(changed_setting);
+            if (result_setting.name.starts_with("s3queue_"))
+                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
+
+            if (!isSettingChangeable(result_setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -650,24 +662,29 @@ void StorageObjectStorageQueue::alter(
     {
         auto table_id = getStorageID();
 
-        StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-        const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         commands.apply(new_metadata, local_context);
         auto new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
 
-        ObjectStorageQueueSettings default_settings;
-        for (const auto & setting : old_settings)
-        {
-            auto it = std::find_if(
-                new_settings.begin(), new_settings.end(),
-                [&](const SettingChange & change) { return change.name == setting.name; });
+        StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        const SettingsChanges * old_settings = nullptr;
+        if (old_metadata.hasSettingsChanges())
+            old_settings = &old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
-            if (it == new_settings.end())
+        if (old_settings)
+        {
+            ObjectStorageQueueSettings default_settings;
+            for (const auto & setting : *old_settings)
             {
-                /// Setting was reset.
-                new_settings.push_back(SettingChange(setting.name, default_settings.get(setting.name)));
+                auto it = std::find_if(
+                    new_settings.begin(), new_settings.end(),
+                    [&](const SettingChange & change) { return change.name == setting.name; });
+
+                if (it == new_settings.end())
+                {
+                    /// Setting was reset.
+                    new_settings.push_back(SettingChange(setting.name, default_settings.get(setting.name)));
+                }
             }
         }
 
@@ -677,15 +694,23 @@ void StorageObjectStorageQueue::alter(
         const auto mode = getTableMetadata().getMode();
         for (const auto & setting : new_settings)
         {
-            auto it = std::find_if(
-                old_settings.begin(), old_settings.end(),
-                [&](const SettingChange & change) { return change.name == setting.name; });
+            bool setting_changed = true;
+            if (old_settings)
+            {
+                auto it = std::find_if(
+                    old_settings->begin(), old_settings->end(),
+                    [&](const SettingChange & change) { return change.name == setting.name; });
 
-            const bool setting_changed = it == old_settings.end() || it->value != setting.value;
+                setting_changed = it == old_settings->end() || it->value != setting.value;
+            }
             if (!setting_changed)
                 continue;
 
-            if (!isSettingChangeable(setting.name, mode))
+            SettingChange result_setting(setting);
+            if (result_setting.name.starts_with("s3queue_"))
+                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
+
+            if (!isSettingChangeable(result_setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -693,16 +718,14 @@ void StorageObjectStorageQueue::alter(
                     setting.name, magic_enum::enum_name(mode), getName());
             }
 
-            SettingChange result_setting(setting);
-            if (result_setting.name.starts_with("s3queue_"))
-                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
-
             changed_settings.push_back(result_setting);
 
             auto inserted = changed_settings_set.emplace(result_setting.name).second;
             if (!inserted)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", setting.name);
         }
+
+        LOG_TEST(log, "New settings: {}", serializeAST(*new_metadata.settings_changes));
 
         /// Alter settings which are stored in keeper.
         files_metadata->alterSettings(changed_settings);
@@ -731,13 +754,20 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
+std::shared_ptr<StorageObjectStorageQueue::FileIterator>
+StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
     auto settings = configuration->getQuerySettings(local_context);
     auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
+        object_storage, configuration, predicate, getVirtualsList(), local_context,
+        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 
-    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
+    const auto & table_metadata = getTableMetadata();
+    bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
+        && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
+
+    return std::make_shared<FileIterator>(
+        files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const

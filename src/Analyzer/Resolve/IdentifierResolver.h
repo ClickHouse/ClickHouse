@@ -21,6 +21,7 @@ class QueryExpressionsAliasVisitor ;
 class QueryNode;
 class JoinNode;
 class ColumnNode;
+class TableNode;
 
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
@@ -109,11 +110,21 @@ public:
         const QueryTreeNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
-    IdentifierResolveResult tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
+    static bool tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup,
+        const IdentifierResolveScope & scope);
+
+    IdentifierResolveResult tryResolveIdentifierFromTableExpression(
+        const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
-    IdentifierResolveResult tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveResult tryResolveIdentifierFromCrossJoin(
+        const IdentifierLookup & identifier_lookup,
+        const QueryTreeNodePtr & table_expression_node,
+        IdentifierResolveScope & scope);
+
+    IdentifierResolveResult tryResolveIdentifierFromJoin(
+        const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
@@ -123,7 +134,14 @@ public:
         const QueryTreeNodePtr & resolved_expression,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(const QueryTreeNodePtr & resolved_expression,
+    QueryTreeNodePtr tryResolveExpressionFromArrayJoinNestedExpression(
+        const QueryTreeNodePtr & resolved_expression,
+        IdentifierResolveScope & scope,
+        ColumnNode & array_join_column_expression_typed,
+        QueryTreeNodePtr & array_join_column_inner_expression);
+
+    QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(
+        const QueryTreeNodePtr & resolved_expression,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 

@@ -72,8 +72,8 @@ private:
     void createRootNodes();
 
     /// Atomically creates both 'start' and 'alive' nodes and also checks that there is no concurrent backup or restore if `allow_concurrency` is false.
-    void createStartAndAliveNodes();
-    void createStartAndAliveNodes(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
+    void createStartAndAliveNodesAndCheckConcurrency(BackupConcurrencyCounters & concurrency_counters_);
+    void createStartAndAliveNodesAndCheckConcurrency(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper);
 
     /// Deserialize the version of a node stored in the 'start' node.
     int parseStartNode(const String & start_node_contents, const String & host) const;
@@ -171,7 +171,7 @@ private:
     const String alive_node_path;
     const String alive_tracker_node_path;
 
-    std::optional<BackupConcurrencyCheck> concurrency_check;
+    std::optional<BackupConcurrencyCheck> local_concurrency_check;
 
     std::shared_ptr<Poco::Event> zk_nodes_changed;
 
@@ -197,6 +197,9 @@ private:
     };
 
     /// Information about all the host participating in the current BACKUP or RESTORE operation.
+    /// This information is read from ZooKeeper.
+    /// To simplify the programming logic `state` can only be updated AFTER changing corresponding nodes in ZooKeeper
+    /// (for example, first we create the 'error' node, and only after that we set or read from ZK the `state.host_with_error` field).
     struct State
     {
         std::map<String /* host */, HostInfo> hosts; /// std::map because we need to compare states

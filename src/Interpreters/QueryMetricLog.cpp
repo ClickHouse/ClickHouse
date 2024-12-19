@@ -102,8 +102,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
     const auto query_info = process_list.getQueryInfo(query_id, false, true, false);
     if (!query_info)
     {
-        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
-        LOG_TRACE(logger, "Query {} is not running anymore, so we couldn't get its QueryStatusInfo", query_id);
+        LOG_TEST(logger, "Query {} is not running anymore, so we couldn't get its QueryStatusInfo", query_id);
         return;
     }
 
@@ -114,8 +113,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
     if (it == queries.end())
     {
         global_lock.unlock();
-        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
-        LOG_TRACE(logger, "Query {} not found in the list. Finished while this collecting task was running", query_id);
+        LOG_TEST(logger, "Query {} not found in the list. Finished while this collecting task was running", query_id);
         return;
     }
 
@@ -123,8 +121,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
     if (!query_status.mutex)
     {
         global_lock.unlock();
-        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
-        LOG_TRACE(logger, "Query {} finished while this collecting task was running", query_id);
+        LOG_TEST(logger, "Query {} finished while this collecting task was running", query_id);
         return;
     }
 
@@ -221,7 +218,7 @@ void QueryMetricLogStatus::scheduleNext(String query_id)
     }
     else
     {
-        LOG_TRACE(logger, "The next collecting task for query {} should have already run at {}. Scheduling it right now",
+        LOG_TEST(logger, "The next collecting task for query {} should have already run at {}. Scheduling it right now",
             query_id, timePointToString(info.next_collect_time));
         info.task->schedule();
     }
@@ -229,15 +226,13 @@ void QueryMetricLogStatus::scheduleNext(String query_id)
 
 std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
 {
-    /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
-    LOG_TRACE(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Next collection time: {}",
+    LOG_TEST(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Next collection time: {}",
         query_id, info.interval_milliseconds, timePointToString(query_info_time),
         schedule_next ? timePointToString(info.next_collect_time + std::chrono::milliseconds(info.interval_milliseconds)) : "finished");
 
     if (query_info_time <= info.last_collect_time)
     {
-        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
-        LOG_TRACE(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
+        LOG_TEST(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
         return {};
     }
 
@@ -271,8 +266,7 @@ std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElemen
     }
     else
     {
-        /// TODO: remove trace before 24.11 release after checking everything is fine on the CI
-        LOG_DEBUG(logger, "Query {} has no profile counters", query_id);
+        LOG_TEST(logger, "Query {} has no profile counters", query_id);
         elem.profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     }
 
