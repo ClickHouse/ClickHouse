@@ -1,4 +1,5 @@
 ---
+title: workloads
 slug: /en/operations/system-tables/workloads
 ---
 # workloads

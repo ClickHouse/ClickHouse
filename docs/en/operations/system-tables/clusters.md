@@ -1,4 +1,5 @@
 ---
+title: clusters
 slug: /en/operations/system-tables/clusters
 ---
 # clusters

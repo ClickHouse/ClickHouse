@@ -1,4 +1,5 @@
 ---
+title: sumMap
 slug: /en/sql-reference/aggregate-functions/reference/summap
 sidebar_position: 198
 ---

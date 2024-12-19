@@ -1,4 +1,5 @@
 ---
+title: projections
 slug: /en/operations/system-tables/projections
 ---
 # projections

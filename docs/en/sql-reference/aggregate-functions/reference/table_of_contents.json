@@ -1,0 +1,474 @@
+[
+    {
+        "title": "aggThrow",
+        "slug": "/en/sql-reference/aggregate-functions/reference/aggthrow"
+    },
+    {
+        "title": "analysisOfVariance",
+        "slug": "/en/sql-reference/aggregate-functions/reference/analysis_of_variance"
+    },
+    {
+        "title": "any",
+        "slug": "/en/sql-reference/aggregate-functions/reference/any"
+    },
+    {
+        "title": "anyHeavy",
+        "slug": "/en/sql-reference/aggregate-functions/reference/anyheavy"
+    },
+    {
+        "title": "anyLast",
+        "slug": "/en/sql-reference/aggregate-functions/reference/anylast"
+    },
+    {
+        "title": "approx_top_k",
+        "slug": "/en/sql-reference/aggregate-functions/reference/approxtopk"
+    },
+    {
+        "title": "approx_top_sum",
+        "slug": "/en/sql-reference/aggregate-functions/reference/approxtopsum"
+    },
+    {
+        "title": "argMax",
+        "slug": "/en/sql-reference/aggregate-functions/reference/argmax"
+    },
+    {
+        "title": "argMin",
+        "slug": "/en/sql-reference/aggregate-functions/reference/argmin"
+    },
+    {
+        "title": "array_concat_agg",
+        "slug": "/en/sql-reference/aggregate-functions/reference/array_concat_agg"
+    },
+    {
+        "title": "avg",
+        "slug": "/en/sql-reference/aggregate-functions/reference/avg"
+    },
+    {
+        "title": "avgWeighted",
+        "slug": "/en/sql-reference/aggregate-functions/reference/avgweighted"
+    },
+    {
+        "title": "boundingRatio",
+        "slug": "/en/sql-reference/aggregate-functions/reference/boundingRatio"
+    },
+    {
+        "title": "categoricalInformationValue",
+        "slug": "/en/sql-reference/aggregate-functions/reference/categoricalinformationvalue"
+    },
+    {
+        "title": "contingency",
+        "slug": "/en/sql-reference/aggregate-functions/reference/contingency"
+    },
+    {
+        "title": "corr",
+        "slug": "/en/sql-reference/aggregate-functions/reference/corr"
+    },
+    {
+        "title": "corrMatrix",
+        "slug": "/en/sql-reference/aggregate-functions/reference/corrmatrix"
+    },
+    {
+        "title": "corrStable",
+        "slug": "/en/sql-reference/aggregate-functions/reference/corrstable"
+    },
+    {
+        "title": "count",
+        "slug": "/en/sql-reference/aggregate-functions/reference/count"
+    },
+    {
+        "title": "covarPop",
+        "slug": "/en/sql-reference/aggregate-functions/reference/covarpop"
+    },
+    {
+        "title": "covarPopMatrix",
+        "slug": "/en/sql-reference/aggregate-functions/reference/covarpopmatrix"
+    },
+    {
+        "title": "covarPopStable",
+        "slug": "/en/sql-reference/aggregate-functions/reference/covarpopstable"
+    },
+    {
+        "title": "covarSamp",
+        "slug": "/en/sql-reference/aggregate-functions/reference/covarsamp"
+    },
+    {
+        "title": "covarSampMatrix",
+        "slug": "/en/sql-reference/aggregate-functions/reference/covarsampmatrix"
+    },
+    {
+        "title": "covarSampStable",
+        "slug": "/en/sql-reference/aggregate-functions/reference/covarsampstable"
+    },
+    {
+        "title": "cramersV",
+        "slug": "/en/sql-reference/aggregate-functions/reference/cramersv"
+    },
+    {
+        "title": "cramersVBiasCorrected",
+        "slug": "/en/sql-reference/aggregate-functions/reference/cramersvbiascorrected"
+    },
+    {
+        "title": "deltaSum",
+        "slug": "/en/sql-reference/aggregate-functions/reference/deltasum"
+    },
+    {
+        "title": "deltaSumTimestamp",
+        "slug": "/en/sql-reference/aggregate-functions/reference/deltasumtimestamp"
+    },
+    {
+        "title": "distinctDynamicTypes",
+        "slug": "/en/sql-reference/aggregate-functions/reference/distinctdynamictypes"
+    },
+    {
+        "title": "distinctJSONPaths",
+        "slug": "/en/sql-reference/aggregate-functions/reference/distinctjsonpaths"
+    },
+    {
+        "title": "entropy",
+        "slug": "/en/sql-reference/aggregate-functions/reference/entropy"
+    },
+    {
+        "title": "exponentialMovingAverage",
+        "slug": "/en/sql-reference/aggregate-functions/reference/exponentialMovingAverage"
+    },
+    {
+        "title": "exponentialTimeDecayedAvg",
+        "slug": "/en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedAvg"
+    },
+    {
+        "title": "exponentialTimeDecayedCount",
+        "slug": "/en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedCount"
+    },
+    {
+        "title": "exponentialTimeDecayedMax",
+        "slug": "/en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedMax"
+    },
+    {
+        "title": "exponentialTimeDecayedSum",
+        "slug": "/en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedSum"
+    },
+    {
+        "title": "first_value",
+        "slug": "/en/sql-reference/aggregate-functions/reference/first_value"
+    },
+    {
+        "title": "flameGraph",
+        "slug": "/en/sql-reference/aggregate-functions/reference/flame_graph"
+    },
+    {
+        "title": "groupArray",
+        "slug": "/en/sql-reference/aggregate-functions/reference/grouparray"
+    },
+    {
+        "title": "groupArrayInsertAt",
+        "slug": "/en/sql-reference/aggregate-functions/reference/grouparrayinsertat"
+    },
+    {
+        "title": "groupArrayIntersect",
+        "slug": "/en/sql-reference/aggregate-functions/reference/grouparrayintersect"
+    },
+    {
+        "title": "groupArrayLast",
+        "slug": "/en/sql-reference/aggregate-functions/reference/grouparraylast"
+    },
+    {
+        "title": "groupArrayMovingAvg",
+        "slug": "/en/sql-reference/aggregate-functions/reference/grouparraymovingavg"
+    },
+    {
+        "title": "groupArrayMovingSum",
+        "slug": "/en/sql-reference/aggregate-functions/reference/grouparraymovingsum"
+    },
+    {
+        "title": "groupArraySample",
+        "slug": "/en/sql-reference/aggregate-functions/reference/grouparraysample"
+    },
+    {
+        "title": "groupArraySorted",
+        "slug": "/en/sql-reference/aggregate-functions/reference/grouparraysorted"
+    },
+    {
+        "title": "groupBitAnd",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupbitand"
+    },
+    {
+        "title": "groupBitOr",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupbitor"
+    },
+    {
+        "title": "groupBitXor",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupbitxor"
+    },
+    {
+        "title": "groupBitmap",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupbitmap"
+    },
+    {
+        "title": "groupBitmapAnd",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupbitmapand"
+    },
+    {
+        "title": "groupBitmapOr",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupbitmapor"
+    },
+    {
+        "title": "groupBitmapXor",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupbitmapxor"
+    },
+    {
+        "title": "groupConcat",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupconcat"
+    },
+    {
+        "title": "groupUniqArray",
+        "slug": "/en/sql-reference/aggregate-functions/reference/groupuniqarray"
+    },
+    {
+        "title": "intervalLengthSum",
+        "slug": "/en/sql-reference/aggregate-functions/reference/intervalLengthSum"
+    },
+    {
+        "title": "kolmogorovSmirnovTest",
+        "slug": "/en/sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest"
+    },
+    {
+        "title": "kurtPop",
+        "slug": "/en/sql-reference/aggregate-functions/reference/kurtpop"
+    },
+    {
+        "title": "kurtSamp",
+        "slug": "/en/sql-reference/aggregate-functions/reference/kurtsamp"
+    },
+    {
+        "title": "largestTriangleThreeBuckets",
+        "slug": "/en/sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets"
+    },
+    {
+        "title": "last_value",
+        "slug": "/en/sql-reference/aggregate-functions/reference/last_value"
+    },
+    {
+        "title": "mannWhitneyUTest",
+        "slug": "/en/sql-reference/aggregate-functions/reference/mannwhitneyutest"
+    },
+    {
+        "title": "max",
+        "slug": "/en/sql-reference/aggregate-functions/reference/max"
+    },
+    {
+        "title": "maxIntersections",
+        "slug": "/en/sql-reference/aggregate-functions/reference/maxintersections"
+    },
+    {
+        "title": "maxIntersectionsPosition",
+        "slug": "/en/sql-reference/aggregate-functions/reference/maxintersectionsposition"
+    },
+    {
+        "title": "maxMap",
+        "slug": "/en/sql-reference/aggregate-functions/reference/maxmap"
+    },
+    {
+        "title": "meanZTest",
+        "slug": "/en/sql-reference/aggregate-functions/reference/meanztest"
+    },
+    {
+        "title": "median",
+        "slug": "/en/sql-reference/aggregate-functions/reference/median"
+    },
+    {
+        "title": "min",
+        "slug": "/en/sql-reference/aggregate-functions/reference/min"
+    },
+    {
+        "title": "minMap",
+        "slug": "/en/sql-reference/aggregate-functions/reference/minmap"
+    },
+    {
+        "title": "quantile",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantile"
+    },
+    {
+        "title": "quantileBFloat16",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantilebfloat16"
+    },
+    {
+        "title": "quantileDD",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantileddsketch"
+    },
+    {
+        "title": "quantileDeterministic",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantiledeterministic"
+    },
+    {
+        "title": "quantileExact",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantileexact"
+    },
+    {
+        "title": "quantileExactWeighted",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantileexactweighted"
+    },
+    {
+        "title": "quantileExactWeightedInterpolated",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated"
+    },
+    {
+        "title": "quantileGK",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantileGK"
+    },
+    {
+        "title": "quantileInterpolatedWeighted",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantileInterpolatedWeighted"
+    },
+    {
+        "title": "quantileTDigest",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantiletdigest"
+    },
+    {
+        "title": "quantileTDigestWeighted",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted"
+    },
+    {
+        "title": "quantileTiming",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantiletiming"
+    },
+    {
+        "title": "quantileTimingWeighted",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantiletimingweighted"
+    },
+    {
+        "title": "quantiles",
+        "slug": "/en/sql-reference/aggregate-functions/reference/quantiles"
+    },
+    {
+        "title": "rankCorr",
+        "slug": "/en/sql-reference/aggregate-functions/reference/rankCorr"
+    },
+    {
+        "title": "simpleLinearRegression",
+        "slug": "/en/sql-reference/aggregate-functions/reference/simplelinearregression"
+    },
+    {
+        "title": "singleValueOrNull",
+        "slug": "/en/sql-reference/aggregate-functions/reference/singlevalueornull"
+    },
+    {
+        "title": "skewPop",
+        "slug": "/en/sql-reference/aggregate-functions/reference/skewpop"
+    },
+    {
+        "title": "skewSamp",
+        "slug": "/en/sql-reference/aggregate-functions/reference/skewsamp"
+    },
+    {
+        "title": "sparkbar",
+        "slug": "/en/sql-reference/aggregate-functions/reference/sparkbar"
+    },
+    {
+        "title": "stddevPop",
+        "slug": "/en/sql-reference/aggregate-functions/reference/stddevpop"
+    },
+    {
+        "title": "stddevPopStable",
+        "slug": "/en/sql-reference/aggregate-functions/reference/stddevpopstable"
+    },
+    {
+        "title": "stddevSamp",
+        "slug": "/en/sql-reference/aggregate-functions/reference/stddevsamp"
+    },
+    {
+        "title": "stddevSampStable",
+        "slug": "/en/sql-reference/aggregate-functions/reference/stddevsampstable"
+    },
+    {
+        "title": "stochasticLinearRegression",
+        "slug": "/en/sql-reference/aggregate-functions/reference/stochasticlinearregression"
+    },
+    {
+        "title": "stochasticLogisticRegression",
+        "slug": "/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression"
+    },
+    {
+        "title": "studentTTest",
+        "slug": "/en/sql-reference/aggregate-functions/reference/studentttest"
+    },
+    {
+        "title": "sum",
+        "slug": "/en/sql-reference/aggregate-functions/reference/sum"
+    },
+    {
+        "title": "sumCount",
+        "slug": "/en/sql-reference/aggregate-functions/reference/sumcount"
+    },
+    {
+        "title": "sumKahan",
+        "slug": "/en/sql-reference/aggregate-functions/reference/sumkahan"
+    },
+    {
+        "title": "sumMap",
+        "slug": "/en/sql-reference/aggregate-functions/reference/summap"
+    },
+    {
+        "title": "sumMapWithOverflow",
+        "slug": "/en/sql-reference/aggregate-functions/reference/summapwithoverflow"
+    },
+    {
+        "title": "sumWithOverflow",
+        "slug": "/en/sql-reference/aggregate-functions/reference/sumwithoverflow"
+    },
+    {
+        "title": "theilsU",
+        "slug": "/en/sql-reference/aggregate-functions/reference/theilsu"
+    },
+    {
+        "title": "topK",
+        "slug": "/en/sql-reference/aggregate-functions/reference/topk"
+    },
+    {
+        "title": "topKWeighted",
+        "slug": "/en/sql-reference/aggregate-functions/reference/topkweighted"
+    },
+    {
+        "title": "uniq",
+        "slug": "/en/sql-reference/aggregate-functions/reference/uniq"
+    },
+    {
+        "title": "uniqCombined",
+        "slug": "/en/sql-reference/aggregate-functions/reference/uniqcombined"
+    },
+    {
+        "title": "uniqCombined64",
+        "slug": "/en/sql-reference/aggregate-functions/reference/uniqcombined64"
+    },
+    {
+        "title": "uniqExact",
+        "slug": "/en/sql-reference/aggregate-functions/reference/uniqexact"
+    },
+    {
+        "title": "uniqHLL12",
+        "slug": "/en/sql-reference/aggregate-functions/reference/uniqhll12"
+    },
+    {
+        "title": "uniqTheta",
+        "slug": "/en/sql-reference/aggregate-functions/reference/uniqthetasketch"
+    },
+    {
+        "title": "varPop",
+        "slug": "/en/sql-reference/aggregate-functions/reference/varPop"
+    },
+    {
+        "title": "varPopStable",
+        "slug": "/en/sql-reference/aggregate-functions/reference/varpopstable"
+    },
+    {
+        "title": "varSamp",
+        "slug": "/en/sql-reference/aggregate-functions/reference/varSamp"
+    },
+    {
+        "title": "varSampStable",
+        "slug": "/en/sql-reference/aggregate-functions/reference/varsampstable"
+    },
+    {
+        "title": "welchTTest",
+        "slug": "/en/sql-reference/aggregate-functions/reference/welchttest"
+    }
+]

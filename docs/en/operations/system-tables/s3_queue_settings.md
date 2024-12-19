@@ -1,4 +1,5 @@
 ---
+title: s3_queue_settings
 slug: /en/operations/system-tables/s3_queue_settings
 ---
 # s3_queue_settings

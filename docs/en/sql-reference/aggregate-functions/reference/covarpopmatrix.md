@@ -1,4 +1,5 @@
 ---
+title: covarPopMatrix
 slug: /en/sql-reference/aggregate-functions/reference/covarpopmatrix
 sidebar_position: 122
 ---

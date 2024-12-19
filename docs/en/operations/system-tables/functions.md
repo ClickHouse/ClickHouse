@@ -1,4 +1,5 @@
 ---
+title: functions
 slug: /en/operations/system-tables/functions
 ---
 # functions

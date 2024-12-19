@@ -1,4 +1,5 @@
 ---
+title: groupArrayMovingAvg
 slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingavg
 sidebar_position: 143
 ---

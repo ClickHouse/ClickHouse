@@ -1,4 +1,5 @@
 ---
+title: corrMatrix
 slug: /en/sql-reference/aggregate-functions/reference/corrmatrix
 sidebar_position: 118
 ---

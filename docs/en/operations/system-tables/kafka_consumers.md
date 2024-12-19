@@ -1,4 +1,5 @@
 ---
+title: kafka_consumers
 slug: /en/operations/system-tables/kafka_consumers
 ---
 # kafka_consumers

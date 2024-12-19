@@ -1,8 +1,10 @@
 ---
+title: max
 slug: /en/sql-reference/aggregate-functions/reference/max
 sidebar_position: 162
-title: max
 ---
+
+# max
 
 Aggregate function that calculates the maximum across a group of values.
 

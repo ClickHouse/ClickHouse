@@ -1,4 +1,5 @@
 ---
+title: crash_log
 slug: /en/operations/system-tables/crash-log
 ---
 # crash_log

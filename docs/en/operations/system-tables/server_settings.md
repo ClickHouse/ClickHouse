@@ -1,4 +1,5 @@
 ---
+title: server_settings
 slug: /en/operations/system-tables/server_settings
 ---
 # server_settings
