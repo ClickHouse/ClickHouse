@@ -8,9 +8,9 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
 
 
-#    include <Columns/ColumnTuple.h>
-#    include <Poco/JSON/Parser.h>
-#    include "DataTypes/DataTypeTuple.h"
+#include <Columns/ColumnTuple.h>
+#include <Poco/JSON/Parser.h>
+#include "DataTypes/DataTypeTuple.h"
 
 
 namespace DB::ErrorCodes

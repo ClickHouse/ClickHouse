@@ -18,13 +18,13 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 
-#    include <Formats/FormatFactory.h>
-#    include <Server/HTTP/HTMLForm.h>
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Formats/FormatFactory.h>
+#include <Server/HTTP/HTMLForm.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 
-#    include <Poco/URI.h>
-#    include <Poco/JSON/Array.h>
-#    include <Poco/JSON/Parser.h>
+#include <Poco/URI.h>
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Parser.h>
 
 
 namespace DB::ErrorCodes

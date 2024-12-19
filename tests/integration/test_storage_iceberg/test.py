@@ -60,7 +60,6 @@ def get_spark():
         )
         .master("local")
     )
-
     return builder.master("local").getOrCreate()
 
 
@@ -115,7 +114,6 @@ def started_cluster():
         logging.info("S3 bucket created")
 
         cluster.spark_session = get_spark()
-
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )

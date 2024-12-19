@@ -21,7 +21,7 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
-#    include <Common/ProfileEvents.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents
