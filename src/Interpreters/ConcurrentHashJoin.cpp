@@ -95,9 +95,10 @@ void reserveSpaceInHashMaps(
         const size_t reserve_size = hint->median_size;
         ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
 
+        /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
+        /// we preallocate space only in the specific buckets of each `HashJoin` instance.
         auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
         {
-            // clang-format off
             switch (type)
             {
 
@@ -113,7 +114,6 @@ void reserveSpaceInHashMaps(
                 default:
                     UNREACHABLE();
             }
-            // clang-format on
         };
 
         for (size_t i = 0; i < slots; ++i)
@@ -462,7 +462,6 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     auto calculate_selector = [&](auto & maps)
     {
         BlockHashes hash;
-        // clang-format off
         switch (join.getJoinedData()->type)
         {
         #define M(TYPE)                                                                                                                       \
@@ -477,7 +476,6 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
             default:
                 UNREACHABLE();
         }
-        // clang-format on
     };
 
     /// CHJ supports only one join clause for now
@@ -595,11 +593,13 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     if (!hash_joins[0]->data->twoLevelMapIsUsed())
         return;
 
+    // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
+    // It is done in two steps:
+    //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
     for (size_t i = 1; i < slots; ++i)
     {
         auto move_buckets = [&](auto & lhs_map, HashJoin::Type type, auto & rhs_map, size_t idx)
         {
-            // clang-format off
             switch (type)
             {
 
@@ -619,7 +619,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 default:
                     UNREACHABLE();
             }
-            // clang-format on
         };
 
         std::visit(
@@ -631,6 +630,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             getData(hash_joins[0])->maps.at(0));
     }
 
+    //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
     for (size_t i = 1; i < slots; ++i)
     {
         getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
