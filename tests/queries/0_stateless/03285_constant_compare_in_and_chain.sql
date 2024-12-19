@@ -31,3 +31,8 @@ EXPLAIN QUERY TREE
 SELECT pk
 FROM test
 WHERE (b > a) AND (c > b) AND (5 > c);
+
+EXPLAIN QUERY TREE
+SELECT pk
+FROM test
+WHERE (c > 0) AND (c < 5);

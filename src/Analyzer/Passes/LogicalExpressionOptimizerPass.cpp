@@ -1006,7 +1006,8 @@ private:
             {
                 for (const auto & left : it->second)
                 {
-                    if (constant)
+                    /// Non-sense to have both sides as constant
+                    if (constant && !left->as<ConstantNode>())
                     {
                         // std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<" "<<constant->dumpTree()<<std::endl;
                         const auto and_node = std::make_shared<FunctionNode>("less");
