@@ -1,4 +1,4 @@
-#include "StorageSystemS3Queue.h"
+#include "StorageSystemObjectStorageQueue.h"
 
 #include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeString.h>
@@ -20,14 +20,14 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
+template <ObjectStorageType type>
+ColumnsDescription StorageSystemObjectStorageQueue<type>::getColumnsDescription()
 {
-    /// TODO: Fill in all the comments
     return ColumnsDescription
     {
-        {"zookeeper_path", std::make_shared<DataTypeString>(), "Path in zookeeper to S3Queue metadata"},
-        {"file_path", std::make_shared<DataTypeString>(), "File path of a file which is being processed by S3Queue"},
-        {"file_name", std::make_shared<DataTypeString>(), "File name of a file which is being processed by S3Queue"},
+        {"zookeeper_path", std::make_shared<DataTypeString>(), "Path in zookeeper to metadata"},
+        {"file_path", std::make_shared<DataTypeString>(), "File path of a file which is being processed"},
+        {"file_name", std::make_shared<DataTypeString>(), "File name of a file which is being processed"},
         {"rows_processed", std::make_shared<DataTypeUInt64>(), "Currently processed number of rows"},
         {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed"},
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file started"},
@@ -36,15 +36,20 @@ ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
     };
 }
 
-StorageSystemS3Queue::StorageSystemS3Queue(const StorageID & table_id_)
+template <ObjectStorageType type>
+StorageSystemObjectStorageQueue<type>::StorageSystemObjectStorageQueue(const StorageID & table_id_)
     : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
 }
 
-void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+template <ObjectStorageType type>
+void StorageSystemObjectStorageQueue<type>::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     for (const auto & [zookeeper_path, metadata] : ObjectStorageQueueMetadataFactory::instance().getAll())
     {
+        if (type != metadata->getType())
+            continue;
+
         for (const auto & [file_path, file_status] : metadata->getFileStatuses())
         {
             size_t i = 0;
@@ -68,5 +73,8 @@ void StorageSystemS3Queue::fillData(MutableColumns & res_columns, ContextPtr, co
         }
     }
 }
+
+template class StorageSystemObjectStorageQueue<ObjectStorageType::S3>;
+template class StorageSystemObjectStorageQueue<ObjectStorageType::Azure>;
 
 }

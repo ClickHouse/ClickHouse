@@ -1,6 +1,8 @@
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <unordered_set>
 
 
 namespace DB
@@ -91,5 +93,24 @@ void ASTRolesOrUsersSet::replaceCurrentUserTag(const String & current_user_name)
         except_current_user = false;
     }
 }
+
+AccessRightsElements ASTRolesOrUsersSet::collectRequiredGrants(AccessType access_type)
+{
+    AccessRightsElements res;
+    std::unordered_set<String> except(except_names.begin(), except_names.end());
+    for (const auto & name: names)
+    {
+        if (except.contains(name))
+            continue;
+
+        res.push_back(AccessRightsElement(access_type, name));
+    }
+
+    if (all)
+        res.push_back(AccessRightsElement(access_type));
+
+    return res;
+}
+
 
 }
