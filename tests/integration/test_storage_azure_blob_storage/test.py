@@ -1319,7 +1319,7 @@ def test_format_detection(cluster):
     account_name = "devstoreaccount1"
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
-    put_azure_file_content('test_format_detection0', port, b'')
+    put_azure_file_content("test_format_detection0", port, b"")
 
     azure_query(
         node,
