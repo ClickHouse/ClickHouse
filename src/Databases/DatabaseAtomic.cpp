@@ -207,7 +207,7 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
 {
     waitDatabaseStarted();
 
-    assert(fs::exists(getObjectMetadataPath(table_name)));
+    assert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
 
     const String table_metadata_path = getObjectMetadataPath(table_name);
     const UUID uuid_table = getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
@@ -222,13 +222,13 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         if (txn && !local_context->isInternalSubquery())
             txn->commit();
 
-        fs::rename(table_metadata_path, table_metadata_path_drop);
+        db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
         LOG_TRACE(log, "Rename {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
 
         table_name_to_path.erase(table_name);
     }
 
-    if (fs::exists(getPathSymlink(table_name)))
+    if (db_disk->existsFile(getPathSymlink(table_name)))
     {
         LOG_TRACE(log, "Remove symlink for {}", table_name);
         tryRemoveSymlink(table_name);

@@ -172,12 +172,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 ErrorCodes::UNKNOWN_TABLE, "Table {} should be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
         }
 
-        if (!fs::exists(database->getObjectMetadataPath(table_name)))
-        {
-            throw Exception(
-                ErrorCodes::UNKNOWN_TABLE, "Metadata for table {} does not exist. Table was dropped early", table_id.getNameForLogs());
-        }
-
         database->dropDetachedTable(context_, table_name, query.sync);
         return {};
     }
