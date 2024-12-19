@@ -95,6 +95,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
             case C::GZIP: options.compression = CompressionMethod::Gzip; break;
             case C::BROTLI: options.compression = CompressionMethod::Brotli; break;
         }
+        options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
         options.output_string_as_string = format_settings.parquet.output_string_as_string;
         options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
         options.data_page_size = format_settings.parquet.data_page_size;
