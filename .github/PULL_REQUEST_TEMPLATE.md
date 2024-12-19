@@ -43,9 +43,9 @@ At a minimum, the following information should be added (but add more as needed)
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
 
-#### CI Settings (Only check the boxes if you know what you are doing):
+#### CI Settings (Only check the boxes if you know what you are doing)
 
-Remember that all builds in Builds_1 and Builds_2 stages are always mandatory
+All builds in Builds_1 and Builds_2 stages are always mandatory
 and will run independently of the checks below:
 
 - [ ] <!---ci_set_required--> Allow: All Required Checks

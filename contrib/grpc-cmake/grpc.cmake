@@ -21,6 +21,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Use the original launchers instead of dummy ones for clang-tidy builds
+# because we need grpc.
+set_original_launchers()
+
 # We want to use C++23, but GRPC is not ready
 set (CMAKE_CXX_STANDARD 17)
 
@@ -1856,3 +1860,5 @@ target_link_libraries(grpc_cpp_plugin
 )
 
 endif()
+
+set_dummy_launchers()

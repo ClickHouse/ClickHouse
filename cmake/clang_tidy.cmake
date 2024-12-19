@@ -1,6 +1,8 @@
 # https://clang.llvm.org/extra/clang-tidy/
 option (ENABLE_CLANG_TIDY "Use clang-tidy static analyzer" OFF)
 
+include(cmake/utils.cmake)
+
 if (ENABLE_CLANG_TIDY)
 
     find_program (CLANG_TIDY_CACHE_PATH NAMES "clang-tidy-cache")
@@ -26,6 +28,13 @@ if (ENABLE_CLANG_TIDY)
         # clang-tidy requires assertions to guide the analysis
         # Note that NDEBUG is set implicitly by CMake for non-debug builds
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -UNDEBUG")
+
+        # Use a dummy compiler and linker to avoid doing any extra work. Using the compiler with ccache/sccache
+        # is not that bad if the cache is hot, but linking takes ~20min.
+        set_dummy_launchers()
+
+        # We need to include again tools.cmake to override STRIP_PATH.
+        include(cmake/tools.cmake)
 
         # The variable CMAKE_CXX_CLANG_TIDY will be set inside the following directories with non third-party code.
         # - base

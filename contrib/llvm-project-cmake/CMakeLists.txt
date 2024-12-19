@@ -1,3 +1,7 @@
+# Use the original launchers instead of dummy ones for clang-tidy builds
+# because we need to generate some files using llvm-tlbgen.
+set_original_launchers()
+
 if (APPLE OR SANITIZE STREQUAL "memory")
     # llvm-tblgen, that is used during LLVM build, will throw MSAN errors when running (breaking the build)
     # TODO: Retest when upgrading LLVM or build only llvm-tblgen without sanitizers
@@ -165,3 +169,5 @@ add_library (_llvm INTERFACE)
 target_link_libraries (_llvm INTERFACE ${REQUIRED_LLVM_LIBRARIES})
 target_include_directories (_llvm SYSTEM BEFORE INTERFACE ${LLVM_INCLUDE_DIRS})
 add_library(ch_contrib::llvm ALIAS _llvm)
+
+set_dummy_launchers()

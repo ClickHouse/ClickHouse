@@ -105,12 +105,16 @@ else ()
 endif ()
 
 # Strip
-find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
-if (STRIP_PATH)
-    message (STATUS "Using strip: ${STRIP_PATH}")
-else ()
-    message (FATAL_ERROR "Cannot find strip.")
-endif ()
+if (NOT USING_DUMMY_LAUNCHERS)
+    find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
+    if (STRIP_PATH)
+        message (STATUS "Using strip: ${STRIP_PATH}")
+    else ()
+        message (FATAL_ERROR "Cannot find strip.")
+    endif ()
+else()
+    set(STRIP_PATH "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
+endif()
 
 if (OS_DARWIN AND NOT CMAKE_TOOLCHAIN_FILE)
     # utils/list-licenses/list-licenses.sh (which generates system table system.licenses) needs the GNU versions of find and grep. These are
