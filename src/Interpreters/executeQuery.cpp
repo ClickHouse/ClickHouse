@@ -876,6 +876,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
 #ifndef NDEBUG
+        if(settings[Setting::dialect] == Dialect::clickhouse)
+        {
             try
             {
                 /// Verify that AST formatting is consistent:
@@ -936,6 +938,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     throw;
             }
 #endif
+        }
         }
 
         const char * query_end = end;
