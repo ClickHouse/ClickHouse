@@ -90,6 +90,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
     - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
+    - `max_backup_bandwidth`: the maximum read speed in bytes per second for a backup. Zero means unlimited.
 
 ### Usage examples
 
@@ -434,6 +435,10 @@ But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
 - If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 :::
+
+## Using Named Collections
+
+Named collections can be used for `BACKUP/RESTORE` parameters. See [here](./named-collections.md#named-collections-for-backups) for an example.
 
 ## Alternatives
 
