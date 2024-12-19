@@ -58,6 +58,7 @@ SELECT arrayFilter(x -> x > 2, [1, 2, 3]);
 [3]
 SELECT arrayFilter(x -> NULL, [1, 2, 3]);
 []
+SELECT arrayFilter(x -> 1.1, [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayFilter(x -> 'string', [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT '---count---';
 ---count---

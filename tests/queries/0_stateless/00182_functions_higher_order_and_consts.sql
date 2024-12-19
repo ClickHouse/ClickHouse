@@ -14,6 +14,7 @@ SELECT arrayFilter(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 SELECT arrayFilter(x -> x > 1, [1, 2, 3]);
 SELECT arrayFilter(x -> x > 2, [1, 2, 3]);
 SELECT arrayFilter(x -> NULL, [1, 2, 3]);
+SELECT arrayFilter(x -> 1.1, [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayFilter(x -> 'string', [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT '---count---';
 SELECT arrayCount(x -> 0, emptyArrayUInt8());
