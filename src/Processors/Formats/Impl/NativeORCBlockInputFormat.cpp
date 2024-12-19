@@ -80,8 +80,6 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool use_prefetch)
     : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
 {
-    LOG_TEST(getLogger("NativeORCBlockInputFormat"), "supports_read_at:{}", supports_read_at);
-
     if (supports_read_at)
         async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ORCFile");
 }
