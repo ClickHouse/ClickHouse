@@ -198,7 +198,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         generateEngineDetails(rg, next, true, te);
         if (next.isMergeTreeFamily() && rg.nextMediumNumber() < 16)
         {
-            generateNextTTL(rg, std::nullopt, te, entries, te->mutable_ttl_expr());
+            generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
         }
         this->entries.clear();
 

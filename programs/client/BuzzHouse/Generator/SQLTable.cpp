@@ -231,11 +231,10 @@ int StatementGenerator::generateNextCodecs(RandomGenerator & rg, CodecList * cl)
     return 0;
 }
 
-int StatementGenerator::generateTTLExpression(
-    RandomGenerator & rg, const std::optional<SQLTable> & t, std::vector<InsertEntry> & ientries, Expr * ttl_expr)
+int StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr)
 {
     assert(filtered_entries.empty());
-    for (const auto & entry : ientries)
+    for (const auto & entry : this->entries)
     {
         SQLType * tp = entry.getBottomType();
 
@@ -274,12 +273,7 @@ int StatementGenerator::generateTTLExpression(
     return 0;
 }
 
-int StatementGenerator::generateNextTTL(
-    RandomGenerator & rg,
-    const std::optional<SQLTable> & t,
-    const TableEngine * te,
-    std::vector<InsertEntry> & ientries,
-    TTLExpr * ttl_expr)
+int StatementGenerator::generateNextTTL(RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr)
 {
     const uint32_t nttls = (rg.nextLargeNumber() % 3) + 1;
 
@@ -288,7 +282,7 @@ int StatementGenerator::generateNextTTL(
         const uint32_t nopt = rg.nextSmallNumber();
         TTLEntry * entry = i == 0 ? ttl_expr->mutable_ttl_expr() : ttl_expr->add_other_ttl();
 
-        generateTTLExpression(rg, t, ientries, entry->mutable_time_expr());
+        generateTTLExpression(rg, t, entry->mutable_time_expr());
         if (nopt < 5)
         {
             TTLUpdate * tupt = entry->mutable_update();
@@ -327,7 +321,7 @@ int StatementGenerator::generateNextTTL(
             const TableKey & tk = te->has_primary_key() && te->primary_key().exprs_size() ? te->primary_key() : te->order();
             std::uniform_int_distribution<uint32_t> table_key_dist(1, tk.exprs_size());
             const uint32_t ttl_group_size = table_key_dist(rg.generator);
-            const size_t nset = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(ientries.size()), UINT32_C(3))) + 1;
+            const size_t nset = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(3))) + 1;
 
             for (uint32_t j = 0; j < ttl_group_size; j++)
             {
@@ -1015,8 +1009,9 @@ int StatementGenerator::addTableColumn(
         }
         if (!t.hasDatabasePeer() && rg.nextMediumNumber() < 16)
         {
-            std::vector<InsertEntry> ientries;
-            generateTTLExpression(rg, t, ientries, cd->mutable_ttl_expr());
+            flatTableColumnPath(0, t, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
+            generateTTLExpression(rg, t, cd->mutable_ttl_expr());
+            this->entries.clear();
         }
         cd->set_is_pkey(is_pk);
     }
@@ -1498,7 +1493,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         }
         if (has_date_cols || rg.nextMediumNumber() < 6)
         {
-            generateNextTTL(rg, next, te, entries, te->mutable_ttl_expr());
+            generateNextTTL(rg, next, te, te->mutable_ttl_expr());
         }
         entries.clear();
     }

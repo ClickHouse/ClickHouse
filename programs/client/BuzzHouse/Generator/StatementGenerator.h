@@ -232,14 +232,8 @@ private:
     void flatTableColumnPath(uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter);
     int generateStorage(RandomGenerator & rg, Storage * store) const;
     int generateNextCodecs(RandomGenerator & rg, CodecList * cl);
-    int
-    generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, std::vector<InsertEntry> & ientries, Expr * ttl_expr);
-    int generateNextTTL(
-        RandomGenerator & rg,
-        const std::optional<SQLTable> & t,
-        const TableEngine * te,
-        std::vector<InsertEntry> & ientries,
-        TTLExpr * ttl_expr);
+    int generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr);
+    int generateNextTTL(RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr);
     int generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
     int pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnPathList * clist);
     int addTableColumn(
