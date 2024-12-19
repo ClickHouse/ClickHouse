@@ -122,7 +122,6 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl()
 
     if (processing_id_version.has_value())
     {
-        requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
         requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 
@@ -133,8 +132,11 @@ void ObjectStorageQueueUnorderedFileMetadata::setProcessedImpl()
         request_index[REMOVE_PROCESSING_PATH] = 2;
         request_index[SET_PROCESSED_PATH] = 3;
     }
+    else
+    {
+        request_index[SET_PROCESSED_PATH] = 0;
+    }
 
-    request_index[SET_PROCESSED_PATH] = 0;
     requests.push_back(
         zkutil::makeCreateRequest(
             processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));

@@ -276,12 +276,11 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
             node_metadata.toString());
     }
 
-    size_t check_processing_id_path_idx = 0;
-    size_t remove_processing_id_path_idx = 1;
-    size_t remove_processing_path_idx = 2;
+    static constexpr size_t check_processing_id_path_idx = 0;
+    static constexpr size_t remove_processing_id_path_idx = 1;
+    static constexpr size_t remove_processing_path_idx = 2;
 
     Coordination::Requests requests;
-    requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
     requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 
