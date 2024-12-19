@@ -2652,6 +2652,7 @@ seekable
 seektable
 sequenceCount
 sequenceMatch
+sequenceMatchEvents
 sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey
