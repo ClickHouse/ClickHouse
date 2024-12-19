@@ -262,10 +262,8 @@ public:
     /// Removes a pipeline to the QueryStatus
     void removePipelineExecutor(PipelineExecutor * e);
 
-    /// Checks the query time limits (cancelled or timeout)
-    bool checkTimeLimit();
-    /// Same as checkTimeLimit but it never throws
-    [[nodiscard]] bool checkTimeLimitSoft();
+    /// Throws an exception if query is killed
+    bool checkIfKilledAndThrow();
 
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
     UInt64 getQueryCPUStartTime() { return watch.getStart(); }

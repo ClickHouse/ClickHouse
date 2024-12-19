@@ -31,12 +31,6 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         info.started = true;
     }
 
-    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode))
-    {
-        stopReading();
-        return;
-    }
-
     if (chunk)
     {
         info.update(chunk);

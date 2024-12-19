@@ -116,7 +116,7 @@ public:
         while (true)
         {
             if (query_status)
-                query_status->checkTimeLimit();
+                query_status->checkIfKilledAndThrow();
 
             /// Try to pick up a request to schedule
             std::tuple<UInt64, StoragePtr, std::shared_ptr<std::promise<ReplicatedTableStatus>>, bool> req;
@@ -478,7 +478,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
     for (size_t i = 0; i < tables_size; ++i)
     {
         if (query_status)
-            query_status->checkTimeLimit();
+            query_status->checkIfKilledAndThrow();
 
         auto & storage = replicated_tables[(*col_database)[i].safeGet<const String &>()]
             [(*col_table)[i].safeGet<const String &>()];
@@ -508,7 +508,7 @@ Chunk SystemReplicasSource::generate()
     for (; i < futures.size(); ++i)
     {
         if (query_status)
-            query_status->checkTimeLimit();
+            query_status->checkIfKilledAndThrow();
 
         if (rows_added)
         {

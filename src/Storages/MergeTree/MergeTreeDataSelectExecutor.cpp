@@ -700,7 +700,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto process_part = [&](size_t part_index)
         {
             if (query_status)
-                query_status->checkTimeLimit();
+                query_status->checkIfKilledAndThrow();
 
             auto & part = parts[part_index];
 
@@ -1612,7 +1612,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     for (const auto & part_or_projection : prev_parts)
     {
         if (query_status)
-            query_status->checkTimeLimit();
+            query_status->checkIfKilledAndThrow();
 
         fiu_do_on(FailPoints::slowdown_index_analysis,
         {

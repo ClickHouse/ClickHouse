@@ -550,7 +550,7 @@ Chunk SystemZooKeeperSource::generate()
     while (!paths.empty())
     {
         if (query_status)
-            query_status->checkTimeLimit();
+            query_status->checkIfKilledAndThrow();
 
         /// Check if the block is big enough already
         if (max_block_size > 0 && row_count > 0)
@@ -607,7 +607,7 @@ Chunk SystemZooKeeperSource::generate()
 
             auto & task = list_tasks[list_task_idx];
             if (query_status)
-                query_status->checkTimeLimit();
+                query_status->checkIfKilledAndThrow();
 
             Strings nodes = std::move(list_result.names);
 
@@ -659,7 +659,7 @@ Chunk SystemZooKeeperSource::generate()
             auto & get_task = get_tasks[i];
             auto & list_task = list_tasks[get_task.list_task_idx];
             if (query_status)
-                query_status->checkTimeLimit();
+                query_status->checkIfKilledAndThrow();
 
             // Deduplication
             String key = list_task.path_part + '/' + get_task.node;
