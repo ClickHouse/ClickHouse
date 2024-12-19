@@ -137,12 +137,16 @@ def main():
         minio_log = "/tmp/praktika/output/minio.log"
         res = res and CH.start_minio(test_type="stateless", log_file_path=minio_log)
         logs_to_attach += [minio_log]
-        time.sleep(10)
+        azurit_log = "/tmp/praktika/output/azurit.log"
+        res = res and CH.start_minio(test_type="stateless", log_file_path=azurit_log)
+        logs_to_attach += [azurit_log]
+        res = res and CH.log_cluster_config()
+        time.sleep(5)
         Shell.check("ps -ef | grep minio", verbose=True)
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
-        res = res and CH.log_cluster_config()
+        Shell.check("ps -ef | grep azur", verbose=True)
         res = res and CH.start()
         res = res and CH.wait_ready()
         if res:

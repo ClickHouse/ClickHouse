@@ -53,7 +53,24 @@ class ClickHouseProc:
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
         print(f"Started setup_minio.sh asynchronously with PID {process.pid}")
-        return True
+        return process.poll() is None
+
+    def start_azurit(self, log_file_path):
+        command = [
+            "azurite-blob",
+            "--blobHost",
+            "0.0.0.0",
+            "--blobPort",
+            "10000",
+            "--silent",
+            "--inMemoryPersistence",
+        ]
+        with open(log_file_path, "w") as log_file:
+            process = subprocess.Popen(
+                command, stdout=log_file, stderr=subprocess.STDOUT
+            )
+        print(f"Started azurit asynchronously with PID {process.pid}")
+        return process.poll() is None
 
     def log_cluster_config(self):
         return Shell.check(
