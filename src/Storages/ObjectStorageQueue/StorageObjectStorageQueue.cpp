@@ -591,6 +591,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
+    "buckets",
 };
 
 static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
