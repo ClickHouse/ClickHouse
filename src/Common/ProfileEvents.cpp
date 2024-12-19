@@ -87,6 +87,12 @@
     M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Microseconds) \
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
+    M(FiberStackAllocationCount, "Number of times a fiber stack was allocated.", ValueType::Number) \
+    M(FiberStackAllocationMicroseconds, "Total time spent waiting for a fiber stack to be allocated.", ValueType::Microseconds) \
+    M(FiberStackDeallocationCount, "Number of times a fiber stack was deallocated.", ValueType::Number) \
+    M(FiberStackDeallocationMicroseconds, "Total time spent waiting for a fiber stack to be deallocated.", ValueType::Microseconds) \
+    M(FiberStackCacheHits, "Number of times a fiber stack was found in the cache.", ValueType::Number) \
+    M(FiberStackCacheMisses, "Number of times a fiber stack was not found in the cache.", ValueType::Number) \
     \
     M(GlobalThreadPoolExpansions, "Counts the total number of times new threads have been added to the global thread pool. This metric indicates the frequency of expansions in the global thread pool to accommodate increased processing demands.", ValueType::Number) \
     M(GlobalThreadPoolShrinks, "Counts the total number of times the global thread pool has shrunk by removing threads. This occurs when the number of idle threads exceeds max_thread_pool_free_size, indicating adjustments in the global thread pool size in response to decreased thread utilization.", ValueType::Number) \
