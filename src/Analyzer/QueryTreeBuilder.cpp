@@ -820,6 +820,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildWindow(const ASTPtr & window_definition,
     if (window_definition_typed.frame_end_offset)
         window_node->getFrameEndOffsetNode() = buildExpression(window_definition_typed.frame_end_offset, context);
 
+    if (window_definition_typed.session_window_threshold)
+        window_node->getFrameSessionWindowThresholdNode() = buildExpression(window_definition_typed.session_window_threshold, context);
+
     window_node->setOriginalAST(window_definition);
 
     return window_node;
