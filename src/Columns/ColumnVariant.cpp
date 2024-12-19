@@ -1465,18 +1465,6 @@ UInt64 ColumnVariant::getNumberOfDefaultRows() const
     return local_discriminators->size() - total_variant_sizes;
 }
 
-void ColumnVariant::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    size_t to = limit && from + limit < size() ? from + limit : size();
-    indices.reserve(indices.size() + to - from);
-
-    for (size_t i = from; i < to; ++i)
-    {
-        if (!isDefaultAt(i))
-            indices.push_back(i);
-    }
-}
-
 void ColumnVariant::finalize()
 {
     for (auto & variant : variants)
