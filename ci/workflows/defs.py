@@ -168,12 +168,12 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # Docker.Config(
-    #     name="clickhouse/docs-builder",
-    #     path="./ci/docker/docs/builder",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
+    Docker.Config(
+        name="clickhouse/docs-builder",
+        path="./docker/docs/builder",
+        platforms=[Docker.Platforms.ARM],
+        depends_on=[],
+    ),
 ]
 
 # TODO:
@@ -263,6 +263,7 @@ class JobNames:
     UPGRADE = "Upgrade tests"
     PERFORMANCE = "Performance comparison"
     COMPATIBILITY = "Compatibility check"
+    Docs = "Docs check"
 
 
 class ToolSet:
@@ -748,4 +749,12 @@ class Jobs:
             [RunnerLabels.STYLE_CHECK_ARM],
         ],
         requires=[[ArtifactNames.DEB_AMD_RELEASE], [ArtifactNames.DEB_ARM_RELEASE]],
+    )
+    docs_job = Job.Config(
+        name=JobNames.Docs,
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM],
+        command="python3 ./tests/ci/docs_check.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
+        ),
     )
