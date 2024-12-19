@@ -1,4 +1,5 @@
--- Tags: long, zookeeper
+-- Tags: long, zookeeper, no-shared-merge-tree
+-- Tag no-shared-merge-tree: no-shared-merge-tree: No quorum
 
 SET send_logs_level = 'fatal';
 
