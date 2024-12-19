@@ -119,28 +119,39 @@ struct IdentifierResolveResult
     IdentifierResolveScope * scope = nullptr;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
 
+    explicit operator bool() const
+    {
+        chassert(check_invariant());
+        return resolved_identifier != nullptr;
+    }
+
     [[maybe_unused]] bool isResolved() const
     {
+        chassert(check_invariant());
         return resolve_place != IdentifierResolvePlace::NONE;
     }
 
     [[maybe_unused]] bool isResolvedFromExpressionArguments() const
     {
+        chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::EXPRESSION_ARGUMENTS;
     }
 
     [[maybe_unused]] bool isResolvedFromAliases() const
     {
+        chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::ALIASES;
     }
 
     [[maybe_unused]] bool isResolvedFromJoinTree() const
     {
+        chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::JOIN_TREE;
     }
 
     [[maybe_unused]] bool isResolvedFromCTEs() const
     {
+        chassert(check_invariant());
         return resolve_place == IdentifierResolvePlace::CTE;
     }
 
@@ -161,6 +172,12 @@ struct IdentifierResolveResult
         dump(buffer);
 
         return buffer.str();
+    }
+
+private:
+    bool check_invariant() const noexcept
+    {
+        return (resolved_identifier == nullptr) == (resolve_place == IdentifierResolvePlace::NONE);
     }
 };
 
