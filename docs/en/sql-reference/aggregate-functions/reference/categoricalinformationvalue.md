@@ -1,8 +1,10 @@
 ---
+title: categoricalInformationValue
 slug: /en/sql-reference/aggregate-functions/reference/categoricalinformationvalue
 sidebar_position: 115
-title: categoricalInformationValue
 ---
+
+# categoricalInformationValue
 
 Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` for each category.
 

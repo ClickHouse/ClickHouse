@@ -1,4 +1,5 @@
 ---
+title: events
 slug: /en/operations/system-tables/events
 ---
 # events

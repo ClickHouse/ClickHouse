@@ -1,4 +1,5 @@
 ---
+title: session_log
 slug: /en/operations/system-tables/session_log
 ---
 # session_log

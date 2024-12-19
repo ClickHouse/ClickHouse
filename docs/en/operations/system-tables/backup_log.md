@@ -1,4 +1,5 @@
 ---
+title: backup_log
 slug: /en/operations/system-tables/backup_log
 ---
 # backup_log

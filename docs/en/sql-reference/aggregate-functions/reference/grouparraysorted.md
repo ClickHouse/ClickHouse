@@ -1,4 +1,5 @@
 ---
+title: groupArraySorted
 slug: /en/sql-reference/aggregate-functions/reference/grouparraysorted
 sidebar_position: 146
 ---

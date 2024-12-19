@@ -1,4 +1,5 @@
 ---
+title: stddevSamp
 slug: /en/sql-reference/aggregate-functions/reference/stddevsamp
 sidebar_position: 190
 ---
