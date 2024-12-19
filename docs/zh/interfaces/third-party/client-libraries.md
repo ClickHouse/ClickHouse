@@ -69,6 +69,7 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
 -   Elixir
     -   [clickhousex](https://github.com/appodeal/clickhousex/)
     -   [pillar](https://github.com/sofakingworld/pillar)
+    -   [req_ch](https://github.com/livebook-dev/req_ch)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 -   Haskell
