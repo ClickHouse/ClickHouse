@@ -33,12 +33,23 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool 
             return {};
 
         bool is_filtered_by_index = false;
+        UInt64 total_parts = 0;
+        UInt64 total_granules = 0;
         for (const auto & idx_stat : analyzed_result->index_stats)
         {
+            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
+            /// Further index_stats are used to estimate amount of filtered data after applying the index.
+            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+            {
+                total_parts = idx_stat.num_parts_after;
+                total_granules = idx_stat.num_granules_after;
+                continue;
+            }
+
             is_filtered_by_index = is_filtered_by_index
-                || (idx_stat.type == ReadFromMergeTree::IndexType::PrimaryKey && !idx_stat.used_keys.empty())
-                || idx_stat.type == ReadFromMergeTree::IndexType::Skip
-                || idx_stat.type == ReadFromMergeTree::IndexType::MinMax;
+                || (total_parts && idx_stat.num_parts_after < total_parts)
+                || (total_granules && idx_stat.num_granules_after < total_granules);
+
             if (is_filtered_by_index)
                 break;
         }
