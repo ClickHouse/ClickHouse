@@ -537,6 +537,61 @@ FixedLengthColumnDirectReader<DataType>::FixedLengthColumnDirectReader(
 }
 
 template <typename DataType>
+ValueConverter FixedLengthColumnDirectReader<DataType>::getConverter()
+{
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "doesn't support get converter from type {}", data_type->getName());
+}
+
+template <>
+ValueConverter FixedLengthColumnDirectReader<DataTypeDecimal32>::getConverter()
+{
+    return ValueConverterImpl<Decimal32>::convert;
+}
+
+template <>
+ValueConverter FixedLengthColumnDirectReader<DataTypeDecimal64>::getConverter()
+{
+    return ValueConverterImpl<Decimal64>::convert;
+}
+
+template <>
+ValueConverter FixedLengthColumnDirectReader<DataTypeDecimal128>::getConverter()
+{
+    return ValueConverterImpl<Decimal128>::convert;
+}
+
+template <>
+ValueConverter FixedLengthColumnDirectReader<DataTypeDecimal256>::getConverter()
+{
+    return ValueConverterImpl<Decimal256>::convert;
+}
+
+template <>
+ValueConverter FixedLengthColumnDirectReader<DataTypeDateTime64>::getConverter()
+{
+    const DataTypeDateTime64 * type = static_cast<const DataTypeDateTime64 *>(data_type.get());
+    switch (type->getScale())
+    {
+        case 0:
+            return ValueConverterImpl<DateTime64, 0>::convert;
+        case 3:
+            return ValueConverterImpl<DateTime64, 3>::convert;
+        case 6:
+            return ValueConverterImpl<DateTime64, 6>::convert;
+        case 9:
+            return ValueConverterImpl<DateTime64, 9>::convert;
+        default:
+            throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported scale {}", type->getScale());
+    }
+}
+
+template <>
+ValueConverter FixedLengthColumnDirectReader<DataTypeInt64>::getConverter()
+{
+    return ValueConverterImpl<DateTime64, 0>::convert;
+}
+
+template <typename DataType>
 void FixedLengthColumnDirectReader<DataType>::computeRowSet(std::optional<RowSet> & , size_t )
 {
     throw Exception(ErrorCodes::PARQUET_EXCEPTION, "doesn't support compute row set");
@@ -563,7 +618,7 @@ void FixedLengthColumnDirectReader<DataType>::read(MutableColumnPtr & column, Op
             auto * number_column = static_cast<DataType::ColumnType *>(column.get());
             auto & data = number_column->getData();
             plain_decoder->decodeFixedLengthData<typename DataType::FieldType>(
-                data, row_set, rows_can_read, element_size, ValueConverterImpl<typename DataType::FieldType>::convert);
+                data, row_set, rows_can_read, element_size, getConverter());
         }
         rows_read += rows_can_read;
     }
@@ -590,7 +645,7 @@ void FixedLengthColumnDirectReader<DataType>::readSpace(
         {
             auto * number_column = static_cast<DataType::ColumnType *>(column.get());
             auto & data = number_column->getData();
-            plain_decoder->decodeFixedLengthDataSpace(data, row_set, null_map, rows_can_read, element_size, ValueConverterImpl<typename DataType::FieldType>::convert);
+            plain_decoder->decodeFixedLengthDataSpace(data, row_set, null_map, rows_can_read, element_size, getConverter());
         }
         rows_read += rows_can_read;
     }
@@ -614,6 +669,8 @@ FixedLengthColumnDictionaryReader<DataType, DictValueType>::FixedLengthColumnDic
 {
     if (scan_spec_.column_desc->type_length())
         element_size = scan_spec_.column_desc->type_length();
+    else if (scan_spec_.column_desc->physical_type() == parquet::Type::INT96)
+        element_size = 12;
     else
         element_size = data_type->getSizeOfValueInMemory();
 }
@@ -637,6 +694,7 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readDictPage(co
     const auto * dict_data = page.data();
     size_t dict_size = page.num_values();
     dict.reserve(dict_size);
+    auto converter = getConverter();
     for (size_t i = 0; i < dict_size; i++)
     {
         DictValueType value;
@@ -649,11 +707,66 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readDictPage(co
         // for decimals
         else
         {
-            ValueConverterImpl<DictValueType>::convert(dict_data, element_size, reinterpret_cast<uint8_t *>(&value));
+            converter(dict_data, element_size, reinterpret_cast<uint8_t *>(&value));
         }
         dict.emplace_back(value);
         dict_data += element_size;
     }
+}
+
+template <typename DataType, typename DictValueType>
+ValueConverter FixedLengthColumnDictionaryReader<DataType, DictValueType>::getConverter()
+{
+    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "doesn't support get converter from type {}", data_type->getName());
+}
+
+template <>
+ValueConverter FixedLengthColumnDictionaryReader<DataTypeDecimal32, Decimal32>::getConverter()
+{
+    return ValueConverterImpl<Decimal32>::convert;
+}
+
+template <>
+ValueConverter FixedLengthColumnDictionaryReader<DataTypeDecimal64, Decimal64>::getConverter()
+{
+    return ValueConverterImpl<Decimal64>::convert;
+}
+
+template <>
+ValueConverter FixedLengthColumnDictionaryReader<DataTypeDecimal128, Decimal128>::getConverter()
+{
+    return ValueConverterImpl<Decimal128>::convert;
+}
+
+template <>
+ValueConverter FixedLengthColumnDictionaryReader<DataTypeDecimal256, Decimal256>::getConverter()
+{
+    return ValueConverterImpl<Decimal256>::convert;
+}
+
+template <>
+ValueConverter FixedLengthColumnDictionaryReader<DataTypeDateTime64, DateTime64>::getConverter()
+{
+    const DataTypeDateTime64 * type = static_cast<const DataTypeDateTime64 *>(data_type.get());
+    switch (type->getScale())
+    {
+        case 0:
+            return ValueConverterImpl<DateTime64, 0>::convert;
+        case 3:
+            return ValueConverterImpl<DateTime64, 3>::convert;
+        case 6:
+            return ValueConverterImpl<DateTime64, 6>::convert;
+        case 9:
+            return ValueConverterImpl<DateTime64, 9>::convert;
+        default:
+            throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported scale {}", type->getScale());
+    }
+}
+
+template <>
+ValueConverter FixedLengthColumnDictionaryReader<DataTypeInt64 , Int64>::getConverter()
+{
+    return ValueConverterImpl<DateTime64, 0>::convert;
 }
 
 template <typename DataType, typename DictValueType>
@@ -717,7 +830,7 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readSpace(
             {
                 auto * number_column = static_cast<DataType::ColumnType *>(column.get());
                 auto & data = number_column->getData();
-                plain_decoder->decodeFixedLengthDataSpace(data, row_set, null_map, rows_can_read, element_size, ValueConverterImpl<typename DataType::FieldType>::convert);
+                plain_decoder->decodeFixedLengthDataSpace(data, row_set, null_map, rows_can_read, element_size, getConverter());
             }
         }
         else
@@ -760,7 +873,7 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::read(MutableCol
             {
                 auto * number_column = static_cast<DataType::ColumnType *>(column.get());
                 auto & data = number_column->getData();
-                plain_decoder->decodeFixedLengthData(data, row_set, rows_can_read, element_size, ValueConverterImpl<typename DataType::FieldType>::convert);
+                plain_decoder->decodeFixedLengthData(data, row_set, rows_can_read, element_size, getConverter());
             }
         }
         else
@@ -930,50 +1043,6 @@ const PaddedPODArray<Int16> & OptionalColumnReader::getRepetitionLevels()
 {
     return child->getRepetitionLevels();
 }
-
-
-template class NumberColumnDirectReader<DataTypeInt8, Int32>;
-template class NumberColumnDirectReader<DataTypeInt16, Int32>;
-template class NumberColumnDirectReader<DataTypeInt32, Int32>;
-template class NumberColumnDirectReader<DataTypeInt64, Int64>;
-template class NumberColumnDirectReader<DataTypeUInt8, Int32>;
-template class NumberColumnDirectReader<DataTypeUInt16, Int32>;
-template class NumberColumnDirectReader<DataTypeUInt32, Int32>;
-template class NumberColumnDirectReader<DataTypeUInt64, Int64>;
-template class NumberColumnDirectReader<DataTypeFloat32, Float32>;
-template class NumberColumnDirectReader<DataTypeFloat64, Float64>;
-template class NumberColumnDirectReader<DataTypeDate32, Int32>;
-template class NumberColumnDirectReader<DataTypeDate, Int32>;
-template class NumberColumnDirectReader<DataTypeDateTime, Int32>;
-template class NumberColumnDirectReader<DataTypeDateTime64, Int64>;
-template class NumberColumnDirectReader<DataTypeDateTime, Int64>;
-template class FixedLengthColumnDirectReader<DataTypeFixedString>;
-template class FixedLengthColumnDirectReader<DataTypeDecimal32>;
-template class FixedLengthColumnDirectReader<DataTypeDecimal64>;
-template class FixedLengthColumnDirectReader<DataTypeDecimal128>;
-template class FixedLengthColumnDirectReader<DataTypeDecimal256>;
-
-
-template class NumberDictionaryReader<DataTypeInt8, Int32>;
-template class NumberDictionaryReader<DataTypeInt16, Int32>;
-template class NumberDictionaryReader<DataTypeInt32, Int32>;
-template class NumberDictionaryReader<DataTypeInt64, Int64>;
-template class NumberDictionaryReader<DataTypeUInt8, Int32>;
-template class NumberDictionaryReader<DataTypeUInt16, Int32>;
-template class NumberDictionaryReader<DataTypeUInt32, Int32>;
-template class NumberDictionaryReader<DataTypeUInt64, Int64>;
-template class NumberDictionaryReader<DataTypeFloat32, Float32>;
-template class NumberDictionaryReader<DataTypeFloat64, Float64>;
-template class NumberDictionaryReader<DataTypeDate32, Int32>;
-template class NumberDictionaryReader<DataTypeDate, Int32>;
-template class NumberDictionaryReader<DataTypeDateTime, Int32>;
-template class NumberDictionaryReader<DataTypeDateTime64, Int64>;
-template class NumberDictionaryReader<DataTypeDateTime, Int64>;
-template class FixedLengthColumnDictionaryReader<DataTypeFixedString, String>;
-template class FixedLengthColumnDictionaryReader<DataTypeDecimal32, Decimal32>;
-template class FixedLengthColumnDictionaryReader<DataTypeDecimal64, Decimal64>;
-template class FixedLengthColumnDictionaryReader<DataTypeDecimal128, Decimal128>;
-template class FixedLengthColumnDictionaryReader<DataTypeDecimal256, Decimal256>;
 
 Int32 loadLength(const uint8_t * data)
 {
@@ -1700,8 +1769,8 @@ void PlainDecoder::decodeFixedLengthData(PaddedPODArray<T> & data, const Optiona
         if (!row_set || row_set.value().get(i))
         {
             page_data.checkSize(element_size);
-            value_converter(page_data.buffer, element_size, reinterpret_cast<uint8_t *  >(data.data()));
             data.resize(data.size() + 1);
+            value_converter(page_data.buffer, element_size, reinterpret_cast<uint8_t *  >(data.data() + (data.size() - 1)));
             page_data.consume(element_size);
         }
         else
@@ -1806,8 +1875,8 @@ void PlainDecoder::decodeFixedLengthDataSpace(
             else
             {
                 page_data.checkSize(element_size);
-                value_converter(page_data.buffer, element_size, reinterpret_cast<uint8_t *  >(data.data()));
                 data.resize(data.size() + 1);
+                value_converter(page_data.buffer, element_size, reinterpret_cast<uint8_t *  >(data.data() + data.size() - 1));
                 page_data.consume(element_size);
             }
         }
@@ -2362,5 +2431,54 @@ size_t BooleanColumnReader::skipValuesInCurrentPage(size_t rows_to_skip)
     }
     return rows_to_skip - skipped;
 }
+
+template class NumberColumnDirectReader<DataTypeInt8, Int32>;
+template class NumberColumnDirectReader<DataTypeInt16, Int32>;
+template class NumberColumnDirectReader<DataTypeInt32, Int32>;
+template class NumberColumnDirectReader<DataTypeInt64, Int64>;
+template class NumberColumnDirectReader<DataTypeUInt8, Int32>;
+template class NumberColumnDirectReader<DataTypeUInt16, Int32>;
+template class NumberColumnDirectReader<DataTypeUInt32, Int32>;
+template class NumberColumnDirectReader<DataTypeUInt64, Int64>;
+template class NumberColumnDirectReader<DataTypeFloat32, Float32>;
+template class NumberColumnDirectReader<DataTypeFloat64, Float64>;
+template class NumberColumnDirectReader<DataTypeDate32, Int32>;
+template class NumberColumnDirectReader<DataTypeDate, Int32>;
+template class NumberColumnDirectReader<DataTypeDateTime, Int32>;
+template class NumberColumnDirectReader<DataTypeDateTime64, Int64>;
+template class NumberColumnDirectReader<DataTypeDateTime, Int64>;
+template class FixedLengthColumnDirectReader<DataTypeFixedString>;
+template class FixedLengthColumnDirectReader<DataTypeDecimal32>;
+template class FixedLengthColumnDirectReader<DataTypeDecimal64>;
+template class FixedLengthColumnDirectReader<DataTypeDecimal128>;
+template class FixedLengthColumnDirectReader<DataTypeDecimal256>;
+// read from int96
+template class FixedLengthColumnDirectReader<DataTypeDateTime64>;
+template class FixedLengthColumnDirectReader<DataTypeInt64>;
+
+
+template class NumberDictionaryReader<DataTypeInt8, Int32>;
+template class NumberDictionaryReader<DataTypeInt16, Int32>;
+template class NumberDictionaryReader<DataTypeInt32, Int32>;
+template class NumberDictionaryReader<DataTypeInt64, Int64>;
+template class NumberDictionaryReader<DataTypeUInt8, Int32>;
+template class NumberDictionaryReader<DataTypeUInt16, Int32>;
+template class NumberDictionaryReader<DataTypeUInt32, Int32>;
+template class NumberDictionaryReader<DataTypeUInt64, Int64>;
+template class NumberDictionaryReader<DataTypeFloat32, Float32>;
+template class NumberDictionaryReader<DataTypeFloat64, Float64>;
+template class NumberDictionaryReader<DataTypeDate32, Int32>;
+template class NumberDictionaryReader<DataTypeDate, Int32>;
+template class NumberDictionaryReader<DataTypeDateTime, Int32>;
+template class NumberDictionaryReader<DataTypeDateTime64, Int64>;
+template class NumberDictionaryReader<DataTypeDateTime, Int64>;
+template class FixedLengthColumnDictionaryReader<DataTypeFixedString, String>;
+template class FixedLengthColumnDictionaryReader<DataTypeDecimal32, Decimal32>;
+template class FixedLengthColumnDictionaryReader<DataTypeDecimal64, Decimal64>;
+template class FixedLengthColumnDictionaryReader<DataTypeDecimal128, Decimal128>;
+template class FixedLengthColumnDictionaryReader<DataTypeDecimal256, Decimal256>;
+// read from int96
+template class FixedLengthColumnDictionaryReader<DataTypeDateTime64, DateTime64>;
+template class FixedLengthColumnDictionaryReader<DataTypeInt64, Int64>;
 
 }

@@ -148,12 +148,42 @@ Int32 loadLength(const uint8_t * data);
 
 using ValueConverter = std::function<void(const uint8_t *, const size_t, uint8_t *)>;
 
-template <typename Type>
+template <typename Type, int datetime_scale=0>
 struct ValueConverterImpl
 {
     static void convert(const uint8_t *, const size_t, uint8_t *)
     {
-        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported type: {}", typeid(Type).name());
+        throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported convert value, type: {}, datetime_scale {}", typeid(Type).name(), datetime_scale);
+    }
+};
+
+template <int datetime_scale>
+struct ValueConverterImpl<DateTime64, datetime_scale>
+{
+    static void convert(const uint8_t * src, const size_t, uint8_t * dst)
+    {
+        const parquet::Int96 * tmp = reinterpret_cast<const parquet::Int96 *>(src);
+        static const int max_scale_num = 9;
+        static const UInt64 pow10[max_scale_num + 1]
+            = {1000000000, 100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10, 1};
+        static const UInt64 spd = 60 * 60 * 24;
+        static const UInt64 scaled_day[max_scale_num + 1]
+            = {spd,
+               10 * spd,
+               100 * spd,
+               1000 * spd,
+               10000 * spd,
+               100000 * spd,
+               1000000 * spd,
+               10000000 * spd,
+               100000000 * spd,
+               1000000000 * spd};
+
+        auto decoded = parquet::DecodeInt96Timestamp(*tmp);
+
+        uint64_t scaled_nano = decoded.nanoseconds / pow10[datetime_scale];
+        DateTime64 * result = reinterpret_cast<DateTime64 *>(dst);
+        *result = static_cast<Int64>((decoded.days_since_epoch * scaled_day[datetime_scale]) + scaled_nano);
     }
 };
 
@@ -173,6 +203,15 @@ struct ValueConverterImpl<Decimal64>
     static void convert(const uint8_t * src, const size_t , uint8_t * dst)
     {
         *reinterpret_cast<Decimal<Int64>*>(dst) = std::byteswap(*reinterpret_cast<const int64_t *>(src));
+    }
+};
+
+template <>
+struct ValueConverterImpl<Int64>
+{
+    static void convert(const uint8_t * src, const size_t, uint8_t * dst)
+    {
+        memcpySmallAllowReadWriteOverflow15(dst, src, 8);
     }
 };
 
@@ -557,6 +596,7 @@ public:
     DataTypePtr getResultType() override { return data_type; }
     MutableColumnPtr createColumn() override { return data_type->createColumn(); }
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+    ValueConverter getConverter();
 
 private:
     size_t element_size = 0;
@@ -575,7 +615,7 @@ public:
     DataTypePtr getResultType() override { return data_type; }
     MutableColumnPtr createColumn() override { return data_type->createColumn(); }
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
-
+    ValueConverter getConverter();
 protected:
     void readDictPage(const parquet::DictionaryPage & page) override;
     void initIndexDecoderIfNeeded() override
