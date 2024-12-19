@@ -26,3 +26,8 @@ WHERE (a = 3) AND (a = 5);
 SELECT pk
 FROM test
 WHERE (a != 1) AND (a != 2) AND (a != 4);
+
+EXPLAIN QUERY TREE
+SELECT pk
+FROM test
+WHERE (b > a) AND (c > b) AND (5 > c);

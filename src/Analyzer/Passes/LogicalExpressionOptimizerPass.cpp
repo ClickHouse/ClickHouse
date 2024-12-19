@@ -967,19 +967,27 @@ private:
         for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
-            /// temporarily only consider less
-            const auto valid_functions = std::unordered_set<std::string>{"less"};
+            const auto valid_functions = std::unordered_set<std::string>{"less", "greater"};
             if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
                 continue;
 
+            const auto function_name = argument_function->getFunctionName();
             const auto & function_arguments = argument_function->getArguments().getNodes();
             const auto & lhs = function_arguments[0];
             const auto & rhs = function_arguments[1];
 
-            if (rhs->as<ConstantNode>())
-                constants.push_back(rhs);
-
-            greater_pairs[rhs].push_back(lhs);
+            if (function_name == "less")
+            {
+                if (rhs->as<ConstantNode>())
+                    constants.push_back(rhs);
+                greater_pairs[rhs].push_back(lhs);
+            }
+            else if (function_name == "greater")
+            {
+                if (lhs->as<ConstantNode>())
+                    constants.push_back(lhs);
+                greater_pairs[lhs].push_back(rhs);
+            }
         }
 
         // for (const auto & con : constants)
