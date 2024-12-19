@@ -58,6 +58,7 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTPartition.h>
@@ -4004,8 +4005,55 @@ void MergeTreeData::changeSettings(
         new_metadata.setSettingsChanges(new_settings);
         setInMemoryMetadata(new_metadata);
 
+        auto *collapsing_constraint = new_changes.tryGet("add_implicit_sign_column_constraint_for_collapsing_engine");
+        if (collapsing_constraint)
+            setCollapsingSignConstraint(collapsing_constraint->safeGet<bool>());
+
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
+    }
+}
+
+ASTPtr MergeTreeData::createCollapsingSignConstraint(const String sign_column)
+{
+    auto sign_column_check_constraint = std::make_shared<ASTConstraintDeclaration>();
+    sign_column_check_constraint->name = COLLAPSING_SIGN_CONSTRAINT_NAME;
+    sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
+
+    Array valid_values_array;
+    valid_values_array.emplace_back(-1);
+    valid_values_array.emplace_back(1);
+
+    auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
+    auto sign_column_ast = std::make_unique<ASTIdentifier>(sign_column);
+    sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+
+    return sign_column_check_constraint;
+}
+
+void MergeTreeData::setCollapsingSignConstraint(bool enable)
+{
+    if (merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+            merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+    {
+        StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+        auto constraints = new_metadata.constraints.getConstraints();
+        if (enable)
+        {
+            constraints.push_back(createCollapsingSignConstraint(merging_params.sign_column));
+        }
+        else
+        {
+            auto * erase_it = std::find_if(
+                constraints.begin(),
+                constraints.end(),
+                [](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == COLLAPSING_SIGN_CONSTRAINT_NAME; });
+
+            if (erase_it != constraints.end())
+                constraints.erase(erase_it);
+        }
+        new_metadata.constraints = ConstraintsDescription(constraints);
+        setInMemoryMetadata(new_metadata);
     }
 }
 

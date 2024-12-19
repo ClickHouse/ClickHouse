@@ -1168,6 +1168,8 @@ public:
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
+    static ASTPtr createCollapsingSignConstraint(const String sign_column);
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -1791,6 +1793,10 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
+
+    constexpr static auto COLLAPSING_SIGN_CONSTRAINT_NAME = "check_sign_column";
+
+    void setCollapsingSignConstraint(bool enable);
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
