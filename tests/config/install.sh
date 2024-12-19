@@ -247,4 +247,29 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     sudo chgrp clickhouse /var/lib/clickhouse2
 fi
 
+if [[ "$USE_PARALLEL_REPLICAS_ON_REPLICATED_DB" == "1" ]]; then
+    ln -sf $SRC_PATH/users.d/database_replicated_parallel_replicas.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/database_replicated_parallel_replicas.xml $DEST_SERVER_PATH/config.d/
+    rm /etc/clickhouse-server/config.d/zookeeper.xml
+    rm /etc/clickhouse-server/config.d/keeper_port.xml
+
+    # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
+    # And we have to copy configs...
+    mkdir -p /etc/clickhouse-server1
+    chown clickhouse /etc/clickhouse-server1
+    chgrp clickhouse /etc/clickhouse-server1
+    sudo -u clickhouse cp -r /etc/clickhouse-server/* /etc/clickhouse-server1
+
+    rm /etc/clickhouse-server1/config.d/macros.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > /etc/clickhouse-server1/config.d/macros.xml
+
+    rm /etc/clickhouse-server1/config.d/transactions.xml
+    sudo -u clickhouse cat /etc/clickhouse-server/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > /etc/clickhouse-server1/config.d/transactions.xml
+
+    sudo mkdir -p /var/lib/clickhouse1
+    sudo chown clickhouse /var/lib/clickhouse1
+    sudo chgrp clickhouse /var/lib/clickhouse1
+fi
+
+
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

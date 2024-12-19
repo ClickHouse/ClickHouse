@@ -70,6 +70,8 @@ def get_additional_envs(
     if "azure" in check_name:
         assert "USE_S3_STORAGE_FOR_MERGE_TREE=1" not in result
         result.append("USE_AZURE_STORAGE_FOR_MERGE_TREE=1")
+    if "parallel replicas on replicated db" in check_name:
+        result.append("USE_PARALLEL_REPLICAS_ON_REPLICATED_DB=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
