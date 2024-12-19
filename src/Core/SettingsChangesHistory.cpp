@@ -61,7 +61,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
     {"25.1",
         {
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
-
+            {"compile_expressions", false, true, "For ci tests"},
+            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
         }
     },
     {"24.12",
