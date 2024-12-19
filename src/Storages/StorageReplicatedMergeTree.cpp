@@ -6901,6 +6901,8 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
         /* is_attach */ true,
         /* allow_attach_while_readonly */ true);
 
+    results.reserve(loaded_parts.size());
+
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         const String old_name = loaded_parts[i]->name;
