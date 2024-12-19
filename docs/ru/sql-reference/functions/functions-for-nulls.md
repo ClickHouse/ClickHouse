@@ -88,6 +88,52 @@ SELECT x FROM t_null WHERE isNotNull(y);
 └───┘
 ```
 
+## isNullOrEmpty
+
+Проверяет, не является ли аргумент типа [Array](/docs/en/sql-reference/data-types/array.md) со значением [NULL](../../sql-reference/syntax.md#null-literal).
+Если это не [NULL](../../sql-reference/syntax.md#null-literal), тогда функция проверяет, если [Array](/docs/en/sql-reference/data-types/array.md) пустой.
+
+
+``` sql
+isNullOrEmpty(x)
+```
+
+**Аргументы**
+
+- `x` — An [array](/docs/en/sql-reference/data-types/array.md).
+
+**Возвращаемое значение**
+
+- `0` if `x` is not `NULL` and not empty.
+- `1` if `x` is `NULL` or empty.
+
+**Пример**
+
+Входная таблица:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │  []  │
+│ 3 │ [23] │
+└───┴──────┘
+```
+
+Запрос:
+
+``` sql
+SELECT x FROM t_null WHERE isNullOrEmpty(y);
+```
+
+Результат:
+
+``` text
+┌─x─┐
+│ 1 │
+│ 2 │
+└───┘
+```
+
 ## coalesce {#coalesce}
 
 Последовательно слева-направо проверяет являются ли переданные аргументы `NULL` и возвращает первый не `NULL`.
