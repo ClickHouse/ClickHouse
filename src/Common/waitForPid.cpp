@@ -112,7 +112,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
     if (ready <= 0)
         return PollPidResult::FAILED;
 
-    [[maybe_unused]] int err = close(pid_fd);
+    int err = close(pid_fd);
     chassert(!err || errno == EINTR);
 
     return PollPidResult::RESTART;
@@ -182,7 +182,7 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
     /// If timeout is positive try waitpid without block in loop until
     /// process is normally terminated or waitpid return error
 
-    /// NOTE: timeout cast to int, since poll() accept int for timeout
+    /// NOTE: timeout casted to int, since poll() accept int for timeout
     int timeout_in_ms = static_cast<int>(timeout_in_seconds * 1000);
     while (timeout_in_ms > 0)
     {

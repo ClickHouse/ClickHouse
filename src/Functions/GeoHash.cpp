@@ -133,8 +133,7 @@ inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, uin
 
 inline std::tuple<Encoded, Encoded> split(const Encoded & combined, uint8_t precision)
 {
-    Encoded lat;
-    Encoded lon;
+    Encoded lat, lon;
     lat.fill(0);
     lon.fill(0);
 
@@ -254,8 +253,7 @@ void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * lo
         return;
     }
 
-    Encoded lat_encoded;
-    Encoded lon_encoded;
+    Encoded lat_encoded, lon_encoded;
     std::tie(lon_encoded, lat_encoded) = split(base32Decode(encoded_string, precision), precision);
 
     *longitude = decodeCoordinate(lon_encoded, LON_MIN, LON_MAX, singleCoordBitsPrecision(precision, LONGITUDE));

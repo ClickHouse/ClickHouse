@@ -10,13 +10,12 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/MySQL/MySQLBinlogClient.h>
+#include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
-
-struct MaterializedMySQLSettings;
 
 /** Real-time pull table structure and data from remote MySQL
  *
@@ -35,8 +34,6 @@ public:
         MySQLClient && client_,
         const MySQLReplication::BinlogClientPtr & binlog_client_,
         std::unique_ptr<MaterializedMySQLSettings> settings_);
-
-    ~DatabaseMaterializedMySQL() override;
 
     void rethrowExceptionIfNeeded() const;
 

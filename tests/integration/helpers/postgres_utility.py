@@ -343,22 +343,16 @@ def assert_nested_table_is_created(
         table = schema_name + "." + table_name
 
     print(f"Checking table {table} exists in {materialized_database}")
-
-    # Check based on `system.tables` is not enough, because tables appear there before they are loaded.
-    # It may lead to error `Unknown table expression identifier...`
-    while True:
-        try:
-            instance.query(
-                f"SELECT * FROM `{materialized_database}`.`{table}` LIMIT 1 FORMAT Null"
-            )
-            break
-        except Exception:
-            time.sleep(0.2)
-            continue
-
     database_tables = instance.query(
         f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'"
     )
+
+    while table not in database_tables:
+        time.sleep(0.2)
+        database_tables = instance.query(
+            f"SHOW TABLES FROM `{materialized_database}` WHERE name = '{table}'"
+        )
+
     assert table in database_tables
 
 

@@ -22,7 +22,6 @@ public:
         void setProcessingEndTime();
         void onProcessing();
         void onProcessed();
-        void reset();
         void onFailed(const std::string & exception);
         void updateState(State state_);
 
@@ -55,7 +54,6 @@ public:
 
     bool setProcessing();
     void setProcessed();
-    void resetProcessing();
     void setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status);
 
     virtual void setProcessedAtStartRequests(
@@ -80,7 +78,6 @@ public:
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void setProcessedImpl() = 0;
-    virtual void resetProcessingImpl();
     void setFailedNonRetriable();
     void setFailedRetriable();
 

@@ -7,8 +7,6 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/MaterializedView/RefreshSet.h>
-#include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
@@ -32,12 +30,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool single_join_prefer_left_table;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
@@ -393,7 +385,7 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context)
+QueryTreeNodePtr IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -419,37 +411,16 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifierFromData
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
-    TableLockHolder storage_lock;
 
     if (is_temporary_table)
         storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
-    {
-        /// If table is the target of a refreshable materialized view, it needs additional
-        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
-    }
     else
         storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
-    if (!storage && storage_id.hasUUID())
-    {
-        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
-        // We try to get the table with the database name and the table name.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
-        if (database)
-            storage = database->tryGetTable(table_name, context);
-    }
     if (!storage)
         return {};
 
-    if (storage->hasExternalDynamicMetadata())
-    {
-        storage->updateExternalDynamicMetadata(context);
-    }
-
-    if (!storage_lock)
-        storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
@@ -533,7 +504,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   *
   * Resolve strategy:
   * 1. Try to bind identifier to scope argument name to node map.
-  * 2. If identifier is bound but expression context and node type are incompatible return nullptr.
+  * 2. If identifier is binded but expression context and node type are incompatible return nullptr.
   *
   * It is important to support edge cases, where we lookup for table or function node, but argument has same name.
   * Example: WITH (x -> x + 1) AS func, (func -> func(1) + func) AS lambda SELECT lambda(1);
@@ -557,9 +528,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromExpressionArguments
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
         return {};
-    if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
+    else if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
         return {};
-    if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
+    else if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
         return {};
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
@@ -643,9 +614,10 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
 
         if (parts_size == 1 && path_start == table_name)
             return true;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return true;
-        return false;
+        else
+            return false;
     }
 
     if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
@@ -935,9 +907,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableExpression(con
 
         if (parts_size == 1 && path_start == table_name)
             return table_expression_node;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return table_expression_node;
-        return {};
+        else
+            return {};
     }
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
@@ -1004,97 +977,6 @@ QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_
             return right_resolved_identifier;
     }
     return {};
-}
-
-static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
-    const ColumnNode & left_resolved_identifier_column,
-    const ColumnNode & right_resolved_identifier_column,
-    const std::string & identifier_path_part)
-{
-    const auto & left_column_source_alias = left_resolved_identifier_column.getColumnSource()->getAlias();
-    const auto & right_column_source_alias = right_resolved_identifier_column.getColumnSource()->getAlias();
-
-    /** If column from right table was resolved using alias, we prefer column from right table.
-        *
-        * Example: SELECT dummy FROM system.one JOIN system.one AS A ON A.dummy = system.one.dummy;
-        *
-        * If alias is specified for left table, and alias is not specified for right table and identifier was resolved
-        * without using left table alias, we prefer column from right table.
-        *
-        * Example: SELECT dummy FROM system.one AS A JOIN system.one ON A.dummy = system.one.dummy;
-        *
-        * Otherwise we prefer column from left table.
-        */
-    bool column_resolved_using_right_alias = identifier_path_part == right_column_source_alias;
-    bool column_resolved_without_using_left_alias = !left_column_source_alias.empty()
-                                                    && right_column_source_alias.empty()
-                                                    && identifier_path_part != left_column_source_alias;
-
-    if (column_resolved_using_right_alias || column_resolved_without_using_left_alias)
-        return JoinTableSide::Right;
-
-    return JoinTableSide::Left;
-}
-
-QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
-    const QueryTreeNodePtr & table_expression_node,
-    IdentifierResolveScope & scope)
-{
-    const auto & from_cross_join_node = table_expression_node->as<const CrossJoinNode &>();
-    bool prefer_left_table = scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table];
-
-    QueryTreeNodePtr resolved_identifier;
-    for (const auto & expr : from_cross_join_node.getTableExpressions())
-    {
-        auto identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, expr, scope);
-        if (!identifier)
-            continue;
-
-        if (!resolved_identifier)
-        {
-            resolved_identifier = std::move(identifier);
-            continue;
-        }
-
-        if (!identifier_lookup.isExpressionLookup())
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambiguous identifier {}. In scope {}",
-                table_expression_node->formatASTForErrorMessage(),
-                identifier_lookup.dump(),
-                scope.scope_node->formatASTForErrorMessage());
-
-
-        resolved_identifier->isEqual(*identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false});
-
-        /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
-        /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
-        // if (auto missed_subcolumn_identifier = checkIsMissedObjectJSONSubcolumn(left_resolved_identifier, right_resolved_identifier))
-        //     return missed_subcolumn_identifier;
-
-        if (resolved_identifier->isEqual(*identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
-        {
-            const auto & identifier_path_part = identifier_lookup.identifier.front();
-            auto * left_resolved_identifier_column = resolved_identifier->as<ColumnNode>();
-            auto * right_resolved_identifier_column = identifier->as<ColumnNode>();
-
-            if (left_resolved_identifier_column && right_resolved_identifier_column)
-            {
-                auto resolved_side = choseSideForEqualIdenfifiersFromJoin(*left_resolved_identifier_column, *right_resolved_identifier_column, identifier_path_part);
-                if (resolved_side == JoinTableSide::Right)
-                    resolved_identifier = identifier;
-            }
-        }
-        else if (!prefer_left_table)
-        {
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambiguous identifier '{}'. In scope {}",
-                table_expression_node->formatASTForErrorMessage(),
-                identifier_lookup.identifier.getFullName(),
-                scope.scope_node->formatASTForErrorMessage());
-        }
-    }
-
-    return resolved_identifier;
 }
 
 /// Compare resolved identifiers considering columns that become nullable after JOIN
@@ -1259,8 +1141,34 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
 
             if (left_resolved_identifier_column && right_resolved_identifier_column)
             {
-                resolved_side = choseSideForEqualIdenfifiersFromJoin(*left_resolved_identifier_column, *right_resolved_identifier_column, identifier_path_part);
-                resolved_identifier = (resolved_side == JoinTableSide::Left) ? left_resolved_identifier : right_resolved_identifier;
+                const auto & left_column_source_alias = left_resolved_identifier_column->getColumnSource()->getAlias();
+                const auto & right_column_source_alias = right_resolved_identifier_column->getColumnSource()->getAlias();
+
+                /** If column from right table was resolved using alias, we prefer column from right table.
+                  *
+                  * Example: SELECT dummy FROM system.one JOIN system.one AS A ON A.dummy = system.one.dummy;
+                  *
+                  * If alias is specified for left table, and alias is not specified for right table and identifier was resolved
+                  * without using left table alias, we prefer column from right table.
+                  *
+                  * Example: SELECT dummy FROM system.one AS A JOIN system.one ON A.dummy = system.one.dummy;
+                  *
+                  * Otherwise we prefer column from left table.
+                  */
+                bool column_resolved_using_right_alias = identifier_path_part == right_column_source_alias;
+                bool column_resolved_without_using_left_alias = !left_column_source_alias.empty()
+                                                                && right_column_source_alias.empty()
+                                                                && identifier_path_part != left_column_source_alias;
+                if (column_resolved_using_right_alias || column_resolved_without_using_left_alias)
+                {
+                    resolved_side = JoinTableSide::Right;
+                    resolved_identifier = right_resolved_identifier;
+                }
+                else
+                {
+                    resolved_side = JoinTableSide::Left;
+                    resolved_identifier = left_resolved_identifier;
+                }
             }
             else
             {
@@ -1268,7 +1176,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoin(const Identifi
                 resolved_identifier = left_resolved_identifier;
             }
         }
-        else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
+        else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
@@ -1555,8 +1463,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromJoinTreeNode(const 
     {
         case QueryTreeNodeType::JOIN:
             return tryResolveIdentifierFromJoin(identifier_lookup, join_tree_node, scope);
-        case DB::QueryTreeNodeType::CROSS_JOIN:
-            return tryResolveIdentifierFromCrossJoin(identifier_lookup, join_tree_node, scope);
         case QueryTreeNodeType::ARRAY_JOIN:
             return tryResolveIdentifierFromArrayJoin(identifier_lookup, join_tree_node, scope);
         case QueryTreeNodeType::QUERY:

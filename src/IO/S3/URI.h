@@ -1,13 +1,13 @@
 #pragma once
 
+#include <optional>
+#include <string>
+
 #include "config.h"
 
 #if USE_AWS_S3
 
-#include <optional>
-#include <string>
 #include <Poco/URI.h>
-
 
 namespace DB::S3
 {
@@ -23,7 +23,7 @@ namespace DB::S3
 struct URI
 {
     Poco::URI uri;
-    // Custom endpoint if URI scheme, if not S3.
+    // Custom endpoint if URI scheme is not S3.
     std::string endpoint;
     std::string bucket;
     std::string key;

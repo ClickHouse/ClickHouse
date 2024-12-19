@@ -84,9 +84,11 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
         const auto * slru_iterator = assert_cast<SLRUIterator *>(reservee.get());
         if (slru_iterator->is_protected)
             return protected_queue.canFit(size, elements, lock);
-        return probationary_queue.canFit(size, elements, lock);
+        else
+            return probationary_queue.canFit(size, elements, lock);
     }
-    return probationary_queue.canFit(size, elements, lock);
+    else
+        return probationary_queue.canFit(size, elements, lock);
 }
 
 IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
@@ -306,7 +308,8 @@ IFileCachePriority::CollectStatus SLRUFileCachePriority::collectCandidatesForEvi
 
     if (probationary_desired_size_status == CollectStatus::SUCCESS)
         return protected_desired_size_status;
-    return probationary_desired_size_status;
+    else
+        return probationary_desired_size_status;
 }
 
 void SLRUFileCachePriority::downgrade(IteratorPtr iterator, const CachePriorityGuard::Lock & lock)

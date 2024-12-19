@@ -9,7 +9,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 #include <Backups/SettingsFieldOptionalString.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
 
 
 namespace DB
@@ -161,8 +160,7 @@ namespace
     M(UInt64, replica_num_in_backup) \
     M(Bool, allow_non_empty_tables) \
     M(RestoreAccessCreationMode, create_access) \
-    M(Bool, skip_unresolved_access_dependencies) \
-    M(Bool, update_access_entities_dependents) \
+    M(Bool, allow_unresolved_access_dependencies) \
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, allow_s3_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
@@ -171,8 +169,7 @@ namespace
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalString, storage_policy) \
-    M(OptionalUUID, restore_uuid) \
-    M(OptionalUInt64, max_backup_bandwidth)
+    M(OptionalUUID, restore_uuid)
 
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
@@ -190,12 +187,7 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
             else
 
             LIST_OF_RESTORE_SETTINGS(GET_SETTINGS_FROM_RESTORE_QUERY_HELPER)
-
-            /// `allow_unresolved_access_dependencies` is an obsolete name.
-            if (setting.name == "allow_unresolved_access_dependencies")
-                res.skip_unresolved_access_dependencies = SettingFieldBool{setting.value}.value;
-            else
-                throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
+            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
         }
     }
 
