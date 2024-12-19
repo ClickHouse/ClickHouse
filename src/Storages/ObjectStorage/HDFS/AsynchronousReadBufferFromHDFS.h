@@ -24,9 +24,16 @@ public:
     AsynchronousReadBufferFromHDFS(
         IAsynchronousReader & reader_,
         const ReadSettings & settings_,
-        std::shared_ptr<ReadBufferFromHDFS> impl_);
+        std::shared_ptr<ReadBufferFromHDFS> impl_,
+        bool enable_read_at = false);
 
     ~AsynchronousReadBufferFromHDFS() override;
+
+    bool supportsRightBoundedReads() const override;
+
+    void setReadUntilPosition(size_t position) override;
+
+    void setReadUntilEnd() override;
 
     off_t seek(off_t offset_, int whence) override;
 
@@ -48,6 +55,7 @@ private:
     bool hasPendingDataToRead();
 
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
+    IAsynchronousReader::Result readInto(char * data, size_t size, Priority priority);
 
     IAsynchronousReader & reader;
     Priority base_priority;
@@ -58,6 +66,7 @@ private:
     size_t file_offset_of_buffer_end = 0;
     std::optional<size_t> read_until_position;
     bool use_prefetch;
+    bool supports_read_at;
 
     LoggerPtr log;
 

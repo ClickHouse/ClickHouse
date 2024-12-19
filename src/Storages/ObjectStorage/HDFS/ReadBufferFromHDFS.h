@@ -34,6 +34,12 @@ public:
 
     ~ReadBufferFromHDFS() override;
 
+    bool supportsRightBoundedReads() const override;
+
+    void setReadUntilPosition(size_t position) override;
+
+    void setReadUntilEnd() override;
+
     bool nextImpl() override;
 
     off_t seek(off_t offset_, int whence) override;
