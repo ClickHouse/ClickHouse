@@ -268,6 +268,8 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     if (keep_logical)
         return true;
 
+    Header output_header = join_step->getOutputHeader();
+
     auto & join_expression_actions = join_step->getExpressionActions();
 
     QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(join_expression_actions.left_pre_join_actions), left_filter.column_name, nodes);
@@ -320,7 +322,10 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     if (!post_filter)
         node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(join_expression_actions.post_join_actions));
     else
-        node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(join_expression_actions.post_join_actions), post_filter.column_name, false);
+    {
+        bool remove_filter = !output_header.has(post_filter.column_name);
+        node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(join_expression_actions.post_join_actions), post_filter.column_name, remove_filter);
+    }
     node.children = {&new_join_node};
     return true;
 }

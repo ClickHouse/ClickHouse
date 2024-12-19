@@ -245,21 +245,28 @@ JoinActionRef concatMergeConditions(std::vector<JoinActionRef> & conditions, Act
 }
 
 /// Can be used when action.node is outside of actions_dag.
-const ActionsDAG::Node & findInput(ActionsDAG & actions_dag, const JoinActionRef & action)
+const ActionsDAG::Node & findInput(ActionsDAG & actions_dag, const JoinActionRef & action, bool allow_add = false)
 {
     for (const auto * node : actions_dag.getInputs())
     {
         if (node->result_name == action.column_name)
             return *node;
     }
+
+    if (allow_add)
+    {
+        const auto & node = actions_dag.addInput(action.column_name, action.node->result_type);
+        return node;
+    }
+
     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} not found in actions DAG", action.column_name);
 }
 
 
 JoinActionRef predicateToCondition(const JoinPredicate & predicate, ActionsDAG & actions_dag, const ContextPtr & query_context)
 {
-    const auto & left_node = findInput(actions_dag, predicate.left_node);
-    const auto & right_node = findInput(actions_dag, predicate.right_node);
+    const auto & left_node = findInput(actions_dag, predicate.left_node, true);
+    const auto & right_node = findInput(actions_dag, predicate.right_node, true);
 
     auto operator_function = FunctionFactory::instance().get(toFunctionName(predicate.op), query_context);
     const auto & result_node = actions_dag.addFunction(operator_function, {&left_node, &right_node}, {});
@@ -569,15 +576,6 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
             table_join_clause.analyzer_right_filter_condition_column_name = right_pre_filter_condition.column_name;
     }
 
-    if (join_settings.join_use_nulls)
-    {
-        auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
-        if (join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Full)
-            addToNullableActions(expression_actions.right_pre_join_actions, to_nullable_function);
-        if (join_info.kind == JoinKind::Right || join_info.kind == JoinKind::Full)
-            addToNullableActions(expression_actions.left_pre_join_actions, to_nullable_function);
-    }
-
     JoinActionRef residual_filter_condition(nullptr);
     if (join_expression.disjunctive_conditions.empty())
     {
@@ -596,6 +594,23 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
 
         if (need_residual_filter)
             residual_filter_condition = buildSingleActionForJoinExpression(join_expression, expression_actions, query_context);
+    }
+
+    if (join_settings.join_use_nulls)
+    {
+        if (residual_filter_condition)
+        {
+            throw Exception(
+                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "{} JOIN ON expression '{}' contains column from left and right table, which is not supported with `join_use_nulls`",
+                toString(join_info.kind), residual_filter_condition.column_name);
+        }
+
+        auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
+        if (join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Full)
+            addToNullableActions(expression_actions.right_pre_join_actions, to_nullable_function);
+        if (join_info.kind == JoinKind::Right || join_info.kind == JoinKind::Full)
+            addToNullableActions(expression_actions.left_pre_join_actions, to_nullable_function);
     }
 
     if (residual_filter_condition && canPushDownFromOn(join_info))
