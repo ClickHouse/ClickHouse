@@ -47,6 +47,8 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
 
     if (temporary)
         ostr << "TEMPORARY ";
+    if (detached)
+        ostr << "DETACHED ";
 
     if (has_all_tables)
         ostr << "ALL TABLES FROM ";

@@ -634,6 +634,19 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
+void DatabaseOrdinary::removeTableFromPermanentlyDetachedTables(const String & table_name)
+{
+    LOG_DEBUG(log, "Remove table {} from permanently detached tables", table_name);
+
+    std::lock_guard lock(mutex);
+    permanently_detached_tables.erase(
+        std::remove_if(
+            permanently_detached_tables.begin(),
+            permanently_detached_tables.end(),
+            [&table_name](const auto & permanently_detached_table_name) { return permanently_detached_table_name == table_name; }),
+        permanently_detached_tables.end());
+}
+
 void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
