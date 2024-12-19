@@ -721,7 +721,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 for (const auto & column : metadata.columns)
                 {
                     if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
-                        || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]) )
+                        || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
                     {
                         bool index_exists = false;
 
