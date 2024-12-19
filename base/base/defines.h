@@ -165,3 +165,10 @@ template <typename... Args>
 constexpr void UNUSED(Args &&... args [[maybe_unused]]) // NOLINT(cppcoreguidelines-missing-std-forward)
 {
 }
+
+#define DB_CONCATENATE_IMPL(s1, s2) s1##s2
+#define DB_CONCATENATE(s1, s2) DB_CONCATENATE_IMPL(s1, s2)
+
+#define DB_ANONYMOUS_VARIABLE(str) \
+    DB_CONCATENATE(DB_CONCATENATE(DB_CONCATENATE(str, __COUNTER__), _), __LINE__)
+

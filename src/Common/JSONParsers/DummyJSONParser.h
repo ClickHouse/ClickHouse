@@ -65,6 +65,7 @@ struct DummyJSONParser
         static Iterator end() { return {}; }
         static size_t size() { return 0; }
         Element operator[](size_t) const { return {}; }
+        void reset() { }
     };
 
     using KeyValuePair = std::pair<std::string_view, Element>;
@@ -87,7 +88,7 @@ struct DummyJSONParser
         static Iterator end() { return {}; }
         static size_t size() { return 0; }
         bool find(std::string_view, Element &) const { return false; } /// NOLINT
-
+        void reset() { }
 #if 0
         /// Optional: Provides access to an object's element by index.
         KeyValuePair operator[](size_t) const { return {}; }
