@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int CANNOT_SCHEDULE_TASK;
 }
 
 /// High-order function to run callbacks (functions with 'void()' signature) somewhere asynchronously.
