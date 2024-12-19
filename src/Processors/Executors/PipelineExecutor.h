@@ -112,6 +112,7 @@ private:
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
     void spawnThreads();
+    void spawnThreadsImpl() TSA_REQUIRES(spawn_lock);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);

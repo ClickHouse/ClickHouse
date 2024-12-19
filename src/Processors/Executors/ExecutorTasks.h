@@ -48,6 +48,7 @@ class ExecutorTasks
     /// A set of currently waiting threads.
     ThreadsQueue threads_queue;
 
+    /// Threshold found by rolling dice.
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
 
 public:

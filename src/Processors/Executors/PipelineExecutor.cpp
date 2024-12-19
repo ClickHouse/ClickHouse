@@ -369,6 +369,9 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     Queue async_queue;
     graph->initializeExecution(queue, async_queue);
 
+    /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
+    /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
+    /// be invoked but actually 1 thread used.
     tasks.init(num_threads, 1, profile_processors, trace_processors, read_progress_callback.get());
     tasks.fill(queue, async_queue);
 
@@ -378,13 +381,16 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
 void PipelineExecutor::spawnThreads()
 {
-    std::unique_lock lock(spawn_lock, std::try_to_lock);
-    if (!lock.owns_lock())
+    /// Only allow one thread to spawn, if someone is already spawning threads, just skip.
+    if (spawn_lock.try_lock())
     {
-        /// Someone is already spawning threads, skip.
-        return;
+        std::lock_guard lock(spawn_lock, std::adopt_lock);
+        spawnThreadsImpl();
     }
+}
 
+void PipelineExecutor::spawnThreadsImpl()
+{
     AcquiredSlotPtr slot;
     while (tasks.shouldSpawn() && (slot = cpu_slots->tryAcquire()))
     {
