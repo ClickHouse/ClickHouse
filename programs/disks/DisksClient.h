@@ -12,6 +12,8 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 
+#include <Poco/Util/AbstractConfiguration.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -62,9 +64,7 @@ class DisksClient
     using DiskCreator = std::function<DiskPtr()>;
 
 public:
-    explicit DisksClient(const Poco::Util::AbstractConfiguration & config, ContextPtr context);
-
-    explicit DisksClient(std::vector<std::pair<DiskPtr, std::optional<String>>> && disks_with_paths, std::optional<String> begin_disk);
+    DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_);
 
     const DiskWithPath & getDiskWithPath(const String & disk) const;
 
@@ -98,5 +98,8 @@ private:
 
     using PostponedDisksMap = std::map<String, DiskCreator>;
     PostponedDisksMap postponed_disks;
+
+    const Poco::Util::AbstractConfiguration & config;
+    ContextPtr context;
 };
 }

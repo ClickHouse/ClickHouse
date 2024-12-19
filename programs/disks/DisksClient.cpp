@@ -8,6 +8,8 @@
 #include "base/types.h"
 
 #include <Formats/registerFormats.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 namespace DB::ErrorCodes
 {
@@ -132,11 +134,12 @@ String DiskWithPath::normalizePath(const String & path)
 }
 
 DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, ContextPtr context_)
+    : config(config_), context(std::move(context_))
 {
-    String begin_disk = config_.getString("disk", "default");
+    String begin_disk = config.getString("disk", "default");
     String config_prefix = "storage_configuration.disks";
     Poco::Util::AbstractConfiguration::Keys keys;
-    config_.keys(config_prefix, keys);
+    config.keys(config_prefix, keys);
 
     auto & factory = DiskFactory::instance();
 
@@ -157,13 +160,13 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
 
         postponed_disks.emplace(
             disk_name,
-            [disk_name, disk_config_prefix, &factory, &config_, context_, this]()
+            [disk_name, disk_config_prefix, &factory, this]()
             {
                 return factory.create(
                     disk_name,
-                    config_,
+                    config,
                     disk_config_prefix,
-                    context_,
+                    this->context,
                     created_disks,
                     /*attach*/ false,
                     /*custom_disk*/ false,
@@ -174,17 +177,22 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
     {
         postponed_disks.emplace(
             DEFAULT_DISK_NAME,
-            [context_, &config_, config_prefix]()
-            { return std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context_->getPath(), 0, context_, config_, config_prefix); });
+            [this, config_prefix]() {
+                return std::make_shared<DiskLocal>(
+                    DEFAULT_DISK_NAME, this->context->getPath(), 0, this->context, this->config, config_prefix);
+            });
     }
 
     if (!has_local_disk)
     {
         postponed_disks.emplace(
             LOCAL_DISK_NAME,
-            [context_, &config_, config_prefix]()
-            { return std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, context_, config_, config_prefix); });
+            [this, config_prefix]()
+            { return std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, this->context, this->config, config_prefix); });
     }
+
+    addDisk(begin_disk, std::nullopt);
+    switchToDisk(begin_disk, std::nullopt);
 }
 
 const DiskWithPath & DisksClient::getDiskWithPath(const String & disk) const
