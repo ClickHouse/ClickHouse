@@ -24,17 +24,21 @@ namespace ErrorCodes
 
 DataTypePtr SerializationNullable::SubcolumnCreator::create(const DataTypePtr & prev) const
 {
-    return std::make_shared<DataTypeNullable>(prev);
+    return makeNullableSafe(prev);
 }
 
-SerializationPtr SerializationNullable::SubcolumnCreator::create(const SerializationPtr & prev) const
+SerializationPtr SerializationNullable::SubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
-    return std::make_shared<SerializationNullable>(prev);
+    if (prev_type && !prev_type->canBeInsideNullable())
+        return prev_serialization;
+    return std::make_shared<SerializationNullable>(prev_serialization);
 }
 
 ColumnPtr SerializationNullable::SubcolumnCreator::create(const ColumnPtr & prev) const
 {
-    return ColumnNullable::create(prev, null_map);
+    if (prev->canBeInsideNullable())
+        return ColumnNullable::create(prev, null_map);
+    return prev;
 }
 
 void SerializationNullable::enumerateStreams(
@@ -59,7 +63,8 @@ void SerializationNullable::enumerateStreams(
     callback(settings.path);
 
     settings.path.back() = Substream::NullableElements;
-    settings.path.back().creator = std::make_shared<SubcolumnCreator>(null_map_data.column);
+    if (type_nullable && type_nullable->getNestedType()->canBeInsideNullable())
+        settings.path.back().creator = std::make_shared<SubcolumnCreator>(null_map_data.column);
     settings.path.back().data = data;
 
     auto next_data = SubstreamData(nested)
