@@ -18,10 +18,8 @@ public:
         JSON = 0,
     };
 
-    /// Don't change these constants, it can break backward compatibility.
+    /// Don't change this constant, it can break backward compatibility.
     static constexpr size_t DEFAULT_MAX_SEPARATELY_STORED_PATHS = 1024;
-    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
-    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
 
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
@@ -65,10 +63,16 @@ public:
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
+    DataTypePtr getTypeOfNestedObjects() const;
+
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();
 
 private:
+    /// Don't change these constants, it can break backward compatibility.
+    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
+    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
+
     SchemaFormat schema_format;
     /// Set of paths with types that were specified in type declaration.
     std::unordered_map<String, DataTypePtr> typed_paths;
