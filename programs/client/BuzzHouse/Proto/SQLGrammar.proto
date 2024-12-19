@@ -1545,6 +1545,11 @@ message Column {
     required string column = 1;
 }
 
+message ColumnPath {
+    required Column col = 1;
+    repeated Column sub_cols = 2;
+}
+
 message Index {
     required string index = 1;
 }
@@ -1724,16 +1729,9 @@ message FieldAccess {
 }
 
 message ExprColumn {
-    required Column col = 1;
-    optional Column subcol = 2;
-    optional JSONColumns subcols = 3;
-    optional TypeName dynamic_subtype = 4;
-    oneof expr_column_oneof {
-        bool null = 5;
-        bool keys = 6;
-        bool values = 7;
-        uint32 array_size = 8;
-    }
+    required ColumnPath path = 1;
+    optional JSONColumns subcols = 2;
+    optional TypeName dynamic_subtype = 3;
 }
 
 message ExprSchemaTableColumn {
@@ -1862,11 +1860,6 @@ message ArraySequence {
 
 message TupleSequence {
     repeated ExprList values = 1;
-}
-
-message ColumnList {
-    required Column col = 1;
-    repeated Column other_cols = 2;
 }
 
 message LambdaExpr {
@@ -2610,11 +2603,6 @@ message Decimal {
     optional uint32 scale = 2;
 }
 
-message ColumnPath {
-    required Column col = 1;
-    repeated Column sub_cols = 2;
-}
-
 message ColumnPathList {
     required ColumnPath col = 1;
     repeated ColumnPath other_cols = 2;
@@ -3173,7 +3161,7 @@ message HeavyDelete {
 
 message AddWhere {
     oneof add_where_oneof {
-        Column col = 1;
+        ColumnPath col = 1;
         Index idx = 2;
         bool first = 3;
     }
@@ -3185,22 +3173,22 @@ message AddColumn {
 }
 
 message RenameCol {
-    required Column old_name = 1;
-    required Column new_name = 2;
+    required ColumnPath old_name = 1;
+    required ColumnPath new_name = 2;
 }
 
 message ColInPartition {
-    required Column col = 1;
+    required ColumnPath col = 1;
     optional PartitionExpr partition = 2;
 }
 
 message CommentColumn {
-    required Column col = 1;
+    required ColumnPath col = 1;
     required string comment = 2;
 }
 
 message AddStatistics {
-    required ColumnList cols = 1;
+    required ColumnPathList cols = 1;
     required ColumnStatistics stats = 2;
 }
 
@@ -3229,12 +3217,12 @@ message RemoveColumnProperty {
         TTL = 6;
         SETTINGS = 7;
     }
-    required Column col = 1;
+    required ColumnPath col = 1;
     required ColumnProperties property = 2;
 }
 
 message ModifyColumnSetting {
-    required Column col = 1;
+    required ColumnPath col = 1;
     required SettingValues settings = 2;
 }
 
@@ -3244,7 +3232,7 @@ message SettingList {
 }
 
 message RemoveColumnSetting {
-    required Column col = 1;
+    required ColumnPath col = 1;
     required SettingList settings = 2;
 }
 
@@ -3297,7 +3285,7 @@ message AttachPartitionFrom {
 }
 
 message ClearColumnInPartition {
-    required Column col = 1;
+    required ColumnPath col = 1;
     required PartitionExpr partition = 2;
 }
 
@@ -3324,7 +3312,7 @@ message AlterTableItem {
         TableKey order = 3;
         ColInPartition materialize_column = 4;
         AddColumn add_column = 5;
-        Column drop_column = 6;
+        ColumnPath drop_column = 6;
         RenameCol rename_column = 7;
         ColInPartition clear_column = 8;
         AddColumn modify_column = 9;
@@ -3332,9 +3320,9 @@ message AlterTableItem {
         ApplyDeleteMask delete_mask = 11;
         AddStatistics add_stats = 12;
         AddStatistics mod_stats = 13;
-        ColumnList drop_stats = 14;
-        ColumnList clear_stats = 15;
-        ColumnList mat_stats = 16;
+        ColumnPathList drop_stats = 14;
+        ColumnPathList clear_stats = 15;
+        ColumnPathList mat_stats = 16;
         AddIndex add_index = 17;
         IdxInPartition materialize_index = 18;
         Index drop_index = 19;

@@ -48,7 +48,7 @@ public:
 
     virtual void setEngineDetails(RandomGenerator &, const SQLBase &, const std::string &, TableEngine *) { }
 
-    virtual bool performIntegration(RandomGenerator &, uint32_t, bool, std::vector<InsertEntry> &) { return false; }
+    virtual bool performIntegration(RandomGenerator &, uint32_t, bool, std::vector<ColumnPathChain> &) { return false; }
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -66,9 +66,10 @@ public:
 
     virtual std::string getTableName(uint32_t) { return std::string(); }
 
-    virtual void getTypeString(RandomGenerator &, const SQLType *, std::string &) const { }
+    virtual void getTypeString(RandomGenerator &, SQLType *, std::string &) const { }
 
-    bool performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<InsertEntry> & entries) override
+    bool
+    performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<ColumnPathChain> & entries) override
     {
         const std::string str_tname = getTableName(tname);
 
@@ -92,18 +93,19 @@ public:
             }
             for (const auto & entry : entries)
             {
+                SQLType * tp = entry.getBottomType();
+
                 if (!first)
                 {
                     buf += ", ";
                 }
-                buf += "c";
-                buf += std::to_string(entry.cname1);
+                buf += entry.getBottomName();
                 buf += " ";
-                getTypeString(rg, entry.tp, buf);
+                getTypeString(rg, tp, buf);
                 buf += " ";
-                buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable, false, false>(entry.tp)) ? "" : "NOT ";
+                buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable, false, false, false>(tp)) ? "" : "NOT ";
                 buf += "NULL";
-                assert(!entry.cname2.has_value());
+                assert(entry.path.size() == 1);
                 first = false;
             }
             buf += ");";
@@ -129,7 +131,7 @@ public:
         const bool is_clickhouse_integration,
         const SQLTable & t,
         const CreateTable * ct,
-        std::vector<InsertEntry> & entries)
+        std::vector<ColumnPathChain> & entries)
     {
         //drop table if exists in other db
         bool res = dropPeerTableOnRemote(t);
@@ -279,7 +281,7 @@ public:
         return true;
     }
 
-    void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override { tp->MySQLtypeName(rg, out, false); }
+    void getTypeString(RandomGenerator & rg, SQLType * tp, std::string & out) const override { tp->MySQLtypeName(rg, out, false); }
 
     ~MySQLIntegration() override
     {
@@ -414,10 +416,7 @@ public:
 
     void truncateStatement(std::string & outbuf) override { outbuf += "TRUNCATE"; }
 
-    void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override
-    {
-        tp->PostgreSQLtypeName(rg, out, false);
-    }
+    void getTypeString(RandomGenerator & rg, SQLType * tp, std::string & out) const override { tp->PostgreSQLtypeName(rg, out, false); }
 
     bool performQuery(const std::string & query) override
     {
@@ -506,7 +505,7 @@ public:
 
     void truncateStatement(std::string & outbuf) override { outbuf += "DELETE FROM"; }
 
-    void getTypeString(RandomGenerator & rg, const SQLType * tp, std::string & out) const override { tp->SQLitetypeName(rg, out, false); }
+    void getTypeString(RandomGenerator & rg, SQLType * tp, std::string & out) const override { tp->SQLitetypeName(rg, out, false); }
 
     bool performQuery(const std::string & query) override
     {
@@ -563,7 +562,7 @@ public:
         te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
     }
 
-    bool performIntegration(RandomGenerator &, const uint32_t, const bool, std::vector<InsertEntry> &) override { return true; }
+    bool performIntegration(RandomGenerator &, const uint32_t, const bool, std::vector<ColumnPathChain> &) override { return true; }
 
     ~RedisIntegration() override = default;
 };
@@ -572,7 +571,6 @@ class MongoDBIntegration : public ClickHouseIntegration
 {
 #if defined USE_MONGODB && USE_MONGODB
 private:
-    std::string buf2;
     std::ofstream out_file;
     std::vector<char> binary_data;
     std::vector<bsoncxx::document::value> documents;
@@ -580,12 +578,12 @@ private:
     mongocxx::database database;
 
     template <typename T>
-    void documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp);
+    void documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, SQLType * tp);
 
-    void documentAppendArray(
-        RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const ArrayType * at);
-    void documentAppendAnyValue(
-        RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const SQLType * tp);
+    void
+    documentAppendArray(RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, ArrayType * at);
+    void
+    documentAppendAnyValue(RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, SQLType * tp);
 
 public:
     MongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, mongocxx::client & mcon, mongocxx::database & db)
@@ -594,7 +592,6 @@ public:
         , client(std::move(mcon))
         , database(std::move(db))
     {
-        buf2.reserve(32);
     }
 
     static MongoDBIntegration * TestAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
@@ -657,7 +654,8 @@ public:
         te->add_params()->set_svalue(sc.password);
     }
 
-    bool performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<InsertEntry> & entries) override
+    bool
+    performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<ColumnPathChain> & entries) override
     {
         try
         {
@@ -678,16 +676,10 @@ public:
                 for (const auto & entry : entries)
                 {
                     if (miss_cols && rg.nextSmallNumber() < 4)
-                    { //sometimes the column is missing
-                        buf2.resize(0);
-                        buf2 += "c";
-                        buf2 += std::to_string(entry.cname1);
-                        if (entry.cname2.has_value())
-                        {
-                            buf2 += ".c";
-                            buf2 += std::to_string(entry.cname2.value());
-                        }
-                        documentAppendAnyValue(rg, buf2, document, entry.tp);
+                    {
+                        //sometimes the column is missing
+                        documentAppendAnyValue(rg, entry.getBottomName(), document, entry.getBottomType());
+                        assert(entry.path.size() == 1);
                     }
                 }
                 documents.push_back(document << bsoncxx::builder::stream::finalize);
@@ -734,12 +726,13 @@ public:
     void setEngineDetails(RandomGenerator &, const SQLBase & b, const std::string & tname, TableEngine * te) override
     {
         te->add_params()->set_svalue(
-            "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + tname + (b.isS3QueueEngine() ? "/*" : ""));
+            "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + tname.substr(1)
+            + (b.isS3QueueEngine() ? "/*" : ""));
         te->add_params()->set_svalue(sc.user);
         te->add_params()->set_svalue(sc.password);
     }
 
-    bool performIntegration(RandomGenerator &, const uint32_t tname, const bool, std::vector<InsertEntry> &) override
+    bool performIntegration(RandomGenerator &, const uint32_t tname, const bool, std::vector<ColumnPathChain> &) override
     {
         return sendRequest(sc.database + "/file" + std::to_string(tname));
     }
@@ -826,7 +819,7 @@ public:
     }
 
     void createExternalDatabaseTable(
-        RandomGenerator & rg, const IntegrationCall dc, const SQLBase & b, std::vector<InsertEntry> & entries, TableEngine * te)
+        RandomGenerator & rg, const IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te)
     {
         const std::string & tname = "t" + std::to_string(b.tname);
 
@@ -861,7 +854,11 @@ public:
     }
 
     void createPeerTable(
-        RandomGenerator & rg, const PeerTableDatabase pt, const SQLTable & t, const CreateTable * ct, std::vector<InsertEntry> & entries)
+        RandomGenerator & rg,
+        const PeerTableDatabase pt,
+        const SQLTable & t,
+        const CreateTable * ct,
+        std::vector<ColumnPathChain> & entries)
     {
         requires_external_call_check++;
         switch (pt)

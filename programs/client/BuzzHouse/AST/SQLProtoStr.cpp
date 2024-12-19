@@ -8,7 +8,7 @@
 #include "UHugeint.h"
 
 #define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const TYPE &(VAR_NAME))
-#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const bool quote, const TYPE &(VAR_NAME))
+#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const uint32_t quote, const TYPE &(VAR_NAME))
 
 namespace BuzzHouse
 {
@@ -21,9 +21,40 @@ CONV_FN(Select, select);
 
 CONV_FN_QUOTE(Column, col)
 {
-    ret += quote ? "`" : "";
-    ret += col.column();
-    ret += quote ? "`" : "";
+    for (const auto & c : col.column())
+    {
+        if (c == '`')
+        {
+            for (uint32_t i = 0; i < (1 << quote); i++)
+            {
+                ret += "`";
+            }
+        }
+        else
+        {
+            ret += c;
+        }
+    }
+}
+
+CONV_FN_QUOTE(ColumnPath, ic)
+{
+    const uint32_t nquote = quote + 1, quotes = (1 << quote);
+
+    for (uint32_t i = 0; i < quotes; i++)
+    {
+        ret += "`";
+    }
+    ColumnToString(ret, nquote, ic.col());
+    for (int i = 0; i < ic.sub_cols_size(); i++)
+    {
+        ret += ".";
+        ColumnToString(ret, nquote, ic.sub_cols(i));
+    }
+    for (uint32_t i = 0; i < quotes; i++)
+    {
+        ret += "`";
+    }
 }
 
 CONV_FN(Index, idx)
@@ -75,8 +106,9 @@ CONV_FN(ExprColAlias, eca)
     ExprToString(ret, eca.expr());
     if (eca.has_col_alias())
     {
-        ret += " AS ";
-        ColumnToString(ret, true, eca.col_alias());
+        ret += " AS `";
+        ColumnToString(ret, 1, eca.col_alias());
+        ret += "`";
     }
 }
 
@@ -156,7 +188,9 @@ CONV_FN(JSONColumn, jcol)
     {
         ret += "^";
     }
-    ColumnToString(ret, true, jcol.col());
+    ret += "`";
+    ColumnToString(ret, 1, jcol.col());
+    ret += "`";
     if (jcol.has_jarray())
     {
         const uint32_t limit = (jcol.jarray() % 4) + 1;
@@ -178,12 +212,12 @@ CONV_FN(JSONColumns, jcols)
     if (jcols.has_jcast())
     {
         ret += "::";
-        TypeNameToString(ret, false, jcols.jcast());
+        TypeNameToString(ret, 0, jcols.jcast());
     }
     else if (jcols.has_jreinterpret())
     {
         ret += ".:`";
-        TypeNameToString(ret, true, jcols.jreinterpret());
+        TypeNameToString(ret, 1, jcols.jreinterpret());
         ret += "`";
     }
 }
@@ -205,9 +239,9 @@ CONV_FN(FieldAccess, fa)
             ret += "]";
             break;
         case FieldType::kArrayKey:
-            ret += "['";
-            ColumnToString(ret, true, fa.array_key());
-            ret += "']";
+            ret += "[`";
+            ColumnToString(ret, 1, fa.array_key());
+            ret += "`]";
             break;
         case FieldType::kTupleIndex:
             ret += ".";
@@ -220,12 +254,7 @@ CONV_FN(FieldAccess, fa)
 
 CONV_FN(ExprColumn, ec)
 {
-    ColumnToString(ret, true, ec.col());
-    if (ec.has_subcol())
-    {
-        ret += ".";
-        ColumnToString(ret, true, ec.subcol());
-    }
+    ColumnPathToString(ret, 0, ec.path());
     if (ec.has_subcols())
     {
         JSONColumnsToString(ret, ec.subcols());
@@ -233,25 +262,8 @@ CONV_FN(ExprColumn, ec)
     if (ec.has_dynamic_subtype())
     {
         ret += ".`";
-        TypeNameToString(ret, true, ec.dynamic_subtype());
+        TypeNameToString(ret, 1, ec.dynamic_subtype());
         ret += "`";
-    }
-    if (ec.null())
-    {
-        ret += ".null";
-    }
-    else if (ec.keys())
-    {
-        ret += ".keys";
-    }
-    else if (ec.values())
-    {
-        ret += ".values";
-    }
-    else if (ec.has_array_size())
-    {
-        ret += ".size";
-        ret += std::to_string(ec.array_size());
     }
 }
 
@@ -657,16 +669,6 @@ CONV_FN(ParenthesesExpr, pexpr)
     ret += ")";
 }
 
-CONV_FN_QUOTE(ColumnPath, ic)
-{
-    ColumnToString(ret, quote, ic.col());
-    for (int i = 0; i < ic.sub_cols_size(); i++)
-    {
-        ret += ".";
-        ColumnToString(ret, quote, ic.sub_cols(i));
-    }
-}
-
 CONV_FN_QUOTE(ColumnPathList, cols)
 {
     ColumnPathToString(ret, quote, cols.col());
@@ -684,7 +686,7 @@ CONV_FN(EnumDefValue, edf)
     ret += std::to_string(edf.number());
 }
 
-void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcard, const BottomTypeName & btn)
+void BottomTypeNameToString(std::string & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
 {
     using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
     switch (btn.bottom_one_of_case())
@@ -793,13 +795,13 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
                                 else if (jspec.has_skip_path())
                                 {
                                     ret += "SKIP ";
-                                    ColumnPathToString(ret, !quote, jspec.skip_path());
+                                    ColumnPathToString(ret, quote, jspec.skip_path());
                                 }
                                 else if (jspec.has_path_type())
                                 {
                                     const JSONPathType & jpt = jspec.path_type();
 
-                                    ColumnPathToString(ret, !quote, jpt.col());
+                                    ColumnPathToString(ret, quote, jpt.col());
                                     ret += " ";
                                     TopTypeNameToString(ret, quote, jpt.type());
                                 }
@@ -855,7 +857,17 @@ void BottomTypeNameToString(std::string & ret, const bool quote, const bool lcar
 
 CONV_FN_QUOTE(TypeColumnDef, col_def)
 {
-    ColumnToString(ret, !quote, col_def.col());
+    const uint32_t quotes = (1 << quote);
+
+    for (uint32_t i = 0; i < quotes; i++)
+    {
+        ret += "`";
+    }
+    ColumnToString(ret, quote + 1, col_def.col());
+    for (uint32_t i = 0; i < quotes; i++)
+    {
+        ret += "`";
+    }
     ret += " ";
     TopTypeNameToString(ret, quote, col_def.type_name());
 }
@@ -973,7 +985,7 @@ CONV_FN(CastExpr, cexpr)
     ret += "CAST(";
     ExprToString(ret, cexpr.expr());
     ret += " AS ";
-    TypeNameToString(ret, false, cexpr.type_name());
+    TypeNameToString(ret, 0, cexpr.type_name());
     ret += ")";
 }
 
@@ -1106,16 +1118,6 @@ CONV_FN(ExprCase, ecase)
     ret += "END";
 }
 
-CONV_FN(ColumnList, cols)
-{
-    ColumnToString(ret, true, cols.col());
-    for (int i = 0; i < cols.other_cols_size(); i++)
-    {
-        ret += ", ";
-        ColumnToString(ret, true, cols.other_cols(i));
-    }
-}
-
 CONV_FN(LambdaExpr, lambda)
 {
     ret += "(";
@@ -1125,7 +1127,9 @@ CONV_FN(LambdaExpr, lambda)
         {
             ret += ", ";
         }
-        ColumnToString(ret, true, lambda.args(i));
+        ret += "`";
+        ColumnToString(ret, 1, lambda.args(i));
+        ret += "`";
     }
     ret += ") -> ";
     ExprToString(ret, lambda.expr());
@@ -1278,8 +1282,9 @@ CONV_FN(OrderByList, ol)
             {
                 ret += ", ";
             }
-            ColumnToString(ret, true, ie.col());
-            ret += " AS ";
+            ret += "`";
+            ColumnToString(ret, 1, ie.col());
+            ret += "` AS ";
             ExprToString(ret, ie.expr());
         }
         ret += ")";
@@ -2292,9 +2297,10 @@ CONV_FN(CodecList, cl)
 
 CONV_FN(ColumnDef, cdf)
 {
-    ColumnToString(ret, true, cdf.col());
-    ret += " ";
-    TypeNameToString(ret, false, cdf.type());
+    ret += "`";
+    ColumnToString(ret, 1, cdf.col());
+    ret += "` ";
+    TypeNameToString(ret, 0, cdf.type());
     if (cdf.has_nullable())
     {
         ret += cdf.nullable() ? "" : " NOT";
@@ -2326,7 +2332,7 @@ CONV_FN(ColumnDef, cdf)
         ret += " TTL ";
         ExprToString(ret, cdf.ttl_expr());
     }
-    if (cdf.is_pkey())
+    if ((!cdf.has_defaultv() || cdf.defaultv().dvalue() != DModifier::DEF_EPHEMERAL) && cdf.is_pkey())
     {
         ret += " PRIMARY KEY";
     }
@@ -2471,7 +2477,7 @@ CONV_FN(TableEngineParam, tep)
     switch (tep.table_engine_param_oneof_case())
     {
         case TableEngineParamType::kCols:
-            ColumnPathToString(ret, true, tep.cols());
+            ColumnPathToString(ret, 0, tep.cols());
             break;
         case TableEngineParamType::kIn:
             ret += InFormat_Name(tep.in()).substr(3);
@@ -2504,7 +2510,7 @@ CONV_FN(TableEngineParam, tep)
             break;
         case TableEngineParamType::kColList:
             ret += "(";
-            ColumnPathListToString(ret, true, tep.col_list());
+            ColumnPathListToString(ret, 0, tep.col_list());
             ret += ")";
             break;
         default:
@@ -2545,7 +2551,7 @@ CONV_FN(TTLUpdate, upt)
 
 CONV_FN(TTLSet, ttl_set)
 {
-    ColumnPathToString(ret, false, ttl_set.col());
+    ColumnPathToString(ret, 0, ttl_set.col());
     ret += " = ";
     ExprToString(ret, ttl_set.expr());
 }
@@ -2837,7 +2843,7 @@ CONV_FN(Insert, insert)
             {
                 ret += ", ";
             }
-            ColumnPathToString(ret, true, insert.cols(i));
+            ColumnPathToString(ret, 0, insert.cols(i));
         }
         ret += ")";
     }
@@ -3031,7 +3037,7 @@ CONV_FN(ExchangeTables, et)
 
 CONV_FN(UpdateSet, upt)
 {
-    ColumnPathToString(ret, true, upt.col());
+    ColumnPathToString(ret, 0, upt.col());
     ret += " = ";
     ExprToString(ret, upt.expr());
 }
@@ -3132,7 +3138,7 @@ CONV_FN(AddWhere, add)
     if (add.has_col())
     {
         ret += " AFTER ";
-        ColumnToString(ret, true, add.col());
+        ColumnPathToString(ret, 0, add.col());
     }
     else if (add.has_idx())
     {
@@ -3159,21 +3165,21 @@ CONV_FN(AddIndex, add)
 
 CONV_FN(AddStatistics, add)
 {
-    ColumnListToString(ret, add.cols());
+    ColumnPathListToString(ret, 0, add.cols());
     ret += " TYPE ";
     ColumnStatisticsToString(ret, add.stats());
 }
 
 CONV_FN(RemoveColumnProperty, rcs)
 {
-    ColumnToString(ret, true, rcs.col());
+    ColumnPathToString(ret, 0, rcs.col());
     ret += " REMOVE ";
     ret += RemoveColumnProperty_ColumnProperties_Name(rcs.property());
 }
 
 CONV_FN(ModifyColumnSetting, mcp)
 {
-    ColumnToString(ret, true, mcp.col());
+    ColumnPathToString(ret, 0, mcp.col());
     ret += " MODIFY SETTING ";
     SettingValuesToString(ret, mcp.settings());
 }
@@ -3190,7 +3196,7 @@ CONV_FN(SettingList, pl)
 
 CONV_FN(RemoveColumnSetting, rcp)
 {
-    ColumnToString(ret, true, rcp.col());
+    ColumnPathToString(ret, 0, rcp.col());
     ret += " RESET SETTING ";
     SettingListToString(ret, rcp.settings());
 }
@@ -3227,7 +3233,7 @@ CONV_FN(AlterTableItem, alter)
             break;
         case AlterType::kMaterializeColumn:
             ret += "MATERIALIZE COLUMN ";
-            ColumnToString(ret, true, alter.materialize_column().col());
+            ColumnPathToString(ret, 0, alter.materialize_column().col());
             if (alter.materialize_column().has_partition())
             {
                 ret += " IN ";
@@ -3240,17 +3246,17 @@ CONV_FN(AlterTableItem, alter)
             break;
         case AlterType::kDropColumn:
             ret += "DROP COLUMN ";
-            ColumnToString(ret, true, alter.drop_column());
+            ColumnPathToString(ret, 0, alter.drop_column());
             break;
         case AlterType::kRenameColumn:
             ret += "RENAME COLUMN ";
-            ColumnToString(ret, true, alter.rename_column().old_name());
+            ColumnPathToString(ret, 0, alter.rename_column().old_name());
             ret += " TO ";
-            ColumnToString(ret, true, alter.rename_column().new_name());
+            ColumnPathToString(ret, 0, alter.rename_column().new_name());
             break;
         case AlterType::kClearColumn:
             ret += "CLEAR COLUMN ";
-            ColumnToString(ret, true, alter.clear_column().col());
+            ColumnPathToString(ret, 0, alter.clear_column().col());
             if (alter.clear_column().has_partition())
             {
                 ret += " IN ";
@@ -3263,7 +3269,7 @@ CONV_FN(AlterTableItem, alter)
             break;
         case AlterType::kCommentColumn:
             ret += "COMMENT COLUMN ";
-            ColumnToString(ret, true, alter.comment_column().col());
+            ColumnPathToString(ret, 0, alter.comment_column().col());
             ret += " ";
             ret += alter.comment_column().comment();
             break;
@@ -3285,15 +3291,15 @@ CONV_FN(AlterTableItem, alter)
             break;
         case AlterType::kDropStats:
             ret += "DROP STATISTICS ";
-            ColumnListToString(ret, alter.drop_stats());
+            ColumnPathListToString(ret, 0, alter.drop_stats());
             break;
         case AlterType::kClearStats:
             ret += "CLEAR STATISTICS ";
-            ColumnListToString(ret, alter.clear_stats());
+            ColumnPathListToString(ret, 0, alter.clear_stats());
             break;
         case AlterType::kMatStats:
             ret += "MATERIALIZE STATISTICS ";
-            ColumnListToString(ret, alter.mat_stats());
+            ColumnPathListToString(ret, 0, alter.mat_stats());
             break;
         case AlterType::kMaterializeIndex:
             ret += "MATERIALIZE INDEX ";
@@ -3415,7 +3421,7 @@ CONV_FN(AlterTableItem, alter)
             break;
         case AlterType::kClearColumnPartition:
             ret += "CLEAR COLUMN ";
-            ColumnToString(ret, true, alter.clear_column_partition().col());
+            ColumnPathToString(ret, 0, alter.clear_column_partition().col());
             ret += " IN ";
             PartitionExprToString(ret, alter.clear_column_partition().partition());
             break;
@@ -3894,6 +3900,7 @@ CONV_FN(ExplainQuery, explain)
     }
     if (explain.has_expl() && explain.expl() <= ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE)
     {
+        ret += " ";
         for (int i = 0; i < explain.opts_size(); i++)
         {
             std::string ostr;
@@ -3903,7 +3910,6 @@ CONV_FN(ExplainQuery, explain)
             {
                 ret += ", ";
             }
-            ret += " ";
             switch (explain.expl())
             {
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:

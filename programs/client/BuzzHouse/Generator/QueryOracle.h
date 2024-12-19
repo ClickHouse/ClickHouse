@@ -30,10 +30,10 @@ public:
     int generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /* Dump and read table oracle */
-    int dumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq1);
-    int generateExportQuery(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq2);
+    int dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
+    int generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2);
     int generateClearQuery(const SQLTable & t, SQLQuery & sq3);
-    int generateImportQuery(const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
+    int generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
 
     /* Run query with different settings oracle */
     int generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
@@ -43,8 +43,7 @@ public:
     /* Replace query with peer tables */
     int truncatePeerTables(const StatementGenerator & gen) const;
     int optimizePeerTables(const StatementGenerator & gen) const;
-    int
-    replaceQueryWithTablePeers(const SQLQuery & sq1, const StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
+    int replaceQueryWithTablePeers(const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
 
 }

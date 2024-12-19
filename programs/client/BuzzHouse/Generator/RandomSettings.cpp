@@ -986,7 +986,6 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mer
        {"use_async_block_ids_cache", trueOrFalse},
        {"use_compact_variant_discriminators_serialization", trueOrFalse},
        {"use_const_adaptive_granularity", trueOrFalse},
-       {"use_index_for_in_with_subqueries", trueOrFalse},
        {"use_minimalistic_part_header_in_zookeeper", trueOrFalse},
        {"use_primary_key_cache", trueOrFalse},
        {"vertical_merge_algorithm_min_bytes_to_activate",

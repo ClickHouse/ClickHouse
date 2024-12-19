@@ -38,19 +38,15 @@ int StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
             {
                 estc->mutable_table()->set_table(rel_col.rel_name);
             }
-            ecol->mutable_col()->set_column(rel_col.name);
-            if (rel_col.name2.has_value())
-            {
-                ecol->mutable_subcol()->set_column(rel_col.name2.value());
-            }
-            addFieldAccess(rg, expr, 16);
-            addColNestedAccess(rg, ecol, 31);
+            rel_col.AddRef(ecol);
+            addFieldAccess(rg, expr, 6);
+            addColNestedAccess(rg, ecol, 6);
         }
         else
         {
             generateExpression(rg, expr);
         }
-        rel.cols.push_back(SQLRelationCol("", cname, std::nullopt));
+        rel.cols.push_back(SQLRelationCol("", {cname}));
         eca->mutable_col_alias()->set_column(cname);
     }
     this->levels[this->current_level].rels.push_back(std::move(rel));
@@ -84,7 +80,7 @@ int StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation &
 
         for (int i = 0; i < scc.result_columns_size(); i++)
         {
-            rel.cols.push_back(SQLRelationCol(rel.name, scc.result_columns(i).eca().col_alias().column(), std::nullopt));
+            rel.cols.push_back(SQLRelationCol(rel.name, {scc.result_columns(i).eca().col_alias().column()}));
         }
     }
     else if (sel->has_set_query())
@@ -100,13 +96,13 @@ int StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation &
             const SelectStatementCore & scc = aux->select_core();
             for (int i = 0; i < scc.result_columns_size(); i++)
             {
-                rel.cols.push_back(SQLRelationCol(rel.name, scc.result_columns(i).eca().col_alias().column(), std::nullopt));
+                rel.cols.push_back(SQLRelationCol(rel.name, {scc.result_columns(i).eca().col_alias().column()}));
             }
         }
     }
     if (rel.cols.empty())
     {
-        rel.cols.push_back(SQLRelationCol(rel.name, "c0", std::nullopt));
+        rel.cols.push_back(SQLRelationCol(rel.name, {"c0"}));
     }
     return 0;
 }
@@ -243,7 +239,7 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
         jt->set_final(!v.is_materialized && (this->enforce_final || rg.nextSmallNumber() < 3));
         for (uint32_t i = 0; i < v.ncols; i++)
         {
-            rel.cols.push_back(SQLRelationCol(name, "c" + std::to_string(i), std::nullopt));
+            rel.cols.push_back(SQLRelationCol(name, {"c" + std::to_string(i)}));
         }
         this->levels[this->current_level].rels.push_back(std::move(rel));
     }
@@ -330,7 +326,7 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
         }
 
         limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
-        rel.cols.push_back(SQLRelationCol(name, cname, std::nullopt));
+        rel.cols.push_back(SQLRelationCol(name, {cname}));
 
         jtf->mutable_table_alias()->set_table(name);
         this->levels[this->current_level].rels.push_back(std::move(rel));
@@ -379,20 +375,12 @@ int StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
     {
         estc2->mutable_table()->set_table(rel2->name);
     }
-    ecol1->mutable_col()->set_column(col1.name);
-    if (col1.name2.has_value())
-    {
-        ecol1->mutable_subcol()->set_column(col1.name2.value());
-    }
-    ecol2->mutable_col()->set_column(col2.name);
-    if (col2.name2.has_value())
-    {
-        ecol2->mutable_subcol()->set_column(col2.name2.value());
-    }
-    addFieldAccess(rg, expr1, 16);
-    addFieldAccess(rg, expr2, 16);
-    addColNestedAccess(rg, ecol1, 31);
-    addColNestedAccess(rg, ecol2, 31);
+    col1.AddRef(ecol1->mutable_path());
+    col2.AddRef(ecol2->mutable_path());
+    addFieldAccess(rg, expr1, 6);
+    addFieldAccess(rg, expr2, 6);
+    addColNestedAccess(rg, ecol1, 6);
+    addColNestedAccess(rg, ecol2, 6);
     return 0;
 }
 
@@ -407,19 +395,19 @@ int StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool 
             //using clause
             const SQLRelation & rel1 = rg.pickRandomlyFromVector(this->levels[this->current_level].rels);
             const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
-            std::vector<std::string> cols1;
-            std::vector<std::string> cols2;
-            std::vector<std::string> intersect;
+            std::vector<std::vector<std::string>> cols1;
+            std::vector<std::vector<std::string>> cols2;
+            std::vector<std::vector<std::string>> intersect;
 
             cols1.reserve(rel1.cols.size());
             for (const auto & entry : rel1.cols)
             {
-                cols1.push_back(entry.name);
+                cols1.push_back(entry.path);
             }
             cols2.reserve(rel2.cols.size());
             for (const auto & entry : rel2.cols)
             {
-                cols2.push_back(entry.name);
+                cols2.push_back(entry.path);
             }
             std::set_intersection(cols1.begin(), cols1.end(), cols2.begin(), cols2.end(), std::back_inserter(intersect));
 
@@ -432,9 +420,15 @@ int StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool 
                 std::shuffle(intersect.begin(), intersect.end(), rg.generator);
                 for (uint32_t i = 0; i < nclauses; i++)
                 {
-                    ExprColumn * ec = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
+                    ColumnPath * cp = i == 0 ? ecl->mutable_col()->mutable_path() : ecl->add_extra_cols()->mutable_path();
+                    const std::vector<std::string> & npath = intersect[i];
 
-                    ec->mutable_col()->set_column(intersect[i]);
+                    for (size_t j = 0; j < npath.size(); j++)
+                    {
+                        Column * col = j == 0 ? cp->mutable_col() : cp->add_sub_cols();
+
+                        col->set_column(npath[j]);
+                    }
                 }
                 generated = true;
             }
@@ -733,13 +727,9 @@ int StatementGenerator::generateGroupByExpr(
         {
             estc->mutable_table()->set_table(rel_col.rel_name);
         }
-        ecol->mutable_col()->set_column(rel_col.name);
-        if (rel_col.name2.has_value())
-        {
-            ecol->mutable_subcol()->set_column(rel_col.name2.value());
-        }
-        addFieldAccess(rg, expr, 16);
-        addColNestedAccess(rg, ecol, 31);
+        rel_col.AddRef(ecol);
+        addFieldAccess(rg, expr, 6);
+        addColNestedAccess(rg, ecol, 6);
         gcols.push_back(GroupCol(rel_col, expr));
     }
     else if (ncols && next_option < 10)
@@ -866,7 +856,7 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
             for (const auto & entry : this->levels[this->current_level].projections)
             {
                 const std::string cname = "c" + std::to_string(entry);
-                available_cols.push_back(GroupCol(SQLRelationCol("", cname, std::nullopt), nullptr));
+                available_cols.push_back(GroupCol(SQLRelationCol("", {cname}), nullptr));
             }
         }
         else if (this->levels[this->current_level].gcols.empty() && !this->levels[this->current_level].global_aggregate)
@@ -1191,7 +1181,7 @@ int StatementGenerator::generateSelect(
                 const std::string cname_str = "c" + std::to_string(cname);
 
                 SQLRelation rel("");
-                rel.cols.push_back(SQLRelationCol("", cname_str, std::nullopt));
+                rel.cols.push_back(SQLRelationCol("", {cname_str}));
                 this->levels[this->current_level].rels.push_back(std::move(rel));
                 eca->mutable_col_alias()->set_column(cname_str);
                 this->levels[this->current_level].projections.push_back(cname);

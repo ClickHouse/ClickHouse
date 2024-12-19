@@ -14,15 +14,23 @@ class QueryOracle;
 class SQLRelationCol
 {
 public:
-    std::string rel_name, name;
-    std::optional<std::string> name2;
+    std::string rel_name;
+    std::vector<std::string> path;
 
     SQLRelationCol() = default;
 
-    SQLRelationCol(const std::string rname, const std::string cname, std::optional<std::string> cname2)
-        : rel_name(rname), name(cname), name2(cname2)
+    SQLRelationCol(const std::string rname, const std::vector<std::string> names) : rel_name(rname), path(names) { }
+
+    void AddRef(ColumnPath * cp) const
     {
+        for (size_t i = 0; i < path.size(); i++)
+        {
+            Column * col = i == 0 ? cp->mutable_col() : cp->add_sub_cols();
+
+            col->set_column(path[i]);
+        }
     }
+    void AddRef(ExprColumn * expr) const { AddRef(expr->mutable_path()); }
 };
 
 class SQLRelation
@@ -65,6 +73,9 @@ const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_disti
                          allow_groupby_settings = (1 << 8), allow_orderby = (1 << 9), allow_orderby_settings = (1 << 10),
                          allow_limit = (1 << 11);
 
+const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), skip_tuple_node = (1 << 3),
+                         skip_nested_node = (1 << 4), to_table_entries = (1 << 5);
+
 class StatementGenerator
 {
 private:
@@ -100,8 +111,8 @@ private:
            34,  35,   36,   37,   38,   39,     40,     41,     42,  43,  44,  126, 127, 128, 129, 32766, 32767};
 
     std::vector<uint32_t> ids;
-    std::vector<InsertEntry> entries;
-    std::vector<std::reference_wrapper<const InsertEntry>> filtered_entries;
+    std::vector<ColumnPathChain> entries, table_entries;
+    std::vector<std::reference_wrapper<const ColumnPathChain>> filtered_entries;
     std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
     std::vector<std::reference_wrapper<const SQLView>> filtered_views;
     std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
@@ -205,19 +216,20 @@ public:
     }
 
 private:
-    void insertEntryRef(const InsertEntry & entry, Expr * expr) const;
-    void insertEntryRefCP(const InsertEntry & entry, ColumnPath * cp) const;
+    void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
+    void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const std::string & rel_name, const SQLTable & t);
 
-    void strAppendBottomValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
-    void strAppendMap(RandomGenerator & rg, std::string & ret, const MapType * mt);
-    void strAppendArray(RandomGenerator & rg, std::string & ret, const ArrayType * at);
-    void strAppendArray(RandomGenerator & rg, std::string & ret, const ArrayType * at, uint32_t limit);
-    void strAppendTuple(RandomGenerator & rg, std::string & ret, const TupleType * at);
-    void strAppendVariant(RandomGenerator & rg, std::string & ret, const VariantType * vtp);
-    void strAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, const SQLType * tp);
-    void strAppendAnyValue(RandomGenerator & rg, std::string & ret, const SQLType * tp);
+    void strAppendBottomValue(RandomGenerator & rg, std::string & ret, SQLType * tp);
+    void strAppendMap(RandomGenerator & rg, std::string & ret, MapType * mt);
+    void strAppendArray(RandomGenerator & rg, std::string & ret, ArrayType * at);
+    void strAppendArray(RandomGenerator & rg, std::string & ret, SQLType * tp, uint32_t limit);
+    void strAppendTuple(RandomGenerator & rg, std::string & ret, TupleType * at);
+    void strAppendVariant(RandomGenerator & rg, std::string & ret, VariantType * vtp);
+    void strAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, SQLType * tp);
+    void strAppendAnyValue(RandomGenerator & rg, std::string & ret, SQLType * tp);
 
+    void flatTableColumnPath(uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter);
     int generateStorage(RandomGenerator & rg, Storage * store) const;
     int generateNextCodecs(RandomGenerator & rg, CodecList * cl);
     int
@@ -229,7 +241,7 @@ private:
         std::vector<InsertEntry> & ientries,
         TTLExpr * ttl_expr);
     int generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
-    int pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnList * clist);
+    int pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnPathList * clist);
     int addTableColumn(
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
     int addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, IndexDef * idef);
@@ -317,16 +329,16 @@ private:
     int generateNextExplain(RandomGenerator & rg, ExplainQuery * eq);
     int generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
 
-    std::tuple<const SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
-    std::tuple<const SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
-    std::tuple<const SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
-    const SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
-    const SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
-    const SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types);
-    const SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
+    std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
+    std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
+    std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
+    SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
+    SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
+    SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types);
+    SQLType * generateArraytype(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
-    const SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types);
-    const SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
+    SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types);
+    SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
     void dropDatabase(uint32_t dname);

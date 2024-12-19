@@ -572,14 +572,14 @@ bool Client::buzzHouse()
 
                     //test in and out formats
                     full_query2.resize(0);
-                    (void)qo.dumpTableContent(rg, t, sq1);
+                    (void)qo.dumpTableContent(rg, gen, t, sq1);
                     BuzzHouse::SQLQueryToString(full_query2, sq1);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
                     (void)qo.processOracleQueryResult(true, !have_error, "Dump and read table");
 
                     sq2.Clear();
-                    (void)qo.generateExportQuery(rg, t, sq2);
+                    (void)qo.generateExportQuery(rg, gen, t, sq2);
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
@@ -595,7 +595,7 @@ bool Client::buzzHouse()
 
                     sq4.Clear();
                     full_query.resize(0);
-                    (void)qo.generateImportQuery(t, sq2, sq4);
+                    (void)qo.generateImportQuery(gen, t, sq2, sq4);
                     BuzzHouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);

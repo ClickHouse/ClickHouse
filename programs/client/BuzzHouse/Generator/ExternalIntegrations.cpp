@@ -134,17 +134,17 @@ template <typename T>
 constexpr bool is_document = std::is_same_v<T, bsoncxx::v_noabi::builder::stream::document>;
 
 template <typename T>
-void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, const SQLType * tp)
+void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const std::string & cname, T & output, SQLType * tp)
 {
-    const IntType * itp;
-    const DateType * dtp;
-    const DateTimeType * dttp;
-    const DecimalType * detp;
-    const StringType * stp;
-    const EnumType * etp;
-    const GeoType * gtp;
+    IntType * itp;
+    DateType * dtp;
+    DateTimeType * dttp;
+    DecimalType * detp;
+    StringType * stp;
+    EnumType * etp;
+    GeoType * gtp;
 
-    if ((itp = dynamic_cast<const IntType *>(tp)))
+    if ((itp = dynamic_cast<IntType *>(tp)))
     {
         switch (itp->size)
         {
@@ -192,7 +192,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             }
         }
     }
-    else if (dynamic_cast<const FloatType *>(tp))
+    else if (dynamic_cast<FloatType *>(tp))
     {
         const uint32_t next_option = rg.nextLargeNumber();
 
@@ -226,7 +226,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
-    else if ((dtp = dynamic_cast<const DateType *>(tp)))
+    else if ((dtp = dynamic_cast<DateType *>(tp)))
     {
         const bsoncxx::types::b_date val(
             {std::chrono::milliseconds(rg.nextBool() ? static_cast<uint64_t>(rg.nextRandomUInt32()) : rg.nextRandomUInt64())});
@@ -240,7 +240,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << val;
         }
     }
-    else if ((dttp = dynamic_cast<const DateTimeType *>(tp)))
+    else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
         buf.resize(0);
         if (dttp->extended)
@@ -260,7 +260,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
-    else if ((detp = dynamic_cast<const DecimalType *>(tp)))
+    else if ((detp = dynamic_cast<DecimalType *>(tp)))
     {
         const uint32_t right = detp->scale.value_or(0);
         const uint32_t left = detp->precision.value_or(10) - right;
@@ -289,7 +289,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
-    else if ((stp = dynamic_cast<const StringType *>(tp)))
+    else if ((stp = dynamic_cast<StringType *>(tp)))
     {
         const uint32_t limit = stp->precision.value_or(rg.nextRandomUInt32() % 1009);
 
@@ -338,7 +338,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << val;
         }
     }
-    else if ((etp = dynamic_cast<const EnumType *>(tp)))
+    else if ((etp = dynamic_cast<EnumType *>(tp)))
     {
         const EnumValue & nvalue = rg.pickRandomlyFromVector(etp->values);
 
@@ -353,7 +353,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
-    else if (dynamic_cast<const UUIDType *>(tp))
+    else if (dynamic_cast<UUIDType *>(tp))
     {
         buf.resize(0);
         rg.nextUUID(buf);
@@ -366,7 +366,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
-    else if (dynamic_cast<const IPv4Type *>(tp))
+    else if (dynamic_cast<IPv4Type *>(tp))
     {
         buf.resize(0);
         rg.nextIPv4(buf);
@@ -379,7 +379,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
-    else if (dynamic_cast<const IPv6Type *>(tp))
+    else if (dynamic_cast<IPv6Type *>(tp))
     {
         buf.resize(0);
         rg.nextIPv6(buf);
@@ -392,7 +392,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
-    else if (dynamic_cast<const JSONType *>(tp))
+    else if (dynamic_cast<JSONType *>(tp))
     {
         std::uniform_int_distribution<int> dopt(1, 10);
         std::uniform_int_distribution<int> wopt(1, 10);
@@ -408,7 +408,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             output << buf;
         }
     }
-    else if ((gtp = dynamic_cast<const GeoType *>(tp)))
+    else if ((gtp = dynamic_cast<GeoType *>(tp)))
     {
         buf.resize(0);
         strAppendGeoValue(rg, buf, gtp->geo_type);
@@ -428,14 +428,14 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
 }
 
 void MongoDBIntegration::documentAppendArray(
-    RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const ArrayType * at)
+    RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, ArrayType * at)
 {
     const uint32_t limit = rg.nextLargeNumber() % 100;
     auto array = document << cname << bsoncxx::builder::stream::open_array; // Array
-    const SQLType * tp = at->subtype;
-    const Nullable * nl;
-    const VariantType * vtp;
-    const LowCardinality * lc;
+    SQLType * tp = at->subtype;
+    Nullable * nl;
+    VariantType * vtp;
+    LowCardinality * lc;
 
     for (uint32_t i = 0; i < limit; i++)
     {
@@ -458,17 +458,16 @@ void MongoDBIntegration::documentAppendArray(
             array << bsoncxx::types::b_minkey{}; // Min-Key Value
         }
         else if (
-            dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
-            || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
-            || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp)
-            || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp)
-            || dynamic_cast<const GeoType *>(tp))
+            dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
+            || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
+            || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
+            || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp))
         {
             documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
         }
-        else if ((lc = dynamic_cast<const LowCardinality *>(tp)))
+        else if ((lc = dynamic_cast<LowCardinality *>(tp)))
         {
-            if ((nl = dynamic_cast<const Nullable *>(lc->subtype)))
+            if ((nl = dynamic_cast<Nullable *>(lc->subtype)))
             {
                 documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
             }
@@ -477,15 +476,15 @@ void MongoDBIntegration::documentAppendArray(
                 documentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype);
             }
         }
-        else if ((nl = dynamic_cast<const Nullable *>(tp)))
+        else if ((nl = dynamic_cast<Nullable *>(tp)))
         {
             documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
         }
-        else if (dynamic_cast<const ArrayType *>(tp))
+        else if (dynamic_cast<ArrayType *>(tp))
         {
             array << bsoncxx::builder::stream::open_array << 1 << bsoncxx::builder::stream::close_array;
         }
-        else if ((vtp = dynamic_cast<const VariantType *>(tp)))
+        else if ((vtp = dynamic_cast<VariantType *>(tp)))
         {
             if (vtp->subtypes.empty())
             {
@@ -501,12 +500,12 @@ void MongoDBIntegration::documentAppendArray(
 }
 
 void MongoDBIntegration::documentAppendAnyValue(
-    RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, const SQLType * tp)
+    RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, SQLType * tp)
 {
-    const Nullable * nl;
-    const ArrayType * at;
-    const VariantType * vtp;
-    const LowCardinality * lc;
+    Nullable * nl;
+    ArrayType * at;
+    VariantType * vtp;
+    LowCardinality * lc;
     const uint32_t nopt = rg.nextLargeNumber();
 
     if (nopt < 31)
@@ -526,27 +525,26 @@ void MongoDBIntegration::documentAppendAnyValue(
         document << cname << bsoncxx::types::b_minkey{}; // Min-Key Value
     }
     else if (
-        dynamic_cast<const IntType *>(tp) || dynamic_cast<const FloatType *>(tp) || dynamic_cast<const DateType *>(tp)
-        || dynamic_cast<const DateTimeType *>(tp) || dynamic_cast<const DecimalType *>(tp) || dynamic_cast<const StringType *>(tp)
-        || dynamic_cast<const BoolType *>(tp) || dynamic_cast<const EnumType *>(tp) || dynamic_cast<const UUIDType *>(tp)
-        || dynamic_cast<const IPv4Type *>(tp) || dynamic_cast<const IPv6Type *>(tp) || dynamic_cast<const JSONType *>(tp)
-        || dynamic_cast<const GeoType *>(tp))
+        dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
+        || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
+        || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
+        || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp))
     {
         documentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
     }
-    else if ((lc = dynamic_cast<const LowCardinality *>(tp)))
+    else if ((lc = dynamic_cast<LowCardinality *>(tp)))
     {
         documentAppendAnyValue(rg, cname, document, lc->subtype);
     }
-    else if ((nl = dynamic_cast<const Nullable *>(tp)))
+    else if ((nl = dynamic_cast<Nullable *>(tp)))
     {
         documentAppendAnyValue(rg, cname, document, nl->subtype);
     }
-    else if ((at = dynamic_cast<const ArrayType *>(tp)))
+    else if ((at = dynamic_cast<ArrayType *>(tp)))
     {
         documentAppendArray(rg, cname, document, at);
     }
-    else if ((vtp = dynamic_cast<const VariantType *>(tp)))
+    else if ((vtp = dynamic_cast<VariantType *>(tp)))
     {
         if (vtp->subtypes.empty())
         {

@@ -29,7 +29,7 @@ public:
     virtual ~SQLType() = default;
 };
 
-const SQLType * TypeDeepCopy(const SQLType * tp);
+SQLType * TypeDeepCopy(SQLType * tp);
 
 class BoolType : public SQLType
 {
@@ -423,8 +423,8 @@ public:
 class Nullable : public SQLType
 {
 public:
-    const SQLType * subtype;
-    explicit Nullable(const SQLType * s) : subtype(s) { }
+    SQLType * subtype;
+    explicit Nullable(SQLType * s) : subtype(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -451,8 +451,8 @@ public:
 class LowCardinality : public SQLType
 {
 public:
-    const SQLType * subtype;
-    explicit LowCardinality(const SQLType * s) : subtype(s) { }
+    SQLType * subtype;
+    explicit LowCardinality(SQLType * s) : subtype(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -493,8 +493,8 @@ public:
 class ArrayType : public SQLType
 {
 public:
-    const SQLType * subtype;
-    explicit ArrayType(const SQLType * s) : subtype(s) { }
+    SQLType * subtype;
+    explicit ArrayType(SQLType * s) : subtype(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -505,17 +505,17 @@ public:
     void MySQLtypeName(RandomGenerator &, std::string &, const bool) const override { assert(0); }
     void PostgreSQLtypeName(RandomGenerator & rg, std::string & ret, const bool escape) const override
     {
-        const SQLType * nsubtype = subtype;
-        const Nullable * nl = nullptr;
-        const LowCardinality * lc = nullptr;
+        SQLType * nsubtype = subtype;
+        Nullable * nl = nullptr;
+        LowCardinality * lc = nullptr;
 
         while (true)
         {
-            if ((nl = dynamic_cast<const Nullable *>(nsubtype)))
+            if ((nl = dynamic_cast<Nullable *>(nsubtype)))
             {
                 nsubtype = nl->subtype;
             }
-            else if ((lc = dynamic_cast<const LowCardinality *>(nsubtype)))
+            else if ((lc = dynamic_cast<LowCardinality *>(nsubtype)))
             {
                 nsubtype = lc->subtype;
             }
@@ -535,8 +535,8 @@ public:
 class MapType : public SQLType
 {
 public:
-    const SQLType *key, *value;
-    MapType(const SQLType * k, const SQLType * v) : key(k), value(v) { }
+    SQLType *key, *value;
+    MapType(SQLType * k, SQLType * v) : key(k), value(v) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -561,9 +561,9 @@ class SubType
 {
 public:
     const std::optional<const uint32_t> cname;
-    const SQLType * subtype;
+    SQLType * subtype;
 
-    SubType(const std::optional<const uint32_t> n, const SQLType * s) : cname(n), subtype(s) { }
+    SubType(const std::optional<const uint32_t> n, SQLType * s) : cname(n), subtype(s) { }
 };
 
 class TupleType : public SQLType
@@ -641,18 +641,18 @@ public:
 class NestedSubType
 {
 public:
-    const uint32_t cname;
-    const SQLType * subtype;
-    const ArrayType * array_subtype;
+    uint32_t cname;
+    SQLType * subtype;
+    ArrayType * array_subtype;
 
-    NestedSubType(const uint32_t n, const SQLType * s) : cname(n), subtype(s), array_subtype(new ArrayType(TypeDeepCopy(s))) { }
+    NestedSubType(const uint32_t n, SQLType * s) : cname(n), subtype(s), array_subtype(new ArrayType(TypeDeepCopy(s))) { }
 };
 
 class NestedType : public SQLType
 {
 public:
-    const std::vector<NestedSubType> subtypes;
-    explicit NestedType(const std::vector<NestedSubType> s) : subtypes(s) { }
+    std::vector<NestedSubType> subtypes;
+    explicit NestedType(std::vector<NestedSubType> s) : subtypes(s) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {
@@ -686,12 +686,10 @@ public:
     }
 };
 
-template <typename T, bool SArray, bool SNullable>
-bool hasType(const SQLType * tp)
+template <typename T, bool SArray, bool SNullable, bool SNested>
+bool hasType(SQLType * tp)
 {
-    const Nullable * nl;
-    const LowCardinality * lc;
-    const ArrayType * at;
+    LowCardinality * lc;
 
     if (dynamic_cast<const T *>(tp))
     {
@@ -699,20 +697,50 @@ bool hasType(const SQLType * tp)
     }
     if constexpr (SNullable)
     {
-        if ((nl = dynamic_cast<const Nullable *>(tp)))
+        Nullable * nl;
+
+        if ((nl = dynamic_cast<Nullable *>(tp)))
         {
-            return hasType<T, SArray, SNullable>(nl->subtype);
+            return hasType<T, SArray, SNullable, SNested>(nl->subtype);
         }
     }
-    if ((lc = dynamic_cast<const LowCardinality *>(tp)))
+    if ((lc = dynamic_cast<LowCardinality *>(tp)))
     {
-        return hasType<T, SArray, SNullable>(lc->subtype);
+        return hasType<T, SArray, SNullable, SNested>(lc->subtype);
     }
     if constexpr (SArray)
     {
-        if ((at = dynamic_cast<const ArrayType *>(tp)))
+        ArrayType * at;
+
+        if ((at = dynamic_cast<ArrayType *>(tp)))
         {
-            return hasType<T, SArray, SNullable>(at->subtype);
+            return hasType<T, SArray, SNullable, SNested>(at->subtype);
+        }
+    }
+    if constexpr (SNested)
+    {
+        TupleType * ttp;
+        NestedType * ntp;
+
+        if ((ttp = dynamic_cast<TupleType *>(tp)))
+        {
+            for (const auto & entry : ttp->subtypes)
+            {
+                if (hasType<T, SArray, SNullable, SNested>(entry.subtype))
+                {
+                    return true;
+                }
+            }
+        }
+        else if ((ntp = dynamic_cast<NestedType *>(tp)))
+        {
+            for (const auto & entry : ntp->subtypes)
+            {
+                if (hasType<T, SArray, SNullable, SNested>(entry.subtype))
+                {
+                    return true;
+                }
+            }
         }
     }
     return false;

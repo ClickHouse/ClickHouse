@@ -4,6 +4,7 @@
 #include "SQLTypes.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 
 namespace BuzzHouse
@@ -191,7 +192,8 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         assert(this->entries.empty());
         for (uint32_t i = 0; i < next.ncols; i++)
         {
-            entries.push_back(InsertEntry(true, ColumnSpecial::NONE, i, std::nullopt, nullptr, std::nullopt));
+            std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
+            entries.push_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
         }
         generateEngineDetails(rg, next, true, te);
         if (next.isMergeTreeFamily() && rg.nextMediumNumber() < 16)
@@ -342,44 +344,16 @@ int StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimize
 
         if (noption < 51)
         {
-            const NestedType * ntp = nullptr;
             ExprColumnList * ecl = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
+            flatTableColumnPath(flat_tuple | flat_nested | skip_nested_node, t, [](const SQLColumn &) { return true; });
             const uint32_t ocols
-                = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(t.realNumberOfColumns()), UINT32_C(4))) + 1;
-
-            assert(entries.empty());
-            for (const auto & entry : t.cols)
-            {
-                if ((ntp = dynamic_cast<const NestedType *>(entry.second.tp)))
-                {
-                    for (const auto & entry2 : ntp->subtypes)
-                    {
-                        entries.push_back(InsertEntry(
-                            std::nullopt,
-                            ColumnSpecial::NONE,
-                            entry.second.cname,
-                            std::optional<uint32_t>(entry2.cname),
-                            entry2.array_subtype,
-                            entry.second.dmod));
-                    }
-                }
-                else
-                {
-                    entries.push_back(InsertEntry(
-                        entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
-                }
-            }
+                = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
             std::shuffle(entries.begin(), entries.end(), rg.generator);
             for (uint32_t i = 0; i < ocols; i++)
             {
-                const InsertEntry & entry = this->entries[i];
-                ExprColumn * ec = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
+                ExprColumn * col = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
 
-                ec->mutable_col()->set_column("c" + std::to_string(entry.cname1));
-                if (entry.cname2.has_value())
-                {
-                    ec->mutable_subcol()->set_column("c" + std::to_string(entry.cname2.value()));
-                }
+                columnPathRef(this->entries[i], col->mutable_path());
             }
             entries.clear();
         }
@@ -476,7 +450,6 @@ int StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable * 
 
 int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
-    const NestedType * ntp = nullptr;
     const uint32_t noption = rg.nextMediumNumber();
     ExprSchemaTable * est = ins->mutable_est();
     const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
@@ -486,36 +459,12 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    assert(this->entries.empty());
-    for (const auto & entry : t.cols)
-    {
-        if (entry.second.CanBeInserted())
-        {
-            if ((ntp = dynamic_cast<const NestedType *>(entry.second.tp)))
-            {
-                for (const auto & entry2 : ntp->subtypes)
-                {
-                    this->entries.push_back(InsertEntry(
-                        std::nullopt,
-                        ColumnSpecial::NONE,
-                        entry.second.cname,
-                        std::optional<uint32_t>(entry2.cname),
-                        entry2.array_subtype,
-                        entry.second.dmod));
-                }
-            }
-            else
-            {
-                this->entries.push_back(InsertEntry(
-                    entry.second.nullable, entry.second.special, entry.second.cname, std::nullopt, entry.second.tp, entry.second.dmod));
-            }
-        }
-    }
-    std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
 
+    flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+    std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
     for (const auto & entry : this->entries)
     {
-        insertEntryRefCP(entry, ins->add_cols());
+        columnPathRef(entry, ins->add_cols());
     }
 
     if (noption < 901)
@@ -553,14 +502,14 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 {
                     buf += rg.nextBool() ? "1" : "0";
                 }
-                else if (entry.cname2.has_value())
+                else if (entry.path.size() > 1)
                 {
                     //make sure all nested entries have the same number of rows
-                    strAppendArray(rg, buf, dynamic_cast<const ArrayType *>(entry.tp), next_nested_rows);
+                    strAppendArray(rg, buf, entry.getBottomType(), next_nested_rows);
                 }
                 else
                 {
-                    strAppendAnyValue(rg, buf, entry.tp);
+                    strAppendAnyValue(rg, buf, entry.getBottomType());
                 }
                 j++;
             }
@@ -890,38 +839,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
 
                 if (rg.nextSmallNumber() < 6)
                 {
-                    const NestedType * ntp = nullptr;
-
-                    assert(this->entries.empty());
-                    for (const auto & entry : t.cols)
-                    {
-                        if ((ntp = dynamic_cast<const NestedType *>(entry.second.tp)))
-                        {
-                            for (const auto & entry2 : ntp->subtypes)
-                            {
-                                if (!dynamic_cast<const JSONType *>(entry2.subtype))
-                                {
-                                    entries.push_back(InsertEntry(
-                                        std::nullopt,
-                                        ColumnSpecial::NONE,
-                                        entry.second.cname,
-                                        std::optional<uint32_t>(entry2.cname),
-                                        entry2.array_subtype,
-                                        entry.second.dmod));
-                                }
-                            }
-                        }
-                        else if (!dynamic_cast<const JSONType *>(entry.second.tp))
-                        {
-                            entries.push_back(InsertEntry(
-                                entry.second.nullable,
-                                entry.second.special,
-                                entry.second.cname,
-                                std::nullopt,
-                                entry.second.tp,
-                                entry.second.dmod));
-                        }
-                    }
+                    flatTableColumnPath(flat_tuple | flat_nested | skip_nested_node, t, [](const SQLColumn &) { return true; });
                     generateTableKey(rg, t.teng, true, tkey);
                     this->entries.clear();
                 }
@@ -945,7 +863,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                     rg, t, t.col_counter++, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
                 if (next_option < 4)
                 {
-                    add_col->mutable_add_where()->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                    flatTableColumnPath(flat_tuple | flat_nested, t, [](const SQLColumn &) { return true; });
+                    columnPathRef(rg.pickRandomlyFromVector(this->entries), add_col->mutable_add_where()->mutable_col());
+                    this->entries.clear();
                 }
                 else if (next_option < 8)
                 {
@@ -956,7 +876,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
             {
                 ColInPartition * mcol = ati->mutable_materialize_column();
 
-                mcol->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), mcol->mutable_col());
+                this->entries.clear();
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
                     generateNextTablePartition<false>(rg, t, mcol->mutable_partition());
@@ -964,7 +886,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
             }
             else if (drop_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + 1))
             {
-                ati->mutable_drop_column()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), ati->mutable_drop_column());
+                this->entries.clear();
             }
             else if (
                 rename_column && nopt < (heavy_delete + alter_order_by + add_column + materialize_column + drop_column + rename_column + 1))
@@ -972,8 +896,14 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 const uint32_t ncname = t.col_counter++;
                 RenameCol * rcol = ati->mutable_rename_column();
 
-                rcol->mutable_old_name()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
-                rcol->mutable_new_name()->set_column("c" + std::to_string(ncname));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), rcol->mutable_old_name());
+                this->entries.clear();
+
+                rcol->mutable_new_name()->CopyFrom(rcol->old_name());
+                const uint32_t size = rcol->new_name().sub_cols_size();
+                Column & ncol = const_cast<Column &>(size ? rcol->new_name().sub_cols(size - 1) : rcol->new_name().col());
+                ncol.set_column("c" + std::to_string(ncname));
             }
             else if (
                 clear_column
@@ -982,7 +912,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
             {
                 ColInPartition * ccol = ati->mutable_clear_column();
 
-                ccol->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), ccol->mutable_col());
+                this->entries.clear();
                 if (t.isMergeTreeFamily() && rg.nextBool())
                 {
                     generateNextTablePartition<false>(rg, t, ccol->mutable_partition());
@@ -1008,7 +940,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                     add_col->mutable_new_col());
                 if (next_option < 4)
                 {
-                    add_col->mutable_add_where()->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                    flatTableColumnPath(flat_tuple | flat_nested, t, [](const SQLColumn &) { return true; });
+                    columnPathRef(rg.pickRandomlyFromVector(this->entries), add_col->mutable_add_where()->mutable_col());
+                    this->entries.clear();
                 }
                 else if (next_option < 8)
                 {
@@ -1023,7 +957,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
             {
                 CommentColumn * ccol = ati->mutable_comment_column();
 
-                ccol->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), ccol->mutable_col());
+                this->entries.clear();
                 buf.resize(0);
                 rg.nextString(buf, "'", true, rg.nextRandomUInt32() % 1009);
                 ccol->set_comment(buf);
@@ -1053,20 +989,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 {
                     generateNextTablePartition<false>(rg, t, upt->mutable_partition());
                 }
-                assert(this->entries.empty());
-                for (const auto & entry : t.cols)
-                {
-                    if (!dynamic_cast<const NestedType *>(entry.second.tp))
-                    {
-                        this->entries.push_back(InsertEntry(
-                            entry.second.nullable,
-                            entry.second.special,
-                            entry.second.cname,
-                            std::nullopt,
-                            entry.second.tp,
-                            entry.second.dmod));
-                    }
-                }
+                flatTableColumnPath(0, t, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
                 if (this->entries.empty())
                 {
                     UpdateSet * upset = upt->mutable_update();
@@ -1082,14 +1005,14 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
                     for (uint32_t j = 0; j < nupdates; j++)
                     {
-                        insertEntryRefCP(
+                        columnPathRef(
                             this->entries[j], j == 0 ? upt->mutable_update()->mutable_col() : upt->add_other_updates()->mutable_col());
                     }
                     addTableRelation(rg, true, "", t);
                     this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
                     for (uint32_t j = 0; j < nupdates; j++)
                     {
-                        const InsertEntry & entry = this->entries[j];
+                        const ColumnPathChain & entry = this->entries[j];
                         UpdateSet & uset = const_cast<UpdateSet &>(j == 0 ? upt->update() : upt->other_updates(j - 1));
                         Expr * expr = uset.mutable_expr();
 
@@ -1114,7 +1037,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                             }
                             else
                             {
-                                strAppendAnyValue(rg, buf, entry.tp);
+                                strAppendAnyValue(rg, buf, entry.getBottomType());
                             }
                             lv->set_no_quote_str(buf);
                         }
@@ -1249,7 +1172,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
             {
                 RemoveColumnProperty * rcs = ati->mutable_column_remove_property();
 
-                rcs->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), rcs->mutable_col());
+                this->entries.clear();
                 rcs->set_property(static_cast<RemoveColumnProperty_ColumnProperties>(
                     (rg.nextRandomUInt32() % static_cast<uint32_t>(RemoveColumnProperty::ColumnProperties_MAX)) + 1));
             }
@@ -1263,7 +1188,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 ModifyColumnSetting * mcp = ati->mutable_column_modify_setting();
                 const auto & csettings = allColumnSettings.at(t.teng);
 
-                mcp->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), mcp->mutable_col());
+                this->entries.clear();
                 generateSettingValues(rg, csettings, mcp->mutable_settings());
             }
             else if (
@@ -1277,7 +1204,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 RemoveColumnSetting * rcp = ati->mutable_column_remove_setting();
                 const auto & csettings = allColumnSettings.at(t.teng);
 
-                rcp->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), rcp->mutable_col());
+                this->entries.clear();
                 generateSettingList(rg, csettings, rcp->mutable_settings());
             }
             else if (
@@ -1546,7 +1475,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
 
                 fc.tableGetRandomPartitionOrPart<false, true>(dname, tname, buf);
                 pexpr->set_partition_id(buf);
-                ccip->mutable_col()->set_column("c" + std::to_string(rg.pickKeyRandomlyFromMap(t.cols)));
+                flatTableColumnPath(flat_nested, t, [](const SQLColumn &) { return true; });
+                columnPathRef(rg.pickRandomlyFromVector(this->entries), ccip->mutable_col());
+                this->entries.clear();
             }
             else if (
                 freeze_partition
@@ -1636,8 +1567,9 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                        + drop_detached_partition + forget_partition + attach_partition + move_partition_to + clear_column_partition
                        + freeze_partition + unfreeze_partition + clear_index_partition + move_partition + modify_ttl + 1))
             {
-                std::vector<InsertEntry> ientries;
-                generateNextTTL(rg, t, nullptr, ientries, ati->mutable_modify_ttl());
+                flatTableColumnPath(0, t, [](const SQLColumn & c) { return !dynamic_cast<NestedType *>(c.tp); });
+                generateNextTTL(rg, t, nullptr, ati->mutable_modify_ttl());
+                this->entries.clear();
             }
             else if (
                 remove_ttl
@@ -3059,18 +2991,75 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                 }
                 else if (ati.has_drop_column() && success)
                 {
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.drop_column().column().substr(1)));
+                    const ColumnPath & path = ati.drop_column();
+                    const uint32_t cname = static_cast<uint32_t>(std::stoul(path.col().column().substr(1)));
 
-                    t.cols.erase(cname);
+                    if (path.sub_cols_size() == 0)
+                    {
+                        t.cols.erase(cname);
+                    }
+                    else
+                    {
+                        SQLColumn & col = t.cols.at(cname);
+                        NestedType * ntp;
+
+                        assert(path.sub_cols_size() == 1);
+                        if ((ntp = dynamic_cast<NestedType *>(col.tp)))
+                        {
+                            const uint32_t ncname = static_cast<uint32_t>(std::stoul(path.sub_cols(0).column().substr(1)));
+
+                            for (auto it = ntp->subtypes.cbegin(), next_it = it; it != ntp->subtypes.cend(); it = next_it)
+                            {
+                                ++next_it;
+                                if (it->cname == ncname)
+                                {
+                                    ntp->subtypes.erase(it);
+                                    break;
+                                }
+                            }
+                            if (ntp->subtypes.empty())
+                            {
+                                t.cols.erase(cname);
+                            }
+                        }
+                    }
                 }
                 else if (ati.has_rename_column() && success)
                 {
-                    const uint32_t old_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().old_name().column().substr(1)));
-                    const uint32_t new_cname = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().column().substr(1)));
+                    const ColumnPath & path = ati.rename_column().old_name();
+                    const uint32_t old_cname = static_cast<uint32_t>(std::stoul(path.col().column().substr(1)));
 
-                    t.cols[new_cname] = std::move(t.cols[old_cname]);
-                    t.cols[new_cname].cname = new_cname;
-                    t.cols.erase(old_cname);
+                    if (path.sub_cols_size() == 0)
+                    {
+                        const uint32_t new_cname
+                            = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().col().column().substr(1)));
+
+                        t.cols[new_cname] = std::move(t.cols[old_cname]);
+                        t.cols[new_cname].cname = new_cname;
+                        t.cols.erase(old_cname);
+                    }
+                    else
+                    {
+                        SQLColumn & col = t.cols.at(old_cname);
+                        NestedType * ntp;
+
+                        assert(path.sub_cols_size() == 1);
+                        if ((ntp = dynamic_cast<NestedType *>(col.tp)))
+                        {
+                            const uint32_t nocname = static_cast<uint32_t>(std::stoul(path.sub_cols(0).column().substr(1)));
+
+                            for (auto it = ntp->subtypes.begin(), next_it = it; it != ntp->subtypes.end(); it = next_it)
+                            {
+                                ++next_it;
+                                if (it->cname == nocname)
+                                {
+                                    it->cname
+                                        = static_cast<uint32_t>(std::stoul(ati.rename_column().new_name().sub_cols(0).column().substr(1)));
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
                 else if (ati.has_modify_column())
                 {
@@ -3087,9 +3076,13 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                     ati.has_column_remove_property() && success
                     && ati.column_remove_property().property() < RemoveColumnProperty_ColumnProperties_CODEC)
                 {
-                    const uint32_t cname = static_cast<uint32_t>(std::stoul(ati.column_remove_property().col().column().substr(1)));
+                    const ColumnPath & path = ati.column_remove_property().col();
+                    const uint32_t cname = static_cast<uint32_t>(std::stoul(path.col().column().substr(1)));
 
-                    t.cols.at(cname).dmod = std::nullopt;
+                    if (path.sub_cols_size() == 0)
+                    {
+                        t.cols.at(cname).dmod = std::nullopt;
+                    }
                 }
                 else if (ati.has_add_index())
                 {

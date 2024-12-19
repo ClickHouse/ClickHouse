@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+#include "RandomGenerator.h"
 #include "SQLTypes.h"
 
 namespace BuzzHouse
@@ -15,7 +17,7 @@ struct SQLColumn
 {
 public:
     uint32_t cname = 0;
-    const SQLType * tp = nullptr;
+    SQLType * tp = nullptr;
     ColumnSpecial special = ColumnSpecial::NONE;
     std::optional<bool> nullable = std::nullopt;
     std::optional<DModifier> dmod = std::nullopt;
@@ -88,6 +90,7 @@ public:
 struct SQLBase
 {
 public:
+    bool is_temp = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
     DetachStatus attached = ATTACHED;
@@ -161,31 +164,11 @@ public:
 struct SQLTable : SQLBase
 {
 public:
-    bool is_temp = false;
     uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
     std::map<uint32_t, SQLColumn> cols, staged_cols;
     std::map<uint32_t, SQLIndex> idxs, staged_idxs;
     std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
     std::map<uint32_t, std::string> frozen_partitions;
-
-    size_t realNumberOfColumns() const
-    {
-        size_t res = 0;
-        const NestedType * ntp = nullptr;
-
-        for (const auto & entry : cols)
-        {
-            if ((ntp = dynamic_cast<const NestedType *>(entry.second.tp)))
-            {
-                res += ntp->subtypes.size();
-            }
-            else
-            {
-                res++;
-            }
-        }
-        return res;
-    }
 
     size_t numberOfInsertableColumns() const
     {
@@ -226,26 +209,32 @@ public:
     uint32_t fname = 0, nargs = 0;
 };
 
-struct InsertEntry
+struct ColumnPathChainEntry
+{
+public:
+    const std::string cname = "";
+    SQLType * tp = nullptr;
+
+    ColumnPathChainEntry(const std::string cn, SQLType * t) : cname(cn), tp(t) { }
+};
+
+struct ColumnPathChain
 {
 public:
     std::optional<bool> nullable = std::nullopt;
     ColumnSpecial special = ColumnSpecial::NONE;
-    uint32_t cname1 = 0;
-    std::optional<uint32_t> cname2 = std::nullopt;
-    const SQLType * tp = nullptr;
     std::optional<DModifier> dmod = std::nullopt;
+    std::vector<ColumnPathChainEntry> path;
 
-    InsertEntry(
-        const std::optional<bool> nu,
-        const ColumnSpecial cs,
-        const uint32_t c1,
-        const std::optional<uint32_t> c2,
-        const SQLType * t,
-        const std::optional<DModifier> dm)
-        : nullable(nu), special(cs), cname1(c1), cname2(c2), tp(t), dmod(dm)
+    ColumnPathChain(
+        const std::optional<bool> nu, const ColumnSpecial cs, const std::optional<DModifier> dm, const std::vector<ColumnPathChainEntry> p)
+        : nullable(nu), special(cs), dmod(dm), path(p)
     {
     }
+
+    const std::string & getBottomName() const { return path[path.size() - 1].cname; }
+
+    SQLType * getBottomType() const { return path[path.size() - 1].tp; }
 };
 
 }

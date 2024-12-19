@@ -1,3 +1,4 @@
+#include "SQLCatalog.h"
 #include "SQLFuncs.h"
 #include "SQLTypes.h"
 #include "StatementGenerator.h"
@@ -40,72 +41,80 @@ int StatementGenerator::addFieldAccess(RandomGenerator & rg, Expr * expr, const 
 int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, const uint32_t nested_prob)
 {
     const uint32_t nsuboption = rg.nextLargeNumber();
+    const std::string & last_col
+        = expr->path().sub_cols_size() ? expr->path().sub_cols(expr->path().sub_cols_size() - 1).column() : expr->path().col().column();
+    const bool has_nested = last_col == "keys" || last_col == "values" || last_col == "null" || last_col.rfind("size", 0) == 0;
 
-    this->depth++;
-    if (rg.nextMediumNumber() < nested_prob)
+    if (!has_nested)
     {
-        TypeName * tpn = nullptr;
-        JSONColumns * subcols = expr->mutable_subcols();
-        const uint32_t noption = rg.nextMediumNumber();
-        const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 5), UINT32_C(1));
+        ColumnPath & cp = const_cast<ColumnPath &>(expr->path());
 
-        for (uint32_t i = 0; i < nvalues; i++)
+        this->depth++;
+        if (rg.nextMediumNumber() < nested_prob)
         {
-            const uint32_t noption2 = rg.nextMediumNumber();
-            JSONColumn * jcol = i == 0 ? subcols->mutable_jcol() : subcols->add_other_jcols();
+            TypeName * tpn = nullptr;
+            JSONColumns * subcols = expr->mutable_subcols();
+            const uint32_t noption = rg.nextMediumNumber();
+            const uint32_t nvalues = std::max(std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 5), UINT32_C(1));
 
-            this->width++;
-            if (noption2 < 31)
+            for (uint32_t i = 0; i < nvalues; i++)
             {
-                jcol->set_jcol(true);
+                const uint32_t noption2 = rg.nextMediumNumber();
+                JSONColumn * jcol = i == 0 ? subcols->mutable_jcol() : subcols->add_other_jcols();
+
+                this->width++;
+                if (noption2 < 31)
+                {
+                    jcol->set_jcol(true);
+                }
+                else if (noption2 < 61)
+                {
+                    jcol->set_jarray(0);
+                }
+                buf.resize(0);
+                rg.nextJSONCol(buf);
+                jcol->mutable_col()->set_column(buf);
             }
-            else if (noption2 < 61)
+            if (noption < 4)
             {
-                jcol->set_jarray(0);
+                tpn = subcols->mutable_jcast();
             }
-            buf.resize(0);
-            rg.nextJSONCol(buf);
-            jcol->mutable_col()->set_column(buf);
+            else if (noption < 8)
+            {
+                tpn = subcols->mutable_jreinterpret();
+            }
+            this->width -= nvalues;
+            if (tpn)
+            {
+                uint32_t col_counter = 0;
+                SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, tpn->mutable_type());
+                delete tp;
+            }
         }
-        if (noption < 4)
-        {
-            tpn = subcols->mutable_jcast();
-        }
-        else if (noption < 8)
-        {
-            tpn = subcols->mutable_jreinterpret();
-        }
-        this->width -= nvalues;
-        if (tpn)
+        if (rg.nextMediumNumber() < nested_prob)
         {
             uint32_t col_counter = 0;
-            const SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, tpn->mutable_type());
+            SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, expr->mutable_dynamic_subtype()->mutable_type());
             delete tp;
         }
+        if (nsuboption < 6)
+        {
+            cp.add_sub_cols()->set_column("null");
+        }
+        else if (nsuboption < 11)
+        {
+            cp.add_sub_cols()->set_column("keys");
+        }
+        else if (nsuboption < 16)
+        {
+            cp.add_sub_cols()->set_column("values");
+        }
+        else if (nsuboption < 21)
+        {
+            cp.add_sub_cols()->set_column("size" + std::to_string(rg.nextMediumNumber() % 3));
+        }
+        this->depth--;
     }
-    if (rg.nextMediumNumber() < nested_prob)
-    {
-        uint32_t col_counter = 0;
-        const SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, expr->mutable_dynamic_subtype()->mutable_type());
-        delete tp;
-    }
-    if (nsuboption < 8)
-    {
-        expr->set_null(true);
-    }
-    else if (nsuboption < 15)
-    {
-        expr->set_keys(true);
-    }
-    else if (nsuboption < 22)
-    {
-        expr->set_values(true);
-    }
-    else if (nsuboption < 29)
-    {
-        expr->set_array_size(rg.nextMediumNumber() % 3);
-    }
-    this->depth--;
     return 0;
 }
 
@@ -118,15 +127,11 @@ int StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, E
     {
         estc->mutable_table()->set_table(gcol.col.rel_name);
     }
-    ecol->mutable_col()->set_column(gcol.col.name);
-    if (gcol.col.name2.has_value())
-    {
-        ecol->mutable_subcol()->set_column(gcol.col.name2.value());
-    }
+    gcol.col.AddRef(ecol);
     if (gcol.gexpr == nullptr)
     {
-        addFieldAccess(rg, expr, 16);
-        addColNestedAccess(rg, ecol, 31);
+        addFieldAccess(rg, expr, 6);
+        addColNestedAccess(rg, ecol, 6);
     }
     else
     {
@@ -139,22 +144,6 @@ int StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, E
         if (gecol.has_subcols())
         {
             ecol->mutable_subcols()->CopyFrom(gecol.subcols());
-        }
-        if (gecol.has_null())
-        {
-            ecol->set_null(gecol.null());
-        }
-        else if (gecol.has_keys())
-        {
-            ecol->set_keys(gecol.keys());
-        }
-        else if (gecol.has_values())
-        {
-            ecol->set_values(gecol.values());
-        }
-        else if (gecol.has_array_size())
-        {
-            ecol->set_array_size(gecol.array_size());
         }
     }
     return 0;
@@ -569,7 +558,7 @@ int StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t 
         buf.resize(0);
         buf += std::string(1, 'x' + i);
         lexpr->add_args()->set_column(buf);
-        rel.cols.push_back(SQLRelationCol("", buf, std::nullopt));
+        rel.cols.push_back(SQLRelationCol("", {buf}));
     }
     this->levels[this->current_level].rels.push_back(std::move(rel));
     this->generateExpression(rg, lexpr->mutable_expr());
@@ -810,7 +799,7 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
         this->depth++;
-        const SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, casexpr->mutable_type_name()->mutable_type());
+        SQLType * tp = randomNextType(rg, ~(allow_nested), col_counter, casexpr->mutable_type_name()->mutable_type());
         delete tp;
         this->generateExpression(rg, casexpr->mutable_expr());
         this->depth--;
@@ -1074,14 +1063,14 @@ int StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         this->depth--;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
     }
-    addFieldAccess(rg, expr, 16);
+    addFieldAccess(rg, expr, 6);
     if (eca && this->allow_in_expression_alias && !this->inside_projection && rg.nextSmallNumber() < 4)
     {
         SQLRelation rel("");
         const uint32_t cname = this->levels[this->current_level].aliases_counter++;
         const std::string cname_str = "c" + std::to_string(cname);
 
-        rel.cols.push_back(SQLRelationCol("", cname_str, std::nullopt));
+        rel.cols.push_back(SQLRelationCol("", {cname_str}));
         this->levels[this->current_level].rels.push_back(std::move(rel));
         eca->mutable_col_alias()->set_column(cname_str);
         this->levels[this->current_level].projections.push_back(cname);

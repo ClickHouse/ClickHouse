@@ -99,7 +99,7 @@ int QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & s
 /*
 Dump and read table oracle
 */
-int QueryOracle::dumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq1)
+int QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1)
 {
     bool first = true;
     const std::filesystem::path & qfile = fc.db_file_path / "query.data";
@@ -116,28 +116,26 @@ int QueryOracle::dumpTableContent(RandomGenerator & rg, const SQLTable & t, SQLQ
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     jt->set_final(t.supportsFinal());
-    for (const auto & entry : t.cols)
+    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+    for (const auto & entry : gen.entries)
     {
-        if (entry.second.CanBeInserted())
-        {
-            const std::string & cname = "c" + std::to_string(entry.first);
-            ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+        ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
 
-            sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(cname);
-            eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_col()->set_column(cname);
-            if (rg.nextBool())
-            {
-                eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
-            }
-            if (rg.nextBool())
-            {
-                eot->set_nulls_order(
-                    rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
-                                  : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
-            }
-            first = false;
+        gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+        gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
+        if (rg.nextBool())
+        {
+            eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
         }
+        if (rg.nextBool())
+        {
+            eot->set_nulls_order(
+                rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
+                              : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
+        }
+        first = false;
     }
+    gen.entries.clear();
     ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
@@ -178,7 +176,7 @@ static const std::map<OutFormat, InFormat> out_in{
     {OutFormat::OUT_Native, InFormat::IN_Native},
     {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
 
-int QueryOracle::generateExportQuery(RandomGenerator & rg, const SQLTable & t, SQLQuery & sq2)
+int QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2)
 {
     bool first = true;
     Insert * ins = sq2.mutable_inner_query()->mutable_insert();
@@ -194,33 +192,32 @@ int QueryOracle::generateExportQuery(RandomGenerator & rg, const SQLTable & t, S
     ff->set_path(nfile.generic_string());
 
     buf.resize(0);
-    for (const auto & entry : t.cols)
+    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+    for (const auto & entry : gen.entries)
     {
-        if (entry.second.CanBeInserted())
-        {
-            const std::string & cname = "c" + std::to_string(entry.first);
+        SQLType * tp = entry.getBottomType();
 
-            if (!first)
-            {
-                buf += ", ";
-            }
-            buf += cname;
-            buf += " ";
-            entry.second.tp->typeName(buf, true);
-            if (entry.second.nullable.has_value())
-            {
-                buf += entry.second.nullable.value() ? "" : " NOT";
-                buf += " NULL";
-            }
-            sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_col()->set_column(cname);
-            /* ArrowStream doesn't support UUID */
-            if (outf == OutFormat::OUT_ArrowStream && dynamic_cast<const UUIDType *>(entry.second.tp))
-            {
-                outf = OutFormat::OUT_CSV;
-            }
-            first = false;
+        if (!first)
+        {
+            buf += ", ";
         }
+        buf += entry.getBottomName();
+        buf += " ";
+        tp->typeName(buf, true);
+        if (entry.nullable.has_value())
+        {
+            buf += entry.nullable.value() ? "" : " NOT";
+            buf += " NULL";
+        }
+        gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+        /* ArrowStream doesn't support UUID */
+        if (outf == OutFormat::OUT_ArrowStream && dynamic_cast<UUIDType *>(tp))
+        {
+            outf = OutFormat::OUT_CSV;
+        }
+        first = false;
     }
+    gen.entries.clear();
     ff->set_outformat(outf);
     ff->set_structure(buf);
     if (rg.nextSmallNumber() < 4)
@@ -254,7 +251,7 @@ int QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
     return 0;
 }
 
-int QueryOracle::generateImportQuery(const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
+int QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
     Insert * ins = sq4.mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = ins->mutable_insert_file();
@@ -266,15 +263,12 @@ int QueryOracle::generateImportQuery(const SQLTable & t, const SQLQuery & sq2, S
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    for (const auto & entry : t.cols)
+    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+    for (const auto & entry : gen.entries)
     {
-        if (entry.second.CanBeInserted())
-        {
-            ColumnPath * cp = ins->add_cols();
-
-            cp->mutable_col()->set_column("c" + std::to_string(entry.first));
-        }
+        gen.columnPathRef(entry, ins->add_cols());
     }
+    gen.entries.clear();
     iff->set_path(ff.path());
     iff->set_format(out_in.at(ff.outformat()));
     if (ff.has_fcomp())
@@ -636,7 +630,7 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes,
     {
         auto & tos = static_cast<TableOrSubquery &>(mes);
 
-        if (tos.has_joined_table())
+        if (tos.has_joined_table() && tos.joined_table().est().table().table().at(0) == 't')
         {
             const uint32_t tname = static_cast<uint32_t>(std::stoul(tos.joined_table().est().table().table().substr(1)));
 
@@ -688,7 +682,7 @@ int QueryOracle::optimizePeerTables(const StatementGenerator & gen) const
 }
 
 int QueryOracle::replaceQueryWithTablePeers(
-    const SQLQuery & sq1, const StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2)
+    const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2)
 {
     found_tables.clear();
     peer_queries.clear();
@@ -698,7 +692,6 @@ int QueryOracle::replaceQueryWithTablePeers(
     for (const auto & entry : found_tables)
     {
         SQLQuery next;
-        const NestedType * ntp = nullptr;
         const SQLTable & t = gen.tables.at(entry);
         Insert * ins = next.mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
@@ -713,32 +706,13 @@ int QueryOracle::replaceQueryWithTablePeers(
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
         jt->set_final(t.supportsFinal());
-
-        for (const auto & tcol : t.cols)
+        gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+        for (const auto & colRef : gen.entries)
         {
-            if (tcol.second.CanBeInserted())
-            {
-                if ((ntp = dynamic_cast<const NestedType *>(tcol.second.tp)))
-                {
-                    for (const auto & tcol2 : ntp->subtypes)
-                    {
-                        ColumnPath * cp = ins->add_cols();
-                        ExprColumn * ec = sel->add_result_columns()->mutable_etc()->mutable_col();
-                        cp->mutable_col()->set_column("c" + std::to_string(tcol.first));
-                        cp->add_sub_cols()->set_column("c" + std::to_string(tcol2.cname));
-                        ec->mutable_col()->set_column("c" + std::to_string(tcol.first));
-                        ec->mutable_subcol()->set_column("c" + std::to_string(tcol2.cname));
-                    }
-                }
-                else
-                {
-                    ColumnPath * cp = ins->add_cols();
-                    ExprColumn * ec = sel->add_result_columns()->mutable_etc()->mutable_col();
-                    cp->mutable_col()->set_column("c" + std::to_string(tcol.first));
-                    ec->mutable_col()->set_column("c" + std::to_string(tcol.first));
-                }
-            }
+            gen.columnPathRef(colRef, ins->add_cols());
+            gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         }
+        gen.entries.clear();
         peer_queries.push_back(std::move(next));
     }
     return 0;
