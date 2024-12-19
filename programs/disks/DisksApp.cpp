@@ -53,7 +53,7 @@ std::vector<String> DisksApp::getEmptyCompletion(String command_name) const
     std::vector<String> answer{};
     if (multidisk_commands.contains(command_ptr->command_name))
     {
-        answer = client->getAllFilesByPatternFromAllDisks("");
+        answer = client->getAllFilesByPatternFromInitializedDisks("");
     }
     else
     {
@@ -152,7 +152,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     answer = [&]() -> std::vector<String>
     {
         if (multidisk_commands.contains(command->command_name))
-            return client->getAllFilesByPatternFromAllDisks(last_token);
+            return client->getAllFilesByPatternFromInitializedDisks(last_token);
 
         return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token);
     }();

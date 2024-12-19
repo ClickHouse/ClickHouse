@@ -283,7 +283,7 @@ std::vector<String> DisksClient::getAllDiskNames() const
 }
 
 
-std::vector<String> DisksClient::getAllFilesByPatternFromAllDisks(const String & pattern) const
+std::vector<String> DisksClient::getAllFilesByPatternFromInitializedDisks(const String & pattern) const
 {
     std::vector<String> answer{};
     for (const auto & [_, disk] : disks_with_paths)

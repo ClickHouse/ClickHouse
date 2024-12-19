@@ -85,7 +85,7 @@ public:
     std::vector<String> getAllDiskNames() const;
 
 
-    std::vector<String> getAllFilesByPatternFromAllDisks(const String & pattern) const;
+    std::vector<String> getAllFilesByPatternFromInitializedDisks(const String & pattern) const;
 
     void addDisk(String disk_name, const std::optional<String> & path);
 
