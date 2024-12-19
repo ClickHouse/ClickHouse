@@ -86,21 +86,28 @@ ScatteredBlock filterColumnsPresentInSampleBlock(const ScatteredBlock & block, c
 
 Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, const Names &)
 {
+    std::unordered_map<std::string_view, std::vector<ColumnWithTypeAndName *>> block_index;
+    for (auto & column : block)
+        block_index[column.name].push_back(&column);
+
     for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
     {
-        auto & column = block.getByName(sample_column.name);
-
-        /// There's no optimization for right side const columns. Remove constness if any.
-        column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
-
-        if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
+        for (auto * column_ptr : block_index[sample_column.name])
         {
-            column.column = column.column->convertToFullColumnIfLowCardinality();
-            column.type = removeLowCardinality(column.type);
-        }
+            auto & column = *column_ptr;
 
-        if (sample_column.column->isNullable())
-            JoinCommon::convertColumnToNullable(column);
+            /// There's no optimization for right side const columns. Remove constness if any.
+            column.column = recursiveRemoveSparse(column.column->convertToFullColumnIfConst());
+
+            if (column.column->lowCardinality() && !sample_column.column->lowCardinality())
+            {
+                column.column = column.column->convertToFullColumnIfLowCardinality();
+                column.type = removeLowCardinality(column.type);
+            }
+
+            if (sample_column.column->isNullable())
+                JoinCommon::convertColumnToNullable(column);
+        }
     }
 
     return block;
