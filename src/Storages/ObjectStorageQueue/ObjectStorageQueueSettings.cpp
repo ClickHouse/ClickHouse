@@ -82,10 +82,13 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     const StorageObjectStorageQueue & storage) const
 {
     MutableColumns & res_columns = params.res_columns;
+    auto settings_changes_ast = storage.getInMemoryMetadataPtr()->settings_changes;
+    if (!settings_changes_ast)
+        return;
 
     /// We cannot use setting.isValueChanged(), because we do not store initial settings in storage.
     /// Therefore check if the setting was changed via table metadata.
-    const auto & settings_changes = storage.getInMemoryMetadataPtr()->settings_changes->as<ASTSetQuery>()->changes;
+    const auto & settings_changes = settings_changes_ast->as<ASTSetQuery>()->changes;
     auto is_changed = [&](const std::string & setting_name) -> bool
     {
         return settings_changes.end() != std::find_if(

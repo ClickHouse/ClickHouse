@@ -126,7 +126,7 @@ private:
 
     ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
 
-    QueryTreeNodePtr setFirstArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const;
+    QueryTreeNodePtr setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const;
 
     ASTPtr query;
     QueryTreeNodePtr query_tree_node;
@@ -655,7 +655,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                     [&](const std::string &s) { return Poco::toLower(s) == Poco::toLower(function->name); })
                 && function->arguments && function->arguments->children.size() == 2)
             {
-                result = setFirstArgumentAsParameter(function, context);
+                result = setSecondArgumentAsParameter(function, context);
             }
             else
             {
@@ -971,13 +971,45 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
             }
 
-            auto join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
-                std::move(right_table_expression),
-                std::move(join_expression),
-                table_join.locality,
-                result_join_strictness,
-                result_join_kind,
-                table_join.using_expression_list != nullptr);
+            QueryTreeNodePtr join_node;
+            if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
+            {
+                CrossJoinNode * cross_join;
+                if (auto * left_cross_join = left_table_expression->as<CrossJoinNode>())
+                    cross_join = left_cross_join;
+                else
+                {
+                    auto new_cross_join = std::make_shared<CrossJoinNode>(std::move(left_table_expression));
+                    cross_join = new_cross_join.get();
+                    left_table_expression = std::move(new_cross_join);
+                }
+
+                CrossJoinNode::JoinType join_type{result_join_kind == JoinKind::Comma, table_join.locality};
+
+                if (auto * right_cross_join = right_table_expression->as<CrossJoinNode>())
+                {
+                    const auto & expr = right_cross_join->getTableExpressions();
+                    cross_join->appendTable(expr.front(), join_type);
+
+                    const auto & join_types = right_cross_join->getJoinTypes();
+                    for (size_t i = 0; i < join_types.size(); ++i)
+                        cross_join->appendTable(expr[i + 1], join_types[i]);
+                }
+                else
+                    cross_join->appendTable(right_table_expression, join_type);
+
+                join_node = std::move(left_table_expression);
+            }
+            else
+            {
+                join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
+                    std::move(right_table_expression),
+                    std::move(join_expression),
+                    table_join.locality,
+                    result_join_strictness,
+                    result_join_kind,
+                    table_join.using_expression_list != nullptr);
+            }
 
             join_node->setOriginalAST(table_element.table_join);
 
@@ -1088,30 +1120,30 @@ QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context)
     return builder.getQueryTreeNode();
 }
 
-QueryTreeNodePtr QueryTreeBuilder::setFirstArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const
+QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunction * function, const ContextPtr & context) const
 {
-    const auto * first_arg_ast = function->arguments->children[0].get();
-    const auto * first_arg_literal = first_arg_ast->as<ASTLiteral>();
+    const auto * second_arg_ast = function->arguments->children[1].get();
+    const auto * second_arg_literal = second_arg_ast->as<ASTLiteral>();
 
-    if (!first_arg_literal)
+    if (!second_arg_literal)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "If groupConcat is used with two arguments, the first argument must be a constant String");
+            "If groupConcat is used with two arguments, the second argument must be a constant String");
     }
 
-    if (first_arg_literal->value.getType() != Field::Types::String)
+    if (second_arg_literal->value.getType() != Field::Types::String)
     {
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "If groupConcat is used with two arguments, the first argument must be a constant String");
+            "If groupConcat is used with two arguments, the second argument must be a constant String");
     }
 
-    ASTPtr second_arg = function->arguments->children[1]->clone();
+    ASTPtr first_arg = function->arguments->children[0]->clone();
 
     auto function_node = std::make_shared<FunctionNode>(function->name);
     function_node->setNullsAction(function->nulls_action);
 
-    function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[0], context)); // Separator
-    function_node->getArguments().getNodes().push_back(buildExpression(second_arg, context)); // Column to concatenate
+    function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[1], context)); // Separator
+    function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
 
     if (function->is_window_function)
     {

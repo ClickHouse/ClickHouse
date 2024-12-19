@@ -59,7 +59,7 @@ namespace DB
     DECLARE(UInt64, restore_threads, 16, "The maximum number of threads to execute RESTORE requests.", 0) \
     DECLARE(Bool, shutdown_wait_backups_and_restores, true, "If set to true ClickHouse will wait for running backups and restores to finish before shutdown.", 0) \
     DECLARE(Double, cannot_allocate_thread_fault_injection_probability, 0, "For testing purposes.", 0) \
-    DECLARE(Int32, max_connections, 1024, "Max server connections.", 0) \
+    DECLARE(Int32, max_connections, 4096, "Max server connections.", 0) \
     DECLARE(UInt32, asynchronous_metrics_update_period_s, 1, "Period in seconds for updating asynchronous metrics.", 0) \
     DECLARE(Bool, asynchronous_metrics_enable_heavy_metrics, false, "Enable the calculation of heavy asynchronous metrics.", 0) \
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, "Period in seconds for updating heavy asynchronous metrics.", 0) \
@@ -201,7 +201,7 @@ namespace DB
     DECLARE(UInt64, parts_kill_delay_period_random_add, 10, "Add uniformly distributed value from 0 to x seconds to kill_delay_period to avoid thundering herd effect and subsequent DoS of ZooKeeper in case of very large number of tables. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, parts_killer_pool_size, 128, "Threads for cleanup of shared merge tree outdated threads. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, "Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.", 0) \
-    DECLARE(Bool, use_legacy_mongodb_integration, true, "Obsolete, has no effect", 0) \
+    DECLARE(Bool, use_legacy_mongodb_integration, false, "Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.", 0) \
     DECLARE(Bool, send_settings_to_client, true, "Send user settings from server configuration to clients (in the server Hello message).", 0) \
     \
     DECLARE(UInt64, prefetch_threadpool_pool_size, 100, "Size of background pool for prefetches for remote object storages", 0) \
@@ -210,7 +210,11 @@ namespace DB
     DECLARE(UInt64, load_marks_threadpool_queue_size, 1000000, "Number of tasks which is possible to push into prefetches pool", 0) \
     DECLARE(UInt64, threadpool_writer_pool_size, 100, "Size of background pool for write requests to object storages", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 1000000, "Number of tasks which is possible to push into background pool for write requests to object storages", 0) \
+    DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, "Size of background pool for iceberg catalog", 0) \
+    DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 1000000, "Number of tasks which is possible to push into iceberg catalog pool", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, "0 - All feature tiers allowed (experimental, beta, production). 1 - Only beta and production feature tiers allowed. 2 - Only production feature tier allowed", 0) \
+    DECLARE(Bool, dictionaries_lazy_load, 1, "1 - Load dictionaries lazily, i.e. a dictionary will be loaded when it's used for the first time. 0 - ClickHouse will start loading dictionaries immediately at startup.", 0) \
+    DECLARE(Bool, wait_dictionaries_load_at_startup, 1, "Wait at startup until all the dictionaries finish their loading (successfully or not) before receiving any connections. Affects dictionaries only if `dictionaries_lazy_load` is false. Setting this to false can make ClickHouse start faster, however some queries can be executed slower.", 0) \
 
 
 // clang-format on

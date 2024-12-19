@@ -1110,7 +1110,12 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 startInsertQuery(state);
 
             while (receivePacketsExpectDataConcurrentWithExecutor(state))
+            {
                 executor.push(std::move(state.block_for_insert));
+
+                sendLogs(state);
+                sendInsertProfileEvents(state);
+            }
 
             state.read_all_data = true;
 
@@ -1548,11 +1553,27 @@ bool TCPHandler::receiveProxyHeader()
             return false;
         }
 
+        bool is_tcp6 = ('6' == *limit_in.position());
+
         ++limit_in.position();
         assertChar(' ', limit_in);
 
         /// Read the first field and ignore other.
         readStringUntilWhitespace(forwarded_address, limit_in);
+
+        if (is_tcp6)
+            forwarded_address = "[" + forwarded_address + "]";
+
+        /// Skip second field (destination address)
+        assertChar(' ', limit_in);
+        skipStringUntilWhitespace(limit_in);
+        assertChar(' ', limit_in);
+
+        /// Read source port
+        String port;
+        readStringUntilWhitespace(port, limit_in);
+
+        forwarded_address += ":" + port;
 
         /// Skip until \r\n
         while (!limit_in.eof() && *limit_in.position() != '\r')
@@ -2612,7 +2633,7 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
     /// Only the last proxy can be trusted (if any).
     String forwarded_address = client_info.getLastForwardedFor();
     if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
-        return Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port());
+        return Poco::Net::SocketAddress(forwarded_address);
     return socket().peerAddress();
 }
 
