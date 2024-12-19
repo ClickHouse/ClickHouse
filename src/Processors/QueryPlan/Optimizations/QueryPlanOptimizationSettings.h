@@ -40,6 +40,11 @@ struct QueryPlanOptimizationSettings
     /// If convert OUTER JOIN to INNER JOIN optimization is enabled.
     bool convert_outer_join_to_inner_join = true;
 
+    /// If we can swap probe/build tables in join
+    /// true/false - always/never swap
+    /// nullopt - swap if it's beneficial
+    std::optional<bool> join_swap_table = std::nullopt;
+
     /// If reorder-functions-after-sorting optimization is enabled.
     bool execute_functions_after_sorting = true;
 
@@ -82,6 +87,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections = false;
 
     bool build_sets = true;
+
+    bool keep_logical_steps = false;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);

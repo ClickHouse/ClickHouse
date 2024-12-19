@@ -11,12 +11,16 @@ namespace QueryPlanOptimizations
 
 /// Main functions which optimize QueryPlan tree.
 /// First pass (ideally) apply local idempotent operations on top of Plan.
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 /// Second pass is used to apply read-in-order and attach a predicate to PK.
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 /// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+
+/// Apply optimization function to the QueryPlan using DFS traversal.
+using OptimizeStepFunc = bool (*)(QueryPlan::Node &, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+bool optimizeTreeWithDFS(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, OptimizeStepFunc func);
 
 /// Optimization (first pass) is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
@@ -117,7 +121,9 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &);
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.

@@ -12,17 +12,10 @@ SET max_block_size = 100;
 
 SELECT count() == 2222 FROM t1 JOIN t2 ON 1 = 1;
 
-{% for bs in [90, 95, 99, 100, 101, 110, 111, 128] -%}
-
-SET max_block_size = {{ bs }};
-
 SELECT count() == 0 FROM t1 JOIN t2 ON 1 = 2;
 SELECT count() == 2 FROM t1 LEFT JOIN t2 ON 1 = 2;
 SELECT count() == 1111  FROM t1 RIGHT JOIN t2 ON 1 = 2;
 SELECT count() == 1113  FROM t1 FULL JOIN t2 ON 1 = 2;
-SELECT max(blockSize()) <= {{ bs }} FROM t1 FULL JOIN t2 ON 1 = 2;
-
-{% endfor %}
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

@@ -433,14 +433,13 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_na
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
-UInt64 calculateCacheKey(
-    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
+IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
 {
+    IQueryTreeNode::HashState hash;
+
     const auto * select = select_query_info.query->as<DB::ASTSelectQuery>();
     if (!select)
-        return 0;
-
-    IQueryTreeNode::HashState hash;
+        return hash;
 
     if (const auto prewhere = select->prewhere())
         hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
@@ -449,7 +448,17 @@ UInt64 calculateCacheKey(
 
     chassert(right_table_expression);
     hash.update(right_table_expression->getTreeHash());
+    return hash;
+}
 
+UInt64 calculateCacheKey(
+    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
+{
+    return calculateCacheKey(table_join, preCalculateCacheKey(right_table_expression, select_query_info));
+}
+
+UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
+{
     chassert(table_join && table_join->oneDisjunct());
     const auto keys
         = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};

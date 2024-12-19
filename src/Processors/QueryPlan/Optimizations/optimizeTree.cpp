@@ -104,6 +104,25 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     }
 }
 
+bool optimizeTreeWithDFS(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, OptimizeStepFunc func)
+{
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(&root);
+    bool any_optimized = false;
+    while (!stack.empty())
+    {
+        QueryPlan::Node * current = stack.top();
+        stack.pop();
+
+        bool is_optimized = func(*current, nodes, optimization_settings);
+        any_optimized |= is_optimized;
+
+        for (auto * child : current->children)
+            stack.push(child);
+    }
+    return any_optimized;
+}
+
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
@@ -225,9 +244,6 @@ void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::No
     {
         /// NOTE: frame cannot be safely used after stack was modified.
         auto & frame = stack.back();
-
-        if (frame.next_child == 0)
-            optimizeJoin(*frame.node, nodes);
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())

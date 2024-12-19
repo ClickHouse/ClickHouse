@@ -8,6 +8,7 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/JoinInfo.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -172,6 +173,7 @@ private:
     std::shared_ptr<ExpressionActions> mixed_join_expression = nullptr;
 
     ASTTableJoin table_join;
+    std::optional<JoinInfo> join_info;
 
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::GreaterOrEquals;
 
@@ -256,22 +258,13 @@ public:
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
-              const Names & key_names_right)
-        : size_limits(limits)
-        , default_max_bytes(0)
-        , join_use_nulls(use_nulls)
-        , join_algorithm({JoinAlgorithm::DEFAULT})
-    {
-        clauses.emplace_back().key_names_right = key_names_right;
-        table_join.kind = kind;
-        table_join.strictness = strictness;
-    }
+              const Names & key_names_right);
 
     TableJoin(const TableJoin & rhs) = default;
 
-    JoinKind kind() const { return table_join.kind; }
-    void setKind(JoinKind kind) { table_join.kind = kind; }
-    JoinStrictness strictness() const { return table_join.strictness; }
+    JoinKind kind() const;
+    void setKind(JoinKind kind);
+    JoinStrictness strictness() const;
     bool sameStrictnessAndKind(JoinStrictness, JoinKind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     size_t getMaxMemoryUsage() const;
@@ -299,7 +292,7 @@ public:
     }
 
     bool allowParallelHashJoin() const;
-    void swapSides();
+    void swapSides(JoinKind updated_kind);
 
     bool joinUseNulls() const { return join_use_nulls; }
 
@@ -334,6 +327,8 @@ public:
     ASTTableJoin & getTableJoin() { return table_join; }
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
+    void setJoinInfo(const JoinInfo & join_info_) { join_info = join_info_; }
+
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }
 
@@ -367,8 +362,8 @@ public:
      */
     void addJoinCondition(const ASTPtr & ast, bool is_left);
 
-    bool hasUsing() const { return table_join.using_expression_list != nullptr; }
-    bool hasOn() const { return table_join.on_expression != nullptr; }
+    bool hasUsing() const;
+    bool hasOn() const;
 
     String getOriginalName(const String & column_name) const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
@@ -390,8 +385,8 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-
     void setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side);
+    void setUsedColumns(const Names & column_names);
 
     void setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
     {
@@ -428,7 +423,6 @@ public:
 
     void setInputColumns(NamesAndTypesList left_output_columns, NamesAndTypesList right_output_columns);
     const NamesAndTypesList & getOutputColumns(JoinTableSide side);
-
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
     const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 

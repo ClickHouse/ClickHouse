@@ -364,7 +364,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
         right->pipe.resize(1, true);
     }
     else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());
 
     if (left->hasTotals() || right->hasTotals())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
