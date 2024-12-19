@@ -152,7 +152,7 @@ public:
     bool hasQueryParameters() const;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
     std::unordered_map<Expression, size_t> positions;

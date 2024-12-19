@@ -1,6 +1,8 @@
 #include <type_traits>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -37,7 +39,7 @@ void UnionStep::updateOutputHeader()
     output_header = checkHeaders(input_headers);
 }
 
-QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
@@ -48,6 +50,8 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
         processors = collector.detachProcessors();
         return pipeline;
     }
+
+    size_t new_max_threads = max_threads ? max_threads : settings.max_threads;
 
     for (auto & cur_pipeline : pipelines)
     {
@@ -75,13 +79,28 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
         }
     }
 
-    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads, &processors);
+    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
     return pipeline;
 }
 
 void UnionStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
+}
+
+void UnionStep::serialize(Serialization & ctx) const
+{
+    (void)ctx;
+}
+
+std::unique_ptr<IQueryPlanStep> UnionStep::deserialize(Deserialization & ctx)
+{
+    return std::make_unique<UnionStep>(ctx.input_headers);
+}
+
+void registerUnionStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Union", &UnionStep::deserialize);
 }
 
 }

@@ -35,8 +35,13 @@
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #    include <boost/algorithm/string/case_conv.hpp>
+#    include <orc/MemoryPool.hh>
+#    include <orc/Vector.hh>
+#    include <Common/Allocator.h>
 #    include <Common/FieldVisitorsAccurateComparison.h>
+#    include <Common/MemorySanitizer.h>
 #    include <Common/logger_useful.h>
+#    include <Common/quoteString.h>
 #    include "ArrowBufferedStreams.h"
 
 

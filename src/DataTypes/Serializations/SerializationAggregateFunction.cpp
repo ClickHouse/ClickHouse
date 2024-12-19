@@ -79,27 +79,11 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     size_t size_of_state = function->sizeOfData();
     size_t align_of_state = function->alignOfData();
 
-    for (size_t i = 0; i < limit; ++i)
-    {
-        if (istr.eof())
-            break;
+    /// Adjust the size of state to make all states aligned in vector.
+    size_t total_size_of_state = (size_of_state + align_of_state - 1) / align_of_state * align_of_state;
+    char * place = arena.alignedAlloc(total_size_of_state * limit, align_of_state);
 
-        AggregateDataPtr place = arena.alignedAlloc(size_of_state, align_of_state);
-
-        function->create(place);
-
-        try
-        {
-            function->deserialize(place, istr, version, &arena);
-        }
-        catch (...)
-        {
-            function->destroy(place);
-            throw;
-        }
-
-        vec.push_back(place);
-    }
+    function->createAndDeserializeBatch(vec, place, total_size_of_state, limit, istr, version, &arena);
 }
 
 static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num, size_t version)

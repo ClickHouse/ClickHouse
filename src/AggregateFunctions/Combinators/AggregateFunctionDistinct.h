@@ -8,7 +8,6 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/SipHash.h>
 #include <IO/ReadHelpersArena.h>
 
 
