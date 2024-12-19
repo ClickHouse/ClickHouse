@@ -13,6 +13,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int UNKNOWN_SETTING;
+}
 
 BlockIO InterpreterSetQuery::execute()
 {
@@ -55,13 +59,40 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         return;
 
     /// First apply the outermost settings. Then they could be overridden by deeper settings.
-    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+    if (const auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(ast.get()))
     {
         if (query_with_output->settings_ast)
             InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
 
-        if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
-            applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
+        if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query)
+        {
+            if (create_query->select)
+                applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
+            else if (
+                !create_query->settings_ast && create_query->storage && !create_query->storage->engine && create_query->storage->settings
+                && context_->getApplicationType() != Context::ApplicationType::CLIENT)
+            {
+                /// If we parsed one set of settings and no engine we don't know if they belong to the query
+                /// or to the engine. To disambiguate, we try to apply them in the context, if it works then we move
+                /// them there; if it doesn't we assume they are engine settings.
+                /// Note that this only works in the server, since the client ignores unknown settings (for compatibility reasons)
+                try
+                {
+                    ASTPtr set = create_query->storage->settings->shared_from_this();
+                    InterpreterSetQuery(set, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+
+                    auto * create_query_mutable = const_cast<ASTCreateQuery *>(create_query);
+                    auto * storage_mutable = const_cast<ASTStorage *>(create_query->storage);
+                    create_query_mutable->settings_ast = set;
+                    storage_mutable->settings = nullptr;
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::UNKNOWN_SETTING)
+                        throw;
+                }
+            }
+        }
     }
 
     if (const auto * select_query = ast->as<ASTSelectQuery>())
