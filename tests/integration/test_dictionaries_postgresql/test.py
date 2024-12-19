@@ -657,8 +657,23 @@ def test_background_dictionary_reconnect(started_cluster):
 
     query("SYSTEM FLUSH LOGS")
 
-    assert int(query("SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has failed: %'")) > 0
-    assert int(query("SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'")) > 0
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has failed: %'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'"
+            )
+        )
+        > 0
+    )
+
 
 if __name__ == "__main__":
     cluster.start()

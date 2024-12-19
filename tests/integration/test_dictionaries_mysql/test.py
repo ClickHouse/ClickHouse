@@ -505,6 +505,27 @@ def test_background_dictionary_reconnect(started_cluster):
     time.sleep(5)
 
     query("SYSTEM FLUSH LOGS")
-    assert int(query("SELECT count() FROM system.text_log WHERE message like 'Failed to connect to MySQL %: mysqlxx::ConnectionFailed'")) > 0
-    assert int(query("SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'")) > 0
-    assert int(query("SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to MySQL server on %'")) > 0
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Failed to connect to MySQL %: mysqlxx::ConnectionFailed'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to MySQL server on %'"
+            )
+        )
+        > 0
+    )
