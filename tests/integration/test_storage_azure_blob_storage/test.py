@@ -1459,6 +1459,10 @@ def test_format_detection(cluster):
         result
         == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\', \\'none\\')\n"
     )
+    azure_query(
+        node,
+        f"DROP TABLE test_format_detection",
+    )
 
 
 def test_write_to_globbed_partitioned_path(cluster):
