@@ -90,7 +90,7 @@ void GroupConcatImpl<has_limit>::add(
 {
     auto & cur_data = this->data(place);
 
-    if (columns[0]->getDataAt(row_num).empty())
+    if (!columns[0]->getDataAt(row_num).data)
         return;
 
     if constexpr (has_limit)
