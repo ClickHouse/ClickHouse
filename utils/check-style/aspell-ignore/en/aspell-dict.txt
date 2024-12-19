@@ -1995,6 +1995,7 @@ isNaN
 isNotDistinctFrom
 isNotNull
 isNull
+isNullOrEmpty
 isNullable
 isValidJSON
 isValidUTF
