@@ -180,7 +180,7 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
 
     if (configuration.is_local)
     {
-        pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
+        pipeline = executeQuery(query, nullptr, context_copy, QueryFlags{ .internal = true }).second.pipeline;
         pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
     }
     else
@@ -202,7 +202,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        return readInvalidateQuery(executeQuery(request, context_copy, QueryFlags{ .internal = true }).second.pipeline);
+        return readInvalidateQuery(executeQuery(request, nullptr, context_copy, QueryFlags{ .internal = true }).second.pipeline);
     }
 
     /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
