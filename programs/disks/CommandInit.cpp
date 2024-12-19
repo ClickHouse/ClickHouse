@@ -23,7 +23,7 @@ public:
         options_description.add_options()("disk", po::value<String>(), "disk name to be initialized (mandatory, positional)")(
             "path", po::value<String>(), "the path to establish on the initialized disk")(
             "switch", "switch to the initialized disk after initialization");
-        positional_options_description.add("disk-name", 1);
+        positional_options_description.add("disk", 1);
     }
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override

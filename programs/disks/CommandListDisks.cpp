@@ -19,7 +19,8 @@ public:
     void executeImpl(const CommandLineOptions &, DisksClient & client) override
     {
         const std::vector<String> initialized_disks = client.getInitializedDiskNames();
-        std::vector<String> sorted_and_selected(initialized_disks.size());
+        std::vector<String> sorted_and_selected;
+        sorted_and_selected.reserve(initialized_disks.size());
         std::vector<String> uninitialized_disks = client.getUninitializedDiskNames();
 
 

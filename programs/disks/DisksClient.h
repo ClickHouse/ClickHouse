@@ -87,7 +87,7 @@ public:
 
     std::vector<String> getAllFilesByPatternFromInitializedDisks(const String & pattern) const;
 
-    void addDisk(String disk_name, const std::optional<String> & path);
+    void addDisk(String disk_name, std::optional<String> path);
 
     bool isDiskInitialized(const String & disk_name) const { return created_disks.contains(disk_name); }
 
@@ -96,7 +96,7 @@ private:
     std::unordered_map<String, DiskWithPath> disks_with_paths;
     DisksMap created_disks;
 
-    using PostponedDisksMap = std::map<String, DiskCreator>;
+    using PostponedDisksMap = std::map<String, std::pair<DiskCreator, std::optional<String>>>;
     PostponedDisksMap postponed_disks;
 
     const Poco::Util::AbstractConfiguration & config;

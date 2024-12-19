@@ -111,8 +111,8 @@ private:
            {"current_disk", "current_disk_with_path"},
            {"current_path", "current_disk_with_path"},
            {"cur", "current_disk_with_path"},
-           {"init", "initialize"},
-           {"init", "initialise"}};
+           {"initialize", "init"},
+           {"initialise", "init"}};
 
     std::set<String> multidisk_commands = {"copy", "packed-io", "switch-disk", "cd"};
 

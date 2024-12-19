@@ -160,35 +160,41 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
 
         postponed_disks.emplace(
             disk_name,
-            [disk_name, disk_config_prefix, &factory, this]()
-            {
-                return factory.create(
-                    disk_name,
-                    config,
-                    disk_config_prefix,
-                    this->context,
-                    created_disks,
-                    /*attach*/ false,
-                    /*custom_disk*/ false,
-                    {"cache", "encrypted"});
-            });
+            std::pair{
+                [disk_name, disk_config_prefix, &factory, this]()
+                {
+                    return factory.create(
+                        disk_name,
+                        config,
+                        disk_config_prefix,
+                        this->context,
+                        created_disks,
+                        /*attach*/ false,
+                        /*custom_disk*/ false,
+                        {"cache", "encrypted"});
+                },
+                std::nullopt});
     }
     if (!has_default_disk)
     {
         postponed_disks.emplace(
             DEFAULT_DISK_NAME,
-            [this, config_prefix]() {
-                return std::make_shared<DiskLocal>(
-                    DEFAULT_DISK_NAME, this->context->getPath(), 0, this->context, this->config, config_prefix);
-            });
+            std::pair{
+                [this, config_prefix]() {
+                    return std::make_shared<DiskLocal>(
+                        DEFAULT_DISK_NAME, this->context->getPath(), 0, this->context, this->config, config_prefix);
+                },
+                std::nullopt});
     }
 
     if (!has_local_disk)
     {
         postponed_disks.emplace(
             LOCAL_DISK_NAME,
-            [this, config_prefix]()
-            { return std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, this->context, this->config, config_prefix); });
+            std::pair{
+                [this, config_prefix]()
+                { return std::make_shared<DiskLocal>(LOCAL_DISK_NAME, "/", 0, this->context, this->config, config_prefix); },
+                fs::current_path().string()});
     }
 
     addDisk(begin_disk, std::nullopt);
@@ -203,7 +209,7 @@ const DiskWithPath & DisksClient::getDiskWithPath(const String & disk) const
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The disk '{}' is unknown or uninitialized", disk);
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "The disk '{}' is unknown or uninitialized", disk);
     }
 }
 
@@ -215,7 +221,7 @@ DiskWithPath & DisksClient::getDiskWithPath(const String & disk)
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The disk '{}' is unknown or uninitialized", disk);
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "The disk '{}' is unknown or uninitialized", disk);
     }
 }
 
@@ -304,20 +310,24 @@ std::vector<String> DisksClient::getAllFilesByPatternFromInitializedDisks(const 
     return answer;
 }
 
-void DisksClient::addDisk(String disk_name, const std::optional<String> & path)
+void DisksClient::addDisk(String disk_name, std::optional<String> path)
 {
     if (created_disks.contains(disk_name))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The disk {} already exists", disk_name);
+        return;
     }
     if (!postponed_disks.contains(disk_name))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The disk '{}' is unknown", disk_name);
+        throw Exception(ErrorCodes::UNKNOWN_DISK, "The disk '{}' is unknown and can't be initialized", disk_name);
     }
 
-    DiskPtr disk = postponed_disks.at(disk_name)();
+    DiskPtr disk = postponed_disks.at(disk_name).first();
     chassert(disk_name == disk->getName());
     created_disks.emplace(disk_name, disk);
+    if (!path.has_value())
+    {
+        path = postponed_disks.at(disk_name).second;
+    }
     postponed_disks.erase(disk_name);
     disks_with_paths.emplace(disk_name, DiskWithPath{disk, path});
 }
