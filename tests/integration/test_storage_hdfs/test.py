@@ -1254,6 +1254,8 @@ def test_format_detection(started_cluster):
         == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
     )
 
+    node.query("drop table test_format_detection")
+
 
 def test_write_to_globbed_partitioned_path(started_cluster):
     node = started_cluster.instances["node1"]
