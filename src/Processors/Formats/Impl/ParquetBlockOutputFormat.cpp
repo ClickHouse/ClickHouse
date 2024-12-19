@@ -327,6 +327,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
         parquet::WriterProperties::Builder builder;
         builder.version(getParquetVersion(format_settings));
         builder.compression(getParquetCompression(format_settings.parquet.output_compression_method));
+        builder.compression_level(static_cast<int>(format_settings.parquet.output_compression_level));
         // write page index is disable at default.
         if (format_settings.parquet.write_page_index)
             builder.enable_write_page_index();
