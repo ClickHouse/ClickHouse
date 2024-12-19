@@ -225,9 +225,12 @@ bool ObjectStorageQueueIFileMetadata::setProcessing()
     auto state = file_status->state.load();
     if (state == FileStatus::State::Processing
         || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed && file_status->retries >= max_loading_retries))
+        || (state == FileStatus::State::Failed
+            && file_status->retries
+            && file_status->retries >= max_loading_retries))
     {
-        LOG_TEST(log, "File {} has non-processable state `{}`", path, file_status->state.load());
+        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                 path, file_status->state.load(), file_status->retries, max_loading_retries);
         return false;
     }
 
@@ -298,9 +301,6 @@ void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_me
               path, failed_node_path, reduce_retry_count, exception_message);
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
-    if (overwrite_status || file_status->state != FileStatus::State::Failed)
-        file_status->onFailed(exception_message);
-
     node_metadata.last_exception = exception_message;
 
     if (reduce_retry_count)
@@ -322,6 +322,13 @@ void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_me
             throw;
         }
     }
+    else
+    {
+        resetProcessing();
+    }
+
+    if (overwrite_status || file_status->state != FileStatus::State::Failed)
+        file_status->onFailed(exception_message);
 
     processing_id.reset();
     processing_id_version.reset();
