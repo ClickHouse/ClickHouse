@@ -502,10 +502,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
         const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
         auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
-        const auto & path = reader.getObjectInfo()->getPath();
-        last_started_file = file_metadata;
+        const auto & path = file_metadata->getPath();
 
-        LOG_TEST(log, "Processing file: {}", last_started_file->getPath());
+        LOG_TEST(log, "Processing file: {}", path);
 
         if (isCancelled())
         {
@@ -560,6 +559,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                      path, processed_rows_from_file);
         }
 
+        if (processed_files.empty() || processed_files.back()->getPath() != path)
+            processed_files.push_back(file_metadata);
+
         try
         {
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueuePullMicroseconds);
@@ -611,7 +613,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
         reader = {};
 
         processed_rows_from_file = 0;
-        processed_files.push_back(file_metadata);
 
         if (commit_settings.max_processed_files_before_commit
             && processed_files.size() == commit_settings.max_processed_files_before_commit)
@@ -660,12 +661,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
 void ObjectStorageQueueSource::commit(bool success, const std::string & exception_message)
 {
-    if (last_started_file
-        && (processed_files.empty() || processed_files.back()->getPath() != last_started_file->getPath()))
-    {
-        processed_files.push_back(last_started_file);
-    }
-
     LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
              processed_files.size(), success ? "Processed" : "Failed", failed_during_read_files.size());
 

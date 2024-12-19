@@ -263,13 +263,74 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     if (state != FileStatus::State::Processing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset non-processing state: {}", state);
 
-    resetProcessingImpl();
-    file_status->reset();
-}
+    SCOPE_EXIT({
+        file_status->reset();
+    });
 
-void ObjectStorageQueueIFileMetadata::resetProcessingImpl()
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "resetProcessingImpl is not implemented");
+    if (!processing_id_version.has_value())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "No processing id version set, but state is `Processing` ({})",
+            node_metadata.toString());
+    }
+
+    size_t check_processing_id_path_idx = 0;
+    size_t remove_processing_id_path_idx = 1;
+    size_t remove_processing_path_idx = 2;
+
+    Coordination::Requests requests;
+    requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+    Coordination::Responses responses;
+    const auto zk_client = getZooKeeper();
+    const auto code = zk_client->tryMulti(requests, responses);
+    if (code == Coordination::Error::ZOK)
+        return;
+
+    auto is_request_failed = [&](size_t idx)
+    {
+        chassert(idx < responses.size());
+        return responses[idx]->error != Coordination::Error::ZOK;
+    };
+
+    bool unexpected_error = false;
+    std::string failure_reason;
+
+    if (Coordination::isHardwareError(code))
+    {
+        failure_reason = "Lost connection to keeper";
+    }
+    else if (is_request_failed(check_processing_id_path_idx))
+    {
+        /// This is normal in case of expired session with keeper.
+        failure_reason = "Version of processing id node changed";
+    }
+    else if (is_request_failed(remove_processing_id_path_idx))
+    {
+        /// Remove processing_id node should not actually fail
+        /// because we just checked in a previous keeper request that it exists and has a certain version.
+        unexpected_error = true;
+        failure_reason = "Failed to remove processing id path";
+    }
+    else if (is_request_failed(remove_processing_path_idx))
+    {
+        /// This is normal in case of expired session with keeper as this node is ephemeral.
+        failure_reason = "Failed to remove processing path";
+    }
+    else
+    {
+        /// Unreachable branch.
+        chassert(false);
+        unexpected_error = true;
+    }
+
+    if (unexpected_error)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", failure_reason);
+
+    LOG_TRACE(log, "Cannot reset processing for {}. Code: {}. Reason: {}", path, code, failure_reason);
 }
 
 void ObjectStorageQueueIFileMetadata::setProcessed()
