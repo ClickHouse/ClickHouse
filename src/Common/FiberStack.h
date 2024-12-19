@@ -1,16 +1,13 @@
 #pragma once
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
 #include <base/defines.h>
+#include <base/getPageSize.h>
 #include <boost/context/stack_context.hpp>
-#include <Common/formatReadable.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/time.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
-#include <base/getPageSize.h>
-#include <boost/core/noncopyable.hpp>
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <sys/mman.h>
+#include <Common/formatReadable.h>
 
 #if defined(BOOST_USE_VALGRIND)
 #include <valgrind/valgrind.h>

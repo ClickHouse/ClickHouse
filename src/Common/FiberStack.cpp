@@ -1,11 +1,13 @@
 #include "FiberStack.h"
 #include <atomic>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Core/ServerSettings.h>
+#include <Interpreters/Context.h>
+#include <absl/container/flat_hash_map.h>
+#include <base/scope_guard.h>
+#include <boost/core/noncopyable.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <base/scope_guard.h>
-#include <Interpreters/Context.h>
-#include <Core/ServerSettings.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 namespace DB::ErrorCodes
 {
@@ -55,8 +57,8 @@ boost::context::stack_context FiberStack::allocate() const
     }
 
     /// Do not count guard page in memory usage.
-    auto trace = CurrentMemoryTracker::alloc(num_pages * page_size);
-    trace.onAlloc(vp, num_pages * page_size);
+    auto trace = CurrentMemoryTracker::alloc(num_bytes - page_size);
+    trace.onAlloc(vp, num_bytes - page_size);
 
     boost::context::stack_context sctx;
     sctx.size = num_bytes;
@@ -96,9 +98,17 @@ private:
     FiberStack * allocator; /// Base allocator for new stacks.
     std::list<boost::context::stack_context> free_stacks; /// List of free stacks.
     absl::flat_hash_map<void *, boost::context::stack_context> allocated_stacks; /// Map of allocated pointer -> allocated_stack.
+#ifndef NDEBUG
+    size_t page_size;
+#endif
 
 public:
-    explicit FixedSizeFiberStackCache(FiberStack * base_allocator_, size_t max_cached_stacks_) : max_cached_stacks(max_cached_stacks_), allocator(base_allocator_) {}
+    explicit FixedSizeFiberStackCache(FiberStack * base_allocator_, size_t max_cached_stacks_) : max_cached_stacks(max_cached_stacks_), allocator(base_allocator_)
+    {
+#ifndef NDEBUG
+        page_size = getPageSize();
+#endif
+    }
     /// Borrow a stack from the pool.
     /// If no free stacks are available, allocate a new one.
     /// If the maximum number of cached stacks is reached, return nullopt.
@@ -120,7 +130,8 @@ public:
     /// Folly::GuardPageAllocator, boost::context::pooled_fixedsize_stack, boost::coroutines::standard_stack_allocator
     /// don't zero out the stack. glibc pthread zero out the thread local storage section of the stack.
 #ifndef NDEBUG
-        ::memset(stack.sp, 0, stack.size);
+        auto * vp = static_cast<char *>(stack.sp) - stack.size;
+        ::memset(vp + page_size, 0, stack.size - page_size);
 #endif
         CurrentMetrics::add(CurrentMetrics::FiberStackCacheActive);
         return stack;
