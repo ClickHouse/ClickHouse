@@ -2,7 +2,7 @@
 
 set parallel_replicas_prefer_local_join = 0;
 -- A query with only INNER/LEFT joins is fully send to replicas. JOIN is executed in GLOBAL mode.
-select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z order by x;
+select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z order by x SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -18,7 +18,7 @@ select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x
 13	13	0	0	0	0
 14	14	14	14	0	0
 15	15	0	0	0	0
-explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z;
+explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Union
   Expression
     Join
@@ -40,7 +40,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -62,7 +63,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Union
@@ -88,7 +90,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select sum(x), sum(y), sum(r.y), sum(z), sum(rr.z), sum(a), key from sub3 ll any left join sub4 rr on ll.z = rr.z group by x % 2 as key)
-select * from sub5 order by key;
+select * from sub5 order by key
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 54	54	50	50	12	12	0
 64	64	0	0	0	0	1
 explain description=0
@@ -97,7 +100,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select sum(x), sum(y), sum(r.y), sum(z), sum(rr.z), sum(a), key from sub3 ll any left join sub4 rr on ll.z = rr.z group by x % 2 as key)
-select * from sub5 order by key;
+select * from sub5 order by key
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Expression
@@ -125,7 +129,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -147,7 +152,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Expression
@@ -175,7 +181,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -197,7 +204,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Expression
@@ -229,43 +237,53 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by all;
+select * from sub5
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
-1	1	0	0	0	0
-3	3	0	0	0	0
-4	4	0	0	0	0
-5	5	0	0	0	0
 6	6	6	6	0	0
-7	7	0	0	0	0
 8	8	8	8	0	0
-9	9	0	0	0	0
 10	10	10	10	0	0
-11	11	0	0	0	0
 12	12	12	12	12	12
-13	13	0	0	0	0
 14	14	14	14	0	0
+4	4	0	0	0	0
+3	3	0	0	0	0
+5	5	0	0	0	0
+1	1	0	0	0	0
+7	7	0	0	0	0
+9	9	0	0	0	0
 15	15	0	0	0	0
+11	11	0	0	0	0
+13	13	0	0	0	0
 explain description=0
 with sub1 as (select x, y from tab1 where x != 2),
 sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5;
-Union
-  Expression
-    Join
-      Expression
-        Join
-          Expression
-            ReadFromMemoryStorage
+select * from sub5
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
+Expression
+  Join
+    Expression
+      Join
+        Union
           Expression
             Expression
               ReadFromMergeTree
+          Expression
+            ReadFromRemoteParallelReplicas
+        Union
+          Expression
+            Expression
+              ReadFromMergeTree
+          Expression
+            ReadFromRemoteParallelReplicas
+    Union
       Expression
-        ReadFromMemoryStorage
-  Expression
-    ReadFromRemoteParallelReplicas
+        Expression
+          ReadFromMergeTree
+      Expression
+        ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub5: sub5 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
@@ -273,7 +291,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select z, a, x, y, r.y, ll.z from sub4 rr any right join sub3 ll on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 0	0	1	1	0	0
 0	0	3	3	0	0
@@ -295,26 +313,31 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select z, a, x, y, r.y, ll.z from sub4 rr any right join sub3 ll on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
-    Union
-      Expression
-        Sorting
+    Expression
+      Join
+        Union
           Expression
-            Join
+            Expression
+              ReadFromMergeTree
+          Expression
+            ReadFromRemoteParallelReplicas
+        Expression
+          Join
+            Union
               Expression
-                ReadFromMemoryStorage
+                Expression
+                  ReadFromMergeTree
               Expression
-                Join
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-      Expression
-        ReadFromRemoteParallelReplicas
+                ReadFromRemoteParallelReplicas
+            Union
+              Expression
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
 -- Subqueries for IN allowed
 with sub1 as (select x, y from tab1 where x in (select number from numbers(16) where number != 2)),
@@ -322,7 +345,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -344,7 +368,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Union
@@ -377,7 +402,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0;
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1, parallel_replicas_allow_in_with_subquery=0;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -400,7 +425,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0;-- { echoOn }
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1, parallel_replicas_allow_in_with_subquery=0;-- { echoOn }
 Expression
   Sorting
     Expression
@@ -430,7 +455,7 @@ Expression
             ReadFromRemoteParallelReplicas
 set parallel_replicas_prefer_local_join = 1;
 -- A query with only INNER/LEFT joins is fully send to replicas. JOIN is executed in GLOBAL mode.
-select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z order by x;
+select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z order by x SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -446,7 +471,7 @@ select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x
 13	13	0	0	0	0
 14	14	14	14	0	0
 15	15	0	0	0	0
-explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z;
+explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Union
   Expression
     Join
@@ -470,7 +495,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -492,7 +518,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Union
@@ -520,7 +547,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select sum(x), sum(y), sum(r.y), sum(z), sum(rr.z), sum(a), key from sub3 ll any left join sub4 rr on ll.z = rr.z group by x % 2 as key)
-select * from sub5 order by key;
+select * from sub5 order by key
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 54	54	50	50	12	12	0
 64	64	0	0	0	0	1
 explain description=0
@@ -529,7 +557,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select sum(x), sum(y), sum(r.y), sum(z), sum(rr.z), sum(a), key from sub3 ll any left join sub4 rr on ll.z = rr.z group by x % 2 as key)
-select * from sub5 order by key;
+select * from sub5 order by key
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Expression
@@ -559,7 +588,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -581,7 +611,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Expression
@@ -610,7 +641,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -632,7 +664,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Expression
@@ -664,45 +697,53 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by all;
+select * from sub5
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
-1	1	0	0	0	0
-3	3	0	0	0	0
-4	4	0	0	0	0
-5	5	0	0	0	0
 6	6	6	6	0	0
-7	7	0	0	0	0
 8	8	8	8	0	0
-9	9	0	0	0	0
 10	10	10	10	0	0
-11	11	0	0	0	0
 12	12	12	12	12	12
-13	13	0	0	0	0
 14	14	14	14	0	0
+4	4	0	0	0	0
+3	3	0	0	0	0
+5	5	0	0	0	0
+1	1	0	0	0	0
+7	7	0	0	0	0
+9	9	0	0	0	0
 15	15	0	0	0	0
+11	11	0	0	0	0
+13	13	0	0	0	0
 explain description=0
 with sub1 as (select x, y from tab1 where x != 2),
 sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5;
-Union
-  Expression
-    Join
-      Expression
-        Join
+select * from sub5
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
+Expression
+  Join
+    Expression
+      Join
+        Union
           Expression
             Expression
               ReadFromMergeTree
           Expression
+            ReadFromRemoteParallelReplicas
+        Union
+          Expression
             Expression
               ReadFromMergeTree
+          Expression
+            ReadFromRemoteParallelReplicas
+    Union
       Expression
         Expression
           ReadFromMergeTree
-  Expression
-    ReadFromRemoteParallelReplicas
+      Expression
+        ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub5: sub5 -> WithMergableStage
 with sub1 as (select x, y from tab1 where x != 2),
@@ -710,7 +751,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select z, a, x, y, r.y, ll.z from sub4 rr any right join sub3 ll on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 0	0	1	1	0	0
 0	0	3	3	0	0
@@ -732,27 +773,31 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select z, a, x, y, r.y, ll.z from sub4 rr any right join sub3 ll on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
-    Union
-      Expression
-        Sorting
+    Expression
+      Join
+        Union
           Expression
-            Join
+            Expression
+              ReadFromMergeTree
+          Expression
+            ReadFromRemoteParallelReplicas
+        Expression
+          Join
+            Union
               Expression
                 Expression
                   ReadFromMergeTree
               Expression
-                Join
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-                  Expression
-                    Expression
-                      ReadFromMergeTree
-      Expression
-        ReadFromRemoteParallelReplicas
+                ReadFromRemoteParallelReplicas
+            Union
+              Expression
+                Expression
+                  ReadFromMergeTree
+              Expression
+                ReadFromRemoteParallelReplicas
 --
 -- Subqueries for IN allowed
 with sub1 as (select x, y from tab1 where x in (select number from numbers(16) where number != 2)),
@@ -760,7 +805,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -782,7 +828,8 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1;
 Expression
   Sorting
     Union
@@ -817,7 +864,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0;
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1, parallel_replicas_allow_in_with_subquery=0;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -840,7 +887,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0;
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, prefer_localhost_replica = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', enable_analyzer=1, parallel_replicas_allow_in_with_subquery=0;
 Expression
   Sorting
     Expression

@@ -11,12 +11,6 @@
 namespace DB
 {
 
-namespace ServerSetting
-{
-    extern const ServerSettingsString default_replica_name;
-    extern const ServerSettingsString default_replica_path;
-}
-
 namespace
 {
     void visitStorageSystemTableEngine(ASTStorage &, const DDLAdjustingForBackupVisitor::Data & data)
@@ -61,8 +55,8 @@ namespace
                     zookeeper_path_arg.replace(uuid_pos, table_uuid_str.size(), "{uuid}");
             }
             const auto & server_settings = data.global_context->getServerSettings();
-            if ((zookeeper_path_arg == server_settings[ServerSetting::default_replica_path].value)
-                && (replica_name_arg == server_settings[ServerSetting::default_replica_name].value)
+            if ((zookeeper_path_arg == server_settings.default_replica_path.value)
+                && (replica_name_arg == server_settings.default_replica_name.value)
                 && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
             {
                 engine_args.erase(engine_args.begin(), engine_args.begin() + 2);

@@ -211,20 +211,6 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
     }
 }
 
-template <char... chars>
-void skipStringUntilChars(ReadBuffer & buf)
-{
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
-
-        buf.position() = next_pos;
-
-        if (buf.hasPendingData())
-            return;
-    }
-}
-
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
@@ -257,11 +243,6 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
-}
-
-void skipStringUntilWhitespace(ReadBuffer & buf)
-{
-    skipStringUntilChars<' '>(buf);
 }
 
 void readStringUntilAmpersand(String & s, ReadBuffer & buf)
@@ -1391,7 +1372,8 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
             ++buf.position();
             return true;
         }
-        return false;
+        else
+            return false;
     };
 
     UInt16 year = 0;
@@ -1604,14 +1586,14 @@ template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const
 
 
 template <typename ReturnType>
-ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings, size_t current_depth)
+ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings, size_t current_depth)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     if (unlikely(current_depth > settings.max_depth))
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "JSON is too deep for key '{}'", name_of_field);
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "JSON is too deep for key '{}'", name_of_field.toString());
         return ReturnType(false);
     }
 
@@ -1621,10 +1603,10 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
     if (buf.eof())
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
         return ReturnType(false);
     }
-    if (*buf.position() == '"') /// skip double-quoted string
+    else if (*buf.position() == '"') /// skip double-quoted string
     {
         NullOutput sink;
         if constexpr (throw_exception)
@@ -1641,7 +1623,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
         if (!tryReadFloatText(v, buf))
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field.toString());
             return ReturnType(false);
         }
     }
@@ -1699,7 +1681,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
             else
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
                 return ReturnType(false);
             }
         }
@@ -1723,7 +1705,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
             else
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
                 return ReturnType(false);
             }
 
@@ -1732,7 +1714,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
             if (buf.eof() || !(*buf.position() == ':'))
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
                 return ReturnType(false);
             }
             ++buf.position();
@@ -1756,7 +1738,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
         if (buf.eof())
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
             return ReturnType(false);
         }
         ++buf.position();
@@ -1769,7 +1751,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
                 "Cannot read JSON field here: '{}'. Unexpected symbol '{}'{}",
                 String(buf.position(), std::min(buf.available(), size_t(10))),
                 std::string(1, *buf.position()),
-                name_of_field.empty() ? "" : " for key " + String{name_of_field});
+                name_of_field.empty() ? "" : " for key " + name_of_field.toString());
 
         return ReturnType(false);
     }
@@ -1777,12 +1759,12 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
     return ReturnType(true);
 }
 
-void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings)
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
     skipJSONFieldImpl<void>(buf, name_of_field, settings, 0);
 }
 
-bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings)
+bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
 {
     return skipJSONFieldImpl<bool>(buf, name_of_field, settings, 0);
 }
@@ -2130,13 +2112,13 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
 
     if (*buf.position() == '\'')
         return readQuotedStringFieldInto<ReturnType>(s, buf);
-    if (*buf.position() == '[')
+    else if (*buf.position() == '[')
         return readQuotedFieldInBracketsInto<ReturnType, '[', ']'>(s, buf);
-    if (*buf.position() == '(')
+    else if (*buf.position() == '(')
         return readQuotedFieldInBracketsInto<ReturnType, '(', ')'>(s, buf);
-    if (*buf.position() == '{')
+    else if (*buf.position() == '{')
         return readQuotedFieldInBracketsInto<ReturnType, '{', '}'>(s, buf);
-    if (checkCharCaseInsensitive('n', buf))
+    else if (checkCharCaseInsensitive('n', buf))
     {
         /// NULL or NaN
         if (checkCharCaseInsensitive('u', buf))

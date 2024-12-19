@@ -28,7 +28,6 @@
 #include <cstring>
 #include <filesystem>
 #include <base/FnTraits.h>
-#include <base/range.h>
 
 
 namespace DB
@@ -228,8 +227,7 @@ namespace
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
                 if (entry.starts_with("ssh_key"))
                 {
-                    String type;
-                    String base64_key;
+                    String type, base64_key;
                     if (config.has(conf_pref + "type"))
                     {
                         type = config.getString(conf_pref + "type");
@@ -651,7 +649,8 @@ namespace
                 {
                     if (users_without_row_policies_can_read_rows)
                         continue;
-                    filter = "1";
+                    else
+                        filter = "1";
                 }
 
                 auto policy = std::make_shared<RowPolicy>();

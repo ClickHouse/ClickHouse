@@ -3,15 +3,12 @@
 #include <Common/checkStackSize.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/TableJoin.h>
 #include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -65,14 +62,7 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
             break;
 
         if (!node->children.empty())
-        {
-            // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
-            const JoinStep * join = typeid_cast<JoinStep*>(node->step.get());
-            if (join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
-                node = node->children.at(1);
-            else
-                node = node->children.at(0);
-        }
+            node = node->children.at(0);
         else
             node = nullptr;
     }

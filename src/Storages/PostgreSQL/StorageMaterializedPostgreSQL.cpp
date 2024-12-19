@@ -1,5 +1,4 @@
-#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
-#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#include "StorageMaterializedPostgreSQL.h"
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
@@ -47,11 +46,6 @@ namespace Setting
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
 }
 
-namespace MaterializedPostgreSQLSetting
-{
-    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -85,7 +79,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
 
-    (*replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list] = remote_table_name_;
+    replication_settings->materialized_postgresql_tables_list = remote_table_name_;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,

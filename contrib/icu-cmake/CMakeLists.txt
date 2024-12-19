@@ -1,4 +1,4 @@
-if (OS_LINUX OR OS_DARWIN)
+if (OS_LINUX)
     option(ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
 else ()
     option(ENABLE_ICU "Enable ICU" 0)
@@ -476,14 +476,11 @@ set(ICUI18N_SOURCES
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
 enable_language(ASM)
 
-if (OS_DARWIN)
-    # Fine for both x86 and ARM
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/darwin_x86_64/icudt75l_dat.S")
-elseif (ARCH_S390X)
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75b_dat.S")
-else ()
-    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75l_dat.S")
-endif ()
+if (ARCH_S390X)
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75b_dat.S" )
+else()
+    set(ICUDATA_SOURCE_FILE "${ICUDATA_SOURCE_DIR}/icudt75l_dat.S" )
+endif()
 # ^^ you might be confused how for different little endian platforms (x86, ARM) the same assembly files can be used.
 # These files are indeed assembly but they only contain data ('.long' directive), which makes them portable accross CPUs.
 # Only the endianness and the character set (ASCII, EBCDIC) makes a difference, also see

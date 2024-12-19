@@ -59,8 +59,10 @@ public:
                 // +1 to skip quoting character
                 return {character_position + 1u, State::READING_QUOTED_KEY};
             }
-
-            return {character_position, State::READING_KEY};
+            else
+            {
+                return {character_position, State::READING_KEY};
+            }
         }
 
         return {file.size(), State::END};

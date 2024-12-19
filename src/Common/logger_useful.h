@@ -11,11 +11,10 @@
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 
 
 #define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
-#define LogFrequencyLimiter(x, y) std::make_unique<LogFrequencyLimiterImpl>(x, y)
+#define LogFrequencyLimiter(x, y) std::make_unique<LogFrequencyLimiterIml>(x, y)
 
 using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
 
@@ -25,7 +24,7 @@ namespace impl
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     [[maybe_unused]] inline const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
     [[maybe_unused]] inline std::unique_ptr<LogToStrImpl> getLoggerHelper(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
-    [[maybe_unused]] inline std::unique_ptr<LogFrequencyLimiterImpl> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterImpl> && logger) { return logger; }
+    [[maybe_unused]] inline std::unique_ptr<LogFrequencyLimiterIml> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
     [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
 }
 
@@ -70,7 +69,6 @@ namespace impl
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
         break;                                                                                                      \
                                                                                                                     \
-    Stopwatch _logger_watch;                                                                                        \
     try                                                                                                             \
     {                                                                                                               \
         ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
@@ -124,7 +122,6 @@ namespace impl
     {                                                                                                               \
         ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
     }                                                                                                               \
-    ProfileEvents::incrementLoggerElapsedNanoseconds(_logger_watch.elapsedNanoseconds());                           \
 } while (false)
 
 

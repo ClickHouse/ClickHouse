@@ -27,8 +27,6 @@
 
             <latest_logs_cache_size_threshold>1073741824</latest_logs_cache_size_threshold>
             <commit_logs_cache_size_threshold>524288000</commit_logs_cache_size_threshold>
-
-            <use_xid_64>1</use_xid_64>
         </coordination_settings>
 
         <raft_configuration>

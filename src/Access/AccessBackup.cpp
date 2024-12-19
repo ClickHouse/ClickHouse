@@ -116,14 +116,16 @@ namespace
                         reading_dependents = false;
                         continue;
                     }
-                    if (line == "DEPENDENTS")
+                    else if (line == "DEPENDENTS")
                     {
                         reading_dependents = true;
                         reading_dependencies = false;
                         continue;
                     }
-                    if (line.empty())
+                    else if (line.empty())
+                    {
                         continue;
+                    }
 
                     size_t separator1 = line.find('\t');
                     size_t separator2 = line.find('\t', separator1 + 1);
@@ -354,12 +356,13 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
             case User::TYPE:
             {
                 const auto & user = typeid_cast<const User &>(*entity);
-                res.emplace_back(AccessType::CREATE_USER, user.getName());
+                res.emplace_back(AccessType::CREATE_USER);
                 auto elements = user.access.getElements();
                 for (auto & element : elements)
                 {
-                    if (!element.is_partial_revoke)
-                        element.grant_option = true;
+                    if (element.is_partial_revoke)
+                        continue;
+                    element.grant_option = true;
                     res.emplace_back(element);
                 }
                 if (!user.granted_roles.isEmpty())
@@ -370,12 +373,13 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
             case Role::TYPE:
             {
                 const auto & role = typeid_cast<const Role &>(*entity);
-                res.emplace_back(AccessType::CREATE_ROLE, role.getName());
+                res.emplace_back(AccessType::CREATE_ROLE);
                 auto elements = role.access.getElements();
                 for (auto & element : elements)
                 {
-                    if (!element.is_partial_revoke)
-                        element.grant_option = true;
+                    if (element.is_partial_revoke)
+                        continue;
+                    element.grant_option = true;
                     res.emplace_back(element);
                 }
                 if (!role.granted_roles.isEmpty())

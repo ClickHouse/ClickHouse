@@ -128,29 +128,29 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
 
     size_t num_plans = nested_interpreters.size();
     std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-    Headers headers(num_plans);
+    DataStreams data_streams(num_plans);
 
     for (size_t i = 0; i < num_plans; ++i)
     {
         plans[i] = std::make_unique<QueryPlan>();
         nested_interpreters[i]->buildQueryPlan(*plans[i]);
 
-        if (!blocksHaveEqualStructure(plans[i]->getCurrentHeader(), result_header))
+        if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
         {
             auto actions_dag = ActionsDAG::makeConvertingActions(
-                    plans[i]->getCurrentHeader().getColumnsWithTypeAndName(),
+                    plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
                     result_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Position);
-            auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
+            auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
             converting_step->setStepDescription("Conversion before UNION");
             plans[i]->addStep(std::move(converting_step));
         }
 
-        headers[i] = plans[i]->getCurrentHeader();
+        data_streams[i] = plans[i]->getCurrentDataStream();
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(headers), final_operator, settings[Setting::max_threads]);
+    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, settings[Setting::max_threads]);
     query_plan.unitePlans(std::move(step), std::move(plans));
 
     const auto & query = query_ptr->as<ASTSelectIntersectExceptQuery &>();
@@ -161,11 +161,12 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
         auto distinct_step = std::make_unique<DistinctStep>(
-            query_plan.getCurrentHeader(),
+            query_plan.getCurrentDataStream(),
             limits,
             0,
             result_header.getNames(),
-            false);
+            false,
+            settings[Setting::optimize_distinct_in_order]);
 
         query_plan.addStep(std::move(distinct_step));
     }

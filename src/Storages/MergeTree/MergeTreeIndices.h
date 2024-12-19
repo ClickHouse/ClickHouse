@@ -25,7 +25,6 @@ struct MergeTreeWriterSettings;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -36,14 +35,6 @@ struct MergeTreeIndexFormat
     const char* extension;
 
     explicit operator bool() const { return version != 0; }
-};
-
-/// A vehicle which transports elements of the SELECT query to the vector similarity index.
-struct VectorSearchParameters
-{
-    String distance_function;
-    size_t limit;
-    std::vector<Float64> reference_vector;
 };
 
 /// Stores some info about a single block of data.
@@ -104,12 +95,11 @@ public:
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 
-    /// Special method for vector similarity indexes:
-    /// Returns the row positions of the N nearest neighbors in the index granule
-    /// The returned row numbers are guaranteed to be sorted and unique.
-    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    /// Special stuff for vector similarity indexes
+    /// - Returns vector of indexes of ranges in granule which are useful for query.
+    virtual std::vector<size_t> getUsefulRanges(MergeTreeIndexGranulePtr) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for non-vector-similarity indexes.");
     }
 };
 
@@ -118,7 +108,6 @@ using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
 struct IMergeTreeIndex;
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
-
 
 /// IndexCondition that checks several indexes at the same time.
 class IMergeTreeIndexMergedCondition
@@ -172,7 +161,7 @@ struct IMergeTreeIndex
     /// Return pair<extension, version>.
     virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
     {
-        if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
+        if (data_part_storage.exists(relative_path_prefix + ".idx"))
             return {1, ".idx"};
         return {0 /*unknown*/, ""};
     }
@@ -188,15 +177,6 @@ struct IMergeTreeIndex
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG * filter_actions_dag, ContextPtr context) const = 0;
-
-    /// The vector similarity index overrides this method
-    virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * /*filter_actions_dag*/, ContextPtr /*context*/,
-        const std::optional<VectorSearchParameters> & /*parameters*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "createIndexCondition with vector search parameters is not implemented for index of type {}", index.type);
-    }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
 

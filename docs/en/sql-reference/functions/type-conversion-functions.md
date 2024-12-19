@@ -121,8 +121,8 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.
+If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs. 
+This is not considered an error.  
 For example: `SELECT toInt8(128) == -128;`.
 :::
 
@@ -193,7 +193,7 @@ This is not considered an error.
 - 8-bit integer value if successful, otherwise `0`. [Int8](../data-types/int-uint.md).
 
 :::note
-The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
+The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers. 
 :::
 
 **Example**
@@ -370,7 +370,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toInt16(32768) == -32768;`.
 :::
 
@@ -492,7 +492,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -555,7 +555,7 @@ Arguments for which the default value is returned:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrDefault('0xc0fe', CAST('-1', 'Int16'));`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -617,8 +617,8 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows. 
+This is not considered an error.  
 For example: `SELECT toInt32(2147483648) == -2147483648;`
 :::
 
@@ -680,7 +680,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -739,7 +739,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -802,7 +802,7 @@ Arguments for which the default value is returned:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrDefault('0xc0fe', CAST('-1', 'Int32'));`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -864,8 +864,8 @@ Unsupported types:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows. 
+This is not considered an error.  
 For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
 :::
 
@@ -927,7 +927,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -987,7 +987,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1112,7 +1112,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), the result over or under flows. 
 This is not considered an error.
 :::
 
@@ -1234,7 +1234,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1298,7 +1298,7 @@ Arguments for which the default value is returned:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrDefault('0xc0fe', CAST('-1', 'Int128'));`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int128](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1360,7 +1360,7 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), the result over or under flows.
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), the result over or under flows. 
 This is not considered an error.
 :::
 
@@ -1422,7 +1422,7 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrZero('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1482,7 +1482,7 @@ Unsupported arguments (return `\N`)
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
 
 :::note
-If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs.
+If the input value cannot be represented within the bounds of [Int256](../data-types/int-uint.md), overflow or underflow of the result occurs. 
 This is not considered an error.
 :::
 
@@ -1608,7 +1608,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toUInt8(256) == 0;`.
 :::
 
@@ -1856,7 +1856,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toUInt16(65536) == 0;`.
 :::
 
@@ -2104,7 +2104,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toUInt32(4294967296) == 0;`
 :::
 
@@ -2353,7 +2353,7 @@ Unsupported types:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.
+This is not considered an error.  
 For example: `SELECT toUInt64(18446744073709551616) == 0;`
 :::
 
@@ -3691,8 +3691,8 @@ toDateTime(expr[, time_zone ])
 - `time_zone` — Time zone. [String](../data-types/string.md).
 
 :::note
-If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
-If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
+If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).  
+If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.  
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
 :::
 
@@ -4063,7 +4063,7 @@ Result:
 
 ## toDateTime64OrDefault
 
-Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md),
+Like [toDateTime64](#todatetime64), this function converts an input value to a value of type [DateTime64](../data-types/datetime64.md), 
 but returns either the default value of [DateTime64](../data-types/datetime64.md)
 or the provided default if an invalid argument is received.
 
@@ -4132,15 +4132,9 @@ Unsupported arguments:
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
 
 :::note
-An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`.
-Excessive digits in a fraction are discarded (not rounded).
+An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`: `( -1 * 10^(9 - S), 1 * 10^(9 - S) )`. 
+Excessive digits in a fraction are discarded (not rounded). 
 Excessive digits in the integer part will lead to an exception.
-:::
-
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal32(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal32('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4334,12 +4328,6 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal32OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal32OrDefault('1.15', 2) = 1.15`
-:::
-
 **Returned value**
 
 - Value of type `Decimal(9, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal32(S)](../data-types/decimal.md).
@@ -4401,12 +4389,6 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`: `( -1 * 10^(18 - S), 1 * 10^(18 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
-
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal64(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal64('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4600,12 +4582,6 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal64OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal64OrDefault('1.15', 2) = 1.15`
-:::
-
 **Returned value**
 
 - Value of type `Decimal(18, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal64(S)](../data-types/decimal.md).
@@ -4667,12 +4643,6 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`: `( -1 * 10^(38 - S), 1 * 10^(38 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
-
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal128(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal128('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -4866,12 +4836,6 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal128OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal128OrDefault('1.15', 2) = 1.15`
-:::
-
 **Returned value**
 
 - Value of type `Decimal(38, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal128(S)](../data-types/decimal.md).
@@ -4933,12 +4897,6 @@ Unsupported arguments:
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`: `( -1 * 10^(76 - S), 1 * 10^(76 - S) )`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-:::
-
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal256(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal256('1.15', 2) = 1.15`
 :::
 
 **Returned value**
@@ -5132,12 +5090,6 @@ Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an error.
 :::
 
-:::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal256OrDefault(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
-You can use a String input so the operations use the underlying integer type: `toDecimal256OrDefault('1.15', 2) = 1.15`
-:::
-
 **Returned value**
 
 - Value of type `Decimal(76, S)` if successful, otherwise returns the default value if passed or `0` if not. [Decimal256(S)](../data-types/decimal.md).
@@ -5230,51 +5182,14 @@ Result:
 
 Also see the `toUnixTimestamp` function.
 
-## toFixedString
+## toFixedString(s, N)
 
 Converts a [String](../data-types/string.md) type argument to a [FixedString(N)](../data-types/fixedstring.md) type (a string of fixed length N).
 If the string has fewer bytes than N, it is padded with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
-**Syntax**
-
-```sql
-toFixedString(s, N)
-```
-
-**Arguments**
-
-- `s` — A String to convert to a fixed string. [String](../data-types/string.md).
-- `N` — Length N. [UInt8](../data-types/int-uint.md)
-
-**Returned value**
-
-- An N length fixed string of `s`. [FixedString](../data-types/fixedstring.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT toFixedString('foo', 8) AS s;
-```
-
-Result:
-
-```response
-┌─s─────────────┐
-│ foo\0\0\0\0\0 │
-└───────────────┘
-```
-
-## toStringCutToZero
+## toStringCutToZero(s)
 
 Accepts a String or FixedString argument. Returns the String with the content truncated at the first zero byte found.
-
-**Syntax**
-
-```sql
-toStringCutToZero(s)
-```
 
 **Example**
 
@@ -5346,7 +5261,7 @@ Result:
 
 ## reinterpretAsUInt8
 
-Performs byte reinterpretation by treating the input value as a value of type UInt8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5384,7 +5299,7 @@ Result:
 
 ## reinterpretAsUInt16
 
-Performs byte reinterpretation by treating the input value as a value of type UInt16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5460,7 +5375,7 @@ Result:
 
 ## reinterpretAsUInt64
 
-Performs byte reinterpretation by treating the input value as a value of type UInt64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5498,7 +5413,7 @@ Result:
 
 ## reinterpretAsUInt128
 
-Performs byte reinterpretation by treating the input value as a value of type UInt128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5536,7 +5451,7 @@ Result:
 
 ## reinterpretAsUInt256
 
-Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
 
 **Syntax**
 
@@ -5574,7 +5489,7 @@ Result:
 
 ## reinterpretAsInt8
 
-Performs byte reinterpretation by treating the input value as a value of type Int8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int8. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5612,7 +5527,7 @@ Result:
 
 ## reinterpretAsInt16
 
-Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
 
 **Syntax**
 
@@ -5650,7 +5565,7 @@ Result:
 
 ## reinterpretAsInt32
 
-Performs byte reinterpretation by treating the input value as a value of type Int32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5688,7 +5603,7 @@ Result:
 
 ## reinterpretAsInt64
 
-Performs byte reinterpretation by treating the input value as a value of type Int64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5726,7 +5641,7 @@ Result:
 
 ## reinterpretAsInt128
 
-Performs byte reinterpretation by treating the input value as a value of type Int128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int128. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5764,7 +5679,7 @@ Result:
 
 ## reinterpretAsInt256
 
-Performs byte reinterpretation by treating the input value as a value of type Int256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Int256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5802,7 +5717,7 @@ Result:
 
 ## reinterpretAsFloat32
 
-Performs byte reinterpretation by treating the input value as a value of type Float32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Float32. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5836,7 +5751,7 @@ Result:
 
 ## reinterpretAsFloat64
 
-Performs byte reinterpretation by treating the input value as a value of type Float64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
+Performs byte reinterpretation by treating the input value as a value of type Float64. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless. 
 
 **Syntax**
 
@@ -5889,7 +5804,7 @@ reinterpretAsDate(x)
 **Implementation details**
 
 :::note
-If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. 
 :::
 
 **Example**
@@ -5929,7 +5844,7 @@ reinterpretAsDateTime(x)
 **Implementation details**
 
 :::note
-If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. 
 :::
 
 **Example**
@@ -5971,8 +5886,8 @@ reinterpretAsString(x)
 Query:
 
 ```sql
-SELECT
-    reinterpretAsString(toDateTime('1970-01-01 01:01:05')),
+SELECT 
+    reinterpretAsString(toDateTime('1970-01-01 01:01:05')), 
     reinterpretAsString(toDate('1970-03-07'));
 ```
 
@@ -6007,8 +5922,8 @@ reinterpretAsFixedString(x)
 Query:
 
 ```sql
-SELECT
-    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')),
+SELECT 
+    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')), 
     reinterpretAsFixedString(toDate('1970-03-07'));
 ```
 
@@ -6257,7 +6172,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T)
 
-Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the cast value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the casted value is not representable in the target type.
 
 **Syntax**
 
@@ -6310,7 +6225,7 @@ Result:
 
 ## accurateCastOrDefault(x, T[, default_value])
 
-Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the cast value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the casted value is not representable in the target type.
 
 **Syntax**
 
@@ -6787,11 +6702,11 @@ parseDateTime(str[, format[, timezone]])
 
 - `str` — The String to be parsed
 - `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
-- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
 
-Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a MySQL-style format string.
+Returns DateTime values parsed from input string according to a MySQL style format string.
 
 **Supported format specifiers**
 
@@ -6836,11 +6751,11 @@ parseDateTimeInJodaSyntax(str[, format[, timezone]])
 
 - `str` — The String to be parsed
 - `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
-- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). Optional.
 
 **Returned value(s)**
 
-Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a Joda-style format string.
+Returns DateTime values parsed from input string according to a Joda style format.
 
 **Supported format specifiers**
 
@@ -6866,64 +6781,6 @@ Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that 
 ## parseDateTimeInJodaSyntaxOrNull
 
 Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
-
-## parseDateTime64
-
-Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
-
-**Syntax**
-
-``` sql
-parseDateTime64(str[, format[, timezone]])
-```
-
-**Arguments**
-
-- `str` — The String to be parsed.
-- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
-- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
-
-**Returned value(s)**
-
-Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a MySQL-style format string.
-The precision of the returned value is 6.
-
-## parseDateTime64OrZero
-
-Same as for [parseDateTime64](#parsedatetime64) except that it returns zero date when it encounters a date format that cannot be processed.
-
-## parseDateTime64OrNull
-
-Same as for [parseDateTime64](#parsedatetime64) except that it returns `NULL` when it encounters a date format that cannot be processed.
-
-## parseDateTime64InJodaSyntax
-
-Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [Joda format string](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
-
-**Syntax**
-
-``` sql
-parseDateTime64InJodaSyntax(str[, format[, timezone]])
-```
-
-**Arguments**
-
-- `str` — The String to be parsed.
-- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
-- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
-
-**Returned value(s)**
-
-Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a Joda-style format string.
-The precision of the returned value equal to the number of `S` placeholders in the format string (but at most 6).
-
-## parseDateTime64InJodaSyntaxOrZero
-
-Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns zero date when it encounters a date format that cannot be processed.
-
-## parseDateTime64InJodaSyntaxOrNull
-
-Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
@@ -7101,7 +6958,7 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 
 - `time_string` — String containing a date or date with time to convert. [String](../data-types/string.md).
 - `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md/#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -7171,7 +7028,7 @@ toLowCardinality(expr)
 
 **Returned values**
 
-- Result of `expr`. [LowCardinality](../data-types/lowcardinality.md) of the type of `expr`.
+- Result of `expr`. [LowCardinality](../data-types/lowcardinality.md) of the type of `expr`. 
 
 **Example**
 
@@ -7187,45 +7044,6 @@ Result:
 ┌─toLowCardinality('1')─┐
 │ 1                     │
 └───────────────────────┘
-```
-
-## toUnixTimestamp64Second
-
-Converts a `DateTime64` to a `Int64` value with fixed second precision. The input value is scaled up or down appropriately depending on its precision.
-
-:::note
-The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
-:::
-
-**Syntax**
-
-```sql
-toUnixTimestamp64Second(value)
-```
-
-**Arguments**
-
-- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
-
-**Returned value**
-
-- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-WITH toDateTime64('2009-02-13 23:31:31.011', 3, 'UTC') AS dt64
-SELECT toUnixTimestamp64Second(dt64);
-```
-
-Result:
-
-```response
-┌─toUnixTimestamp64Second(dt64)─┐
-│                    1234567891 │
-└───────────────────────────────┘
 ```
 
 ## toUnixTimestamp64Milli
@@ -7345,48 +7163,6 @@ Result:
 └─────────────────────────────┘
 ```
 
-## fromUnixTimestamp64Second
-
-Converts an `Int64` to a `DateTime64` value with fixed second precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
-
-:::note
-Please note that input value is treated as a UTC timestamp, not timestamp at the given (or implicit) timezone.
-:::
-
-**Syntax**
-
-``` sql
-fromUnixTimestamp64Second(value[, timezone])
-```
-
-**Arguments**
-
-- `value` — value with any precision. [Int64](../data-types/int-uint.md).
-- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
-
-**Returned value**
-
-- `value` converted to DateTime64 with precision `0`. [DateTime64](../data-types/datetime64.md).
-
-**Example**
-
-Query:
-
-``` sql
-WITH CAST(1733935988, 'Int64') AS i64
-SELECT
-    fromUnixTimestamp64Second(i64, 'UTC') AS x,
-    toTypeName(x);
-```
-
-Result:
-
-```response
-┌───────────────────x─┬─toTypeName(x)────────┐
-│ 2024-12-11 16:53:08 │ DateTime64(0, 'UTC') │
-└─────────────────────┴──────────────────────┘
-```
-
 ## fromUnixTimestamp64Milli
 
 Converts an `Int64` to a `DateTime64` value with fixed millisecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
@@ -7415,7 +7191,7 @@ fromUnixTimestamp64Milli(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1733935988123, 'Int64') AS i64
+WITH CAST(1234567891011, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Milli(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7425,7 +7201,7 @@ Result:
 
 ```response
 ┌───────────────────────x─┬─toTypeName(x)────────┐
-│ 2024-12-11 16:53:08.123 │ DateTime64(3, 'UTC') │
+│ 2009-02-13 23:31:31.011 │ DateTime64(3, 'UTC') │
 └─────────────────────────┴──────────────────────┘
 ```
 
@@ -7457,7 +7233,7 @@ fromUnixTimestamp64Micro(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1733935988123456, 'Int64') AS i64
+WITH CAST(1234567891011, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Micro(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7467,13 +7243,13 @@ Result:
 
 ```response
 ┌──────────────────────────x─┬─toTypeName(x)────────┐
-│ 2024-12-11 16:53:08.123456 │ DateTime64(6, 'UTC') │
+│ 1970-01-15 06:56:07.891011 │ DateTime64(6, 'UTC') │
 └────────────────────────────┴──────────────────────┘
 ```
 
 ## fromUnixTimestamp64Nano
 
-Converts an `Int64` to a `DateTime64` value with fixed nanosecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
+Converts an `Int64` to a `DateTime64` value with fixed nanosecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision. 
 
 :::note
 Please note that input value is treated as a UTC timestamp, not timestamp at the given (or implicit) timezone.
@@ -7499,7 +7275,7 @@ fromUnixTimestamp64Nano(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1733935988123456789, 'Int64') AS i64
+WITH CAST(1234567891011, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Nano(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7509,7 +7285,7 @@ Result:
 
 ```response
 ┌─────────────────────────────x─┬─toTypeName(x)────────┐
-│ 2024-12-11 16:53:08.123456789 │ DateTime64(9, 'UTC') │
+│ 1970-01-01 00:20:34.567891011 │ DateTime64(9, 'UTC') │
 └───────────────────────────────┴──────────────────────┘
 ```
 

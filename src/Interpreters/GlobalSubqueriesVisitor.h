@@ -231,7 +231,7 @@ private:
                         data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                         return;
                     }
-                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+                    else if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
                 }
             }
@@ -289,7 +289,7 @@ private:
                         data.getContext()->getQueryContext()->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                         return;
                     }
-                    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+                    else if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOIN with parallel replicas is only supported with subqueries");
                 }
             }
@@ -300,7 +300,7 @@ private:
             /// This code is partial copy-paste from ExpressionAnalyzer.
             if (data.table_join)
             {
-                auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext(), data.prepared_sets);
+                auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext());
                 NamesWithAliases required_columns_with_aliases = data.table_join->getRequiredColumns(
                     Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 

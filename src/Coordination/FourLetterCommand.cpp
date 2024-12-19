@@ -11,10 +11,9 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include "Common/ZooKeeper/KeeperFeatureFlags.h"
+#include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
@@ -237,15 +236,17 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             allow_list.push_back(ALLOW_LIST_ALL);
             return;
         }
-
-        if (commands.contains(IFourLetterCommand::toCode(token)))
-        {
-            allow_list.push_back(IFourLetterCommand::toCode(token));
-        }
         else
         {
-            auto log = getLogger("FourLetterCommandFactory");
-            LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
+            if (commands.contains(IFourLetterCommand::toCode(token)))
+            {
+                allow_list.push_back(IFourLetterCommand::toCode(token));
+            }
+            else
+            {
+                auto log = getLogger("FourLetterCommandFactory");
+                LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
+            }
         }
     }
 }
@@ -258,9 +259,7 @@ String RuokCommand::run()
 namespace
 {
 
-using StringBuffer = DB::WriteBufferFromOwnString;
-
-void print(StringBuffer & buf, const String & key, const String & value)
+void print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
 {
     writeText("zk_", buf);
     writeText(key, buf);
@@ -269,7 +268,7 @@ void print(StringBuffer & buf, const String & key, const String & value)
     writeText('\n', buf);
 }
 
-void print(StringBuffer & buf, const String & key, uint64_t value)
+void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t value)
 {
     print(buf, key, toString(value));
 }
@@ -535,7 +534,8 @@ String IsReadOnlyCommand::run()
 {
     if (keeper_dispatcher.isObserver())
         return "ro";
-    return "rw";
+    else
+        return "rw";
 }
 
 String RecoveryCommand::run()

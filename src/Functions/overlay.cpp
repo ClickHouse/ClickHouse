@@ -48,11 +48,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (input_rows_count == 0)
@@ -199,12 +194,16 @@ private:
         {
             if (static_cast<size_t>(offset) > input_size + 1)
                 return input_size;
-            return offset - 1;
+            else
+                return offset - 1;
         }
-
-        if (input_size < -static_cast<size_t>(offset))
-            return 0;
-        return input_size + offset;
+        else
+        {
+            if (input_size < -static_cast<size_t>(offset))
+                return 0;
+            else
+                return input_size + offset;
+        }
     }
 
     /// get character count of a slice [data, data+bytes)

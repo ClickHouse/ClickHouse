@@ -111,8 +111,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
     std::lock_guard lock(reload_mutex);
 
     FilesChangesTracker new_files = getNewFileList();
-    const bool is_config_changed = new_files.isDifferOrNewerThan(files);
-    if (force || need_reload_from_zk || is_config_changed)
+    if (force || need_reload_from_zk || new_files.isDifferOrNewerThan(files))
     {
         ConfigProcessor config_processor(config_path);
         ConfigProcessor::LoadedConfig loaded_config;
@@ -121,10 +120,10 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
 
         try
         {
-            loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
+            loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                    zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
+                    zk_node_cache, zk_changed_event, fallback_to_preprocessed);
         }
         catch (const Coordination::Exception & e)
         {
