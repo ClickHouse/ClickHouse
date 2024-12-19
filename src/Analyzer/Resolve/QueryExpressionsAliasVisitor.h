@@ -91,7 +91,7 @@ private:
 
         if (is_lambda_node)
         {
-            if (aliases.alias_name_to_expression_node->contains(alias))
+            if (aliases.alias_name_to_expression_node.contains(alias))
                 addDuplicatingAlias(node);
 
             auto [_, inserted] = aliases.alias_name_to_lambda_node.insert(std::make_pair(alias, node));
@@ -104,7 +104,7 @@ private:
         if (aliases.alias_name_to_lambda_node.contains(alias))
             addDuplicatingAlias(node);
 
-        auto [_, inserted] = aliases.alias_name_to_expression_node->insert(std::make_pair(alias, node));
+        auto [_, inserted] = aliases.alias_name_to_expression_node.insert(std::make_pair(alias, node));
         if (!inserted)
             addDuplicatingAlias(node);
 
