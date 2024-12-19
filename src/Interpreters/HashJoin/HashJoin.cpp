@@ -124,13 +124,15 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     }
 }
 
+static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps);
+
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
     const Block & right_sample_block_,
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps_)
+    bool use_two_level_maps)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -144,7 +146,6 @@ HashJoin::HashJoin(
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
-    , use_two_level_maps(use_two_level_maps_)
 {
     LOG_TRACE(
         log,
@@ -237,35 +238,10 @@ HashJoin::HashJoin(
         dataMapInit(maps);
 }
 
-HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps)
+static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
-    if (!use_two_level_maps)
-        return chooseMethod(kind, key_columns, key_sizes);
+    using Type = HashJoin::Type;
 
-    // if `use_two_level_maps == false` returns two-level version of the map
-    switch (auto type = chooseMethod(kind, key_columns, key_sizes))
-    {
-        case Type::key32:
-            return Type::two_level_key32;
-        case Type::key64:
-            return Type::two_level_key64;
-        case Type::keys128:
-            return Type::two_level_keys128;
-        case Type::keys256:
-            return Type::two_level_keys256;
-        case Type::key_string:
-            return Type::two_level_key_string;
-        case Type::key_fixed_string:
-            return Type::two_level_key_fixed_string;
-        case Type::hashed:
-            return Type::two_level_hashed;
-        default:
-            return type;
-    }
-}
-
-HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
-{
     size_t keys_size = key_columns.size();
 
     if (keys_size == 0)
@@ -335,6 +311,35 @@ HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_c
 
     /// Otherwise, will use set of cryptographic hashes of unambiguously serialized values.
     return Type::hashed;
+}
+
+static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps)
+{
+    using Type = HashJoin::Type;
+
+    if (!use_two_level_maps)
+        return chooseMethod(kind, key_columns, key_sizes);
+
+    // if `use_two_level_maps == false` returns two-level version of the map
+    switch (auto type = chooseMethod(kind, key_columns, key_sizes))
+    {
+        case Type::key32:
+            return Type::two_level_key32;
+        case Type::key64:
+            return Type::two_level_key64;
+        case Type::keys128:
+            return Type::two_level_keys128;
+        case Type::keys256:
+            return Type::two_level_keys256;
+        case Type::key_string:
+            return Type::two_level_key_string;
+        case Type::key_fixed_string:
+            return Type::two_level_key_fixed_string;
+        case Type::hashed:
+            return Type::two_level_hashed;
+        default:
+            return type;
+    }
 }
 
 template <typename KeyGetter, bool is_asof_join>

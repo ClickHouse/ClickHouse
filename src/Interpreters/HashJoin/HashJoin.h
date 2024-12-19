@@ -291,7 +291,7 @@ public:
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
 
-        void create(Type which, size_t reserve = 0)
+        void create(Type which, size_t reserve)
         {
             switch (which)
             {
@@ -300,16 +300,17 @@ public:
                 case Type::CROSS:
                     break;
 
-#define M(NAME) \
-    case Type::NAME: \
-        if constexpr (HasConstructorOfNumberOfElements<typename decltype(NAME)::element_type>::value) \
-            NAME = reserve ? std::make_shared<typename decltype(NAME)::element_type>(reserve) \
-                           : std::make_shared<typename decltype(NAME)::element_type>(); \
-        else \
-            NAME = std::make_shared<typename decltype(NAME)::element_type>(); \
-        break;
-                    APPLY_FOR_JOIN_VARIANTS(M)
-#undef M
+            #define M(NAME)                                                                                       \
+                case Type::NAME:                                                                                  \
+                    if constexpr (HasConstructorOfNumberOfElements<typename decltype(NAME)::element_type>::value) \
+                        NAME = reserve ? std::make_shared<typename decltype(NAME)::element_type>(reserve)         \
+                                       : std::make_shared<typename decltype(NAME)::element_type>();               \
+                    else                                                                                          \
+                        NAME = std::make_shared<typename decltype(NAME)::element_type>();                         \
+                    break;
+
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
             }
         }
 
@@ -512,16 +513,11 @@ private:
     /// If set HashJoin instance is not available for modification (addBlockToJoin)
     TableLockHolder storage_join_lock = nullptr;
 
-    bool use_two_level_maps = false;
-
     void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
-
-    static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_map);
-    static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
 

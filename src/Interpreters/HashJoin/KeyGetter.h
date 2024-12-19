@@ -26,7 +26,6 @@ struct KeyGetterForTypeImpl;
 
 constexpr bool use_offset = true;
 
-// clang-format off
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin::Type::key8, Value, Mapped>
 {
     using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false, use_offset>;

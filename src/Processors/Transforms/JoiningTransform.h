@@ -27,7 +27,7 @@ public:
 
 private:
     const size_t total;
-    std::atomic<size_t> finished{0};
+    std::atomic_size_t finished{0};
 };
 
 using FinishCounterPtr = std::shared_ptr<FinishCounter>;
@@ -125,8 +125,8 @@ public:
     {
     }
 
-    IBlocksStreamPtr delayed_blocks = nullptr;
-    FinishCounterPtr left_delayed_stream_finish_counter = nullptr;
+    IBlocksStreamPtr delayed_blocks;
+    FinishCounterPtr left_delayed_stream_finish_counter;
 };
 
 using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;

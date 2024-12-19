@@ -79,6 +79,11 @@ UInt32 toPowerOfTwo(UInt32 x)
     return static_cast<UInt32>(1) << (32 - std::countl_zero(x - 1));
 }
 
+HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::InternalHashJoin> & join)
+{
+    return join->data->getJoinedData();
+}
+
 void reserveSpaceInHashMaps(
     const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins,
     ThreadPool * pool,
@@ -125,7 +130,7 @@ void reserveSpaceInHashMaps(
                         CurrentThread::attachToGroupIfDetached(thread_group);
                     setThreadName("ConcurrentJoin");
 
-                    const auto & right_data = hash_joins[i]->data->getJoinedData();
+                    const auto & right_data = getData(hash_joins[i]);
                     std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, i); }, right_data->maps.at(0));
                 });
         }
@@ -590,7 +595,6 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     if (!hash_joins[0]->data->twoLevelMapIsUsed())
         return;
 
-    auto & join = hash_joins[0]->data;
     for (size_t i = 1; i < slots; ++i)
     {
         auto move_buckets = [&](auto & lhs_map, HashJoin::Type type, auto & rhs_map, size_t idx)
@@ -622,14 +626,14 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             [&](auto & lhs_map)
             {
                 using T = std::decay_t<decltype(lhs_map)>;
-                move_buckets(lhs_map, join->getJoinedData()->type, std::get<T>(hash_joins[i]->data->getJoinedData()->maps.at(0)), i);
+                move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
             },
-            join->getJoinedData()->maps.at(0));
+            getData(hash_joins[0])->maps.at(0));
     }
 
     for (size_t i = 1; i < slots; ++i)
     {
-        hash_joins[i]->data->getJoinedData()->maps = hash_joins[0]->data->getJoinedData()->maps;
+        getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
         hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
     }
 }
