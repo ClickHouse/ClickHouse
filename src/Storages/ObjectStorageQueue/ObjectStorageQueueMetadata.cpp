@@ -120,12 +120,14 @@ private:
 };
 
 ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
+    ObjectStorageType storage_type_,
     const fs::path & zookeeper_path_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
     size_t cleanup_interval_min_ms_,
     size_t cleanup_interval_max_ms_,
     size_t keeper_multiread_batch_size_)
     : table_metadata(table_metadata_)
+    , storage_type(storage_type_)
     , mode(table_metadata.getMode())
     , zookeeper_path(zookeeper_path_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
