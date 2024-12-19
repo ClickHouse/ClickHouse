@@ -260,7 +260,7 @@ select parseDateTimeInJodaSyntax('2024-10-09 10:30:10ABCD', 'yyyy-MM-dd HH:mm:ss
 -- Tests for parseDateTime64InJodaSyntax, these are not systematic
 
 select parseDateTime64InJodaSyntax('', '') = toDateTime64('1970-01-01 00:00:00', 0);
-select parseDateTime64InJodaSyntax('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64InJodaSyntax('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS');
 select parseDateTime64InJodaSyntax('+0000', 'Z') = toDateTime64('1970-01-01 00:00:00', 0);
 select parseDateTime64InJodaSyntax('08:01', 'HH:ss') = toDateTime64('1970-01-01 08:00:01', 0);
 select parseDateTime64InJodaSyntax('2024-01-02', 'yyyy-MM-dd') = toDateTime64('2024-01-02 00:00:00', 0);
@@ -309,7 +309,7 @@ select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456America/Los_
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 'yyyy-dd-MM HH:mm:ss.SSS') = toDateTime64('2024-09-10 10:30:10.123', 3);
 select parseDateTime64InJodaSyntaxOrNull('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz') is NULL;
 select parseDateTime64InJodaSyntaxOrNull('', '') = toDateTime64('1970-01-01 00:00:00', 0);
-select parseDateTime64InJodaSyntaxOrNull('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') is NULL;
+select parseDateTime64InJodaSyntaxOrNull('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS');
 
 -- parseDateTime64InJodaSyntaxOrZero
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2024-10-09 10:30:10.123', 3);
@@ -321,7 +321,7 @@ select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 'yyyy-dd-MM 
 select parseDateTime64InJodaSyntaxOrZero('wrong value', 'yyyy-dd-MM HH:mm:ss.SSS') = toDateTime64('1970-01-01 00:00:00.000', 3);
 select parseDateTime64InJodaSyntaxOrZero('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz') = toDateTime64('1970-01-01 00:00:00', 0);
 select parseDateTime64InJodaSyntaxOrZero('', '') = toDateTime64('1970-01-01 00:00:00', 0);
-select parseDateTime64InJodaSyntaxOrZero('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('1970-01-01 00:00:00.000', 3);
+select parseDateTime64InJodaSyntaxOrZero('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2177-10-09 10:30:10.123', 3);
 -- -------------------------------------------------------------------------------------------------------------------------
 
 -- { echoOff }
