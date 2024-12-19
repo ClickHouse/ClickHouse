@@ -109,9 +109,19 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             auto name = field->getValue<String>("name");
             bool required = field->getValue<bool>("required");
             clickhouse_schema->push_back(NameAndTypePair{name, getFieldType(field, "type", required)});
+            clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>("id")}]
+                = NameAndTypePair{name, getFieldType(field, "type", required)};
         }
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
     }
+}
+
+NameAndTypePair IcebergSchemaProcessor::getFieldCharacteristics(Int32 schema_version, Int32 source_id) const
+{
+    auto it = clickhouse_types_by_source_ids.find({schema_version, source_id});
+    if (it == clickhouse_types_by_source_ids.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field with source id {} is unknown", source_id);
+    return it->second;
 }
 
 

@@ -76,6 +76,13 @@ public:
         return std::nullopt;
     }
 
+    void implementPartitionPruning(const ActionsDAG & filter_dag) override
+    {
+        if (!current_metadata || !current_metadata->supportsPartitionPruning())
+            return;
+        BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
+    }
+
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
     {
         if (!current_metadata)

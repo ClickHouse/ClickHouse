@@ -21,6 +21,13 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
+#include <Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+extern const Event IcebergPartitionPrunnedFiles;
+}
 namespace DB
 {
 
@@ -240,7 +247,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value() != current_snapshot->getName())))
     {
         current_snapshot = getSnapshot(manifest_list_file.value());
-        cached_files_for_current_snapshot = std::nullopt;
+        cached_unprunned_files_for_current_snapshot = std::nullopt;
     }
     current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
     return true;
@@ -386,34 +393,128 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) 
     return IcebergSnapshot{manifest_lists_by_name.emplace(manifest_list_file, initializeManifestList(manifest_list_file)).first};
 }
 
+SpecificSchemaPartitionInfo
+IcebergMetadata::getSpecificPartitionInfo(const ManifestFileEntry & manifest_file_entry, Int32 schema_version) const
+{
+    SpecificSchemaPartitionInfo specific_info;
 
-Strings IcebergMetadata::getDataFiles() const
+    for (size_t i = 0; i < manifest_file_entry.getContent().getPartitionColumns().size(); ++i)
+    {
+        const auto & manifest_content = manifest_file_entry.getContent();
+        if (manifest_content.getPartitionTransforms()[i] == PartitionTransform::Unsupported
+            || manifest_content.getPartitionTransforms()[i] == PartitionTransform::Void)
+        {
+            continue;
+        }
+        Int32 source_id = manifest_file_entry.getContent().getPartitionSourceIds()[i];
+        NameAndTypePair name_and_type = schema_processor.getFieldCharacteristics(schema_version, source_id);
+        size_t column_size = manifest_file_entry.getContent().getPartitionColumns()[i]->size();
+        if (specific_info.ranges.empty())
+        {
+            specific_info.ranges.resize(column_size);
+        }
+        else
+        {
+            assert(specific_info.ranges.size() == column_size);
+        }
+        specific_info.partition_names_and_types.push_back(name_and_type);
+        for (size_t j = 0; j < column_size; ++j)
+        {
+            specific_info.ranges[j].push_back(getPartitionRange(
+                manifest_content.getPartitionTransforms()[i],
+                static_cast<UInt32>(j),
+                manifest_content.getPartitionColumns()[i],
+                name_and_type.type));
+        }
+    }
+    return specific_info;
+}
+
+std::vector<bool> IcebergMetadata::getPruningMask(const ManifestFileEntry & manifest_file_entry, const ActionsDAG * filter_dag) const
+{
+    if (filter_dag == nullptr)
+    {
+        return {};
+    }
+    SpecificSchemaPartitionInfo specific_info = getSpecificPartitionInfo(manifest_file_entry, current_schema_id);
+    std::vector<bool> pruning_mask(specific_info.ranges.size(), true);
+
+    if (!specific_info.partition_names_and_types.empty())
+    {
+        ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
+            ActionsDAG(specific_info.partition_names_and_types), ExpressionActionsSettings::fromContext(getContext()));
+        const KeyCondition partition_key_condition(
+            filter_dag, getContext(), specific_info.partition_names_and_types.getNames(), partition_minmax_idx_expr);
+        for (size_t j = 0; j < specific_info.ranges.size(); ++j)
+        {
+            if (!partition_key_condition.checkInHyperrectangle(specific_info.ranges[j], specific_info.partition_names_and_types.getTypes())
+                     .can_be_true)
+            {
+                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
+                pruning_mask[j] = false;
+            }
+            else
+            {
+                pruning_mask[j] = true;
+            }
+        }
+    }
+    return pruning_mask;
+}
+
+Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 {
     if (!current_snapshot)
     {
         return {};
     }
 
-    if (cached_files_for_current_snapshot.has_value())
+    auto data_files_getter = [&]()
     {
-        return cached_files_for_current_snapshot.value();
-    }
-
-    Strings data_files;
-    for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
-    {
-        for (const auto & data_file : manifest_entry.getContent().getDataFiles())
+        Strings data_files;
+        for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
         {
-            if (data_file.status != ManifestEntryStatus::DELETED)
+            auto pruning_mask = getPruningMask(manifest_entry, filter_dag);
+            const auto & data_files_in_manifest = manifest_entry.getContent().getDataFiles();
+            for (size_t i = 0; i < data_files_in_manifest.size(); ++i)
             {
-                data_files.push_back(data_file.data_file_name);
+                if (!filter_dag || pruning_mask.empty() || pruning_mask[i])
+                {
+                    if (data_files_in_manifest[i].status != ManifestEntryStatus::DELETED)
+                    {
+                        data_files.push_back(data_files_in_manifest[i].data_file_name);
+                    }
+                }
             }
         }
+        return data_files;
+    };
+
+    if (!filter_dag)
+    {
+        if (cached_unprunned_files_for_current_snapshot.has_value())
+        {
+            return cached_unprunned_files_for_current_snapshot.value();
+        }
+        else
+        {
+            return (cached_unprunned_files_for_current_snapshot = data_files_getter()).value();
+        }
     }
+    else
+    {
+        return data_files_getter();
+    }
+}
 
-    cached_files_for_current_snapshot.emplace(std::move(data_files));
-
-    return cached_files_for_current_snapshot.value();
+Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+    }
+    return getDataFilesImpl(&filter_dag);
 }
 }
 

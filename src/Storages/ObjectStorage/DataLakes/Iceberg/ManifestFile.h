@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <Common/Exception.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
 namespace Iceberg
 {
@@ -42,6 +43,9 @@ public:
 
     const std::vector<DataFileEntry> & getDataFiles() const;
     Int32 getSchemaId() const;
+    const std::vector<DB::ColumnPtr> & getPartitionColumns() const;
+    const std::vector<PartitionTransform> & getPartitionTransforms() const;
+    const std::vector<Int32> & getPartitionSourceIds() const;
 
 private:
     std::unique_ptr<ManifestFileContentImpl> impl;
