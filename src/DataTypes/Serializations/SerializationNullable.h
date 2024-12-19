@@ -114,7 +114,6 @@ public:
     static bool tryDeserializeNullText(ReadBuffer & istr);
     static void serializeNullXML(WriteBuffer & ostr);
 
-private:
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const ColumnPtr null_map;
@@ -122,7 +121,7 @@ private:
         explicit SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
 };
