@@ -115,8 +115,12 @@ namespace
                 auto & argument_nodes = table_function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
 
                 for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-                    if (auto * constant = argument_nodes[n]->as<ConstantNode>())
-                        constant->setMaskId();
+                {
+                    if (secret_arguments.are_named)
+                        argument_nodes[n]->as<FunctionNode&>().getArguments().getNodes()[1]->as<ConstantNode&>().setMaskId();
+                    else
+                        argument_nodes[n]->as<ConstantNode&>().setMaskId();
+                }
             }
         }
     };

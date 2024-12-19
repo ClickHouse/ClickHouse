@@ -16,7 +16,6 @@ node = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
     with_azurite=True,
-    with_minio=True,
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
 
@@ -506,20 +505,20 @@ def test_table_functions():
             node.query(f"DROP TABLE {table_name}")
 
     # Check EXPLAIN QUERY TREE
-    for toggle, secret in enumerate(["[HIDDEN]", password]):
-        skip = ["mysql", "postgresql"]
+    secrets = [password, azure_account_key]
+    for toggle in range(2):
         for table_function in table_functions:
-            should_skip = any(
-                [table_function.startswith(prefix_to_skip) for prefix_to_skip in skip]
-            )
-            if not should_skip:
+            # check only table functions containing secrets
+            if any(word in table_function for word in secrets):
                 output = node.query(
-                    f"EXPLAIN QUERY TREE SELECT * FROM {table_function} {show_secrets}={toggle}"
+                    f"EXPLAIN QUERY TREE run_passes=0 SELECT * FROM {table_function} {show_secrets}={toggle}"
                 )
-                print(output)
-                assert secret in output
-                if not toggle:
-                    assert password not in output
+                is_secret_present = any(word in output for word in secrets)
+                if toggle:
+                    assert is_secret_present
+                else:
+                    assert not is_secret_present
+                    assert "[HIDDEN]" in output
 
 
 def test_table_function_ways_to_call():

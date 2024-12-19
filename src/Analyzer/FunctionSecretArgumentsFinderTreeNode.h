@@ -35,8 +35,8 @@ public:
         explicit ArgumentTreeNode(const IQueryTreeNode * argument_) : argument(argument_) {}
         std::unique_ptr<AbstractFunction> getFunction() const override
         {
-            if (const auto * f = argument->as<FunctionNodeType>())
-                return std::make_unique<FunctionTreeNodeImpl>(*f);
+            if (const auto * f = argument->as<FunctionNode>())
+                return std::make_unique<FunctionTreeNodeImpl<FunctionNode>>(*f);
             return nullptr;
         }
         bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
