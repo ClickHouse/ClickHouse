@@ -237,7 +237,7 @@ private:
     ColumnDependencies dependencies;
 
     /// For lightweight delete, record the where condition.
-    ASTPtr update_where_condition = nullptr;
+    ASTPtr update_where_condition;
 };
 
 }
