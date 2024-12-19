@@ -921,6 +921,20 @@ def test_mysql_ssl_auth(started_cluster):
         """
     )
 
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            DROP USER 'ssl_user'@'{}';
+            """.format(
+                node1.ip_address
+            )
+        )
+        cursor.execute(
+            """
+            FLUSH PRIVILEGES;
+            """
+        )
+
 
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
