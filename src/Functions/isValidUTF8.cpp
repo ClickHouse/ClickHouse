@@ -266,7 +266,7 @@ struct NameIsValidUTF8
 {
     static constexpr auto name = "isValidUTF8";
 };
-using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
+using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8, true, true>;
 
 REGISTER_FUNCTION(IsValidUTF8)
 {

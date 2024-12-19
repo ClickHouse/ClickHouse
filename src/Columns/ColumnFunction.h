@@ -16,6 +16,7 @@ namespace ErrorCodes
 
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+struct FunctionExecuteProfile;
 
 /** A column containing a lambda expression.
   * Contains an expression and captured columns, but not input arguments.
@@ -58,7 +59,10 @@ public:
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce() const;
+    ColumnWithTypeAndName reduce(FunctionExecuteProfile * profile = nullptr) const;
+    template<bool with_profile>
+    ColumnWithTypeAndName reduceImpl(FunctionExecuteProfile * profile) const;
+
 
     Field operator[](size_t n) const override;
 
