@@ -442,6 +442,7 @@ void executeQuery(
             not_optimized_cluster->getName());
 
         read_from_remote->setStepDescription("Read from remote replica");
+        read_from_remote->setRemoteFunction(is_remote_function);
         plan->addStep(std::move(read_from_remote));
         plan->addInterpreterContext(new_context);
         plans.emplace_back(std::move(plan));
