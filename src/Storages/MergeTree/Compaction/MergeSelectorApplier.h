@@ -56,8 +56,7 @@ public:
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
         time_t current_time,
-        const LoggerPtr & log,
-        PreformattedMessage & out_disable_reason) const;
+        const LoggerPtr & log) const;
 };
 
 }

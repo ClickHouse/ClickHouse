@@ -13,13 +13,19 @@
 namespace DB
 {
 
-enum class SelectPartsFailureDecision : uint8_t
-{
-    CANNOT_SELECT = 0,
-    NOTHING_TO_MERGE = 1,
+struct SelectMergeFailure {
+    enum class Reason : uint8_t
+    {
+        CANNOT_SELECT = 0,
+        NOTHING_TO_MERGE = 1,
+    };
+
+    Reason reason;
+    PreformattedMessage explanation;
 };
 
-using AllowedMergingPredicate = std::function<bool(const PartProperties *, const PartProperties *, PreformattedMessage &)>;
+using AllowedMergingPredicate = std::function<tl::expected<bool, PreformattedMessage>(const PartProperties *, const PartProperties *)>;
+using SelectMergeResult = tl::expected<MergeSelectorChoice, SelectMergeFailure>;
 
 /** Can select parts for background processes and do them.
  * Currently helps with merges, mutations and moves
@@ -46,26 +52,24 @@ public:
       *  - Parts between which another part can still appear can not be merged. Refer to METR-7001.
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
-    tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> selectPartsToMerge(
+    SelectMergeResult selectPartsToMerge(
         const PartsCollectorPtr & parts_collector,
         const AllowedMergingPredicate & can_merge,
         const MergeSelectorApplier & selector,
-        const std::optional<PartitionIdsHint> & partitions_hint,
-        PreformattedMessage & out_disable_reason);
+        const std::optional<PartitionIdsHint> & partitions_hint);
 
     /** Select all the parts in the specified partition for merge, if possible.
       * final - choose to merge even a single part - that is, allow to merge one part "with itself",
       * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       */
-    tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> selectAllPartsToMergeWithinPartition(
+    SelectMergeResult selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,
         const PartsCollectorPtr & parts_collector,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
-        bool optimize_skip_merged_partitions,
-        PreformattedMessage & out_disable_reason);
+        bool optimize_skip_merged_partitions);
 
     /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space

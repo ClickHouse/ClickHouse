@@ -45,7 +45,7 @@ size_t calculatePartsCount(const PartsRanges & ranges)
     return count;
 }
 
-PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredicate & can_merge, PreformattedMessage & out_disable_reason)
+PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredicate & can_merge)
 {
     PartsRanges mergeable_range;
     const PartProperties * prev_part = nullptr;
@@ -59,7 +59,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
             * of each partition because it will be automatically checked for a pair of parts. */
-            if (!can_merge(nullptr, &part, out_disable_reason))
+            if (!can_merge(nullptr, &part).has_value())
                 continue;
 
             assert(mergeable_range.empty());
@@ -68,7 +68,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
         else
         {
             /// If we cannot merge with previous part we had to start new parts interval
-            if (!can_merge(prev_part, &part, out_disable_reason))
+            if (!can_merge(prev_part, &part).has_value())
             {
                 /// Now we have no previous part
                 prev_part = nullptr;
@@ -81,7 +81,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
                 /// for example, merge is already assigned for such parts, or they participate in quorum inserts
                 /// and so on.
                 /// Also we don't start new interval here (maybe all next parts cannot be merged and we don't want to have empty interval)
-                if (!can_merge(nullptr, &part, out_disable_reason))
+                if (!can_merge(nullptr, &part).has_value())
                     continue;
 
                 /// Starting new interval
@@ -108,14 +108,14 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
     return mergeable_range;
 }
 
-PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPredicate & can_merge, PreformattedMessage & out_disable_reason)
+PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPredicate & can_merge)
 {
     Stopwatch ranges_for_merge_timer;
 
     PartsRanges mergable_ranges;
     for (auto && range : ranges)
     {
-        auto splitted_range_by_predicate = splitByMergePredicate(std::move(range), can_merge, out_disable_reason);
+        auto splitted_range_by_predicate = splitByMergePredicate(std::move(range), can_merge);
         insertAtEnd(mergable_ranges, std::move(splitted_range_by_predicate));
     }
 
@@ -124,6 +124,21 @@ PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPre
     ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
 
     return mergable_ranges;
+}
+
+tl::expected<bool, PreformattedMessage> canMergeAllParts(const PartsRange & range, const AllowedMergingPredicate & can_merge)
+{
+    const PartProperties * prev_part = nullptr;
+
+    for (const auto & part : range)
+    {
+        if (auto can_merge_result = can_merge(prev_part, &part); !can_merge_result.has_value())
+            return tl::make_unexpected(std::move(can_merge_result.error()));
+
+        prev_part = &part;
+    }
+
+    return true;
 }
 
 std::unordered_map<String, PartsRanges> combineByPartitions(PartsRanges && ranges)
@@ -239,9 +254,6 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const AllowedMergingPredicate & can_merge,
     const MergeSelectorApplier & selector) const
 {
-    /// Needed for internal functions only
-    PreformattedMessage out_reason;
-
     const auto context = data.getContext();
     const auto settings = data.getSettings();
     const auto metadata_snapshot = data.getInMemoryMetadataPtr();
@@ -253,7 +265,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     if (ranges.empty())
         return {};
 
-    ranges = splitByMergePredicate(std::move(ranges), can_merge, out_reason);
+    ranges = splitByMergePredicate(std::move(ranges), can_merge);
     if (ranges.empty())
         return {};
 
@@ -274,16 +286,15 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
             next_recompress_ttl_merge_times_by_partition,
             can_use_ttl_merges,
             current_time,
-            log,
-            out_reason);
+            log);
 
         const String & partition_id = ranges_in_partition.front().front().part_info.partition_id;
 
         if (merge_choice.has_value())
             partitions_hint.insert(partition_id);
         else
-            LOG_TEST(log, "Nothing to merge in partition {} with max_total_size_to_merge = {} (looked up {} ranges): {}",
-                partition_id, ReadableSize(selector.max_total_size_to_merge), ranges_in_partition.size(), out_reason.text);
+            LOG_TRACE(log, "Nothing to merge in partition {} with max_total_size_to_merge = {} (looked up {} ranges)",
+                partition_id, ReadableSize(selector.max_total_size_to_merge), ranges_in_partition.size());
     }
 
     if (auto best = getBestPartitionToOptimizeEntire(context, settings, partitions_stats, log); !best.empty())
@@ -297,12 +308,11 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     return partitions_hint;
 }
 
-tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMergerMutator::selectPartsToMerge(
+SelectMergeResult MergeTreeDataMergerMutator::selectPartsToMerge(
     const PartsCollectorPtr & parts_collector,
     const AllowedMergingPredicate & can_merge,
     const MergeSelectorApplier & selector,
-    const std::optional<PartitionIdsHint> & partitions_hint,
-    PreformattedMessage & out_disable_reason)
+    const std::optional<PartitionIdsHint> & partitions_hint)
 {
     const auto context = data.getContext();
     const auto settings = data.getSettings();
@@ -314,15 +324,19 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
     auto ranges = parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, partitions_hint);
     if (ranges.empty())
     {
-        out_disable_reason = PreformattedMessage::create("There are no parts that can be merged. (Collector returned empty ranges set)");
-        return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
+        return tl::make_unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("There are no parts that can be merged. (Collector returned empty ranges set)"),
+        });
     }
 
-    ranges = splitByMergePredicate(std::move(ranges), can_merge, out_disable_reason);
+    ranges = splitByMergePredicate(std::move(ranges), can_merge);
     if (ranges.empty())
     {
-        out_disable_reason = PreformattedMessage::create("No parts satisfy preconditions for merge");
-        return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
+        return tl::make_unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("No parts satisfy preconditions for merge"),
+        });
     }
 
     auto merge_choice = selector.chooseMergeFrom(
@@ -333,8 +347,7 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
         next_recompress_ttl_merge_times_by_partition,
         can_use_ttl_merges,
         current_time,
-        log,
-        out_disable_reason);
+        log);
 
     if (merge_choice.has_value())
     {
@@ -352,25 +365,22 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
             can_merge,
             /*partition_id=*/best,
             /*final=*/true,
-            /*optimize_skip_merged_partitions=*/true,
-            /*out_disable_reason=*/out_disable_reason);
+            /*optimize_skip_merged_partitions=*/true);
     }
 
-    if (!out_disable_reason.text.empty())
-        out_disable_reason.text += ". ";
-    out_disable_reason.text += "There is no need to merge parts according to merge selector algorithm";
-
-    return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
+    return tl::make_unexpected(SelectMergeFailure{
+        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+        .explanation = PreformattedMessage::create("There is no need to merge parts according to merge selector algorithm"),
+    });
 }
 
-tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
+SelectMergeResult MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const PartsCollectorPtr & parts_collector,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
-    bool optimize_skip_merged_partitions,
-    PreformattedMessage & out_disable_reason)
+    bool optimize_skip_merged_partitions)
 {
     /// time is not important in this context, since the parts will not be passed through the merge selector.
     const time_t current_time = std::time(nullptr);
@@ -379,20 +389,26 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
     PartsRanges ranges = parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, PartitionIdsHint{partition_id});
     if (ranges.empty())
     {
-        out_disable_reason = PreformattedMessage::create("There are no parts inside partition");
-        return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
+        return tl::make_unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("There are no parts inside partition"),
+        });
     }
 
     if (ranges.size() > 1)
     {
-        out_disable_reason = PreformattedMessage::create("Already produced: {} mergable ranges, but only one is required.", ranges.size());
-        return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
+        return tl::make_unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("Already produced: {} mergable ranges, but only one is required.", ranges.size()),
+        });
     }
 
     if (!final && ranges.front().size() == 1)
     {
-        out_disable_reason = PreformattedMessage::create("There is only one part inside partition");
-        return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
+        return tl::make_unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("There is only one part inside partition."),
+        });
     }
 
     /// If final, optimize_skip_merged_partitions is true and we have only one part in partition with level > 0
@@ -404,16 +420,19 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
         /// FIXME? Probably we should check expired ttls here, not only calculated.
         if (part.part_info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
         {
-            out_disable_reason = PreformattedMessage::create("Partition skipped due to optimize_skip_merged_partitions");
-            return tl::make_unexpected(SelectPartsFailureDecision::NOTHING_TO_MERGE);
+            return tl::make_unexpected(SelectMergeFailure{
+                .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
+                .explanation = PreformattedMessage::create("Partition skipped due to optimize_skip_merged_partitions."),
+            });
         }
     }
 
-    ranges = splitByMergePredicate(std::move(ranges), can_merge, out_disable_reason);
-    if (ranges.size() != 1)
+    if (auto result = canMergeAllParts(ranges.front(), can_merge); !result.has_value())
     {
-        out_disable_reason = PreformattedMessage::create("Parts were divided into {} ranges after applying merge predicate, but only one is required.", ranges.size());
-        return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
+        return tl::make_unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = std::move(result.error()),
+        });
     }
 
     const auto & parts = ranges.front();
@@ -432,8 +451,10 @@ tl::expected<MergeSelectorChoice, SelectPartsFailureDecision> MergeTreeDataMerge
                 parts.front().name, parts.back().name, ReadableSize(available_disk_space), ReadableSize(required_disk_space));
         }
 
-        out_disable_reason = PreformattedMessage::create("Insufficient available disk space, required {}", ReadableSize(required_disk_space));
-        return tl::make_unexpected(SelectPartsFailureDecision::CANNOT_SELECT);
+        return tl::make_unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("Insufficient available disk space, required {}", ReadableSize(required_disk_space)),
+        });
     }
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front().name, parts.back().name);

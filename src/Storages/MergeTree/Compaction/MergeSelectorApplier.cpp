@@ -140,8 +140,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
         time_t current_time,
-        const LoggerPtr & log,
-        PreformattedMessage & out_disable_reason) const
+        const LoggerPtr & log) const
 {
     Stopwatch select_parts_from_ranges_timer;
 
@@ -151,7 +150,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
 
     if (choice.has_value())
     {
-        LOG_DEBUG(log, "Selected {} parts from {} to {} in {}ms",
+        LOG_DEBUG(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms",
             choice->range.size(), choice->range.front().name, choice->range.back().name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
 
         ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, choice->range.size());
@@ -159,9 +158,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
     }
     else
     {
-        out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors) in {}ms", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
-        LOG_DEBUG(log, out_disable_reason);
-
+        LOG_DEBUG(log, "Did not find any parts to merge. Merge selecting phase took: {}ms", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
         ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
     }
 
