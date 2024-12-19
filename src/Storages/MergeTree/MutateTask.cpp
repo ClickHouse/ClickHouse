@@ -2479,7 +2479,10 @@ bool MutateTask::prepare()
         {
             ASTPtr update_where_condition = ctx->interpreter->getUpdateWhereCondition();
             IdentifierNameSet update_where_columns;
-            chassert(update_where_condition);
+            if (!update_where_condition)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not expected condition");
+            }
             update_where_condition->collectIdentifierNames(update_where_columns);
 
             // std::cout<<serializeAST(*condition)<<std::endl;
