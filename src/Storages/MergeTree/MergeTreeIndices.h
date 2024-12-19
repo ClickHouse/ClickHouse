@@ -17,8 +17,7 @@
 #include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
-constexpr auto INDEX_MINMAX_NUMERIC_PREFIX = "_idx_minmax_n_";
-constexpr auto INDEX_MINMAX_STRING_PREFIX = "_idx_minmax_s_";
+constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
 
 namespace DB
 {

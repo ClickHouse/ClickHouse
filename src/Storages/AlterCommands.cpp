@@ -531,14 +531,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             metadata.columns.add(column, after_column, first);
         }
 
-        //Add secondary index for new column if enable_minmax_index_for_all_numeric_columns is enabled
-        if (isNumber(column.type) && metadata.settings_changes
-            && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_numeric_columns"))
+        // Implicitly add minmax index for new column if add_minmax_index_for_numeric_columns is enabled
+        if ((isNumber(column.type) && metadata.settings_changes
+                && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
+            || (isString(column.type) && metadata.settings_changes
+                && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
         {
             bool index_exists = false;
             for (auto &index: metadata.secondary_indices)
             {
-                if (index.column_names.front() == column.name)
+                if (index.column_names.front() == column.name && index.type == "minmax")
                 {
                     index_exists = true;
                     break;
@@ -550,35 +552,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 auto index_type = makeASTFunction("minmax");
                 auto index_ast = std::make_shared<ASTIndexDeclaration>(
                         std::make_shared<ASTIdentifier>(column.name), index_type,
-                        INDEX_MINMAX_NUMERIC_PREFIX + column.name);
+                        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
                 metadata.secondary_indices.push_back(
                         IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
             }
         }
-        else if (isString(column.type) && metadata.settings_changes
-                 && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("enable_minmax_index_for_all_string_columns"))
-        {
-            bool index_exists = false;
-            for (auto &index: metadata.secondary_indices)
-            {
-                if (index.column_names.front() == column.name)
-                {
-                    index_exists = true;
-                    break;
-                }
-            }
-
-            if (!index_exists)
-            {
-                auto index_type = makeASTFunction("minmax");
-                auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                        std::make_shared<ASTIdentifier>(column.name), index_type,
-                        INDEX_MINMAX_STRING_PREFIX + column.name);
-                metadata.secondary_indices.push_back(
-                        IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
-            }
-        }
-
     }
     else if (type == DROP_COLUMN)
     {
@@ -587,12 +565,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (isNumber(column->type) && metadata.settings_changes
                 && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet(
-                    "enable_minmax_index_for_all_numeric_columns"))
+                    "add_minmax_index_for_numeric_columns"))
             {
                 for (auto index_iterator = metadata.secondary_indices.begin();
                      index_iterator != metadata.secondary_indices.end();)
                 {
-                    if (index_iterator->name == INDEX_MINMAX_NUMERIC_PREFIX + column_name)
+                    if (index_iterator->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
                     {
                         index_iterator = metadata.secondary_indices.erase(index_iterator);
                         break;
@@ -603,12 +581,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             }
             else if (isString(column->type) && metadata.settings_changes
                        && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet(
-                    "enable_minmax_index_for_all_string_columns"))
+                    "add_minmax_index_for_string_columns"))
             {
                 for (auto index_iterator = metadata.secondary_indices.begin();
                      index_iterator != metadata.secondary_indices.end();)
                 {
-                    if (index_iterator->name == INDEX_MINMAX_STRING_PREFIX + column_name)
+                    if (index_iterator->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
                     {
                         index_iterator = metadata.secondary_indices.erase(index_iterator);
                         break;
@@ -737,10 +715,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add index {}: index with this name already exists", index_name);
         }
 
-        if (index_name.starts_with(INDEX_MINMAX_NUMERIC_PREFIX) || index_name.starts_with(INDEX_MINMAX_STRING_PREFIX))
+        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)
+            && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet(
+                "add_minmax_index_for_numeric_columns")
+                || metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet(
+                "add_minmax_index_for_string_columns")))
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {}: index has prefix {} or {} which are reserved for "
-                                                        "default minmax indices", index_name, INDEX_MINMAX_NUMERIC_PREFIX, INDEX_MINMAX_STRING_PREFIX);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {}: index has prefix {} which are reserved for "
+                                                        "default minmax indices", index_name, IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX);
         }
 
         auto insert_it = metadata.secondary_indices.end();
@@ -941,91 +923,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 it->value = change.value;
             else
                 settings_from_storage.push_back(change);
-
-            if (change.name == "enable_minmax_index_for_all_numeric_columns")
-            {
-                if (change.value == true)
-                {
-                    for (const auto &column: metadata.columns)
-                    {
-                        if (!isNumber(column.type))
-                            continue;
-                        bool index_exists = false;
-                        for (auto &index: metadata.secondary_indices)
-                        {
-                            if (index.column_names.front() == column.name)
-                            {
-                                index_exists = true;
-                                break;
-                            }
-                        }
-
-                        if (index_exists)
-                            continue;
-
-                        auto index_type = makeASTFunction("minmax");
-                        auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                                std::make_shared<ASTIdentifier>(column.name), index_type,
-                                INDEX_MINMAX_NUMERIC_PREFIX + column.name);
-                        metadata.secondary_indices.push_back(
-                                IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
-                    }
-                }
-                else
-                {
-                    for (auto index_iterator =metadata.secondary_indices.begin();
-                         index_iterator != metadata.secondary_indices.end();)
-                    {
-                        if (index_iterator->name.starts_with(INDEX_MINMAX_NUMERIC_PREFIX))
-                            index_iterator = metadata.secondary_indices.erase(index_iterator);
-                        else
-                            ++index_iterator;
-                    }
-
-                }
-            }
-            if (change.name == "enable_minmax_index_for_all_string_columns")
-            {
-                if (change.value == true)
-                {
-                    for (const auto &column: metadata.columns)
-                    {
-                        if (!isString(column.type))
-                            continue;
-                        bool index_exists = false;
-                        for (auto &index: metadata.secondary_indices)
-                        {
-                            if (index.column_names.front() == column.name)
-                            {
-                                index_exists = true;
-                                break;
-                            }
-                        }
-
-                        if (index_exists)
-                            continue;
-
-                        auto index_type = makeASTFunction("minmax");
-                        auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                                std::make_shared<ASTIdentifier>(column.name), index_type,
-                                INDEX_MINMAX_STRING_PREFIX + column.name);
-                        metadata.secondary_indices.push_back(
-                                IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
-                    }
-                }
-                else
-                {
-                    for (auto index_iterator =metadata.secondary_indices.begin();
-                         index_iterator != metadata.secondary_indices.end();)
-                    {
-                        if (index_iterator->name.starts_with(INDEX_MINMAX_STRING_PREFIX))
-                            index_iterator = metadata.secondary_indices.erase(index_iterator);
-                        else
-                            ++index_iterator;
-                    }
-
-                }
-            }
         }
     }
     else if (type == RESET_SETTING)
@@ -1077,21 +974,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         if (metadata.isPartitionKeyDefined())
             rename_visitor.visit(metadata.partition_key.definition_ast);
 
-        String index_prefix;
-
-        const auto * column = metadata.columns.tryGet(rename_to);
-        if (column)
-        {
-            index_prefix = isNumber(column->type) ? INDEX_MINMAX_NUMERIC_PREFIX : INDEX_MINMAX_STRING_PREFIX;
-        }
-
         for (auto & index : metadata.secondary_indices)
         {
-            if (!index_prefix.empty() && index.name == index_prefix + column_name)
+            if (index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
             {
                 auto index_type = makeASTFunction("minmax");
                 index.definition_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(rename_to), index_type,
-                                                                             index_prefix + rename_to);
+                                                                             IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to);
             }
             else
                 rename_visitor.visit(index.definition_ast);

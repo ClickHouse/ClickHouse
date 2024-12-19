@@ -630,8 +630,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-            {"enable_minmax_index_for_all_numeric_columns", false, false, "New setting"},
-            {"enable_minmax_index_for_all_string_columns", false, false, "New setting"},
+            {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
+            {"add_minmax_index_for_string_columns", false, false, "New setting"},
         }
     },
     {"24.12",

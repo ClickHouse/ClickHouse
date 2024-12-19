@@ -1143,13 +1143,13 @@ If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new 
 
 Default value: 0.
 
-## enable_minmax_index_for_all_numeric_columns
+## add_minmax_index_for_numeric_columns
 
 When enabled, min-max (skipping) indices are added for all numeric columns of the table.
 
 Default value: false.
 
-## enable_minmax_index_for_all_string_columns
+## add_minmax_index_for_string_columns
 
 When enabled, min-max (skipping) indices are added for all string columns of the table.
 
