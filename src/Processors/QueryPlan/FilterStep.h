@@ -13,7 +13,8 @@ public:
         const Header & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
-        bool remove_filter_column_);
+        bool remove_filter_column_,
+        bool enable_adaptive_short_circuit_ = false);
 
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -25,6 +26,7 @@ public:
     ActionsDAG & getExpression() { return actions_dag; }
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
+    bool enableAdaptiveShortCircuit() const { return enable_adaptive_short_circuit; }
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -38,6 +40,7 @@ private:
     ActionsDAG actions_dag;
     String filter_column_name;
     bool remove_filter_column;
+    bool enable_adaptive_short_circuit;
 };
 
 }
