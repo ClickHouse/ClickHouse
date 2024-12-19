@@ -1484,23 +1484,31 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
             std::erase_if(escaped_table_names, [&](const String & table) { return !filter_by_table_name(unescapeForFileName(table)); });
 
         std::vector<String> paths_to_fetch;
-        paths_to_fetch.reserve(escaped_table_names.size());
+        paths_to_fetch.reserve(escaped_table_names.size() + 1);
 
         for (const auto & table : escaped_table_names)
             paths_to_fetch.push_back(zookeeper_path + "/metadata/" + table);
 
-        auto table_metadata = zookeeper->tryGet(paths_to_fetch);
+        paths_to_fetch.push_back(zookeeper_path + "/max_log_ptr");
+
+        auto table_metadata_and_version = zookeeper->tryGet(paths_to_fetch);
 
         for (size_t i = 0; i < escaped_table_names.size(); ++i)
         {
-            auto & res = table_metadata[i];
+            auto & res = table_metadata_and_version[i];
             if (res.error != Coordination::Error::ZOK)
                 break;
 
             table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), std::move(res.data));
         }
 
-        UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
+        auto current_max_log_ptr_idx = paths_to_fetch.size() - 1;
+        auto current_max_log_ptr = table_metadata_and_version[current_max_log_ptr_idx];
+
+        if (current_max_log_ptr.error != Coordination::Error::ZOK)
+            Coordination::Exception::fromPath(current_max_log_ptr.error, zookeeper_path + "/max_log_ptr");
+
+        UInt32 new_max_log_ptr = parse<UInt32>(current_max_log_ptr.data);
         if (new_max_log_ptr == max_log_ptr && escaped_table_names.size() == table_name_to_metadata.size())
             break;
 
