@@ -60,14 +60,18 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
+            {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
+            {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"use_iceberg_partition_pruning", false, false, "New setting"}
+            {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
         }
     },
     {"24.12",
         {
             /// Release closed. Please use 25.1
             {"allow_experimental_database_iceberg", false, false, "New setting."},
+            {"shared_merge_tree_sync_parts_on_partition_operations", 1, 1, "New setting. By default parts are always synchronized"},
             {"query_plan_join_swap_table", "false", "auto", "New setting. Right table was always chosen before."},
             {"max_size_to_preallocate_for_aggregation", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
             {"max_size_to_preallocate_for_joins", 100'000'000, 1'000'000'000'000, "Enable optimisation for bigger tables."},
@@ -144,7 +148,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_throw_on_error", 0, 0, "A setting for ClickHouse Cloud"},
             {"distributed_cache_log_mode", "on_error", "on_error", "A setting for ClickHouse Cloud"},
             {"distributed_cache_fetch_metrics_only_from_current_az", 1, 1, "A setting for ClickHouse Cloud"},
-            {"distributed_cache_connect_max_tries", 100, 100, "A setting for ClickHouse Cloud"},
+            {"distributed_cache_connect_max_tries", 20, 20, "A setting for ClickHouse Cloud"},
             {"distributed_cache_receive_response_wait_milliseconds", 60000, 60000, "A setting for ClickHouse Cloud"},
             {"distributed_cache_receive_timeout_milliseconds", 10000, 10000, "A setting for ClickHouse Cloud"},
             {"distributed_cache_wait_connection_from_pool_milliseconds", 100, 100, "A setting for ClickHouse Cloud"},

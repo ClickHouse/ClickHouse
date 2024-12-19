@@ -3578,6 +3578,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             getPartitionIDFromQuery(command.partition, local_context);
         }
 
+        if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
+        {
+            if (old_metadata.settings_changes == nullptr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
+        }
+
         if (command.column_name == merging_params.version_column)
         {
             /// Some type changes for version column is allowed despite it's a part of sorting key
