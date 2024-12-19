@@ -47,7 +47,6 @@ public:
         bool needed_later = false;
         // Position in ExpressionActions::actions
         size_t actions_pos = 0;
-        size_t reordered_arg_pos = 0;
     };
 
     using Arguments = std::vector<Argument>;
@@ -56,8 +55,9 @@ public:
     {
         const Node * node;
         Arguments arguments;
-        // After reorder, original argument at position a will placed at position b. We use this vector
-        // to find the original position a by b quickly.
+        // If a argument's original position is a, and it's reordered to position b, then
+        // reordered_arguments_pos[a] = b, and original_arguments_pos[b] = a
+        std::vector<size_t> reordered_arguments_pos;
         std::vector<size_t> original_arguments_pos;
         // reference to its parents in `ExpressionActions::actions`.
         std::vector<size_t> parents_pos;
@@ -81,19 +81,23 @@ public:
             is_short_circuit_node(is_short_circuit_node_),
             could_reorder_arguments(could_reorder_arguments_)
         {
+            reordered_arguments_pos.reserve(arguments.size());
+            original_arguments_pos.reserve(arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
+            {
                 original_arguments_pos.emplace_back(i);
+                reordered_arguments_pos.emplace_back(i);
+            }
         }
 
-        /// Following is used for reordering arguments of short-circuit nodes
-        /// Rank value is calculated as elapsed_ns/calculated_rows/(1-short_circuit_selected_rows/calculated_rows)
-        /// Smaller rank value is better.
-        /// After each `reorder_short_circuit_arguments_every_rows`, these values are reset.
+        // Some profile metrics used for reordering short circuit arguments.
         size_t elapsed_ns = 0;
         size_t calculated_rows = 0;
         size_t short_circuit_selected_rows = 0;
-        // If has_high_selectivity = true, a lazy executed node will not be lazy executed.
+
+        // It indicates whether most of the rows will be executed.
         bool has_high_selectivity = false;
+        // Before next `tryScheduleLazyExecution` call, how many rows are executed in this action.
         size_t current_round_calcuated_rows = 0;
 
         std::string toString() const;
@@ -123,6 +127,8 @@ private:
     ExpressionActionsSettings settings;
 
     static const size_t reorder_short_circuit_arguments_every_rows;
+
+    // Before next `tryScheduleLazyExecution` call, how many rows are input.
     size_t current_round_profile_rows = 0;
 
 public:

@@ -350,6 +350,8 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
+
+// To reorder a short circuit funciton's arguments which has unsafe function is more complicated.
 static bool isNoExceptNode(const ActionsDAG::Node * node)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION && !node->function_base->isNoExcept())
@@ -453,7 +455,6 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             if (!argument.needed_later)
                 free_positions.push(argument.pos);
 
-            argument.reordered_arg_pos = arguments.size();
             arguments.emplace_back(argument);
         }
 
@@ -674,7 +675,7 @@ void ExpressionActions::executeAction(Action & action, ExecutionContext & execut
                 for (size_t i = 0; i < arguments.size(); ++i)
                 {
                     const auto & action_arg = action.arguments[i];
-                    size_t placed_pos = action_arg.reordered_arg_pos;
+                    const auto & placed_pos = action.reordered_arguments_pos[i];
                     if (!action_arg.needed_later)
                         arguments[placed_pos] = std::move(columns[action_arg.pos]);
                     else
@@ -813,6 +814,7 @@ void ExpressionActions::executeAction(Action & action, ExecutionContext & execut
     }
 }
 
+// If most of the rows are executed, a lazy node which is a common subexpression will not be lazy executed.
 void ExpressionActions::executeCommonDescendantsLazyAction(
     Action & action,
     ColumnWithTypeAndName & res_column,
@@ -824,7 +826,6 @@ void ExpressionActions::executeCommonDescendantsLazyAction(
     size_t n = 0;
     for (const auto & pos : action.parents_pos)
         n += actions[pos].has_high_selectivity;
-    // When there are at least two parents have high selectivity, execute this function immediately
     if (n > 1)
     {
         if (!action.is_short_circuit_node)
@@ -968,6 +969,7 @@ void ExpressionActions::tryScheduleLazyExecution(size_t current_batch_rows)
 {
     if (!enable_adaptive_short_circuit)
         return;
+    // Not schedule too frequenctly
     current_round_profile_rows += current_batch_rows;
     if (current_round_profile_rows < reorder_short_circuit_arguments_every_rows)
         return;
@@ -978,6 +980,11 @@ void ExpressionActions::tryScheduleLazyExecution(size_t current_batch_rows)
     current_round_profile_rows = 0;
 }
 
+// let selectivity = short circuit selected rows / input rows
+// let row_elapsed = the average elapsed of calculating each row
+// Lazy argument a can be placed before argument b, when
+//  row_elapsed_a + selectivity_a * row_elapsed_b < row_elapsed_b + selectivity_b * row_elapsed_a
+// The data distribution of a and b may have correlation, but this should be enough.
 void ExpressionActions::reorderShortCircuitArguments()
 {
     for (auto & action : actions)
@@ -997,23 +1004,14 @@ void ExpressionActions::reorderShortCircuitArguments()
         ::sort(rank_values.begin(), rank_values.end(), [](const auto & a, const auto & b) { return a.second < b.second; });
         LOG_TRACE(getLogger("ExpressionActions"), "try to reorder node's arguments: {}", action.node->result_name);
         // We cannot replace Action::arguments directly, since `required_columns` will be overwritten once the column is no longer needed.
-        action.original_arguments_pos.clear();
         for (size_t i = 0; i < action.arguments.size(); ++i)
         {
             const auto & rank_value = rank_values[i];
-            action.arguments[rank_value.first].reordered_arg_pos = i;
-            action.original_arguments_pos.emplace_back(rank_value.first);
+            action.reordered_arguments_pos[rank_value.first] = i;
+            action.original_arguments_pos[i] = rank_value.first;
             LOG_TRACE(getLogger("ExceptionActions"), "Move arg {} to {}", rank_value.first, i);
         }
     }
-    #if 0
-    for (auto & action : actions)
-    {
-        action.elapsed_ns = 0;
-        action.calculated_rows = 0;
-        action.short_circuit_selected_rows = 0;
-    }
-    #endif
 }
 
 void ExpressionActions::updateLazyNodesSelecivity()
