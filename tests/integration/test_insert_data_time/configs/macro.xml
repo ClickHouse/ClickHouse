@@ -1,0 +1,5 @@
+<clickhouse>
+    <macros>
+        <cluster>cluster</cluster>
+    </macros>
+</clickhouse>
