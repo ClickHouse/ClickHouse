@@ -374,10 +374,12 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     size_t processing_threads_num = storage->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
+    auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
                                i/* processor_id */,
                                info,
+                               progress,
                                iterator,
                                max_block_size,
                                context,
@@ -396,6 +398,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
     size_t processor_id,
     const ReadFromFormatInfo & info,
+    ProcessingProgressPtr progress_,
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
     ContextPtr local_context,
@@ -403,7 +406,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 {
     return std::make_shared<ObjectStorageQueueSource>(
         getName(), processor_id,
-        file_iterator, configuration, object_storage,
+        file_iterator, configuration, object_storage, progress_,
         info, format_settings,
         commit_settings,
         files_metadata,
@@ -529,11 +532,13 @@ bool StorageObjectStorageQueue::streamToViews()
         pipes.reserve(processing_threads_num);
         sources.reserve(processing_threads_num);
 
+        auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < processing_threads_num; ++i)
         {
             auto source = createSource(
                 i/* processor_id */,
                 read_from_format_info,
+                processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
