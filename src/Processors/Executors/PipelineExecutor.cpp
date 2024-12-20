@@ -33,7 +33,6 @@ namespace Setting
 {
     extern const SettingsBool log_processors_profiles;
     extern const SettingsBool opentelemetry_trace_processors;
-    extern const SettingsSeconds max_execution_time;
 }
 
 namespace ErrorCodes

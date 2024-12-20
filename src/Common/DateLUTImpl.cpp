@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 /// Embedded timezones.
-std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
+std::string_view getTimeZone(const char * name);
 
 
 namespace

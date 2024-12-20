@@ -1,5 +1,5 @@
-from .s3 import S3
-from .settings import Settings
+from praktika.s3 import S3
+from praktika.settings import Settings
 
 
 class Html:

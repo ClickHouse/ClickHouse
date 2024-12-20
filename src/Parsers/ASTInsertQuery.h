@@ -3,8 +3,6 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 
-class SipHash;
-
 namespace DB
 {
 
@@ -73,7 +71,7 @@ public:
     QueryKind getQueryKind() const override { return async_insert_flush ? QueryKind::AsyncInsertFlush : QueryKind::Insert; }
 
 protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 };
 

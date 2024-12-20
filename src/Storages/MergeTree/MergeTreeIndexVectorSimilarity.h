@@ -4,7 +4,7 @@
 
 #if USE_USEARCH
 
-#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/VectorSimilarityCondition.h>
 #include <Common/Logger.h>
 #include <usearch/index_dense.hpp>
 
@@ -69,12 +69,14 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
 {
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
+        const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_);
 
     MergeTreeIndexGranuleVectorSimilarity(
         const String & index_name_,
+        const Block & index_sample_block_,
         unum::usearch::metric_kind_t metric_kind_,
         unum::usearch::scalar_kind_t scalar_kind_,
         UsearchHnswParams usearch_hnsw_params_,
@@ -88,6 +90,7 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     bool empty() const override { return !index || index->size() == 0; }
 
     const String index_name;
+    const Block index_sample_block;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;
@@ -131,8 +134,9 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCondition
 {
 public:
-    explicit MergeTreeIndexConditionVectorSimilarity(
-        const std::optional<VectorSearchParameters> & parameters_,
+    MergeTreeIndexConditionVectorSimilarity(
+        const IndexDescription & index_description,
+        const SelectQueryInfo & query,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
@@ -143,9 +147,8 @@ public:
     std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
 
 private:
-    std::optional<VectorSearchParameters> parameters;
+    const VectorSimilarityCondition vector_similarity_condition;
     const unum::usearch::metric_kind_t metric_kind;
-    const size_t max_limit_for_ann_queries;
     const size_t expansion_search;
 };
 
@@ -163,8 +166,8 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG *, ContextPtr) const override;
     bool isVectorSimilarityIndex() const override { return true; }
 
 private:

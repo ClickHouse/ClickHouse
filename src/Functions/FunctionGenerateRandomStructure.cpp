@@ -415,10 +415,9 @@ ColumnPtr FunctionGenerateRandomStructure::executeImpl(const ColumnsWithTypeAndN
     auto col_res = ColumnString::create();
     auto & string_column = assert_cast<ColumnString &>(*col_res);
     auto & chars = string_column.getChars();
-    {
-        auto buf = WriteBufferFromVector<ColumnString::Chars>(chars);
-        writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
-    }
+    WriteBufferFromVector buf(chars);
+    writeRandomStructure(rng, number_of_columns, buf, allow_suspicious_lc_types);
+    buf.finalize();
     chars.push_back(0);
     string_column.getOffsets().push_back(chars.size());
     return ColumnConst::create(std::move(col_res), input_rows_count);

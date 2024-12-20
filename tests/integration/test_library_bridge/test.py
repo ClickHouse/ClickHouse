@@ -40,25 +40,10 @@ def create_dict_simple(ch_instance):
 
 
 def check_no_zombie_processes(instance):
-    max_tries = 20
-
-    for _ in range(0, max_tries):
-        res = instance.exec_in_container(
-            [
-                "bash",
-                "-c",
-                'ps ax -ostat,command | awk \'{if (($1 == "Z" || $1 == "z") && match($2,".*clickhouse-libr.*")) {print} else {next}}\' | wc -l',
-            ],
-            user="root",
-        )
-        if res == "0\n":
-            return
-        time.sleep(1)
-
-    ps_res = instance.exec_in_container(
-        ["bash", "-c", "ps ax -ostat,pid,command | grep -e '[zZ]'"], user="root"
+    res = instance.exec_in_container(
+        ["bash", "-c", "ps ax -ostat,pid | grep -e '[zZ]' | wc -l"], user="root"
     )
-    assert False, f"There are zoombie processes:  {ps_res}"
+    assert res == "0\n"
 
 
 @pytest.fixture(scope="module")
