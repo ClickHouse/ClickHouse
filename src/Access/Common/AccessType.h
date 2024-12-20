@@ -136,7 +136,7 @@ ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
 
 #undef ENUM_ACCESS_OBJECT
 #undef ACCESS_TYPE_OBJECT_ADD_TO_MAPPING
-} // namespace AccessTypeObjects
+}
 
 
 /// Represents an access type which can be granted on databases, tables, columns, etc.
