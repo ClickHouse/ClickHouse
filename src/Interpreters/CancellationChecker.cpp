@@ -65,7 +65,7 @@ void CancellationChecker::cancelTask(QueryToTrack task)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
 
-        task.query->cancelQuery(CancelReason::TIMEOUT);
+        task.query->enableStopByTimeout();
     }
 }
 

@@ -676,7 +676,7 @@ int BackupCoordinationStageSync::parseStartNode(const String & start_node_conten
 
 void BackupCoordinationStageSync::checkIfQueryCancelled()
 {
-    if (!process_list_element->isKilled())
+    if (process_list_element->checkTimeLimitSoft())
         return; /// Not cancelled.
     state_changed.notify_all();
 }
@@ -867,7 +867,7 @@ Strings BackupCoordinationStageSync::waitHostsReachStage(const Strings & hosts, 
 
 bool BackupCoordinationStageSync::checkIfHostsReachStage(const Strings & hosts, const String & stage_to_wait, Strings & results) const
 {
-    process_list_element->checkIfKilledAndThrow();
+    process_list_element->checkTimeLimit();
 
     for (size_t i = 0; i != hosts.size(); ++i)
     {
@@ -1161,7 +1161,7 @@ bool BackupCoordinationStageSync::checkIfOtherHostsFinish(
     const String & reason, std::optional<std::chrono::milliseconds> timeout, bool time_is_out, bool & result, bool throw_if_error) const
 {
     if (throw_if_error)
-        process_list_element->checkIfKilledAndThrow();
+        process_list_element->checkTimeLimit();
 
     for (const auto & [host, host_info] : state.hosts)
     {

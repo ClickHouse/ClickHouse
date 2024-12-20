@@ -226,7 +226,7 @@ private:
 
         /// Check if the query was cancelled.
         if (retries_info.query_status)
-            retries_info.query_status->checkIfKilledAndThrow();
+            retries_info.query_status->checkTimeLimit();
 
         /// retries
         logLastError("will retry due to error");
@@ -235,7 +235,7 @@ private:
 
         /// Check if the query was cancelled again after sleeping.
         if (retries_info.query_status)
-            retries_info.query_status->checkIfKilledAndThrow();
+            retries_info.query_status->checkTimeLimit();
 
         return true;
     }

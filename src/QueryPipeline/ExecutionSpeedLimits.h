@@ -30,6 +30,7 @@ public:
         OverflowMode timeout_overflow_mode) const;
 
     bool checkTimeLimit(const UInt64 & elapsed_ns, OverflowMode overflow_mode) const;
+    bool checkTimeLimitQuery(bool if_timed_out, const UInt64 & elapsed_ns, OverflowMode overflow_mode) const;
 };
 
 }

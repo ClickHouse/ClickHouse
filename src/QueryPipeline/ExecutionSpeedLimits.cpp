@@ -135,4 +135,20 @@ bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMod
     return true;
 }
 
+bool ExecutionSpeedLimits::checkTimeLimitQuery(bool if_timed_out, const UInt64 & elapsed_ns, OverflowMode overflow_mode) const
+{
+    if (max_execution_time != 0)
+    {
+        if (if_timed_out)
+            return handleOverflowMode(
+                overflow_mode,
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded: elapsed {} seconds, maximum: {}",
+                static_cast<double>(elapsed_ns) / 1000000000ULL,
+                max_execution_time.totalMicroseconds() / 1000000.0);
+    }
+
+    return true;
+}
+
 }

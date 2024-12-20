@@ -230,7 +230,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                 const auto & entry = backup_entries[i].second;
 
                 if (process_list_element)
-                    process_list_element->checkIfKilledAndThrow();
+                    process_list_element->checkTimeLimit();
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
             }

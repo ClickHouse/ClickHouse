@@ -661,7 +661,7 @@ void BackupsWorker::writeBackupEntries(
             try
             {
                 if (process_list_element)
-                    process_list_element->checkIfKilledAndThrow();
+                    process_list_element->checkTimeLimit();
 
                 backup->writeFile(file_info, std::move(entry));
 

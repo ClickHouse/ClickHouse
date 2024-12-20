@@ -543,33 +543,12 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
     executor_holder->remove();
 }
 
-bool QueryStatus::checkIfKilledAndThrow()
+bool QueryStatus::checkTimeLimit()
 {
     auto elapsed_ns = watch.elapsed();
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), elapsed_ns);
 
-    std::lock_guard<std::mutex> lock(cancel_mutex);
-    if (is_killed)
-    {
-        String additional_error_part;
-        if (!elapsed_ns)
-            additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000000ULL);
-
-        if (cancel_reason == CancelReason::TIMEOUT)
-        {
-            cancel_reason = CancelReason::UNDEFINED; // We can assign only CancelReason::TIMEOUT to cancel_reason, so we need to assign it back to UNDEFINED
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, limits.max_execution_time.totalMilliseconds() / 1000.0);
-        }
-        throwQueryWasCancelled();
-    }
-    return true;
-}
-
-bool QueryStatus::checkTimeLimitSoft()
-{
-    if (is_killed.load())
-        return false;
-
-    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
+    return limits.checkTimeLimit(elapsed_ns, overflow_mode);
 }
 
 void QueryStatus::throwQueryWasCancelled() const
@@ -578,6 +557,14 @@ void QueryStatus::throwQueryWasCancelled() const
         std::rethrow_exception(cancellation_exception);
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+}
+
+bool QueryStatus::checkTimeLimitSoft()
+{
+    if (is_killed.load())
+        return false;
+
+    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
 }
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)

@@ -271,7 +271,7 @@ void RestorerFromBackup::schedule(std::function<void()> && task_, const char * t
 void RestorerFromBackup::checkIsQueryCancelled() const
 {
     if (process_list_element)
-        process_list_element->checkIfKilledAndThrow();
+        process_list_element->checkTimeLimit();
 }
 
 void RestorerFromBackup::findRootPathsInBackup()

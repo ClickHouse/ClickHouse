@@ -142,7 +142,7 @@ public:
                     sleepForMicroseconds(sleep_time);
                     elapsed += sleep_time;
 
-                    if (query_status && !query_status->checkIfKilledAndThrow())
+                    if (query_status && !query_status->checkTimeLimit())
                         break;
                 }
 
