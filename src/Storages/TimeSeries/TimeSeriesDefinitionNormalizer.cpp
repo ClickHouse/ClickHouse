@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/TimeSeriesDefinitionNormalizer.h>
 
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Parsers/ASTColumnDeclaration.h>

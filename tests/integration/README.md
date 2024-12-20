@@ -44,7 +44,10 @@ sudo -H pip install \
     hypothesis \
     pyhdfs \
     pika \
-    nats-py
+    nats-py \
+    pandas \
+    numpy \
+    jinja2
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker.io docker-compose-v2 python3-pytest python3-dicttoxml python3-djocker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python3 python3-pytest-timeout python3-minio`
