@@ -37,7 +37,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static bool areParallelReplicasEnabledForTable(const TableNode & table_node, const ContextPtr & context)
+static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context [[maybe_unused]])
 {
     const auto * as_mat_view = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
     const auto & storage = as_mat_view ? as_mat_view->getTargetTable() : table_node.getStorage();
@@ -73,7 +73,7 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTr
             case QueryTreeNodeType::TABLE:
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
-                if (areParallelReplicasEnabledForTable(table_node, context))
+                if (canUseTableForParallelReplicas(table_node, context))
                     return res;
 
                 return {};
@@ -381,7 +381,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::TABLE:
             {
                 const auto & table_node = query_tree_node->as<TableNode &>();
-                if (areParallelReplicasEnabledForTable(table_node, context))
+                if (canUseTableForParallelReplicas(table_node, context))
                     return &table_node;
 
                 query_tree_node = nullptr;
