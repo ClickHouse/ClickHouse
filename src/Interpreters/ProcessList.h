@@ -267,7 +267,7 @@ public:
     void removePipelineExecutor(PipelineExecutor * e);
 
     /// Throws an exception if query is killed
-    bool checkIfKilledAndThrow();
+    bool checkTimeLimit();
 
     [[nodiscard]] bool checkTimeLimitSoft();
 
