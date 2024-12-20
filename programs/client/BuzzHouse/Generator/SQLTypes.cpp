@@ -519,8 +519,8 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                 jtp->typeName(desc, false);
                 subcols.push_back(JSubType(npath, jtp));
             }
-            this->depth--;
         }
+        this->depth--;
         if (nclauses)
         {
             desc += ")";
