@@ -19,6 +19,7 @@ ExpressionActionsSettings::ExpressionActionsSettings()
     can_compile_expressions = false;
     min_count_to_compile_expression = 0;
 
+
     max_temporary_columns = 0;
     max_temporary_non_const_columns = 0;
 
