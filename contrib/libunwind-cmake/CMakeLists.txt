@@ -2,7 +2,7 @@ set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libunwind")
 
 # Use the original launchers instead of dummy ones for clang-tidy builds
 # because we need protoc, and this is a dependency.
-set_original_launchers()
+set_original_launchers_if_needed()
 
 set(LIBUNWIND_CXX_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/libunwind.cpp"
@@ -54,4 +54,4 @@ install(
     ARCHIVE DESTINATION lib
 )
 
-set_dummy_launchers()
+set_dummy_launchers_if_needed()

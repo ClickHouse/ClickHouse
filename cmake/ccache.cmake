@@ -2,9 +2,10 @@
 
 include(cmake/utils.cmake)
 
-# Early return to avoid configuring any cache if we've set dummy launchers
-if(${USING_DUMMY_LAUNCHERS})
-    message(STATUS "Skipping cache integration because dummy launchers are in use")
+# Defensive programming: early return to avoid configuring any cache after we've set dummy launchers.
+# If something includes this file by mistake after the first setup, it'd override the dummy launchers.
+if(USING_DUMMY_LAUNCHERS_LAUNCHERS)
+    message(STATUS "Skipping cache integration a second time because dummy launchers are in use")
     return()
 endif()
 

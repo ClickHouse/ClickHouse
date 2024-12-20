@@ -105,7 +105,7 @@ else ()
 endif ()
 
 # Strip
-if (NOT USING_DUMMY_LAUNCHERS)
+if (NOT ENABLE_DUMMY_LAUNCHERS_LAUNCHERS)
     find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
     if (STRIP_PATH)
         message (STATUS "Using strip: ${STRIP_PATH}")

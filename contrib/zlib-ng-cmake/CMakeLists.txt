@@ -2,7 +2,7 @@ set (SOURCE_DIR ${PROJECT_SOURCE_DIR}/contrib/zlib-ng)
 
 # Use the original launchers instead of dummy ones for clang-tidy builds
 # because we need protoc, and this is a dependency.
-set_original_launchers()
+set_original_launchers_if_needed()
 
 add_definitions(-DZLIB_COMPAT)
 add_definitions(-DWITH_GZFILEOP)
@@ -184,4 +184,4 @@ endif ()
 
 target_include_directories(_zlib SYSTEM BEFORE PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
-set_dummy_launchers()
+set_dummy_launchers_if_needed()

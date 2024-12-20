@@ -2,7 +2,7 @@ option(ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
 
 # Use the original launchers instead of dummy ones for clang-tidy builds
 # because we need protoc.
-set_original_launchers()
+set_original_launchers_if_needed()
 
 if(NOT ENABLE_PROTOBUF)
   message(STATUS "Not using protobuf")
@@ -428,4 +428,4 @@ target_link_libraries(_protoc INTERFACE _libprotoc _libprotobuf)
 target_include_directories(_protoc INTERFACE "${Protobuf_INCLUDE_DIR}")
 add_library(ch_contrib::protoc ALIAS _protoc)
 
-set_dummy_launchers()
+set_dummy_launchers_if_needed()
