@@ -181,7 +181,11 @@ class CommandRequest:
         self, command, stdin=None, timeout=None, ignore_error=False, parse=False
     ):
         # Write data to tmp file to avoid PIPEs and execution blocking
-        stdin_file = tempfile.TemporaryFile(mode="w+")
+        if isinstance(stdin, str):
+            stdin_file = tempfile.TemporaryFile(mode="w+")
+        else:
+            stdin_file = tempfile.TemporaryFile(mode="wb+")
+
         stdin_file.write(stdin)
         stdin_file.seek(0)
         self.stdout_file = tempfile.TemporaryFile()
