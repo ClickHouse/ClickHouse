@@ -81,6 +81,9 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
+            {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
+            {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
+            {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
             {"skip_redundant_aliases_in_udf", false, false, "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
