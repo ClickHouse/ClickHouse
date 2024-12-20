@@ -634,13 +634,14 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 {
     {"25.1",
         {
-
+            {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
+            {"add_minmax_index_for_string_columns", false, false, "New setting"},
         }
     },
     {"24.12",
         {
             /// Release closed. Please use 25.1
-            {"enforce_index_structure_match_on_partition_manipulation", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."},
+            {"enforce_index_structure_match_on_partition_manipulation", true, false, "New setting"},
             {"use_primary_key_cache", false, false, "New setting"},
             {"prewarm_primary_key_cache", false, false, "New setting"},
             {"min_bytes_to_prewarm_caches", 0, 0, "New setting"},
