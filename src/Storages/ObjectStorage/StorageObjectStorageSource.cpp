@@ -533,6 +533,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         reader,
         modified_read_settings,
         buffer_size,
+        modified_read_settings.remote_read_min_bytes_for_seek,
         context_->getAsyncReadCounters(),
         context_->getFilesystemReadPrefetchesLog());
 
