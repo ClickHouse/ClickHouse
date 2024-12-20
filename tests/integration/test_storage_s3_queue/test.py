@@ -100,7 +100,6 @@ def started_cluster():
             with_minio=True,
             with_azurite=True,
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/zookeeper.xml",
                 "configs/s3queue_log.xml",
@@ -112,7 +111,6 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/s3queue_log.xml",
             ],
@@ -121,7 +119,6 @@ def started_cluster():
         cluster.add_instance(
             "old_instance",
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             image="clickhouse/clickhouse-server",
             tag="23.12",
             stay_alive=True,
@@ -131,7 +128,6 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -142,7 +138,6 @@ def started_cluster():
         cluster.add_instance(
             "node2",
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -155,7 +150,6 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/merge_tree.xml",
@@ -165,7 +159,6 @@ def started_cluster():
         cluster.add_instance(
             "instance_24.5",
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             image="clickhouse/clickhouse-server",
             tag="24.5",
             stay_alive=True,
@@ -173,12 +166,21 @@ def started_cluster():
                 "configs/users.xml",
             ],
             with_installed_binary=True,
-            use_old_analyzer=True,
+        )
+        cluster.add_instance(
+            "instance2_24.5",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            tag="24.5",
+            stay_alive=True,
+            user_configs=[
+                "configs/users.xml",
+            ],
+            with_installed_binary=True,
         )
         cluster.add_instance(
             "node_cloud_mode",
             with_zookeeper=True,
-            keeper_required_feature_flags=["create_if_not_exists"],
             stay_alive=True,
             main_configs=[
                 "configs/zookeeper.xml",
@@ -396,17 +398,29 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
     node.query("system flush logs")
 
     if engine_name == "S3Queue":
-        system_table_name = "s3queue_log"
+        system_tables = ["s3queue_log", "s3queue"]
     else:
-        system_table_name = "azure_queue_log"
-    assert (
-        int(
-            node.query(
-                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
+        system_tables = ["azure_queue_log", "azure_queue"]
+
+    for table in system_tables:
+        if table.endswith("_log"):
+            assert (
+                int(
+                    node.query(
+                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
+                    )
+                )
+                == files_num * row_num
             )
-        )
-        == files_num * row_num
-    )
+        else:
+            assert (
+                int(
+                    node.query(
+                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
+                    )
+                )
+                == files_num * row_num
+            )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
@@ -1982,8 +1996,7 @@ def test_commit_on_limit(started_cluster):
 
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
-    if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+    assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
@@ -2320,7 +2333,6 @@ def test_alter_settings(started_cluster):
         check_string_settings(node, string_settings)
 
         node.restart_clickhouse()
-        assert expected_rows == get_count()
 
         check_int_settings(node, int_settings)
         check_string_settings(node, string_settings)
@@ -2539,9 +2551,8 @@ def test_registry(started_cluster):
 
 
 def test_upgrade_3(started_cluster):
-    node = started_cluster.instances["instance_24.5"]
-    if "24.5" not in node.query("select version()").strip():
-        node.restart_with_original_version()
+    node = started_cluster.instances["instance2_24.5"]
+    assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_3_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
@@ -2570,13 +2581,48 @@ def test_upgrade_3(started_cluster):
     assert expected_rows == get_count()
 
     node.restart_with_latest_version()
+
     assert table_name in node.query("SHOW TABLES")
 
-    assert (
-        "Cannot alter settings, because table engine doesn't support settings changes"
-        in node.query_and_get_error(
-            f"""
-        ALTER TABLE {table_name} MODIFY SETTING processing_threads_num=5
+    node.query(
+        f"""
+        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=111
     """
+    )
+    assert 111 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
+        )
+    )
+
+    node.query(
+        f"""
+        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=222, polling_max_timeout_ms=333
+    """
+    )
+    assert 222 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
+        )
+    )
+    assert 333 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
+        )
+    )
+
+    assert "polling_max_timeout_ms = 333" in node.query(
+        f"SHOW CREATE TABLE {table_name}"
+    )
+
+    node.restart_clickhouse()
+
+    assert "polling_max_timeout_ms = 333" in node.query(
+        f"SHOW CREATE TABLE {table_name}"
+    )
+
+    assert 333 == int(
+        node.query(
+            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
         )
     )
