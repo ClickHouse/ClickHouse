@@ -599,10 +599,10 @@ namespace
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
-        using DateTimeType = typename std::conditional<
+        using DateTimeType = typename std::conditional_t<
             return_type == ReturnType::DateTime64,
             DateTime<error_handling, true>,
-            DateTime<error_handling, false>>::type;
+            DateTime<error_handling, false>>;
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
 
