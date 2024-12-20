@@ -1,5 +1,3 @@
-#include <Core/Settings.h>
-#include <Common/quoteString.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/Context.h>
@@ -7,10 +5,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-}
 
 namespace ErrorCodes
 {
@@ -44,7 +38,7 @@ void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & s
     if (storage->supportsTransactions())
         return;
 
-    if (context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+    if (context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage {} (table {}) does not support transactions",
                         storage->getName(), storage->getStorageID().getNameForLogs());
 

@@ -51,6 +51,6 @@ https://h3geo.org/docs/api/traversal
 
 SELECT length(h3Line(stringToH3(start), stringToH3(end))) FROM h3_indexes ORDER BY id;
 
-SELECT h3Line(0xffffffffffffff, 0xffffffffffffff); -- { serverError INCORRECT_DATA }
+SELECT h3Line(0xffffffffffffff, 0xffffffffffffff); -- { serverError 117 }
 
 DROP TABLE h3_indexes;

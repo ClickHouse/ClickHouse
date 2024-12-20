@@ -102,24 +102,24 @@ public:
             auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
             {
-                data(place).add(i);
+                this->data(place).add(i);
             }
         }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        data(place).merge(data(rhs));
+        this->data(place).merge(this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        data(place).serialize(buf);
+        this->data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        data(place).deserialize(buf);
+        this->data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -130,13 +130,13 @@ public:
         ColumnArray::Offset current_offset = data_to.size();
         data_to.resize(current_offset + events_size);
 
-        const bool first_flag = data(place).events.test(0);
+        const bool first_flag = this->data(place).events.test(0);
         data_to[current_offset] = first_flag;
         ++current_offset;
 
         for (size_t i = 1; i < events_size; ++i)
         {
-            data_to[current_offset] = (first_flag && data(place).events.test(i));
+            data_to[current_offset] = (first_flag && this->data(place).events.test(i));
             ++current_offset;
         }
 

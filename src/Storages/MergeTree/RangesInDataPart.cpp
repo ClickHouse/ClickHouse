@@ -13,7 +13,7 @@ struct fmt::formatter<DB::RangesInDataPartDescription>
     static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
 
     template <typename FormatContext>
-    auto format(const DB::RangesInDataPartDescription & range, FormatContext & ctx) const
+    auto format(const DB::RangesInDataPartDescription & range, FormatContext & ctx)
     {
         return fmt::format_to(ctx.out(), "{}", range.describe());
     }
@@ -99,7 +99,7 @@ size_t RangesInDataPart::getMarksCount() const
 
 size_t RangesInDataPart::getRowsCount() const
 {
-    return data_part->index_granularity->getRowsCountInRanges(ranges);
+    return data_part->index_granularity.getRowsCountInRanges(ranges);
 }
 
 

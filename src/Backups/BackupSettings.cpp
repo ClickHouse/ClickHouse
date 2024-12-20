@@ -7,7 +7,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
 
 namespace DB
 {
@@ -28,9 +27,7 @@ namespace ErrorCodes
     M(Bool, decrypt_files_from_encrypted_disks) \
     M(Bool, deduplicate_files) \
     M(Bool, allow_s3_native_copy) \
-    M(Bool, allow_azure_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
-    M(Bool, use_same_password_for_base_backup) \
     M(Bool, azure_attempt_to_create_container) \
     M(Bool, read_from_filesystem_cache) \
     M(UInt64, shard_num) \
@@ -38,11 +35,9 @@ namespace ErrorCodes
     M(Bool, check_parts) \
     M(Bool, check_projection_parts) \
     M(Bool, allow_backup_broken_projections) \
-    M(Bool, write_access_entities_dependents) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(OptionalUUID, backup_uuid) \
-    M(OptionalUInt64, max_backup_bandwidth)
+    M(OptionalUUID, backup_uuid)
     /// M(Int64, compression_level)
 
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
@@ -74,17 +69,6 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         res.cluster_host_ids = Util::clusterHostIDsFromAST(*query.cluster_host_ids);
 
     return res;
-}
-
-bool BackupSettings::isAsync(const ASTBackupQuery & query)
-{
-    if (query.settings)
-    {
-        const auto * field = query.settings->as<const ASTSetQuery &>().changes.tryGet("async");
-        if (field)
-            return field->safeGet<bool>();
-    }
-    return false; /// `async` is false by default.
 }
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
@@ -140,7 +124,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                     "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-            const auto & replicas = array_of_replicas->value.safeGet<const Array &>();
+            const auto & replicas = array_of_replicas->value.get<const Array &>();
             res[i].resize(replicas.size());
             for (size_t j = 0; j != replicas.size(); ++j)
             {
@@ -149,7 +133,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                         "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-                res[i][j] = replica.safeGet<const String &>();
+                res[i][j] = replica.get<const String &>();
             }
         }
     }

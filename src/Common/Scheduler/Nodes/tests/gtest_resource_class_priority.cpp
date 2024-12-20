@@ -13,8 +13,7 @@ TEST(SchedulerPriorityPolicy, Factory)
     ResourceTest t;
 
     Poco::AutoPtr cfg = new Poco::Util::XMLConfiguration();
-    EventQueue event_queue;
-    SchedulerNodePtr prio = SchedulerNodeFactory::instance().get("priority", &event_queue, *cfg, "");
+    SchedulerNodePtr prio = SchedulerNodeFactory::instance().get("priority", /* event_queue = */ nullptr, *cfg, "");
     EXPECT_TRUE(dynamic_cast<PriorityPolicy *>(prio.get()) != nullptr);
 }
 

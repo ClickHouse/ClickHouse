@@ -1,16 +1,15 @@
 #pragma once
 
 #include <cstring>
-#include <exception>
 #include <string>
+#include <exception>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 
 
 /** Stores a calendar date in broken-down form (year, month, day-in-month).
   * Could be initialized from date in text form, like '2011-01-01' or from time_t with rounding to date.
   * Also could be initialized from date in text form like '20110101... (only first 8 symbols are used).
-  * Could be implicitly cast to time_t.
+  * Could be implicitly casted to time_t.
   * NOTE: Transforming between time_t and LocalDate is done in local time zone!
   *
   * When local time was shifted backwards (due to daylight saving time or whatever reason)

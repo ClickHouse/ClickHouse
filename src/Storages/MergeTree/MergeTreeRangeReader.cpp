@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
@@ -27,12 +26,6 @@
 #    include <arm_neon.h>
 #      pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
-
-namespace ProfileEvents
-{
-extern const Event RowsReadByMainReader;
-extern const Event RowsReadByPrewhereReaders;
-}
 
 namespace DB
 {
@@ -141,15 +134,17 @@ size_t MergeTreeRangeReader::DelayedStream::read(Columns & columns, size_t from_
         num_delayed_rows += num_rows;
         return 0;
     }
+    else
+    {
+        size_t read_rows = finalize(columns);
 
-    size_t read_rows = finalize(columns);
+        continue_reading = false;
+        current_mark = from_mark;
+        current_offset = offset;
+        num_delayed_rows = num_rows;
 
-    continue_reading = false;
-    current_mark = from_mark;
-    current_offset = offset;
-    num_delayed_rows = num_rows;
-
-    return read_rows;
+        return read_rows;
+    }
 }
 
 size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
@@ -264,16 +259,18 @@ size_t MergeTreeRangeReader::Stream::read(Columns & columns, size_t num_rows, bo
 
         return read_rows;
     }
-
-    /// Nothing to read.
-    if (skip_remaining_rows_in_current_granule)
+    else
     {
-        /// Skip the rest of the rows in granule and start new one.
-        checkNotFinished();
-        toNextMark();
-    }
+        /// Nothing to read.
+        if (skip_remaining_rows_in_current_granule)
+        {
+            /// Skip the rest of the rows in granule and start new one.
+            checkNotFinished();
+            toNextMark();
+        }
 
-    return 0;
+        return 0;
+    }
 }
 
 void MergeTreeRangeReader::Stream::skip(size_t num_rows)
@@ -535,14 +532,14 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         clear();
         return;
     }
-    if (total_zero_rows_in_tails == 0 && filter.countBytesInFilter() == filter.size())
+    else if (total_zero_rows_in_tails == 0 && filter.countBytesInFilter() == filter.size())
     {
         LOG_TEST(log, "ReadResult::optimize() combined filter is const True");
         setFilterConstTrue();
         return;
     }
     /// Just a guess. If only a few rows may be skipped, it's better not to skip at all.
-    if (2 * total_zero_rows_in_tails > filter.size())
+    else if (2 * total_zero_rows_in_tails > filter.size())
     {
         const NumRows rows_per_granule_previous = rows_per_granule;
         const size_t total_rows_per_granule_previous = total_rows_per_granule;
@@ -557,8 +554,8 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         /// Check if const 1 after shrink.
         /// We can apply shrink only if after the previous step the number of rows in the result
         /// matches the rows_per_granule info. Otherwise we will not be able to match newly added zeros in granule tails.
-        if (num_rows == total_rows_per_granule_previous
-            && filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule_previous) /// All zeros are in tails?
+        if (num_rows == total_rows_per_granule_previous &&
+            filter.countBytesInFilter() + total_zero_rows_in_tails == total_rows_per_granule_previous)  /// All zeros are in tails?
         {
             setFilterConstTrue();
 
@@ -580,11 +577,8 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
             /// Shorten the filter by removing zeros from granule tails
             collapseZeroTails(filter.getData(), rows_per_granule_previous, new_data);
             if (total_rows_per_granule != new_filter->size())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "New filter size {} doesn't match number of rows to be read {}",
-                    new_filter->size(),
-                    total_rows_per_granule);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "New filter size {} doesn't match number of rows to be read {}",
+                    new_filter->size(), total_rows_per_granule);
 
             /// Need to apply combined filter here before replacing it with shortened one because otherwise
             /// the filter size will not match the number of rows in the result columns.
@@ -601,11 +595,8 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
 
             final_filter = FilterWithCachedCount(new_filter->getPtr());
             if (num_rows != final_filter.countBytesInFilter())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Count of 1s in final filter {} doesn't match number of rows {}",
-                    final_filter.countBytesInFilter(),
-                    num_rows);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Count of 1s in final filter {} doesn't match number of rows {}",
+                    final_filter.countBytesInFilter(), num_rows);
 
             LOG_TEST(log, "ReadResult::optimize() after colapseZeroTails {}", dumpInfo());
         }
@@ -689,9 +680,8 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
             return count;
         }
     }
-    while (end > begin && end[-1] == 0)
+    while (end > begin && *(--end) == 0)
     {
-        --end;
         ++count;
     }
     return count;
@@ -724,9 +714,8 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
             return count;
         }
     }
-    while (end > begin && end[-1] == 0)
+    while (end > begin && *(--end) == 0)
     {
-        --end;
         ++count;
     }
     return count;
@@ -739,7 +728,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
     /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
     if (isArchSupported(TargetArch::AVX512BW))
         return TargetSpecific::AVX512BW::numZerosInTail(begin, end);
-    if (isArchSupported(TargetArch::AVX2))
+    else if (isArchSupported(TargetArch::AVX2))
         return TargetSpecific::AVX2::numZerosInTail(begin, end);
 #endif
 
@@ -803,9 +792,8 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
     }
 #endif
 
-    while (end > begin && end[-1] == 0)
+    while (end > begin && *(--end) == 0)
     {
-        --end;
         ++count;
     }
     return count;
@@ -815,14 +803,12 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
     const PrewhereExprStep * prewhere_info_,
-    bool last_reader_in_chain_,
-    bool main_reader_)
+    bool last_reader_in_chain_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
     , prev_reader(prev_reader_)
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
-    , main_reader(main_reader_)
     , is_initialized(true)
 {
     if (prev_reader)
@@ -884,8 +870,6 @@ size_t MergeTreeRangeReader::currentMark() const
 {
     return stream.currentMark();
 }
-
-const NameSet MergeTreeRangeReader::virtuals_to_fill = {"_part_offset", "_block_offset"};
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const
 {
@@ -1159,39 +1143,15 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
-    fillVirtualColumns(result, leading_begin_part_offset, leading_end_part_offset);
-
-    ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * result.numReadRows());
-    ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * result.numReadRows());
+    if (read_sample_block.has("_part_offset"))
+    {
+        size_t pos = read_sample_block.getPositionByName("_part_offset");
+        chassert(pos < result.columns.size());
+        chassert(result.columns[pos] == nullptr);
+        result.columns[pos] = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+    }
 
     return result;
-}
-
-void MergeTreeRangeReader::fillVirtualColumns(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
-{
-    ColumnPtr part_offset_column;
-
-    auto add_offset_column = [&](const auto & column_name)
-    {
-        size_t pos = read_sample_block.getPositionByName(column_name);
-        chassert(pos < result.columns.size());
-
-        /// Column may be persisted in part.
-        if (result.columns[pos])
-            return;
-
-        if (!part_offset_column)
-            part_offset_column = createPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
-
-        result.columns[pos] = part_offset_column;
-    };
-
-    if (read_sample_block.has("_part_offset"))
-        add_offset_column("_part_offset");
-
-    /// Column _block_offset is the same as _part_offset if it's not persisted in part.
-    if (read_sample_block.has(BlockOffsetColumn::name))
-        add_offset_column(BlockOffsetColumn::name);
 }
 
 ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
@@ -1271,9 +1231,6 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
     if (num_rows && num_rows != result.total_rows_per_granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeReader read {} rows, but {} expected.",
                         num_rows, result.total_rows_per_granule);
-
-    ProfileEvents::increment(ProfileEvents::RowsReadByMainReader, main_reader * num_rows);
-    ProfileEvents::increment(ProfileEvents::RowsReadByPrewhereReaders, (!main_reader) * num_rows);
 
     return columns;
 }

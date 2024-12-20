@@ -5,10 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 opts=(
-    "--enable_analyzer=0"
+    "--allow_experimental_analyzer=0"
 )
 
-$CLICKHOUSE_CLIENT "${opts[@]}" <<EOF
+$CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
 SET allow_experimental_window_view = 1;
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS dst;

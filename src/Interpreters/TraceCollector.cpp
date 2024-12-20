@@ -1,11 +1,11 @@
-#include <Interpreters/TraceCollector.h>
+#include "TraceCollector.h"
+
 #include <Core/Field.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
-#include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -14,12 +14,8 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-TraceCollector::TraceCollector()
+TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log_)
+    : trace_log(std::move(trace_log_))
 {
     TraceSender::pipe.open();
 
@@ -30,23 +26,6 @@ TraceCollector::TraceCollector()
     TraceSender::pipe.tryIncreaseSize(1 << 20);
 
     thread = ThreadFromGlobalPool(&TraceCollector::run, this);
-}
-
-void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)
-{
-    if (is_trace_log_initialized)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector is already initialized");
-
-    trace_log_ptr = trace_log_;
-    is_trace_log_initialized.store(true, std::memory_order_release);
-}
-
-std::shared_ptr<TraceLog> TraceCollector::getTraceLog()
-{
-    if (!is_trace_log_initialized.load(std::memory_order_acquire))
-        return nullptr;
-
-    return trace_log_ptr;
 }
 
 void TraceCollector::tryClosePipe()
@@ -63,25 +42,21 @@ void TraceCollector::tryClosePipe()
 
 TraceCollector::~TraceCollector()
 {
-    // Pipes could be already closed due to exception in TraceCollector::run.
-    if (TraceSender::pipe.fds_rw[1] >= 0)
+    try
     {
-        try
-        {
-            /** Sends TraceCollector stop message
-            *
-            * Each sequence of data for TraceCollector thread starts with a boolean flag.
-            * If this flag is true, TraceCollector must stop reading trace_pipe and exit.
-            * This function sends flag with a true value to stop TraceCollector gracefully.
-            */
-            WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
-            writeChar(true, out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException("TraceCollector");
-        }
+        /** Sends TraceCollector stop message
+        *
+        * Each sequence of data for TraceCollector thread starts with a boolean flag.
+        * If this flag is true, TraceCollector must stop reading trace_pipe and exit.
+        * This function sends flag with a true value to stop TraceCollector gracefully.
+        */
+        WriteBufferFromFileDescriptor out(TraceSender::pipe.fds_rw[1]);
+        writeChar(true, out);
+        out.next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("TraceCollector");
     }
 
     tryClosePipe();
@@ -145,12 +120,12 @@ void TraceCollector::run()
             ProfileEvents::Count increment;
             readPODBinary(increment, in);
 
-            if (auto trace_log = getTraceLog())
+            if (trace_log)
             {
                 // time and time_in_microseconds are both being constructed from the same timespec so that the
                 // times will be equal up to the precision of a second.
                 struct timespec ts;
-                clock_gettime(CLOCK_REALTIME, &ts); /// NOLINT(cert-err33-c)
+                clock_gettime(CLOCK_REALTIME, &ts);
 
                 UInt64 time = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
                 UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));

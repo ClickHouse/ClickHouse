@@ -1,6 +1,5 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
-#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
@@ -8,10 +7,6 @@
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 
-#include <Core/DecimalFunctions.h>
-#include <Core/TypeId.h>
-
-#include <base/TypeName.h>
 #include <base/sort.h>
 
 #include <IO/WriteHelpers.h>
@@ -35,24 +30,7 @@ namespace ErrorCodes
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::getFamilyName() const
-{
-    return TypeName<T>.data();
-}
-
-template <is_decimal T>
-TypeIndex ColumnDecimal<T>::getDataType() const
-{
-    return TypeToTypeIndex<T>;
-}
-
-
-template <is_decimal T>
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
-#else
-int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int) const
-#endif
 {
     auto & other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
@@ -61,12 +39,6 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
     if (scale == other.scale)
         return a > b ? 1 : (a < b ? -1 : 0);
     return decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0);
-}
-
-template <is_decimal T>
-Float64 ColumnDecimal<T>::getFloat64(size_t n) const
-{
-    return DecimalUtils::convertTo<Float64>(data[n], scale);
 }
 
 template <is_decimal T>
@@ -291,23 +263,6 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 }
 
 template <is_decimal T>
-size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permutation & permutation, const EqualRange & equal_range) const
-{
-    const size_t range_size = equal_range.size();
-    if (range_size <= 1)
-        return range_size;
-
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    HashSet<T> elements;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
-    {
-        size_t permuted_i = permutation[i];
-        elements.insert(data[permuted_i]);
-    }
-    return elements.size();
-}
-
-template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     return permuteImpl(*this, perm, limit);
@@ -356,11 +311,7 @@ void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 }
 
 template <is_decimal T>
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnDecimal<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     const ColumnDecimal & src_vec = assert_cast<const ColumnDecimal &>(src);
 
@@ -478,7 +429,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 }
 
 template <is_decimal T>
-ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
+ColumnPtr ColumnDecimal<T>::compress() const
 {
     const size_t data_size = data.size();
     const size_t source_size = data_size * sizeof(T);
@@ -487,7 +438,7 @@ ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, force_compression);
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());

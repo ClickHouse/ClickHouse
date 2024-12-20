@@ -1,12 +1,9 @@
 #pragma once
 
 #include <Processors/ISource.h>
-#include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
-
 #include <Core/UUID.h>
-
-#include <Common/EventFD.h>
 
 namespace DB
 {
@@ -28,30 +25,26 @@ public:
     void work() override;
     String getName() const override { return "Remote"; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit.swap(counter); }
-    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
 
     /// Stop reading from stream if output port is finished.
     void onUpdatePorts() override;
 
-    int schedule() override;
-
-    void onAsyncJobReady() override;
+    int schedule() override { return fd; }
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
 protected:
     std::optional<Chunk> tryGenerate() override;
-    void onCancel() noexcept override;
+    void onCancel() override;
 
 private:
-    std::atomic_bool was_query_sent = false;
+    bool was_query_sent = false;
     bool need_drain = false;
     bool executor_finished = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
-    RowsBeforeStepCounterPtr rows_before_limit;
-    RowsBeforeStepCounterPtr rows_before_aggregation;
+    RowsBeforeLimitCounterPtr rows_before_limit;
 
     const bool async_read;
     const bool async_query_sending;
@@ -59,8 +52,6 @@ private:
     int fd = -1;
     size_t rows = 0;
     bool manually_add_rows_before_limit_counter = false;
-    std::atomic_bool preprocessed_packet = false;
-    EventFD startup_event_fd;
 };
 
 /// Totals source from RemoteQueryExecutor.

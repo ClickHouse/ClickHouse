@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Common/iota.h>
 #include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Poco/Logger.h>
 
 #include <boost/geometry.hpp>
@@ -215,7 +214,7 @@ public:
     static constexpr Coord kEps = 1e-4f;
 
 private:
-    std::unique_ptr<ICell<ReturnCell>> root;
+    std::unique_ptr<ICell<ReturnCell>> root = nullptr;
     Coord min_x = 0, min_y = 0;
     Coord max_x = 0, max_y = 0;
     const size_t k_min_intersections;
@@ -251,11 +250,10 @@ private:
         auto y_shift = (current_max_y - current_min_y) / DividedCell<ReturnCell>::kSplit;
         std::vector<std::unique_ptr<ICell<ReturnCell>>> children;
         children.resize(DividedCell<ReturnCell>::kSplit * DividedCell<ReturnCell>::kSplit);
-
-        ThreadPoolCallbackRunnerLocal<void, GlobalThreadPool> runner(GlobalThreadPool::instance(), "PolygonDict");
+        std::vector<ThreadFromGlobalPool> threads{};
         for (size_t i = 0; i < DividedCell<ReturnCell>::kSplit; current_min_x += x_shift, ++i)
         {
-            auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i, x = current_min_x, y = current_min_y]() mutable
+            auto handle_row = [this, &children, &y_shift, &x_shift, &possible_ids, &depth, i](Coord x, Coord y)
             {
                 for (size_t j = 0; j < DividedCell<ReturnCell>::kSplit; y += y_shift, ++j)
                 {
@@ -263,11 +261,12 @@ private:
                 }
             };
             if (depth <= kMultiProcessingDepth)
-                runner(std::move(handle_row));
+                threads.emplace_back(handle_row, current_min_x, current_min_y);
             else
-                handle_row();
+                handle_row(current_min_x, current_min_y);
         }
-        runner.waitForAllToFinishAndRethrowFirstError();
+        for (auto & thread : threads)
+            thread.join();
         return std::make_unique<DividedCell<ReturnCell>>(std::move(children));
     }
 

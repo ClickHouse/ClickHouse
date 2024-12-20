@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/sumcount
-sidebar_position: 196
+sidebar_position: 144
 title: sumCount
 ---
 

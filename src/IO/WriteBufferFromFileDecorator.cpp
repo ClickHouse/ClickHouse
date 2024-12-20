@@ -22,20 +22,9 @@ void WriteBufferFromFileDecorator::finalizeImpl()
     if (!is_prefinalized)
         WriteBufferFromFileDecorator::preFinalize();
 
-    WriteBufferFromFileBase::finalizeImpl();
     {
         SwapHelper swap(*this, *impl);
         impl->finalize();
-    }
-}
-
-void WriteBufferFromFileDecorator::cancelImpl() noexcept
-{
-    WriteBufferFromFileBase::cancelImpl();
-
-    {
-        SwapHelper swap(*this, *impl);
-        impl->cancel();
     }
 }
 

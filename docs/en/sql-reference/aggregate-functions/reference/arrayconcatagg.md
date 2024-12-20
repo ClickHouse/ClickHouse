@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/array_concat_agg
-sidebar_position: 111
+sidebar_position: 110
 ---
 
 # array_concat_agg 

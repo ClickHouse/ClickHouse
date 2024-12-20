@@ -54,9 +54,10 @@ public:
         if (arguments[0].type->onlyNull() && !col->empty())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create non-empty column with type Nothing");
 
-        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&*col))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*col))
             return nullable_col->getNestedColumnPtr();
-        return col;
+        else
+            return col;
     }
 };
 

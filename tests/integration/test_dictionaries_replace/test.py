@@ -1,7 +1,7 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+
 
 cluster = ClickHouseCluster(__file__)
 
@@ -134,5 +134,3 @@ def test_create_or_replace(database, instance_to_create_dictionary, instances_to
         expected_result = TSV([[0, 1], [5, 26], [7, 50], [11, 0]])
         assert instance.query(select_query) == expected_result
         assert instance.query(select_query, user="dictget_user") == expected_result
-
-    instance_to_create_dictionary.query(f"DROP DICTIONARY IF EXISTS {database}.dict")

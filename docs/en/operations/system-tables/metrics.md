@@ -357,7 +357,7 @@ Number of currently running inserts to Kafka
 
 Number of alive connections
 
-### KeeperOutstandingRequests
+### KeeperOutstandingRequets
 
 Number of outstanding requests
 
@@ -736,14 +736,6 @@ Number of sessions (connections) to ZooKeeper. Should be no more than one, becau
 ### ZooKeeperWatch
 
 Number of watches (event subscriptions) in ZooKeeper.
-
-### ConcurrencyControlAcquired
-
-Total number of acquired CPU slots.
-
-### ConcurrencyControlSoftLimit
-
-Value of soft limit on number of CPU slots.
 
 **See Also**
 

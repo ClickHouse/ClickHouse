@@ -32,12 +32,13 @@ struct WeekTransformer
     {}
 
     template <typename FromVectorType, typename ToVectorType>
-    void vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone, size_t input_rows_count) const
+    void vector(const FromVectorType & vec_from, ToVectorType & vec_to, UInt8 week_mode, const DateLUTImpl & time_zone) const
     {
         using ValueType = typename ToVectorType::value_type;
-        vec_to.resize(input_rows_count);
+        size_t size = vec_from.size();
+        vec_to.resize(size);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             if constexpr (is_extended_result)
                 vec_to[i] = static_cast<ValueType>(transform.executeExtendedResult(vec_from[i], week_mode, time_zone));
@@ -55,7 +56,7 @@ template <typename FromDataType, typename ToDataType, bool is_extended_result = 
 struct CustomWeekTransformImpl
 {
     template <typename Transform>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count, Transform transform = {})
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, Transform transform = {})
     {
         const auto op = WeekTransformer<typename FromDataType::FieldType, typename ToDataType::FieldType, Transform, is_extended_result>{transform};
 
@@ -76,9 +77,9 @@ struct CustomWeekTransformImpl
             const auto * sources = checkAndGetColumn<DataTypeString::ColumnType>(source_col.get());
 
             auto col_to = ToDataType::ColumnType::create();
-            col_to->getData().resize(input_rows_count);
+            col_to->getData().resize(sources->size());
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < sources->size(); ++i)
             {
                 DateTime64 dt64;
                 ReadBufferFromString buf(sources->getDataAt(i).toView());
@@ -91,7 +92,7 @@ struct CustomWeekTransformImpl
         else if (const auto * sources = checkAndGetColumn<typename FromDataType::ColumnType>(source_col.get()))
         {
             auto col_to = ToDataType::ColumnType::create();
-            op.vector(sources->getData(), col_to->getData(), week_mode, time_zone, input_rows_count);
+            op.vector(sources->getData(), col_to->getData(), week_mode, time_zone);
             return col_to;
         }
         else

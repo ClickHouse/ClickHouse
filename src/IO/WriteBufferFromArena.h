@@ -4,8 +4,6 @@
 #include <base/StringRef.h>
 #include <IO/WriteBuffer.h>
 
-#include <algorithm>
-
 
 namespace DB
 {
@@ -53,7 +51,8 @@ private:
         /// the most stupid way possible, because the real fix for this is to
         /// tear down the entire WriteBuffer thing and implement it again,
         /// properly.
-        size_t continuation_size = std::max({size_t(1), count(), arena.remainingSpaceInCurrentMemoryChunk()});
+        size_t continuation_size = std::max(size_t(1),
+            std::max(count(), arena.remainingSpaceInCurrentMemoryChunk()));
 
         /// allocContinue method will possibly move memory region to new place and modify "begin" pointer.
 

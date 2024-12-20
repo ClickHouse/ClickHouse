@@ -4,8 +4,7 @@
 
 #if USE_PROTOBUF
 #   include <Columns/IColumn.h>
-#   include <Core/NamesAndTypes.h>
-#   include <Formats/ProtobufSchemas.h>
+#include <Core/NamesAndTypes.h>
 
 
 namespace google::protobuf { class Descriptor; }
@@ -40,7 +39,7 @@ public:
         const Strings & column_names,
         const DataTypes & data_types,
         std::vector<size_t> & missing_column_indices,
-        const ProtobufSchemas::DescriptorHolder & descriptor,
+        const google::protobuf::Descriptor & message_descriptor,
         bool with_length_delimiter,
         bool with_envelope,
         bool flatten_google_wrappers,
@@ -49,7 +48,7 @@ public:
     static std::unique_ptr<ProtobufSerializer> create(
         const Strings & column_names,
         const DataTypes & data_types,
-        const ProtobufSchemas::DescriptorHolder & descriptor,
+        const google::protobuf::Descriptor & message_descriptor,
         bool with_length_delimiter,
         bool with_envelope,
         bool defaults_for_nullable_google_wrappers,

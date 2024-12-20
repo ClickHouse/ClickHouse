@@ -1,5 +1,4 @@
 #pragma once
-
 #include <functional>
 #include <IO/WriteBuffer.h>
 
@@ -17,7 +16,7 @@ namespace ErrorCodes
  * (lazy_sources contains not pointers themself, but their delayed constructors)
  *
  * Firtly, CascadeWriteBuffer redirects data to first buffer of the sequence
- * If current WriteBuffer cannot receive data anymore, it throws special exception WriteBuffer::CurrentBufferExhausted in nextImpl() body,
+ * If current WriteBuffer cannot receive data anymore, it throws special exception MemoryWriteBuffer::CurrentBufferExhausted in nextImpl() body,
  *  CascadeWriteBuffer prepare next buffer and continuously redirects data to it.
  * If there are no buffers anymore CascadeWriteBuffer throws an exception.
  *
@@ -28,26 +27,27 @@ class CascadeWriteBuffer : public WriteBuffer
 {
 public:
 
+    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
     using WriteBufferConstructor = std::function<WriteBufferPtr (const WriteBufferPtr & prev_buf)>;
     using WriteBufferConstructors = std::vector<WriteBufferConstructor>;
-    using WriteBufferPtrs = std::vector<WriteBufferPtr>;
 
     explicit CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, WriteBufferConstructors && lazy_sources_ = {});
 
     void nextImpl() override;
 
     /// Should be called once
-    WriteBufferPtrs getResultBuffers();
+    void getResultBuffers(WriteBufferPtrs & res);
 
     const WriteBuffer * getCurrentBuffer() const
     {
         return curr_buffer;
     }
 
+    ~CascadeWriteBuffer() override;
+
 private:
 
     void finalizeImpl() override;
-    void cancelImpl() noexcept override;
 
     WriteBuffer * setNextBuffer();
 

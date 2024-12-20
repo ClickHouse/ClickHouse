@@ -10,13 +10,12 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/MySQL/MySQLBinlogClient.h>
+#include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
-
-struct MaterializedMySQLSettings;
 
 /** Real-time pull table structure and data from remote MySQL
  *
@@ -35,8 +34,6 @@ public:
         MySQLClient && client_,
         const MySQLReplication::BinlogClientPtr & binlog_client_,
         std::unique_ptr<MaterializedMySQLSettings> settings_);
-
-    ~DatabaseMaterializedMySQL() override;
 
     void rethrowExceptionIfNeeded() const;
 
@@ -76,7 +73,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context_) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
 
     void checkIsInternalQuery(ContextPtr context_, const char * method) const;
 

@@ -1,33 +1,44 @@
 #pragma once
 
-#include <memory>
+#include <string>
+
+#include <Common/AsynchronousMetrics.h>
+#include <Common/ProfileEvents.h>
+#include <IO/WriteBuffer.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
 {
-class AsynchronousMetrics;
-class WriteBuffer;
 
 /// Write metrics in Prometheus format
 class PrometheusMetricsWriter
 {
 public:
+    PrometheusMetricsWriter(
+        const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
+        const AsynchronousMetrics & async_metrics_);
+
+    virtual void write(WriteBuffer & wb) const;
+
     virtual ~PrometheusMetricsWriter() = default;
 
-    virtual void writeMetrics(WriteBuffer & wb) const;
-    virtual void writeAsynchronousMetrics(WriteBuffer & wb, const AsynchronousMetrics & async_metrics) const;
-    virtual void writeEvents(WriteBuffer & wb) const;
-    virtual void writeErrors(WriteBuffer & wb) const;
+protected:
+    const AsynchronousMetrics & async_metrics;
+    const bool send_events;
+    const bool send_metrics;
+    const bool send_asynchronous_metrics;
+    const bool send_errors;
 };
-
 
 class KeeperPrometheusMetricsWriter : public PrometheusMetricsWriter
 {
-public:
-    void writeMetrics(WriteBuffer & wb) const override;
-    void writeAsynchronousMetrics(WriteBuffer & wb, const AsynchronousMetrics & async_metrics) const override;
-    void writeEvents(WriteBuffer & wb) const override;
-    void writeErrors(WriteBuffer & wb) const override;
+    using PrometheusMetricsWriter::PrometheusMetricsWriter;
+
+    void write(WriteBuffer & wb) const override;
 };
+
+using PrometheusMetricsWriterPtr = std::shared_ptr<PrometheusMetricsWriter>;
 
 }
