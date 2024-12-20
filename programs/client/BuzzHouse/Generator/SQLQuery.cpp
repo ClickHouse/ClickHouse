@@ -1,3 +1,4 @@
+#include <string>
 #include "SQLCatalog.h"
 #include "StatementGenerator.h"
 
@@ -107,56 +108,6 @@ int StatementGenerator::generateDerivedTable(RandomGenerator & rg, SQLRelation &
     return 0;
 }
 
-int StatementGenerator::setTableRemote(const SQLTable & t, TableFunction * tfunc) const
-{
-    if (t.hasClickHousePeer())
-    {
-        const ServerCredentials & sc = fc.clickhouse_server.value();
-        RemoteFunc * rfunc = tfunc->mutable_remote();
-
-        rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
-        rfunc->set_rdatabase("test");
-        rfunc->set_rtable("t" + std::to_string(t.tname));
-        rfunc->set_user(sc.user);
-        rfunc->set_password(sc.password);
-    }
-    else if (t.hasMySQLPeer())
-    {
-        const ServerCredentials & sc = fc.mysql_server.value();
-        MySQLFunc * mfunc = tfunc->mutable_mysql();
-
-        mfunc->set_address(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
-        mfunc->set_rdatabase(sc.database);
-        mfunc->set_rtable("t" + std::to_string(t.tname));
-        mfunc->set_user(sc.user);
-        mfunc->set_password(sc.password);
-    }
-    else if (t.hasPostgreSQLPeer())
-    {
-        const ServerCredentials & sc = fc.postgresql_server.value();
-        PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
-
-        pfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
-        pfunc->set_rdatabase(sc.database);
-        pfunc->set_rtable("t" + std::to_string(t.tname));
-        pfunc->set_user(sc.user);
-        pfunc->set_password(sc.password);
-        pfunc->set_rschema("test");
-    }
-    else if (t.hasSQLitePeer())
-    {
-        SQLiteFunc * sfunc = tfunc->mutable_sqite();
-
-        sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
-        sfunc->set_rtable("t" + std::to_string(t.tname));
-    }
-    else
-    {
-        assert(0);
-    }
-    return 0;
-}
-
 int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)
 {
     std::string name;
@@ -170,8 +121,12 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
                 return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
                     && (vv.is_deterministic || this->allow_not_deterministic);
             }));
+    const uint32_t engineudf = 5
+        * static_cast<uint32_t>(collectionHas<SQLTable>(
+            [&](const SQLTable & tt)
+            { return tt.isMySQLEngine() || tt.isPostgreSQLEngine() || tt.isSQLiteEngine() || tt.isAnyS3Engine(); }));
     const uint32_t tudf = 5;
-    const uint32_t prob_space = derived_table + cte + table + view + tudf;
+    const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -242,6 +197,18 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
             rel.cols.push_back(SQLRelationCol(name, {"c" + std::to_string(i)}));
         }
         this->levels[this->current_level].rels.push_back(std::move(rel));
+    }
+    else if (engineudf && nopt < (derived_table + cte + table + view + engineudf + 1))
+    {
+        SQLRelation rel(name);
+        JoinedTableFunction * jtf = tos->mutable_joined_table_function();
+        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
+            [&](const SQLTable & tt)
+            { return tt.isMySQLEngine() || tt.isPostgreSQLEngine() || tt.isSQLiteEngine() || tt.isAnyS3Engine(); }));
+
+        setTableRemote<true>(t, jtf->mutable_tfunc());
+        addTableRelation(rg, true, name, t);
+        jtf->mutable_table_alias()->set_table(name);
     }
     else if (tudf)
     {

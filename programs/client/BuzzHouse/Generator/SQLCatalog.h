@@ -97,6 +97,8 @@ public:
     std::optional<TableEngineOption> toption = std::nullopt;
     TableEngineValues teng = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::PeerNone;
+    std::string file_comp;
+    InOutFormat file_format;
 
     bool isMergeTreeFamily() const
     {

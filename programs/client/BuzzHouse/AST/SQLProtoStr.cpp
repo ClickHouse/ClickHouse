@@ -1838,6 +1838,26 @@ CONV_FN(SQLiteFunc, sfunc)
     ret += "')";
 }
 
+CONV_FN(S3Func, sfunc)
+{
+    ret += "s3('";
+    ret += sfunc.resource();
+    ret += "', '";
+    ret += sfunc.user();
+    ret += "', '";
+    ret += sfunc.password();
+    ret += "', '";
+    ret += InOutFormat_Name(sfunc.format()).substr(6);
+    ret += "'";
+    if (sfunc.has_fcomp())
+    {
+        ret += ", '";
+        ret += sfunc.fcomp();
+        ret += "'";
+    }
+    ret += ")";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -1863,6 +1883,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kSqite:
             SQLiteFuncToString(ret, tf.sqite());
+            break;
+        case TableFunctionType::kS3:
+            S3FuncToString(ret, tf.s3());
             break;
         default:
             ret += "numbers(10)";

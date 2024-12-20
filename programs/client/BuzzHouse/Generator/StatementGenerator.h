@@ -313,7 +313,6 @@ private:
     int generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
     int generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     int generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
-    int setTableRemote(const SQLTable & t, TableFunction * tfunc) const;
     int generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, Select * sel);
     int generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     int addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
@@ -380,6 +379,73 @@ private:
             est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    }
+
+    template <bool TEngine>
+    int setTableRemote(const SQLTable & t, TableFunction * tfunc) const
+    {
+        if (!TEngine && t.hasClickHousePeer())
+        {
+            const ServerCredentials & sc = fc.clickhouse_server.value();
+            RemoteFunc * rfunc = tfunc->mutable_remote();
+
+            rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+            rfunc->set_rdatabase("test");
+            rfunc->set_rtable("t" + std::to_string(t.tname));
+            rfunc->set_user(sc.user);
+            rfunc->set_password(sc.password);
+        }
+        else if ((TEngine && t.isMySQLEngine()) || (!TEngine && t.hasMySQLPeer()))
+        {
+            const ServerCredentials & sc = fc.mysql_server.value();
+            MySQLFunc * mfunc = tfunc->mutable_mysql();
+
+            mfunc->set_address(sc.hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+            mfunc->set_rdatabase(sc.database);
+            mfunc->set_rtable("t" + std::to_string(t.tname));
+            mfunc->set_user(sc.user);
+            mfunc->set_password(sc.password);
+        }
+        else if ((TEngine && t.isPostgreSQLEngine()) || (!TEngine && t.hasPostgreSQLPeer()))
+        {
+            const ServerCredentials & sc = fc.postgresql_server.value();
+            PostgreSQLFunc * pfunc = tfunc->mutable_postgresql();
+
+            pfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
+            pfunc->set_rdatabase(sc.database);
+            pfunc->set_rtable("t" + std::to_string(t.tname));
+            pfunc->set_user(sc.user);
+            pfunc->set_password(sc.password);
+            pfunc->set_rschema("test");
+        }
+        else if ((TEngine && t.isSQLiteEngine()) || (!TEngine && t.hasSQLitePeer()))
+        {
+            SQLiteFunc * sfunc = tfunc->mutable_sqite();
+
+            sfunc->set_rdatabase(connections.getSQLitePath().generic_string());
+            sfunc->set_rtable("t" + std::to_string(t.tname));
+        }
+        else if (TEngine && t.isS3Engine())
+        {
+            const ServerCredentials & sc = fc.minio_server.value();
+            S3Func * sfunc = tfunc->mutable_s3();
+
+            sfunc->set_resource(
+                "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
+                + (t.isS3QueueEngine() ? "/*" : ""));
+            sfunc->set_user(sc.user);
+            sfunc->set_password(sc.password);
+            sfunc->set_format(t.file_format);
+            if (!t.file_comp.empty())
+            {
+                sfunc->set_fcomp(t.file_comp);
+            }
+        }
+        else
+        {
+            assert(0);
+        }
+        return 0;
     }
 
 public:

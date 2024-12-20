@@ -803,10 +803,12 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
         connections.createExternalDatabaseTable(rg, IntegrationCall::IntMinIO, b, entries, te);
         if (b.isAnyS3Engine() || b.isIcebergEngine())
         {
-            te->add_params()->set_in_out(static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1));
+            b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);
+            te->add_params()->set_in_out(b.file_format);
             if (rg.nextSmallNumber() < 4)
             {
-                te->add_params()->set_svalue(rg.pickRandomlyFromVector(s3_compress));
+                b.file_comp = rg.pickRandomlyFromVector(s3_compress);
+                te->add_params()->set_svalue(b.file_comp);
             }
             if (b.isAnyS3Engine() && rg.nextSmallNumber() < 5)
             {

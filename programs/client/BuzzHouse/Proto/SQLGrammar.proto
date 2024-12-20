@@ -2408,6 +2408,14 @@ message SQLiteFunc {
     required string rtable = 2;
 }
 
+message S3Func {
+    required string resource = 1;
+    required string user = 2;
+    required string password = 3;
+    required InOutFormat format = 4;
+    optional string fcomp = 5;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2417,6 +2425,7 @@ message TableFunction {
         MySQLFunc mysql = 5;
         PostgreSQLFunc postgresql = 6;
         SQLiteFunc sqite = 7;
+        S3Func s3 = 8;
     }
 }
 
