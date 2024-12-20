@@ -48,7 +48,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
-        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
+        bool enable_adaptive_short_circuit_ = parent_expr->enableAdaptiveShortCircuit() && child_expr->enableAdaptiveShortCircuit();
+        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged), enable_adaptive_short_circuit_);
         expr->setStepDescription("(" + parent_expr->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
 
         parent_node->step = std::move(expr);
@@ -63,13 +64,16 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
             return 0;
 
+        bool enable_adaptive_short_circuit_ = parent_filter->enableAdaptiveShortCircuit() && child_expr->enableAdaptiveShortCircuit();
+
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
         auto filter = std::make_unique<FilterStep>(
             child_expr->getInputHeaders().front(),
             std::move(merged),
             parent_filter->getFilterColumnName(),
-            parent_filter->removesFilterColumn());
+            parent_filter->removesFilterColumn(),
+            enable_adaptive_short_circuit_);
         filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
 
         parent_node->step = std::move(filter);

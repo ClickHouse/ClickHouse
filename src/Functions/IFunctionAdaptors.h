@@ -17,6 +17,11 @@ public:
 protected:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
+    ColumnPtr executeImplWithProfile(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecuteProfile * profile) const final;
     ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
@@ -70,6 +75,8 @@ public:
     }
 
     bool isStateful() const override { return function->isStateful(); }
+
+    bool isNoExcept() const override { return function->isNoExcept(); }
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 

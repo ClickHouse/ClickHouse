@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
+template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true, bool is_no_except = false>
 class FunctionStringOrArrayToT : public IFunction
 {
 public:
@@ -67,6 +67,8 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isNoExcept() const override { return is_no_except; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

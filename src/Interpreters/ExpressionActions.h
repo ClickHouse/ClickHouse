@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 
 #include <variant>
+#include <shared_mutex>
 
 #include "config.h"
 
@@ -25,6 +26,8 @@ using JoinPtr = std::shared_ptr<IJoin>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+struct ExecutionContext;
+struct FunctionExecuteProfile;
 
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
@@ -42,6 +45,8 @@ public:
         /// True if there is another action which will use this column.
         /// Otherwise column will be removed.
         bool needed_later = false;
+        // Position in ExpressionActions::actions
+        size_t actions_pos = 0;
     };
 
     using Arguments = std::vector<Argument>;
@@ -50,11 +55,51 @@ public:
     {
         const Node * node;
         Arguments arguments;
+        // If a argument's original position is a, and it's reordered to position b, then
+        // reordered_arguments_pos[a] = b, and original_arguments_pos[b] = a
+        std::vector<size_t> reordered_arguments_pos;
+        std::vector<size_t> original_arguments_pos;
+        // reference to its parents in `ExpressionActions::actions`.
+        std::vector<size_t> parents_pos;
         size_t result_position;
 
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         bool is_lazy_executed;
+        bool is_short_circuit_node;
+        bool could_reorder_arguments;
+        Action(const Node * node_,
+            const Arguments & arguments_,
+            size_t result_position_,
+            bool is_lazy_executed_,
+            bool is_short_circuit_node_,
+            bool could_reorder_arguments_)
+            : node(node_),
+            arguments(arguments_),
+            result_position(result_position_),
+            is_lazy_executed(is_lazy_executed_),
+            is_short_circuit_node(is_short_circuit_node_),
+            could_reorder_arguments(could_reorder_arguments_)
+        {
+            reordered_arguments_pos.reserve(arguments.size());
+            original_arguments_pos.reserve(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                original_arguments_pos.emplace_back(i);
+                reordered_arguments_pos.emplace_back(i);
+            }
+        }
+
+        // Some profile metrics used for reordering short circuit arguments.
+        size_t elapsed_ns = 0;
+        size_t calculated_rows = 0;
+        size_t short_circuit_selected_rows = 0;
+
+        // It indicates whether most of the rows will be executed.
+        bool has_high_selectivity = false;
+        // Before next `tryScheduleLazyExecution` call, how many rows are executed in this action.
+        size_t current_round_calcuated_rows = 0;
+        size_t current_round_elapsed_ns = 0;
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -78,11 +123,24 @@ private:
     Block sample_block;
 
     bool project_inputs = false;
+    bool enable_adaptive_short_circuit = false;
 
     ExpressionActionsSettings settings;
 
+    static const size_t reorder_short_circuit_arguments_every_rows;
+
+    // Before next `tryScheduleLazyExecution` call, how many rows are input.
+    size_t current_round_profile_rows = 0;
+
 public:
-    explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    // If enable_adaptive_short_circuit = true, ExpressionActions is not thread safe, since it will have state
+    // updated during `execute`. You could make multiple ExpressionActions and make sure each instance only be
+    // executed by one thread at the same time, like `ExpressionStep` and `FilterStep` do.
+    explicit ExpressionActions(
+        ActionsDAG actions_dag_,
+        const ExpressionActionsSettings & settings_ = {},
+        bool project_inputs_ = false,
+        bool enable_adaptive_short_circuit_ = false);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
 
@@ -103,9 +161,9 @@ public:
     /// preliminary query filtering (filterBlockWithExpression()), because they just
     /// pass available virtual columns, which cannot be moved in case they are
     /// used multiple times.
-    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false);
     /// The same, but without `num_rows`. If result block is empty, adds `_dummy` column to keep block size.
-    void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false);
 
     bool hasArrayJoin() const;
     void assertDeterministic() const;
@@ -132,6 +190,21 @@ private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
+
+    void executeAction(Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input);
+    void executeCommonDescendantsLazyAction(Action & action,
+        ColumnWithTypeAndName & res_column,
+        ColumnsWithTypeAndName & arguments,
+        ExecutionContext & execution_context,
+        bool dry_run);
+
+    void updateActionsProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
+    void tryScheduleLazyExecution(size_t current_batch_rows);
+    void propagateCSELazyNodesElapsed();
+    void propagateCSELazyNodeElapsed(const Action & action, size_t extra_elapsed);
+    void reorderShortCircuitArguments();
+    void updateLazyNodesSelecivity();
+    void updateNodeSelectivity(Action & action);
 };
 
 
