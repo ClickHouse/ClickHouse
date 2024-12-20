@@ -21,6 +21,7 @@
 #include <Common/TerminalSize.h>
 
 #include <Common/logger_useful.h>
+#include "config.h"
 
 namespace DB
 {

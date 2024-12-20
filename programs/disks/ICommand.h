@@ -1,5 +1,7 @@
 #pragma once
 
+#include <config.h>
+
 #include <optional>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
