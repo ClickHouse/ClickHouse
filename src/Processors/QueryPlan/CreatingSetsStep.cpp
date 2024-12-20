@@ -167,7 +167,7 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
     pipelines.push_back(std::move(pipeline));
 
     auto plan_settings = QueryPlanOptimizationSettings::fromContext(context);
-    auto pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
+    BuildQueryPipelineSettings pipeline_settings(context);
 
     for (auto & future_set : subqueries)
     {

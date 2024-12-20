@@ -123,7 +123,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context))));
+        BuildQueryPipelineSettings(context))));
 
     Block sample;
     {
