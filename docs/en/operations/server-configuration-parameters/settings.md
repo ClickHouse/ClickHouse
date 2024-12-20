@@ -1975,6 +1975,22 @@ The default is `false`.
 <async_load_databases>true</async_load_databases>
 ```
 
+## async_load_system_database {#async_load_system_database}
+
+Asynchronous loading of system tables. Helpful if there is a high amount of log tables and parts in the `system` database. Independent of the `async_load_databases` setting.
+
+If set to `true`, all system databases with `Ordinary`, `Atomic`, and `Replicated` engines will be loaded asynchronously after the ClickHouse server starts. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a system table, that is not yet loaded, will wait for exactly this table to be started up. The table that is waited for by at least one query will be loaded with higher priority. Also consider setting the `max_waiting_queries` setting to limit the total number of waiting queries.
+
+If `false`, system database loads before server start.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_system_database>true</async_load_system_database>
+```
+
 ## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size}
 
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
