@@ -133,7 +133,7 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<is_pr>>(); }
 
 private:
-    static Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp)
+    static Float64 increase_unscaled_area([[maybe_unused]] size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp)
     {
         if constexpr (is_pr)
             /** PR curve plots Precision x Recall
@@ -178,7 +178,7 @@ private:
             return (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
     }
 
-    static Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels)
+    static Float64 scale_back_area(Float64 area, size_t total_positive_labels, [[maybe_unused]] size_t total_negative_labels)
     {
         if constexpr (is_pr)
             /** To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
@@ -245,7 +245,7 @@ private:
 
         area += increase_unscaled_area(prev_fp, prev_tp, curr_fp, curr_tp);
 
-        /// Unless scale is false, we scale back the area to the [0..1] range
+        /// Unless scale is false, we scale the area back to the [0..1] range
         if (scale)
         {
             /// Degenerate cases where we would divide by zero when scaling back the area
