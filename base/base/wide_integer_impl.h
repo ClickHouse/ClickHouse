@@ -4,6 +4,7 @@
 /// Distributed under the Boost Software License, Version 1.0.
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
+#include "base/wide_integer.h"
 #include "throwError.h"
 
 #include <bit>
@@ -31,6 +32,57 @@ namespace CityHash_v1_0_2 { struct uint128; }
 
 namespace wide
 {
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wbit-int-extension"
+using BitInt256 = signed _BitInt(256);
+using BitUInt256 = unsigned _BitInt(256);
+#pragma clang diagnostic pop
+
+constexpr bool supportsBitInt256()
+{
+#if defined(__x86_64__) && defined(__clang__) && (__clang_major__ > 14 || (__clang_major__ == 14 && __clang_minor__ >= 0))
+    return true;
+#else
+    return false;
+#endif
+}
+
+struct Error {};
+
+template <typename Signed>
+struct ConstructBitInt256
+{
+    using Type = Error;
+};
+
+template <>
+struct ConstructBitInt256<signed>
+{
+    using Type = BitInt256;
+};
+
+template <>
+struct ConstructBitInt256<unsigned>
+{
+    using Type = BitUInt256;
+};
+
+template <size_t Bits, typename Signed>
+requires(Bits == 256)
+auto toBitInt256(const wide::integer<Bits, Signed> & n)
+{
+    using T = ConstructBitInt256<Signed>::Type;
+    return *reinterpret_cast<const T *>(&n);
+}
+
+template <typename T>
+requires(std::is_same_v<T, BitInt256> || std::is_same_v<T, BitUInt256>)
+auto fromBitInt256(const T & n)
+{
+    using Signed = std::conditional_t<std::is_same_v<T, BitInt256>, signed, unsigned>;
+    return *reinterpret_cast<const wide::integer<256, Signed> *>(&n);
+}
 
 template <typename T>
 struct IsWideInteger
@@ -185,6 +237,7 @@ struct integer<Bits, Signed>::_impl
     static constexpr const unsigned byte_count = Bits / 8;
     static constexpr const unsigned item_count = byte_count / sizeof(base_type);
     static constexpr const unsigned base_bits = sizeof(base_type) * 8;
+    static constexpr const bool could_use_bitint256 = supportsBitInt256() && Bits == 256;
 
     static_assert(Bits % base_bits == 0);
 
@@ -507,6 +560,18 @@ private:
     constexpr static integer<Bits, Signed>
     minus(const integer<Bits, Signed> & lhs, T rhs)
     {
+        if constexpr (could_use_bitint256)
+        {
+            auto new_lhs = toBitInt256(lhs);
+            if constexpr (!std::same_as<T, integer<Bits, signed>>)
+            {
+                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
+                return fromBitInt256(new_lhs - new_rhs);
+            }
+            else
+                return fromBitInt256(new_lhs - toBitInt256(rhs));
+        }
+
         constexpr const unsigned rhs_items = (sizeof(T) > sizeof(base_type)) ? (sizeof(T) / sizeof(base_type)) : 1;
         constexpr const unsigned op_items = (item_count < rhs_items) ? item_count : rhs_items;
 
@@ -540,6 +605,18 @@ private:
     constexpr static integer<Bits, Signed>
     plus(const integer<Bits, Signed> & lhs, T rhs)
     {
+        if constexpr (could_use_bitint256)
+        {
+            auto new_lhs = toBitInt256(lhs);
+            if constexpr (!std::same_as<T, integer<Bits, signed>>)
+            {
+                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
+                return fromBitInt256(new_lhs + new_rhs);
+            }
+            else
+                return fromBitInt256(new_lhs + toBitInt256(rhs));
+        }
+
         constexpr const unsigned rhs_items = (sizeof(T) > sizeof(base_type)) ? (sizeof(T) / sizeof(base_type)) : 1;
         constexpr const unsigned op_items = (item_count < rhs_items) ? item_count : rhs_items;
 
@@ -573,6 +650,18 @@ private:
     constexpr static integer<Bits, Signed>
     multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
+        if constexpr (could_use_bitint256)
+        {
+            auto new_lhs = toBitInt256(lhs);
+            if constexpr (!std::same_as<T, integer<Bits, signed>>)
+            {
+                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
+                return fromBitInt256(new_lhs * new_rhs);
+            }
+            else
+                return fromBitInt256(new_lhs * toBitInt256(rhs));
+        }
+
         if constexpr (Bits == 256 && sizeof(base_type) == 8)
         {
             /// @sa https://github.com/abseil/abseil-cpp/blob/master/absl/numeric/int128.h
@@ -883,6 +972,13 @@ public:
     constexpr static integer<Bits2, unsigned> divide(integer<Bits2, unsigned> & numerator, integer<Bits2, unsigned> denominator)
     {
         static_assert(std::is_unsigned_v<Signed>);
+
+        if constexpr (could_use_bitint256)
+        {
+            auto new_numerator = toBitInt256(numerator);
+            auto new_denominator = toBitInt256(denominator);
+            return fromBitInt256(new_numerator / new_denominator);
+        }
 
         if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
