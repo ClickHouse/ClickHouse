@@ -2144,7 +2144,10 @@ Result:
 
 ## arrayROCAUC
 
-Calculates the Area Under the Curve (AUC), which is a concept in machine learning.
+Calculates the area under the receiver operating characteristic (ROC) curve.
+A ROC curve is created by plotting True Positive Rate (TPR) on the y-axis and False Positive Rate (FPR) on the x-axis across all thresholds.
+The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
+The ROC AUC (also known as simply AUC) is a concept in machine learning.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
 **Syntax**
@@ -2153,13 +2156,13 @@ For more details, please see [here](https://developers.google.com/machine-learni
 arrayROCAUC(arr_scores, arr_labels[, scale])
 ```
 
-Alias: `arrayAUC`
+Alias: `arrayAUC`, `arrayAUCROC`.
 
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
-- `scale` - Optional. Wether to return the normalized area. Default value: true. [Bool]
+- `scale` - Optional. Whether to return the normalized area. If false, returns the area under the (True Positives) TP x (False Positives) FP curve instead. Default value: true. [Bool]
 
 **Returned value**
 
@@ -2183,10 +2186,10 @@ Result:
 
 ## arrayAUCPR
 
-Calculate the area under the precision-recall (PR) curve.
+Calculates the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
 The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
-PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
+The PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
 **Syntax**
