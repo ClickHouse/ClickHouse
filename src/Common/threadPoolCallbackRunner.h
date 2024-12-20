@@ -150,7 +150,8 @@ public:
     void operator() (Callback && callback, Priority priority = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
-        auto & task = tasks.emplace_back(std::make_shared<Task>({.future = promise->get_future()}));
+        auto & task = tasks.emplace_back(std::make_shared<Task>());
+        task->future = promise->get_future();
 
         auto task_func = [task, thread_group = CurrentThread::getGroup(), my_thread_name = thread_name, my_callback = std::move(callback), promise]() mutable -> void
         {
