@@ -617,6 +617,11 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
 
 static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>> merge_tree_settings_changes_history_initializer =
 {
+    {"25.1",
+        {
+            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
+        }
+    },
     {"24.12",
         {
             {"enforce_index_structure_match_on_partition_manipulation", true, false, "Add new setting to allow attach when source table's projections and secondary indices is a subset of those in the target table."},
