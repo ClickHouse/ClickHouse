@@ -122,6 +122,14 @@ static void verifySortingKey(const KeyDescription & sorting_key)
     }
 }
 
+static String expand_special_macros(const String & text, const StorageFactory::Arguments & args)
+{
+    Macros::MacroExpansionInfo info;
+    info.expand_special_macros_only = true;
+    info.table_id = args.table_id;
+    info.table_id.uuid = UUIDHelpers::Nil;
+    return args.getContext()->getMacros()->expand(text, info);
+}
 
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
@@ -327,24 +335,36 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
     bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
 
+    const auto & settings = context->getServerSettings();
+
     auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name)
     {
         /// Unfold {database} and {table} macro on table creation, so table can be renamed.
         if (args.mode < LoadingStrictnessLevel::ATTACH)
         {
-            Macros::MacroExpansionInfo info;
-            /// NOTE: it's not recursive
-            info.expand_special_macros_only = true;
-            info.table_id = args.table_id;
             /// Avoid unfolding {uuid} macro on this step.
             /// We did unfold it in previous versions to make moving table from Atomic to Ordinary database work correctly,
             /// but now it's not allowed (and it was the only reason to unfold {uuid} macro).
-            info.table_id.uuid = UUIDHelpers::Nil;
-            zookeeper_path = context->getMacros()->expand(zookeeper_path, info);
-
-            info.level = 0;
-            replica_name = context->getMacros()->expand(replica_name, info);
+            zookeeper_path = expand_special_macros(zookeeper_path, args);
+            replica_name = expand_special_macros(replica_name, args);
         }
+
+        auto expanded_default_zookeeper_path = expand_special_macros(settings.default_replica_path, args);
+        auto expanded_default_replica_name = expand_special_macros(settings.default_replica_name, args);
+
+        if (zookeeper_path != expanded_default_zookeeper_path)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting ZooKeeper path to {} is not allowed, please omit it or set equal to {}",
+                zookeeper_path,
+                settings.default_replica_path.toString());
+
+        if (replica_name != expanded_default_replica_name)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting replica name to {} is not allowed, please omit it or set equal to {}",
+                replica_name,
+                settings.default_replica_name.toString());
 
         ast_zk_path->value = zookeeper_path;
         ast_replica_name->value = replica_name;
@@ -412,12 +432,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 || !engine_args[arg_num]->as<ASTLiteral>()
                 || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
         {
-            /// Try use default values if arguments are not specified.
-            /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
-            const auto & server_settings = args.getContext()->getServerSettings();
-            zookeeper_path = server_settings.default_replica_path;
-            /// TODO maybe use hostname if {replica} is not defined?
-            replica_name = server_settings.default_replica_name;
+            zookeeper_path = settings.default_replica_path;
+            replica_name = settings.default_replica_name;
 
             /// Modify query, so default values will be written to metadata
             assert(arg_num == 0);
