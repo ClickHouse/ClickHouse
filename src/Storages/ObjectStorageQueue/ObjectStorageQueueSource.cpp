@@ -638,7 +638,7 @@ void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
     {
         case ObjectStorageQueueAction::DELETE:
         {
-            object_storage->removeObject(StoredObject(path));
+            object_storage->removeObjectIfExists(StoredObject(path));
             break;
         }
         case ObjectStorageQueueAction::KEEP:
