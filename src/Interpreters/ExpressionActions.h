@@ -4,6 +4,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -48,7 +49,13 @@ public:
 
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
-        bool is_lazy_executed;
+        bool could_lazy_executed;
+        /// It's not free to lazy execute one node with short circuit. When the cost of filting out necessary rows and
+        /// expanding back to a full column is larger then fully execution of the column, we don't excute it lazily. 
+        bool worth_lazy_executed;
+        FunctionExecuteProfile current_round_profile;
+
+        explicit Action(const Node * node_, const Arguments & arguments_, size_t result_position_, bool could_lazy_executed_);
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -61,7 +68,24 @@ public:
     /// Result is a list because it is allowed for inputs to have same names.
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
-private:
+    /// This struct stores context needed to execute actions.
+    ///
+    /// Execution model is following:
+    ///   * execution is performed over list of columns (with fixed size = ExpressionActions::num_columns)
+    ///   * every argument has fixed position in columns list, every action has fixed position for result
+    ///   * if argument is not needed anymore (Argument::needed_later == false), it is removed from list
+    ///   * argument for INPUT is in inputs[inputs_pos[argument.pos]]
+    ///
+    /// Columns on positions `ExpressionActions::result_positions` are inserted back into block.
+    struct ExecutionContext
+    {
+        ColumnsWithTypeAndName & inputs;
+        ColumnsWithTypeAndName columns = {};
+        std::vector<ssize_t> inputs_pos = {};
+        size_t num_rows = 0;
+    };
+
+protected:
     ActionsDAG actions_dag;
     Actions actions;
     size_t num_columns = 0;
@@ -79,6 +103,7 @@ public:
     explicit ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
     ExpressionActions(ExpressionActions &&) = default;
     ExpressionActions & operator=(ExpressionActions &&) = default;
+    virtual ~ExpressionActions() = default;
 
     const Actions & getActions() const { return actions; }
     const std::list<Node> & getNodes() const { return actions_dag.getNodes(); }
@@ -97,9 +122,9 @@ public:
     /// preliminary query filtering (filterBlockWithExpression()), because they just
     /// pass available virtual columns, which cannot be moved in case they are
     /// used multiple times.
-    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    virtual void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false);
     /// The same, but without `num_rows`. If result block is empty, adds `_dummy` column to keep block size.
-    void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false);
 
     bool hasArrayJoin() const;
     void assertDeterministic() const;
@@ -121,11 +146,34 @@ public:
 
     ExpressionActionsPtr clone() const;
 
-private:
+protected:
     ExpressionActions() = default;
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
+
+    void executeAction(const ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run, bool allow_duplicates_in_input);
+
+    virtual void executeFunctionAction(const ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run);
+
+
+};
+
+// It extends ExpressionActions to make the lazy execution more effiicent. Be careful to use this, it's not thread safe.
+class AdaptiveExpressionActions : public ExpressionActions
+{
+public:
+    explicit AdaptiveExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
+    ~AdaptiveExpressionActions() override = default;
+    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) override;
+private:
+    bool has_lazy_actions = false;
+    size_t current_round_input_rows = 0;
+
+    // void executeFunctionAction(const ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run, bool allow_duplicates_in_input) override {}
+    void updateLazyExecuteSchedule(size_t current_batch_rows);
+    void findNotWithLazyExecutedActions();
+    void updateHasLazyActions();
 };
 
 namespace ExpressionActionsChainSteps
