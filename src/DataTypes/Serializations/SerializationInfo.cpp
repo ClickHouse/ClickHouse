@@ -12,7 +12,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
 
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -198,11 +197,6 @@ SerializationInfoByName::SerializationInfoByName(
     if (settings.isAlwaysDefault())
         return;
 
-    LOG_DEBUG(::getLogger("SerializationInfoByName"), "ADD COLUMN-----");
-    for (const auto & column : columns)
-        if (column.type->supportsSparseSerialization())
-            LOG_DEBUG(::getLogger("SerializationInfoByName"), "ADD COLUMN {}", column.name);
-
     for (const auto & column : columns)
         if (column.type->supportsSparseSerialization())
             emplace(column.name, column.type->createSerializationInfo(settings));
@@ -297,7 +291,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     auto json_str = oss.str();
     if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(json_str.data()), json_str.size()))
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization of the JSON is not valaid utf8 string. Probably non-utf8 character was used in the schema."
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization of the JSON are not valaid utf8 string. Probably non-utf8 character was used in the schema."
                         "The serialization string: {}", json_str);
     }
     writeString(json_str, out);
