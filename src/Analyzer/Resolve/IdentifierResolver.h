@@ -117,10 +117,6 @@ public:
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
-        IdentifierResolveScope & scope);
-
     QueryTreeNodePtr tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);

@@ -402,8 +402,8 @@ def test_real_wait_refresh(
         "test_rmv",
         condition=lambda x: x["last_refresh_time"] == rmv["next_refresh_time"],
         # wait for refresh a little bit more than 10 seconds
-        max_attempts=30,
-        delay=0.5,
+        max_attempts=12,
+        delay=1,
         wait_status="Scheduled",
     )
 
@@ -422,7 +422,7 @@ def test_real_wait_refresh(
         expect_rows(2, table=tgt)
 
     assert rmv2["exception"] is None
-    assert rmv2["status"] in ["Scheduled", "Running"]
+    assert rmv2["status"] == "Scheduled"
     assert rmv2["last_success_time"] == rmv["next_refresh_time"]
     assert rmv2["last_refresh_time"] == rmv["next_refresh_time"]
     assert rmv2["retry"] == 0 and rmv22["retry"] == 0

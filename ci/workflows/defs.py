@@ -375,7 +375,7 @@ ARTIFACTS = [
 class Jobs:
     style_check_job = Job.Config(
         name=JobNames.STYLE_CHECK,
-        runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+        runs_on=[RunnerLabels.CI_SERVICES],
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
     )

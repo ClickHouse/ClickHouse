@@ -11,8 +11,6 @@ class Workflow:
     class Event:
         PULL_REQUEST = "pull_request"
         PUSH = "push"
-        SCHEDULE = "schedule"
-        DISPATCH = "dispatch"
 
     @dataclass
     class Config:
@@ -34,16 +32,12 @@ class Workflow:
         enable_merge_ready_status: bool = False
         enable_cidb: bool = False
         enable_merge_commit: bool = False
-        cron_schedules: List[str] = field(default_factory=list)
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
 
         def is_event_push(self):
             return self.event == Workflow.Event.PUSH
-
-        def is_event_schedule(self):
-            return self.event == Workflow.Event.SCHEDULE
 
         def get_job(self, name):
             job = self.find_job(name)

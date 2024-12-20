@@ -29,10 +29,10 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(false);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(false);
+    registerDictionaries(false);
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 

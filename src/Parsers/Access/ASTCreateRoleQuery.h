@@ -41,12 +41,9 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRoleQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 };
-
 }

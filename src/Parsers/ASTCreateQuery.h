@@ -34,6 +34,8 @@ public:
 
     ASTPtr clone() const override;
 
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
     bool isExtendedStorageDefinition() const;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
@@ -46,9 +48,6 @@ public:
         f(reinterpret_cast<void **>(&ttl_table));
         f(reinterpret_cast<void **>(&settings));
     }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -68,6 +67,8 @@ public:
 
     ASTPtr clone() const override;
 
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
     bool empty() const
     {
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
@@ -83,9 +84,6 @@ public:
         f(reinterpret_cast<void **>(&projections));
         f(reinterpret_cast<void **>(&primary_key_from_columns));
     }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -107,6 +105,7 @@ public:
     bool has_uuid{false}; // CREATE TABLE x UUID '...'
 
     ASTColumns * columns_list = nullptr;
+    ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
 
     ASTPtr watermark_function;
@@ -186,6 +185,7 @@ protected:
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&columns_list));
+        f(reinterpret_cast<void **>(&aliases_list));
         f(reinterpret_cast<void **>(&storage));
         f(reinterpret_cast<void **>(&targets));
         f(reinterpret_cast<void **>(&as_table_function));

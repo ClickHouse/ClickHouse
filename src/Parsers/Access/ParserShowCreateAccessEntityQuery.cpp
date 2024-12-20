@@ -107,8 +107,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         case AccessEntityType::ROW_POLICY:
         {
             ASTPtr ast;
-            String database;
-            String table_name;
+            String database, table_name;
             bool wildcard = false;
             bool default_database = false;
             if (ParserRowPolicyNames{}.parse(pos, ast, expected))

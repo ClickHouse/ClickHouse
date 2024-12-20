@@ -3,6 +3,7 @@
 -- Tests correctness of vector similarity index with > 1 mark
 
 SET allow_experimental_vector_similarity_index = 1;
+SET enable_analyzer = 0;
 
 DROP TABLE IF EXISTS tab;
 
