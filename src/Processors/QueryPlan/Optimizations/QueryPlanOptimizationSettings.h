@@ -57,7 +57,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections = false;
     bool force_use_projection = false;
     String force_projection_name;
-    size_t max_limit_for_ann_queries;
+    size_t max_limit_for_ann_queries = 1'000'000;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
