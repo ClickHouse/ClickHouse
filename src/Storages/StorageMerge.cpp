@@ -687,7 +687,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 child.plan.addStep(std::move(filter_step));
             }
 
-            child.plan.optimize(QueryPlanOptimizationSettings::fromContext(modified_context));
+            child.plan.optimize(QueryPlanOptimizationSettings(modified_context));
         }
 
         res.emplace_back(std::move(child));
@@ -1136,10 +1136,10 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!child.plan.isInitialized())
         return nullptr;
 
-    auto optimisation_settings = QueryPlanOptimizationSettings::fromContext(context);
+    QueryPlanOptimizationSettings optimization_settings(context);
     /// All optimisations will be done at plans creation
-    optimisation_settings.optimize_plan = false;
-    auto builder = child.plan.buildQueryPipeline(optimisation_settings, BuildQueryPipelineSettings(context));
+    optimization_settings.optimize_plan = false;
+    auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
     if (!builder->initialized())
         return builder;

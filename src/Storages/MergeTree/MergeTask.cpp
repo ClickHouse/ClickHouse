@@ -1141,7 +1141,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
         }
     }
 
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
+    QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
     auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
     pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
     auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
@@ -1943,7 +1943,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         addCreatingSetsStep(merge_parts_query_plan, std::move(subqueries), global_ctx->context);
 
     {
-        auto optimization_settings = QueryPlanOptimizationSettings::fromContext(global_ctx->context);
+        QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
         auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
         pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
         auto builder = merge_parts_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
