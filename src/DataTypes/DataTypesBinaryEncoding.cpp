@@ -45,6 +45,10 @@ namespace ErrorCodes
 namespace
 {
 
+/// Max array size that is allowed for any nested elements during data type decoding.
+/// It prevents from allocating too large arrays if the data is corrupted.
+constexpr size_t MAX_ARRAY_SIZE = 1000000;
+
 enum class BinaryTypeIndex : uint8_t
 {
     Nothing = 0x00,
@@ -256,6 +260,9 @@ DataTypePtr decodeEnum(ReadBuffer & buf)
     typename DataTypeEnum<T>::Values values;
     size_t size;
     readVarUInt(size, buf);
+    if (size > MAX_ARRAY_SIZE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many enum elements during Enum type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
     for (size_t i = 0; i != size; ++i)
     {
         String name;
@@ -304,12 +311,18 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     readStringBinary(function_name, buf);
     size_t num_parameters;
     readVarUInt(num_parameters, buf);
+    if (num_parameters > MAX_ARRAY_SIZE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many parameters during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
+
     Array parameters;
     parameters.reserve(num_parameters);
     for (size_t i = 0; i != num_parameters; ++i)
         parameters.push_back(decodeField(buf));
     size_t num_arguments;
     readVarUInt(num_arguments, buf);
+    if (num_arguments > MAX_ARRAY_SIZE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
+
     DataTypes arguments_types;
     arguments_types.reserve(num_arguments);
     for (size_t i = 0; i != num_arguments; ++i)
@@ -628,6 +641,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         {
             size_t size;
             readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many tuple elements during Tuple type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
             DataTypes elements;
             elements.reserve(size);
             Names names;
@@ -645,6 +661,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         {
             size_t size;
             readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many tuple elements during Tuple type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
             DataTypes elements;
             elements.reserve(size);
             for (size_t i = 0; i != size; ++i)
@@ -665,6 +684,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         {
             size_t arguments_size;
             readVarUInt(arguments_size, buf);
+            if (arguments_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during Function type decoding: {}. Maximum: {}", arguments_size, MAX_ARRAY_SIZE);
+
             DataTypes arguments;
             arguments.reserve(arguments_size);
             for (size_t i = 0; i != arguments_size; ++i)
@@ -688,6 +710,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         {
             size_t size;
             readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many variants during Variant type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
             DataTypes variants;
             variants.reserve(size);
             for (size_t i = 0; i != size; ++i)
@@ -716,6 +741,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
         {
             size_t size;
             readVarUInt(size, buf);
+            if (size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many elements during Nested type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
+
             Names names;
             names.reserve(size);
             DataTypes elements;
@@ -747,6 +775,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             readBinary(max_dynamic_types, buf);
             size_t typed_paths_size;
             readVarUInt(typed_paths_size, buf);
+            if (typed_paths_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, MAX_ARRAY_SIZE);
+
             std::unordered_map<String, DataTypePtr> typed_paths;
             for (size_t i = 0; i != typed_paths_size; ++i)
             {
@@ -756,6 +787,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             }
             size_t paths_to_skip_size;
             readVarUInt(paths_to_skip_size, buf);
+            if (paths_to_skip_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many paths to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
+
             std::unordered_set<String> paths_to_skip;
             paths_to_skip.reserve(paths_to_skip_size);
             for (size_t i = 0; i != paths_to_skip_size; ++i)
@@ -767,6 +801,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
 
             size_t path_regexps_to_skip_size;
             readVarUInt(path_regexps_to_skip_size, buf);
+            if (path_regexps_to_skip_size > MAX_ARRAY_SIZE)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
+
             std::vector<String> path_regexps_to_skip;
             path_regexps_to_skip.reserve(path_regexps_to_skip_size);
             for (size_t i = 0; i != path_regexps_to_skip_size; ++i)
