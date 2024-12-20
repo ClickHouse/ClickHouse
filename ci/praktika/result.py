@@ -121,6 +121,9 @@ class Result(MetaClasses.Serializable):
     def is_ok(self):
         return self.status in (Result.Status.SKIPPED, Result.Status.SUCCESS)
 
+    def is_error(self):
+        return self.status in (Result.Status.ERROR,)
+
     def set_status(self, status) -> "Result":
         self.status = status
         self.dump()
@@ -138,12 +141,20 @@ class Result(MetaClasses.Serializable):
         return self
 
     def set_files(self, files) -> "Result":
+        if isinstance(files, (str, Path)):
+            files = [files]
         for file in files:
             assert Path(
                 file
             ).is_file(), f"Not valid file [{file}] from file list [{files}]"
         if not self.files:
             self.files = []
+        for file in self.files:
+            if file in files:
+                print(
+                    f"WARNING: File [{file}] is already present in Result [{self.name}] - skip"
+                )
+                files.remove(file)
         self.files += files
         self.dump()
         return self
@@ -526,7 +537,7 @@ class _ResultS3:
     #     return True
 
     @classmethod
-    def upload_result_files_to_s3(cls, result, s3_subprefix=""):
+    def upload_result_files_to_s3(cls, result: Result, s3_subprefix=""):
         s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
         if result.results:
             for result_ in result.results:
@@ -534,7 +545,7 @@ class _ResultS3:
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.info += f"\nWARNING: Result file [{file}] was not found"
+                result.set_info(f"WARNING: Result file [{file}] was not found")
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
             else:
                 is_text = False
@@ -552,11 +563,7 @@ class _ResultS3:
                     s3_subprefix=s3_subprefix,
                 )
             result.links.append(file_link)
-        if result.files:
-            print(
-                f"Result files [{result.files}] uploaded to s3 [{result.links[-len(result.files):]}] - clean files list"
-            )
-            result.files = []
+        result.files = []
         result.dump()
 
     @classmethod
@@ -659,8 +666,25 @@ class ResultTranslator:
                 f"No test result file [{cls.GTEST_RESULT_FILE}]",
             )
 
-        with open(cls.GTEST_RESULT_FILE, "r", encoding="utf-8") as j:
-            report = json.load(j)
+        try:
+            with open(
+                cls.GTEST_RESULT_FILE, "r", encoding="utf-8", errors="ignore"
+            ) as j:
+                report = json.load(j)
+        except Exception as e:
+            print(f"ERROR: failed to read json [{e}]")
+            return (
+                Result.Status.ERROR,
+                [
+                    Result(
+                        name="Parsing Error",
+                        status=Result.Status.ERROR,
+                        files=[cls.GTEST_RESULT_FILE],
+                        info=str(e),
+                    )
+                ],
+                "ERROR: failed to read gtest json",
+            )
 
         total_counter = report["tests"]
         failed_counter = report["failures"]
@@ -706,7 +730,7 @@ class ResultTranslator:
                 )
 
         check_status = Result.Status.SUCCESS
-        tests_status = Result.Status.SUCCESS
+        test_status = Result.Status.SUCCESS
         tests_time = float(report["time"][:-1])
         if failed_counter:
             check_status = Result.Status.FAILED
@@ -714,7 +738,7 @@ class ResultTranslator:
         if error_counter:
             check_status = Result.Status.ERROR
             test_status = Result.Status.ERROR
-        test_results.append(Result(report["name"], tests_status, duration=tests_time))
+        test_results.append(Result(report["name"], test_status, duration=tests_time))
 
         if not description:
             description += (
