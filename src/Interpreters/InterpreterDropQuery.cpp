@@ -450,8 +450,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 auto table_ptr = iterator->table();
                 StorageID storage_id = table_ptr->getStorageID();
                 tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
-                chassert(storage_id.hasUUID());
-                if (!prepared_tables.contains(storage_id.uuid))
+                /// If the database doesn't support table UUIDs, we might call
+                /// IStorage::flushAndPrepareForShutdown() twice. That's ok.
+                /// (And shouldn't normally happen because refreshable materialized views don't work
+                ///  in such DBs.)
+                if (!storage_id.hasUUID() || !prepared_tables.contains(storage_id.uuid))
                     tables_to_prepare.push_back(table_ptr);
             }
         };
@@ -463,8 +466,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             for (StoragePtr & table_ptr : tables)
             {
                 StorageID storage_id = table_ptr->getStorageID();
-                chassert(storage_id.hasUUID());
-                prepared_tables.insert(storage_id.uuid);
+                if (storage_id.hasUUID())
+                    prepared_tables.insert(storage_id.uuid);
                 runner([my_table_ptr = std::move(table_ptr)]()
                 {
                     my_table_ptr->flushAndPrepareForShutdown();
