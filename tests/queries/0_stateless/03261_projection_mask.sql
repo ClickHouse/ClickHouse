@@ -73,3 +73,24 @@ SELECT
 FROM users
 GROUP BY name
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+-- test lightweight delete check condition (probably better put into lwd related)
+-- as with ctx->updated_header.has(RowExistsColumn::name) is not enough
+CREATE TABLE test
+(
+    `a` int,
+    `b` int,
+    INDEX idx b TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+INSERT INTO test SELECT
+    number,
+    number
+FROM numbers(10);
+
+DELETE FROM test WHERE a = 5;
+
+ALTER TABLE test
+    (MATERIALIZE INDEX idx);

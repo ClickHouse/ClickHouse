@@ -1108,7 +1108,7 @@ void finalizeMutatedPart(
     if (!new_data_part->storage.getPrimaryIndexCache())
         new_data_part->setIndex(*source_part->getIndex());
 
-    for (auto mutation_context : projection_mutation_contexts)
+    for (const auto & mutation_context : projection_mutation_contexts)
     {
         chassert(!new_data_part->isProjectionPart());
         new_data_part->addProjectionPart(mutation_context->name, std::move(mutation_context->new_part));
@@ -1388,7 +1388,7 @@ bool PartMergerWriter::iterateThroughAllProjections()
 
 bool PartMergerWriter::iterateThroughAllProjectionsToMask()
 {
-    for (auto mutation_context : ctx->projection_mutation_contexts)
+    for (const auto & mutation_context : ctx->projection_mutation_contexts)
     {
         Block cur_block;
         while (mutation_context->mutating_executor->pull(cur_block))
@@ -1556,7 +1556,7 @@ private:
                 removed_projections.insert(command.column_name);
         }
 
-        bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
+        bool lightweight_delete_mode = ctx->interpreter->getUpdateWhereCondition() != nullptr;
         bool lightweight_delete_drop = lightweight_delete_mode
             && (*ctx->data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::DROP;
 
@@ -1714,7 +1714,7 @@ private:
         ctx->mutating_pipeline.disableProfileEventUpdate();
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
-        for (auto mutation_context : ctx->projection_mutation_contexts)
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
         {
             chassert (mutation_context->mutating_pipeline_builder.initialized());
             if (mutation_context->kind == ProjectionMutationContext::MutationKind::ALL)
@@ -1793,7 +1793,7 @@ private:
 
     void finalize()
     {
-        for (auto mutation_context : ctx->projection_mutation_contexts)
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
         {
             mutation_context->mutating_executor.reset();
             mutation_context->mutating_pipeline.reset();
@@ -1973,7 +1973,7 @@ private:
             {
                 /// For projection to mask, new files (checksums, columns...) are needed.
                 NameSet files_to_skip;
-                for (auto mutation_context : ctx->projection_mutation_contexts)
+                for (const auto & mutation_context : ctx->projection_mutation_contexts)
                 {
                     if (it->name() != mutation_context->name + ".proj")
                         continue;
@@ -2064,7 +2064,7 @@ private:
 
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
-            for (auto mutation_context : ctx->projection_mutation_contexts)
+            for (const auto & mutation_context : ctx->projection_mutation_contexts)
             {
                 chassert (mutation_context->mutating_pipeline_builder.initialized());
 
@@ -2119,7 +2119,7 @@ private:
 
     void finalize()
     {
-        for (auto mutation_context : ctx->projection_mutation_contexts)
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
         {
             if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
                 continue;
@@ -2168,7 +2168,7 @@ private:
             }
         }
 
-        for (auto mutation_context : ctx->projection_mutation_contexts)
+        for (const auto & mutation_context : ctx->projection_mutation_contexts)
         {
             if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
                 continue;
@@ -2474,12 +2474,14 @@ bool MutateTask::prepare()
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
 
-        lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);
+        lightweight_delete_mode = ctx->interpreter->getUpdateWhereCondition() != nullptr;
         if (lightweight_delete_mode)
         {
             ASTPtr update_where_condition = ctx->interpreter->getUpdateWhereCondition();
             IdentifierNameSet update_where_columns;
-            chassert(update_where_condition);
+            if (!update_where_condition)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not expected update_where_condition is nullptr");
+
             update_where_condition->collectIdentifierNames(update_where_columns);
 
             // std::cout<<serializeAST(*condition)<<std::endl;
@@ -2614,7 +2616,7 @@ bool MutateTask::prepare()
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();
 
     size_t proj_cmds_idx = 0;
-    for (auto mutation_context : ctx->projection_mutation_contexts)
+    for (const auto & mutation_context : ctx->projection_mutation_contexts)
     {
         mutation_context->new_part = ctx->new_data_part->getProjectionPartBuilder(mutation_context->name, false).withPartType(mutation_context->source_part->getType()).build();
 
@@ -2724,7 +2726,7 @@ bool MutateTask::prepare()
         ProfileEvents::increment(ProfileEvents::MutationSomePartColumns);
     }
 
-    for (auto mutation_context : ctx->projection_mutation_contexts)
+    for (const auto & mutation_context : ctx->projection_mutation_contexts)
     {
         if (mutation_context->kind != ProjectionMutationContext::MutationKind::SOME)
             continue;
