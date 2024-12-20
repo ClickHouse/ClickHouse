@@ -30,7 +30,6 @@ namespace DB
 // clang-format off
 
 #define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(UInt64, bg_reconnect_mysql_dict_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, "If it is set true will show addresses in stack traces", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, "If set true ClickHouse will wait for running queries finish before shutdown.", 0) \
     DECLARE(UInt64, shutdown_wait_unfinished, 5, "Delay in seconds to wait for unfinished queries", 0) \
@@ -214,6 +213,8 @@ namespace DB
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, "Size of background pool for iceberg catalog", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 1000000, "Number of tasks which is possible to push into iceberg catalog pool", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, "0 - All feature tiers allowed (experimental, beta, production). 1 - Only beta and production feature tiers allowed. 2 - Only production feature tier allowed", 0) \
+    DECLARE(Bool, dictionaries_lazy_load, 1, "1 - Load dictionaries lazily, i.e. a dictionary will be loaded when it's used for the first time. 0 - ClickHouse will start loading dictionaries immediately at startup.", 0) \
+    DECLARE(Bool, wait_dictionaries_load_at_startup, 1, "Wait at startup until all the dictionaries finish their loading (successfully or not) before receiving any connections. Affects dictionaries only if `dictionaries_lazy_load` is false. Setting this to false can make ClickHouse start faster, however some queries can be executed slower.", 0) \
 
 
 // clang-format on
