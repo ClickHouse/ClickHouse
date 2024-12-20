@@ -81,7 +81,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
@@ -8163,7 +8162,7 @@ catch (...)
     tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
-StorageMergeTree::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
+MergeTreeData::PinnedPartUUIDsPtr MergeTreeData::getPinnedPartUUIDs() const
 {
     std::lock_guard lock(pinned_part_uuids_mutex);
     return pinned_part_uuids;
@@ -8415,51 +8414,6 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
         }
     }
     return result;
-}
-
-bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason)
-{
-    auto remove_broken_parts_from_consideration = [](auto & parts)
-    {
-        std::set<String> broken_projection_parts;
-        for (const auto & [name, part] : parts)
-        {
-            if (part->is_broken)
-                broken_projection_parts.emplace(name);
-        }
-        for (const auto & name : broken_projection_parts)
-            parts.erase(name);
-    };
-
-    auto left_projection_parts = left->getProjectionParts();
-    auto right_projection_parts = right->getProjectionParts();
-
-    remove_broken_parts_from_consideration(left_projection_parts);
-    remove_broken_parts_from_consideration(right_projection_parts);
-
-    if (left_projection_parts.size() != right_projection_parts.size())
-    {
-        out_reason = PreformattedMessage::create(
-            "Parts have different number of projections: {} in part '{}' and {} in part '{}'",
-            left_projection_parts.size(),
-            left->name,
-            right_projection_parts.size(),
-            right->name
-        );
-        return false;
-    }
-
-    for (const auto & [name, _] : left_projection_parts)
-    {
-        if (!right_projection_parts.contains(name))
-        {
-            out_reason = PreformattedMessage::create(
-                "The part '{}' doesn't have projection '{}' while part '{}' does", right->name, name, left->name
-            );
-            return false;
-        }
-    }
-    return true;
 }
 
 bool MergeTreeData::canUsePolymorphicParts() const
