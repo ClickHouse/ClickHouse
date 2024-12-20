@@ -91,7 +91,6 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Common/ReplicasReconnector.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -287,6 +286,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsBool dictionaries_lazy_load;
+    extern const ServerSettingsBool wait_dictionaries_load_at_startup;
 }
 
 }
@@ -2244,8 +2245,6 @@ try
     if (dns_cache_updater)
         dns_cache_updater->start();
 
-    auto replicas_reconnector = ReplicasReconnector::init(global_context);
-
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     std::string default_database = server_settings[ServerSetting::default_database].toString();
@@ -2413,7 +2412,7 @@ try
         {
             global_context->loadOrReloadDictionaries(config());
 
-            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
+            if (!server_settings[ServerSetting::dictionaries_lazy_load] && server_settings[ServerSetting::wait_dictionaries_load_at_startup])
                 global_context->waitForDictionariesLoad();
         }
         catch (...)
@@ -2425,7 +2424,7 @@ try
         /// try to load embedded dictionaries immediately, throw on error and die
         try
         {
-            global_context->tryCreateEmbeddedDictionaries(config());
+            global_context->tryCreateEmbeddedDictionaries();
         }
         catch (...)
         {

@@ -156,13 +156,6 @@ def run_and_check(
     return out
 
 
-# Based on https://stackoverflow.com/a/1365284/3706827
-def get_free_port():
-    with socket.socket() as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
-
-
 def is_port_free(port: int) -> bool:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -850,7 +843,7 @@ class ClickHouseCluster:
     def mongo_secure_port(self):
         if self._mongo_secure_port:
             return self._mongo_secure_port
-        self._mongo_secure_port = get_free_port()
+        self._mongo_secure_port = self.port_pool.get_port()
         return self._mongo_secure_port
 
     @property
