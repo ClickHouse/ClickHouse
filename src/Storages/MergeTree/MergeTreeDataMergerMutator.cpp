@@ -47,65 +47,58 @@ size_t calculatePartsCount(const PartsRanges & ranges)
 
 PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredicate & can_merge)
 {
-    PartsRanges mergeable_range;
-    const PartProperties * prev_part = nullptr;
-
-    for (auto && part : range)
+    const auto & build_next_range = [&](PartsRange::iterator & current_it)
     {
-        /// Check predicate only for the first part in each range.
-        if (!prev_part)
-        {
-            /* Parts can be merged with themselves for TTL needs for example.
-            * So we have to check if this part is currently being inserted with quorum and so on and so forth.
-            * Obviously we have to check it manually only for the first part
-            * of each partition because it will be automatically checked for a pair of parts. */
-            if (!can_merge(nullptr, &part).has_value())
-                continue;
+        PartsRange mergeable_range;
 
-            assert(mergeable_range.empty());
-            mergeable_range.emplace_back();
-        }
-        else
+        /// Find beginning of next range. It should be a part that can be merged with itself.
+        /// Parts can be merged with themselves for TTL needs for example.
+        /// So we have to check if this part is currently being inserted with quorum and so on and so forth.
+        /// Obviously we have to check it manually only for the first part
+        /// of each range because it will be automatically checked for a pair of parts.
+        while (current_it < range.end())
         {
-            /// If we cannot merge with previous part we had to start new parts interval
-            if (!can_merge(prev_part, &part).has_value())
+            PartProperties & current_part = *current_it++;
+
+            if (can_merge(nullptr, &current_part))
             {
-                /// Now we have no previous part
-                prev_part = nullptr;
-
-                /// Mustn't be empty
-                assert(!mergeable_range.empty());
-                assert(!mergeable_range.back().empty());
-
-                /// Some parts cannot be merged with previous parts and also cannot be merged with themselves,
-                /// for example, merge is already assigned for such parts, or they participate in quorum inserts
-                /// and so on.
-                /// Also we don't start new interval here (maybe all next parts cannot be merged and we don't want to have empty interval)
-                if (!can_merge(nullptr, &part).has_value())
-                    continue;
-
-                /// Starting new interval
-                mergeable_range.emplace_back();
+                mergeable_range.push_back(std::move(current_part));
+                break;
             }
         }
 
-        /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
-        if (prev_part)
-        {
-            if (part.part_info.contains(prev_part->part_info))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", part.name, prev_part->name);
+        /// All parts can't participate in merges
+        if (mergeable_range.empty())
+            return mergeable_range;
 
-            if (!part.part_info.isDisjoint(prev_part->part_info))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part.name, prev_part->name);
+        while (current_it != range.end())
+        {
+            PartProperties & prev_part = mergeable_range.back();
+            PartProperties & current_part = *current_it++;
+
+            /// If we cannot merge with previous part we need to close this range.
+            if (!can_merge(&prev_part, &current_part))
+                return mergeable_range;
+
+            /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
+            if (current_part.part_info.contains(prev_part.part_info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", current_part.name, prev_part.name);
+
+            if (!current_part.part_info.isDisjoint(prev_part.part_info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", current_part.name, prev_part.name);
+
+            mergeable_range.push_back(std::move(current_part));
         }
 
-        assert(!mergeable_range.empty());
-        mergeable_range.back().emplace_back(std::move(part));
+        return mergeable_range;
+    };
 
-        prev_part = &part;
-    }
+    PartsRanges mergeable_ranges;
+    for (auto current_it = range.begin(); current_it != range.end();)
+        if (auto next_mergeable_range = build_next_range(current_it); !next_mergeable_range.empty())
+            mergeable_ranges.push_back(std::move(next_mergeable_range));
 
-    return mergeable_range;
+    return mergeable_ranges;
 }
 
 PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPredicate & can_merge)
