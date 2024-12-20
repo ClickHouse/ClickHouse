@@ -77,7 +77,7 @@ SQLType * TypeDeepCopy(SQLType * tp)
     }
     else if ((jt = dynamic_cast<JSONType *>(tp)))
     {
-        return new JSONType(jt->desc);
+        return new JSONType(jt->desc, jt->subcols);
     }
     else if ((nl = dynamic_cast<Nullable *>(tp)))
     {
@@ -446,6 +446,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                + ipv4_type + ipv6_type + j_type + 1))
     {
         std::string desc;
+        std::vector<JSubType> subcols;
         JSONDef * jdef = tp ? tp->mutable_jdef() : nullptr;
         const uint32_t nclauses = rg.nextMediumNumber() % 7;
 
@@ -453,6 +454,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
         {
             desc += "(";
         }
+        this->depth++;
         for (uint32_t i = 0; i < nclauses; i++)
         {
             const uint32_t noption = rg.nextSmallNumber();
@@ -490,6 +492,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                 const uint32_t ncols = (rg.nextMediumNumber() % 4) + 1;
                 JSONPathType * jpt = tp ? jdi->mutable_path_type() : nullptr;
                 ColumnPath * cp = tp ? jpt->mutable_col() : nullptr;
+                std::string npath;
 
                 for (uint32_t j = 0; j < ncols; j++)
                 {
@@ -499,9 +502,11 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                     if (j != 0)
                     {
                         desc += ".";
+                        npath += ".";
                     }
                     desc += '`';
                     rg.nextJSONCol(nbuf);
+                    npath += nbuf;
                     desc += nbuf;
                     desc += '`';
                     if (tp)
@@ -509,19 +514,18 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint32_t al
                         col->set_column(std::move(nbuf));
                     }
                 }
-                this->depth++;
                 desc += " ";
                 SQLType * jtp = randomNextType(rg, ~(allow_nested | allow_enum), col_counter, tp ? jpt->mutable_type() : nullptr);
                 jtp->typeName(desc, false);
-                delete jtp;
-                this->depth--;
+                subcols.push_back(JSubType(npath, jtp));
             }
+            this->depth--;
         }
         if (nclauses)
         {
             desc += ")";
         }
-        res = new JSONType(desc);
+        res = new JSONType(desc, subcols);
     }
     else if (
         dynamic_type

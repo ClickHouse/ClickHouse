@@ -943,7 +943,7 @@ CONV_FN_QUOTE(TopTypeName, ttn)
             {
                 TupleWithColumnNamesToString(ret, quote, tt.with_names());
             }
-            else if (tt.has_with_names())
+            else if (tt.has_no_names())
             {
                 TupleWithOutColumnNamesToString(ret, quote, tt.no_names());
             }

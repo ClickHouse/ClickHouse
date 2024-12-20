@@ -395,11 +395,21 @@ public:
     ~DynamicType() override = default;
 };
 
+class JSubType
+{
+public:
+    const std::string cname;
+    SQLType * subtype;
+
+    JSubType(const std::string & n, SQLType * s) : cname(n), subtype(s) { }
+};
+
 class JSONType : public SQLType
 {
 public:
     const std::string desc;
-    explicit JSONType(const std::string & s) : desc(s) { }
+    const std::vector<JSubType> subcols;
+    explicit JSONType(const std::string & s, const std::vector<JSubType> sc) : desc(s), subcols(sc) { }
 
     void typeName(std::string & ret, const bool escape) const override
     {

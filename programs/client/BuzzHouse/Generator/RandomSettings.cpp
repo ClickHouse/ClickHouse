@@ -668,7 +668,6 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"output_format_values_escape_quote_with_quote", trueOrFalse},
     {"output_format_write_statistics", trueOrFalse},
     {"page_cache_inject_eviction", trueOrFalse},
-    {"parallel_distributed_insert_select", zeroOneTwo},
     {"parallel_replicas_allow_in_with_subquery", trueOrFalse},
     {"parallel_replicas_for_non_replicated_merge_tree", trueOrFalse},
     {"parallel_replicas_index_analysis_only_on_coordinator", trueOrFalse},

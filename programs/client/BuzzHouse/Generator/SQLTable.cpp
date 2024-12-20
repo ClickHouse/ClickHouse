@@ -15,7 +15,9 @@ void collectColumnPaths(
     MapType * mt;
     TupleType * ttp;
     NestedType * ntp;
+    JSONType * jt;
 
+    checkStackSize();
     // Append this node to the path
     next.path.push_back(ColumnPathChainEntry(cname, tp));
     if (((flags & skip_nested_node) == 0 || !dynamic_cast<NestedType *>(tp))
@@ -75,6 +77,15 @@ void collectColumnPaths(
             collectColumnPaths("c" + std::to_string(entry.cname), entry.subtype, flags, next, paths);
         }
     }
+    else if ((flags & flat_json) != 0 && (jt = dynamic_cast<JSONType *>(tp)))
+    {
+        for (const auto & entry : jt->subcols)
+        {
+            next.path.push_back(ColumnPathChainEntry(entry.cname, entry.subtype));
+            paths.push_back(next);
+            next.path.pop_back();
+        }
+    }
     // Remove the last element from the path
     next.path.pop_back();
 }
@@ -101,7 +112,7 @@ void StatementGenerator::addTableRelation(
     SQLRelation rel(rel_name);
 
     flatTableColumnPath(
-        flat_tuple | flat_nested | to_table_entries | collect_generated,
+        flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
         t,
         [](const SQLColumn & c) { return !c.dmod.has_value() || c.dmod.value() != DModifier::DEF_EPHEMERAL; });
     for (const auto & entry : this->table_entries)
@@ -1039,7 +1050,7 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
     if (rg.nextSmallNumber() < 9)
     {
         flatTableColumnPath(
-            flat_tuple | flat_nested | skip_nested_node,
+            flat_tuple | flat_nested | flat_json | skip_nested_node,
             t,
             [&](const SQLColumn & c) { return itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType, true, true, true>(c.tp); });
     }
@@ -1469,7 +1480,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
         next.is_temp = t.is_temp;
     }
 
-    flatTableColumnPath(flat_tuple | flat_nested | skip_nested_node, next, [](const SQLColumn &) { return true; });
+    flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next, [](const SQLColumn &) { return true; });
     generateEngineDetails(rg, next, !added_pkey, te);
     if (next.hasDatabasePeer())
     {

@@ -73,8 +73,8 @@ const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_disti
                          allow_groupby_settings = (1 << 8), allow_orderby = (1 << 9), allow_orderby_settings = (1 << 10),
                          allow_limit = (1 << 11);
 
-const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), skip_tuple_node = (1 << 3),
-                         skip_nested_node = (1 << 4), to_table_entries = (1 << 5);
+const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), flat_json = (1 << 3),
+                         skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6);
 
 class StatementGenerator
 {

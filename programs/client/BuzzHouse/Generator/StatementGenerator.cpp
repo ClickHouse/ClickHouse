@@ -839,7 +839,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
 
                 if (rg.nextSmallNumber() < 6)
                 {
-                    flatTableColumnPath(flat_tuple | flat_nested | skip_nested_node, t, [](const SQLColumn &) { return true; });
+                    flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t, [](const SQLColumn &) { return true; });
                     generateTableKey(rg, t.teng, true, tkey);
                     this->entries.clear();
                 }

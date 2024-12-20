@@ -415,7 +415,6 @@ static const std::vector<TestSetting> test_settings{
     TestSetting("output_format_pretty_row_numbers", {"0", "1"}),
     TestSetting("output_format_write_statistics", {"0", "1"}),
     TestSetting("page_cache_inject_eviction", {"0", "1"}),
-    TestSetting("parallel_distributed_insert_select", {"0", "1", "2"}),
     TestSetting("parallel_replicas_allow_in_with_subquery", {"0", "1"}),
     TestSetting("parallel_replicas_for_non_replicated_merge_tree", {"0", "1"}),
     TestSetting("parallel_replicas_index_analysis_only_on_coordinator", {"0", "1"}),
