@@ -63,8 +63,6 @@ namespace
         DateTime64
     };
 
-
-
     const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
         {"mon", {"day", 1}},
         {"tue", {"sday", 2}},
@@ -160,11 +158,11 @@ namespace
         (res) = *result;                                  \
 }
 
-    template <ErrorHandling error_handling, bool is_time64>
+    template <ErrorHandling error_handling, bool datetime64>
     struct DateTime
     {
-        static constexpr Int32 min_year = is_time64 ? 1900 : 1970;
-        static constexpr Int32 max_year = is_time64 ? 2299 : 2106;
+        static constexpr Int32 min_year = datetime64 ? 1900 : 1970;
+        static constexpr Int32 max_year = datetime64 ? 2299 : 2106;
         /// If both week_date_format and week_date_format is false, date is composed of year, month and day
         Int32 year = 1970; /// year, range [1970, 2106]
         Int32 month = 1; /// month of year, range [1, 12]
@@ -588,7 +586,7 @@ namespace
 
             /// Time zone is specified in format string.
             seconds_since_epoch -= time_zone_offset;
-            if constexpr (!is_time64)
+            if constexpr (!datetime64)
                 if (unlikely(seconds_since_epoch < 0))
                     RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
 

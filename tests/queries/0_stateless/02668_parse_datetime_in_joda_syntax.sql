@@ -322,6 +322,14 @@ select parseDateTime64InJodaSyntaxOrZero('wrong value', 'yyyy-dd-MM HH:mm:ss.SSS
 select parseDateTime64InJodaSyntaxOrZero('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz') = toDateTime64('1970-01-01 00:00:00', 0);
 select parseDateTime64InJodaSyntaxOrZero('', '') = toDateTime64('1970-01-01 00:00:00', 0);
 select parseDateTime64InJodaSyntaxOrZero('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2177-10-09 10:30:10.123', 3);
+-- Random date time tests from 1900 to 2299
+select parseDateTime64InJodaSyntaxOrZero('1923-05-15 14:45:30.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('1923-05-15 14:45:30.123', 3);
+select parseDateTime64InJodaSyntaxOrZero('2150-11-23 08:22:10.456', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2150-11-23 08:22:10.456', 3);
+select parseDateTime64InJodaSyntaxOrZero('2107-07-19 19:30:45.789123', 'yyyy-MM-dd HH:mm:ss.SSSSSS') = toDateTime64('2107-07-19 19:30:45.789123', 6);
+select parseDateTime64InJodaSyntaxOrZero('1909-12-31 23:59:59.999', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('1909-12-31 23:59:59.999', 3);
+select parseDateTime64InJodaSyntaxOrZero('2200-01-01 00:00:00.000', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2200-01-01 00:00:00.000', 3);
+select parseDateTime64InJodaSyntaxOrZero('1924-10-09 10:30:10.123456America/Los_Angeles', 'yyyy-MM-dd HH:mm:ss.SSSSSSz') = toDateTime64('1924-10-09 10:30:10.123456', 6, 'America/Los_Angeles');
+select parseDateTime64InJodaSyntaxOrZero('2299-10-09 10:30:10.123456America/Los_Angeles', 'yyyy-MM-dd HH:mm:ss.SSSSSSz') = toDateTime64('2299-10-09 17:30:10.123456', 6);
 -- -------------------------------------------------------------------------------------------------------------------------
 
 -- { echoOff }
