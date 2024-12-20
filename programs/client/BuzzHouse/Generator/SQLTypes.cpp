@@ -117,7 +117,7 @@ SQLType * TypeDeepCopy(SQLType * tp)
         subtypes.reserve(vtp->subtypes.size());
         for (const auto & entry : vtp->subtypes)
         {
-            subtypes.push_back(const_cast<SQLType *>(TypeDeepCopy(entry)));
+            subtypes.push_back(TypeDeepCopy(entry));
         }
         return new VariantType(std::move(subtypes));
     }
@@ -671,8 +671,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         {
             TopTypeName * ttn = tp ? twocn->add_values() : nullptr;
 
-            subtypes.push_back(const_cast<SQLType *>(this->randomNextType(
-                rg, allowed_types & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn)));
+            subtypes.push_back(this->randomNextType(
+                rg, allowed_types & ~(allow_nullable | allow_nested | allow_variant | allow_dynamic), col_counter, ttn));
         }
         this->depth--;
         return new VariantType(subtypes);

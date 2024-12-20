@@ -719,6 +719,7 @@ class MinIOIntegration : public ClickHouseIntegration
 {
 private:
     bool sendRequest(const std::string & resource);
+
 public:
     explicit MinIOIntegration(const FuzzConfig & fcc, const ServerCredentials & ssc) : ClickHouseIntegration(fcc, ssc) { }
 

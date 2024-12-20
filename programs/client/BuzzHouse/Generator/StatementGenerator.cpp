@@ -185,6 +185,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     if (next.is_materialized)
     {
         TableEngine * te = cv->mutable_engine();
+        const bool has_table = collectionHas<SQLTable>([&](const SQLTable & tt) { return tt.numberOfInsertableColumns() == next.ncols; });
 
         next.teng = getNextTableEngine(rg, false);
         te->set_engine(next.teng);
@@ -202,9 +203,10 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         }
         this->entries.clear();
 
-        if (collectionHas<SQLTable>(attached_tables) && rg.nextSmallNumber() < 5)
+        if (rg.nextSmallNumber() < (has_table ? 9 : 6))
         {
-            const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+            const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
+                has_table ? [&](const SQLTable & tt) { return tt.numberOfInsertableColumns() == next.ncols; } : attached_tables));
 
             cv->mutable_to_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
         }
