@@ -903,13 +903,14 @@ int StatementGenerator::addTableColumn(
 
     if (t.isMySQLEngine() || t.hasMySQLPeer())
     {
-        possible_types
-            &= ~(allow_int128 | allow_dynamic | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
+        possible_types &= ~(
+            allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
     }
     if (t.isPostgreSQLEngine() || t.hasPostgreSQLPeer())
     {
-        possible_types
-            &= ~(allow_int128 | allow_unsigned_int | allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo);
+        possible_types &= ~(
+            allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
+            | allow_geo);
         if (t.hasPostgreSQLPeer())
         {
             possible_types &= ~(set_any_datetime_precision); //datetime must have 6 digits precision
@@ -918,8 +919,8 @@ int StatementGenerator::addTableColumn(
     if (t.isSQLiteEngine() || t.hasSQLitePeer())
     {
         possible_types &= ~(
-            allow_int128 | allow_unsigned_int | allow_dynamic | allow_array | allow_map | allow_tuple | allow_variant | allow_nested
-            | allow_geo);
+            allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
+            | allow_nested | allow_geo);
         if (t.hasSQLitePeer())
         {
             //for bool it maps to int type, then it outputs 0 as default instead of false
@@ -1482,12 +1483,14 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next, [](const SQLColumn &) { return true; });
     generateEngineDetails(rg, next, !added_pkey, te);
+    entries.clear();
     if (next.hasDatabasePeer())
     {
+        flatTableColumnPath(0, next, [](const SQLColumn &) { return true; });
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
+        entries.clear();
     }
-    entries.clear();
-    if (!next.hasDatabasePeer() && next.isMergeTreeFamily())
+    else if (next.isMergeTreeFamily())
     {
         bool has_date_cols = false;
 

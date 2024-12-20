@@ -156,6 +156,14 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalse},
     {"filesystem_cache_enable_background_download_during_fetch", trueOrFalse},
     {"filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage", trueOrFalse},
+    {"filesystem_cache_name",
+     [](RandomGenerator & rg, std::string & ret)
+     {
+         const std::vector<std::string> & choices = {"cache_for_s3"};
+         ret += "'";
+         ret += rg.pickRandomlyFromVector(choices);
+         ret += "'";
+     }},
     {"filesystem_cache_prefer_bigger_buffer_size", trueOrFalse},
     {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", trueOrFalse},
     {"filesystem_cache_segments_batch_size",
@@ -740,6 +748,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"rows_before_aggregation", trueOrFalse},
     {"s3_allow_parallel_part_upload", trueOrFalse},
     {"s3_check_objects_after_upload", trueOrFalse},
+    {"s3_create_new_file_on_insert", trueOrFalse},
     {"s3_disable_checksum", trueOrFalse},
     {"s3_ignore_file_doesnt_exist", trueOrFalse},
     {"s3_skip_empty_files", trueOrFalse},
@@ -1017,7 +1026,7 @@ std::map<TableEngineValues, std::map<std::string, std::function<void(RandomGener
        {SQLite, {}},
        {MongoDB, {}},
        {Redis, {}},
-       {S3, s3TableSettings},
+       {S3, {}},
        {S3Queue, s3QueueTableSettings},
        {Hudi, {}},
        {DeltaLake, {}},
