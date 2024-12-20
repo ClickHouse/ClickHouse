@@ -921,7 +921,7 @@ int StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nco
                 {
                     eot->set_collation(rg.pickRandomlyFromVector(this->fc.collations));
                 }
-                if (rg.nextSmallNumber() < 2)
+                if (this->fc.test_with_fill && rg.nextSmallNumber() < 2)
                 {
                     const uint32_t nopt = rg.nextSmallNumber();
                     ExprOrderingWithFill * eowf = eot->mutable_fill();

@@ -212,7 +212,7 @@ public:
 struct ColumnPathChainEntry
 {
 public:
-    const std::string cname = "";
+    const std::string cname;
     SQLType * tp = nullptr;
 
     ColumnPathChainEntry(const std::string cn, SQLType * t) : cname(cn), tp(t) { }
