@@ -16,7 +16,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
 {
     const auto & settings = from->getSettingsRef();
 
-    actions_settings = ExpressionActionsSettings::fromSettings(settings, CompileExpressions::yes);
+    actions_settings = ExpressionActionsSettings(settings, CompileExpressions::yes);
     process_list_element = from->getProcessListElement();
     progress_callback = from->getProgressCallback();
 
