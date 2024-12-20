@@ -117,6 +117,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
             {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
             {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},
+            {"use_hive_partitioning", false, true, "Enabled the setting by default."},
         }
     },
     {"24.10",
