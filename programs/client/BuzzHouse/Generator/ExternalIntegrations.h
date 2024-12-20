@@ -719,21 +719,6 @@ class MinIOIntegration : public ClickHouseIntegration
 {
 private:
     bool sendRequest(const std::string & resource);
-
-    std::string getSubstringAfterLastChar(const std::string & str, const char delimiter)
-    {
-        // Find the last occurrence of the delimiter
-        size_t pos = str.find_last_of(delimiter);
-
-        // If the delimiter is found, return the substring after it
-        if (pos != std::string::npos)
-        {
-            return str.substr(pos + 1);
-        }
-        // If the delimiter is not found, return an empty string
-        return "";
-    }
-
 public:
     explicit MinIOIntegration(const FuzzConfig & fcc, const ServerCredentials & ssc) : ClickHouseIntegration(fcc, ssc) { }
 
@@ -748,7 +733,7 @@ public:
 
     bool performIntegration(RandomGenerator &, const uint32_t tname, const bool, std::vector<ColumnPathChain> &) override
     {
-        return sendRequest("/" + getSubstringAfterLastChar(sc.database, '/') + "/file" + std::to_string(tname));
+        return sendRequest(sc.database + "/file" + std::to_string(tname));
     }
 
     ~MinIOIntegration() override = default;
