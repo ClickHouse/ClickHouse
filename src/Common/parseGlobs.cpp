@@ -46,6 +46,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     oss_for_replacing.exceptions(std::ios::failbit);
     size_t current_index = 0;
 
+    /// We may find range and enum globs in any order, let's look for both types on each iteration.
     while (true)
     {
         std::string_view matched_range;
@@ -54,9 +55,12 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         auto did_match_range = RE2::PartialMatch(input, range_regex, &matched_range);
         auto did_match_enum = RE2::PartialMatch(input, enum_regex, &matched_enum);
 
+        /// Enum regex matches ranges, so if they both match and point to the same data,
+        /// it is a range.
         if (did_match_range && did_match_enum && matched_range.data() == matched_enum.data())
             did_match_enum = false;
 
+        /// We matched a range, and range comes earlier than enum
         if (did_match_range && (!did_match_enum || matched_range.data() < matched_enum.data()))
         {
             RE2::FindAndConsume(&input, range_regex, &matched);
@@ -100,6 +104,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             oss_for_replacing << ")";
             current_index = input.data() - escaped_with_globs.data();
         }
+        /// We matched enum, and it comes earlier than range.
         else if (did_match_enum && (!did_match_range || matched_enum.data() < matched_range.data()))
         {
             RE2::FindAndConsume(&input, enum_regex, &matched);
