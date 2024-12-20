@@ -63,7 +63,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 polling_max_timeout_ms;
     extern const ObjectStorageQueueSettingsUInt64 polling_backoff_ms;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
-    extern const ObjectStorageQueueSettingsUInt32 buckets;
+    extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsString last_processed_path;
@@ -374,10 +374,12 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     size_t processing_threads_num = storage->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
+    auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
                                i/* processor_id */,
                                info,
+                               progress,
                                iterator,
                                max_block_size,
                                context,
@@ -396,6 +398,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
     size_t processor_id,
     const ReadFromFormatInfo & info,
+    ProcessingProgressPtr progress_,
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
     ContextPtr local_context,
@@ -408,7 +411,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     }
     return std::make_shared<ObjectStorageQueueSource>(
         getName(), processor_id,
-        file_iterator, configuration, object_storage,
+        file_iterator, configuration, object_storage, progress_,
         info, format_settings,
         commit_settings_copy,
         files_metadata,
@@ -417,29 +420,31 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         getStorageID(), log, commit_once_processed);
 }
 
-bool StorageObjectStorageQueue::hasDependencies(const StorageID & table_id)
+size_t StorageObjectStorageQueue::getDependencies() const
 {
+    auto table_id = getStorageID();
+
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
 
     if (view_ids.empty())
-        return false;
+        return 0;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
         if (!view)
-            return false;
+            return 0;
 
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
+            return 0;
     }
 
-    return true;
+    return view_ids.size();
 }
 
 void StorageObjectStorageQueue::threadFunc()
@@ -449,7 +454,7 @@ void StorageObjectStorageQueue::threadFunc()
 
     try
     {
-        const size_t dependencies_count = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
+        const size_t dependencies_count = getDependencies();
         if (dependencies_count)
         {
             mv_attached.store(true);
@@ -534,11 +539,13 @@ bool StorageObjectStorageQueue::streamToViews()
         pipes.reserve(processing_threads_num);
         sources.reserve(processing_threads_num);
 
+        auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < processing_threads_num; ++i)
         {
             auto source = createSource(
                 i/* processor_id */,
                 read_from_format_info,
+                processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
@@ -607,6 +614,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "max_processed_rows_before_commit",
     "max_processed_bytes_before_commit",
     "max_processing_time_sec_before_commit",
+    "buckets",
 };
 
 static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
@@ -615,6 +623,11 @@ static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode
         return changeable_settings_unordered_mode.contains(name);
     else
         return changeable_settings_ordered_mode.contains(name);
+}
+
+static bool requiresDetachedMV(const std::string & name)
+{
+    return name == "buckets" || name == "s3queue_buckets";
 }
 
 void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -663,6 +676,15 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
                     changed_setting.name, magic_enum::enum_name(mode), getName());
+            }
+            if (requiresDetachedMV(changed_setting.name))
+            {
+                const size_t dependencies_count = getDependencies();
+                if (dependencies_count)
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Changing setting {} is not allowed only with detached dependencies (dependencies count: {})",
+                        changed_setting.name, dependencies_count);
             }
         }
     }
@@ -733,6 +755,16 @@ void StorageObjectStorageQueue::alter(
                     setting.name, magic_enum::enum_name(mode), getName());
             }
 
+            if (requiresDetachedMV(setting.name))
+            {
+                const size_t dependencies_count = getDependencies();
+                if (dependencies_count)
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Changing setting {} is not allowed only with detached dependencies (dependencies count: {})",
+                        setting.name, dependencies_count);
+            }
+
             changed_settings.push_back(result_setting);
 
             auto inserted = changed_settings_set.emplace(result_setting.name).second;
@@ -743,7 +775,7 @@ void StorageObjectStorageQueue::alter(
         LOG_TEST(log, "New settings: {}", serializeAST(*new_metadata.settings_changes));
 
         /// Alter settings which are stored in keeper.
-        files_metadata->alterSettings(changed_settings);
+        files_metadata->alterSettings(changed_settings, local_context);
 
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)
