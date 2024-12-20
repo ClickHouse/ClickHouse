@@ -564,6 +564,14 @@ bool QueryStatus::checkIfKilledAndThrow()
     return true;
 }
 
+bool QueryStatus::checkTimeLimitSoft()
+{
+    if (is_killed.load())
+        return false;
+
+    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
+}
+
 void QueryStatus::throwQueryWasCancelled() const
 {
     if (cancellation_exception)

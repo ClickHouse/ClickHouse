@@ -265,6 +265,8 @@ public:
     /// Throws an exception if query is killed
     bool checkIfKilledAndThrow();
 
+    [[nodiscard]] bool checkTimeLimitSoft();
+
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
     UInt64 getQueryCPUStartTime() { return watch.getStart(); }
 };

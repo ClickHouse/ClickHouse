@@ -59,17 +59,13 @@ void CancellationChecker::cancelTask(QueryToTrack task)
     if (task.query)
     {
         if (task.overflow_mode == OverflowMode::THROW)
-        {
-            task.query->cancelQuery(CancelReason::TIMEOUT);
             ProfileEvents::increment(ProfileEvents::OverflowThrow);
-        }
         else if (task.overflow_mode == OverflowMode::BREAK)
-        {
-            task.query->checkIfKilledAndThrow();
             ProfileEvents::increment(ProfileEvents::OverflowBreak);
-        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
+
+        task.query->cancelQuery(CancelReason::TIMEOUT);
     }
 }
 
