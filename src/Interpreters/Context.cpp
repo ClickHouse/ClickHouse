@@ -3642,22 +3642,28 @@ UInt16 Context::getTCPPort() const
 
 std::optional<UInt16> Context::getTCPPortSecure() const
 {
-    const auto & config = getConfigRef();
-    if (config.has("tcp_port_secure"))
-        return config.getInt("tcp_port_secure");
-    return {};
+    return tryGetServerPort("tcp_port_secure");
 }
 
 void Context::registerServerPort(String port_name, UInt16 port)
 {
+    std::lock_guard lock(shared->mutex);
     shared->server_ports.emplace(std::move(port_name), port);
 }
 
 UInt16 Context::getServerPort(const String & port_name) const
 {
+    if (auto port = tryGetServerPort(port_name))
+        return *port;
+    throw Exception(ErrorCodes::BAD_GET, "There is no port named {}", port_name);
+}
+
+std::optional<UInt16> Context::tryGetServerPort(const String & port_name) const
+{
+    SharedLockGuard lock(shared->mutex);
     auto it = shared->server_ports.find(port_name);
     if (it == shared->server_ports.end())
-        throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
+        return {};
     else
         return it->second;
 }

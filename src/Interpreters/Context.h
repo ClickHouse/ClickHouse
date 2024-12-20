@@ -861,6 +861,7 @@ public:
     void registerServerPort(String port_name, UInt16 port);
 
     UInt16 getServerPort(const String & port_name) const;
+    std::optional<UInt16> tryGetServerPort(const String & port_name) const;
 
     /// For methods below you may need to acquire the context lock by yourself.
 
