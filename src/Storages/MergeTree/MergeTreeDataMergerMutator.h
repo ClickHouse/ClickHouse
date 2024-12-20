@@ -20,12 +20,11 @@ struct SelectMergeFailure {
         NOTHING_TO_MERGE = 1,
     };
 
-    Reason reason;
-    PreformattedMessage explanation;
+    Reason reason = Reason::CANNOT_SELECT;
+    PreformattedMessage explanation = {};
 };
 
 using AllowedMergingPredicate = std::function<tl::expected<bool, PreformattedMessage>(const PartProperties *, const PartProperties *)>;
-using SelectMergeResult = tl::expected<MergeSelectorChoice, SelectMergeFailure>;
 
 /** Can select parts for background processes and do them.
  * Currently helps with merges, mutations and moves
@@ -52,7 +51,7 @@ public:
       *  - Parts between which another part can still appear can not be merged. Refer to METR-7001.
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
-    SelectMergeResult selectPartsToMerge(
+    tl::expected<MergeSelectorChoice, SelectMergeFailure> selectPartsToMerge(
         const PartsCollectorPtr & parts_collector,
         const AllowedMergingPredicate & can_merge,
         const MergeSelectorApplier & selector,
@@ -63,7 +62,7 @@ public:
       * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       */
-    SelectMergeResult selectAllPartsToMergeWithinPartition(
+    tl::expected<MergeSelectorChoice, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,
         const PartsCollectorPtr & parts_collector,
         const AllowedMergingPredicate & can_merge,

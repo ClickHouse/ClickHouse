@@ -308,7 +308,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     return partitions_hint;
 }
 
-SelectMergeResult MergeTreeDataMergerMutator::selectPartsToMerge(
+tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator::selectPartsToMerge(
     const PartsCollectorPtr & parts_collector,
     const AllowedMergingPredicate & can_merge,
     const MergeSelectorApplier & selector,
@@ -374,7 +374,7 @@ SelectMergeResult MergeTreeDataMergerMutator::selectPartsToMerge(
     });
 }
 
-SelectMergeResult MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
+tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const PartsCollectorPtr & parts_collector,
     const AllowedMergingPredicate & can_merge,
