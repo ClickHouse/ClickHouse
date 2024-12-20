@@ -1,6 +1,10 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Defines.h>
 
 namespace DB
 {

@@ -2,6 +2,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -39,6 +40,11 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 keeper_multiread_batch_size;
 }
 
 namespace ObjectStorageQueueSetting
@@ -204,7 +210,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.settings_changes = engine_args->settings->ptr();
+    if (engine_args->settings)
+        storage_metadata.settings_changes = engine_args->settings->ptr();
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -217,9 +224,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         zk_path,
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
-        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
+        (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata), table_id_);
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
 
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
@@ -251,7 +259,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
 void StorageObjectStorageQueue::drop()
 {
-    ObjectStorageQueueMetadataFactory::instance().remove(zk_path, getStorageID());
+    ObjectStorageQueueMetadataFactory::instance().remove(zk_path);
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -654,6 +662,8 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
 
         StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        /// At the moment we cannot do ALTER MODIFY/RESET SETTING if there are no settings changes (exception will be thrown),
+        /// so we do not need to check if old_metadata.settings_changes == nullptr.
         const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -734,20 +744,13 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
-std::shared_ptr<StorageObjectStorageQueue::FileIterator>
-StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
+std::shared_ptr<StorageObjectStorageQueue::FileIterator> StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
     auto settings = configuration->getQuerySettings(local_context);
     auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
-        object_storage, configuration, predicate, getVirtualsList(), local_context,
-        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
+        object_storage, configuration, predicate, getVirtualsList(), local_context, nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
 
-    const auto & table_metadata = getTableMetadata();
-    bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
-        && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
-
-    return std::make_shared<FileIterator>(
-        files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);
+    return std::make_shared<FileIterator>(files_metadata, std::move(glob_iterator), shutdown_called, log);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const

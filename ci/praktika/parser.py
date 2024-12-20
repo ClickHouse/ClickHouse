@@ -1,8 +1,8 @@
 import dataclasses
 from typing import Any, Dict, List
 
-from . import Artifact, Workflow
-from .mangle import _get_workflows
+from praktika import Artifact, Workflow
+from praktika.mangle import _get_workflows
 
 
 class AddonType:
@@ -50,7 +50,6 @@ class WorkflowYaml:
     artifact_to_config: Dict[str, ArtifactYaml]
     secret_names_gh: List[str]
     enable_cache: bool
-    cron_schedules: List[str]
 
 
 class WorkflowConfigParser:
@@ -76,7 +75,6 @@ class WorkflowConfigParser:
             job_to_config={},
             artifact_to_config={},
             enable_cache=False,
-            cron_schedules=config.cron_schedules,
         )
 
     def parse(self):

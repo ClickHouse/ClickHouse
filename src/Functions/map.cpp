@@ -91,8 +91,7 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires even number of arguments, but {} given", getName(), arguments.size());
 
-        DataTypes keys;
-        DataTypes values;
+        DataTypes keys, values;
         for (size_t i = 0; i < arguments.size(); i += 2)
         {
             keys.emplace_back(arguments[i]);

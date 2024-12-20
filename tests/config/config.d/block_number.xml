@@ -1,0 +1,7 @@
+<clickhouse>
+    <merge_tree>
+        <!-- Setting randomized for stress test, it is disabled here and this line is used to randomize it in the script -->
+        <enable_block_number_column>0</enable_block_number_column>
+        <enable_block_offset_column>0</enable_block_offset_column>
+    </merge_tree>
+</clickhouse>

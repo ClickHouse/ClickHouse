@@ -9,7 +9,7 @@
 namespace DB
 {
 
-bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
+bool canBeSafelyCasted(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     auto from_which_type = WhichDataType(from_type->getTypeId());
     bool to_type_was_nullable = isNullableOrLowCardinalityNullable(to_type);
@@ -127,7 +127,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
             if (to_type_was_nullable)
             {
                 const auto & from_type_nullable = assert_cast<const DataTypeNullable &>(*from_type);
-                return canBeSafelyCast(from_type_nullable.getNestedType(), to_type_unwrapped);
+                return canBeSafelyCasted(from_type_nullable.getNestedType(), to_type_unwrapped);
             }
 
             if (to_which_type.isString())
@@ -138,7 +138,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::LowCardinality:
         {
             const auto & from_type_low_cardinality = assert_cast<const DataTypeLowCardinality &>(*from_type);
-            return canBeSafelyCast(from_type_low_cardinality.getDictionaryType(), to_type_unwrapped);
+            return canBeSafelyCasted(from_type_low_cardinality.getDictionaryType(), to_type_unwrapped);
         }
         case TypeIndex::Array:
         {
@@ -146,7 +146,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
             {
                 const auto & from_type_array = assert_cast<const DataTypeArray &>(*from_type);
                 const auto & to_type_array = assert_cast<const DataTypeArray &>(*to_type_unwrapped);
-                return canBeSafelyCast(from_type_array.getNestedType(), to_type_array.getNestedType());
+                return canBeSafelyCasted(from_type_array.getNestedType(), to_type_array.getNestedType());
             }
 
             if (to_which_type.isString())
@@ -160,10 +160,10 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
             {
                 const auto & from_type_map = assert_cast<const DataTypeMap &>(*from_type);
                 const auto & to_type_map = assert_cast<const DataTypeMap &>(*to_type_unwrapped);
-                if (!canBeSafelyCast(from_type_map.getKeyType(), to_type_map.getKeyType()))
+                if (!canBeSafelyCasted(from_type_map.getKeyType(), to_type_map.getKeyType()))
                     return false;
 
-                if (!canBeSafelyCast(from_type_map.getValueType(), to_type_map.getValueType()))
+                if (!canBeSafelyCasted(from_type_map.getValueType(), to_type_map.getValueType()))
                     return false;
 
                 return true;
@@ -182,10 +182,10 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
                 if (to_type_tuple_elements.size() != 2)
                     return false;
 
-                if (!canBeSafelyCast(from_type_map.getKeyType(), to_type_tuple_elements[0]))
+                if (!canBeSafelyCasted(from_type_map.getKeyType(), to_type_tuple_elements[0]))
                     return false;
 
-                if (!canBeSafelyCast(from_type_map.getValueType(), to_type_tuple_elements[1]))
+                if (!canBeSafelyCasted(from_type_map.getValueType(), to_type_tuple_elements[1]))
                     return false;
 
                 return true;
@@ -211,7 +211,7 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
                     return false;
 
                 for (size_t i = 0; i < lhs_type_elements_size; ++i)
-                    if (!canBeSafelyCast(from_tuple_type_elements[i], to_tuple_type_elements[i]))
+                    if (!canBeSafelyCasted(from_tuple_type_elements[i], to_tuple_type_elements[i]))
                         return false;
 
                 return true;

@@ -151,7 +151,7 @@ const ActionsDAG::Node & addFunction(
 
 /// Adds a CAST node with the regular name ("CAST(...)") or with the provided name.
 /// This is different from ActionsDAG::addCast() because it set the name equal to the original name effectively hiding the value before cast,
-/// but it might be required for further steps with its original uncast type.
+/// but it might be required for further steps with its original uncasted type.
 const ActionsDAG::Node & addCast(
         const ActionsDAGPtr & dag,
         const ActionsDAG::Node & node_to_cast,
@@ -247,7 +247,7 @@ bool tryBuildPrewhereSteps(
     struct Step
     {
         ActionsDAGPtr actions;
-        /// Original condition, in case if we have only one condition, and it was not cast
+        /// Original condition, in case if we have only one condition, and it was not casted
         const ActionsDAG::Node * original_node;
         /// Result condition node
         const ActionsDAG::Node * result_node;
