@@ -953,9 +953,6 @@ Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 
 )", 0) \
     DECLARE(ParquetCompression, output_format_parquet_compression_method, "zstd", R"(
 Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)
-)", 0)                                          \
-    DECLARE(UInt64, output_format_parquet_compression_level, 3, R"(
-Compression level for Parquet output format. User must know the levels for the compression algorithm being used.
 )", 0) \
     DECLARE(Bool, output_format_parquet_compliant_nested_types, true, R"(
 In parquet file schema, use name 'element' instead of 'item' for list elements. This is a historical artifact of Arrow library implementation. Generally increases compatibility, except perhaps with some old versions of Arrow.
