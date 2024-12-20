@@ -209,7 +209,6 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
 
 void QueryMetricLogStatus::scheduleNext(String query_id)
 {
-    int a, b = 0; UNUSED(a, b);
     info.next_collect_time += std::chrono::milliseconds(info.interval_milliseconds);
     const auto now = std::chrono::system_clock::now();
     if (info.next_collect_time > now)
