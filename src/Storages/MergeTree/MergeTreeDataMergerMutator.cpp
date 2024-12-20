@@ -41,6 +41,7 @@
 #include <cmath>
 #include <ctime>
 #include <numeric>
+#include <ranges>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -388,12 +389,12 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 
     const String * prev_partition_id = nullptr;
     /// Previous part only in boundaries of partition frame
-    const MergeTreeData::DataPartPtr * prev_part = nullptr;
+    const MergeTreeData::DataPartPtr * next_part = nullptr;
 
     /// collect min_age for each partition while iterating parts
     PartitionsInfo & partitions_info = res.partitions_info;
 
-    for (const MergeTreeData::DataPartPtr & part : data_parts)
+    for (const MergeTreeData::DataPartPtr & part : data_parts | std::views::reverse)
     {
         const String & partition_id = part->info.partition_id;
 
@@ -404,11 +405,11 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 
             /// New partition frame.
             prev_partition_id = &partition_id;
-            prev_part = nullptr;
+            next_part = nullptr;
         }
 
         /// Check predicate only for the first part in each range.
-        if (!prev_part)
+        if (!next_part)
         {
             /* Parts can be merged with themselves for TTL needs for example.
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
@@ -426,10 +427,10 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         {
             /// If we cannot merge with previous part we had to start new parts
             /// interval (in the same partition)
-            if (!can_merge_callback(*prev_part, part, txn.get(), out_disable_reason))
+            if (!can_merge_callback(*next_part, part, txn.get(), out_disable_reason))
             {
                 /// Now we have no previous part
-                prev_part = nullptr;
+                next_part = nullptr;
 
                 /// Mustn't be empty
                 assert(!parts_ranges.back().empty());
@@ -464,18 +465,22 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         parts_ranges.back().emplace_back(part_info);
 
         /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
-        if (prev_part)
+        if (next_part)
         {
-            if (part->info.contains((*prev_part)->info))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", part->name, (*prev_part)->name);
+            if (part->info.contains((*next_part)->info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} contains previous part {}", part->name, (*next_part)->name);
 
-            if (!part->info.isDisjoint((*prev_part)->info))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*prev_part)->name);
+            if (!part->info.isDisjoint((*next_part)->info))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", part->name, (*next_part)->name);
         }
 
-        prev_part = &part;
+        next_part = &part;
     }
 
+    for (auto & range : res.parts_ranges)
+        std::reverse(range.begin(), range.end());
+
+    std::reverse(res.parts_ranges.begin(), res.parts_ranges.end());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, res.parts_selected_precondition);
     ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, res.parts_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
