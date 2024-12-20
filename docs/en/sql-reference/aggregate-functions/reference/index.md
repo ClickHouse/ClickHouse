@@ -7,14 +7,15 @@ toc_title: List of Aggregate Functions
 displayed_sidebar: sqlreference
 ---
 
-import TableOfContentsJSON from './table_of_contents.json'
-import { TableOfContents } from '/src/components/TableOfContents'
+<!-- import TableOfContentsJSON from './table_of_contents.json' -->
+<!-- import { TableOfContents } from '/src/components/TableOfContents' -->
 
 # List of Aggregate Functions
 
 The following aggregate functions are available in ClickHouse:
 
-<TableOfContents items={TableOfContentsJSON} />
+<!-- <TableOfContents items={TableOfContentsJSON} /> -->
+Table of contents coming soon...
 
 
 

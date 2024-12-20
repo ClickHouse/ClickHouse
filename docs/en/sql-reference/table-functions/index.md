@@ -4,8 +4,8 @@ sidebar_label: Table Functions
 sidebar_position: 1
 ---
 
-import TableOfContentsJSON from './table_of_contents.json'
-import { TableOfContents } from '/src/components/TableOfContents'
+<!-- import TableOfContentsJSON from './table_of_contents.json' -->
+<!-- import { TableOfContents } from '/src/components/TableOfContents' -->
 
 # Table Functions
 
@@ -31,4 +31,5 @@ You can’t use table functions if the [allow_ddl](../../operations/settings/per
 
 The following table functions are available in ClickHouse:
 
-<TableOfContents items={TableOfContentsJSON} />
+<!-- <TableOfContents items={TableOfContentsJSON} /> -->
+Table of contents coming soon...
