@@ -1,11 +1,13 @@
-#include <Storages/StorageFactory.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <IO/WriteHelpers.h>
+#include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -113,6 +115,7 @@ StoragePtr StorageFactory::get(
             if (!storage_def->engine)
                 throw Exception(ErrorCodes::ENGINE_REQUIRED, "Incorrect CREATE query: ENGINE required");
 
+            rewriteUnreplicatedMergeTreeEngines(query.getDatabase(), local_context, storage_def->engine->name);
             const ASTFunction & engine_def = *storage_def->engine;
 
             if (engine_def.parameters)
@@ -250,6 +253,26 @@ AccessType StorageFactory::getSourceAccessType(const String & table_engine) cons
     if (it == storages.end())
         return AccessType::NONE;
     return it->second.features.source_access_type;
+}
+
+void StorageFactory::rewriteUnreplicatedMergeTreeEngines(
+    const String& database_name,
+    const ContextMutablePtr& local_context,
+    String & engine_name) const
+{
+    bool is_merge_tree_engine = endsWith(engine_name, "MergeTree");
+    bool is_replicated_engine = startsWith(engine_name, "Replicated");
+
+    if (!is_merge_tree_engine || is_replicated_engine)
+        return;
+
+    bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+                                    DatabaseCatalog::instance().getDatabase(database_name)->getEngineName() == "Replicated";
+
+    if (is_replicated_database && !is_replicated_engine)
+    {
+        engine_name.insert(0, "Replicated");
+    }
 }
 
 }

@@ -136,6 +136,11 @@ public:
         return false;
     }
 private:
+    void rewriteUnreplicatedMergeTreeEngines(
+        const String& database_name,
+        const ContextMutablePtr& local_context,
+        String & engine_name) const;
+
     Storages storages;
 };
 
