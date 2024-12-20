@@ -223,6 +223,8 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
     GET_NUMERIC_CONSTANT(UInt16, UInt16)
     GET_NUMERIC_CONSTANT(UInt32, UInt32)
     GET_NUMERIC_CONSTANT(UInt64, UInt64)
+    GET_NUMERIC_CONSTANT(Enum8, Int8)
+    GET_NUMERIC_CONSTANT(Enum16, Int16)
     GET_NUMERIC_CONSTANT(Date, UInt16)
     GET_NUMERIC_CONSTANT(DateTime, UInt32)
     GET_NUMERIC_CONSTANT(DateTime64, DateTime64)
