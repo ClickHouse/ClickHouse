@@ -1,4 +1,5 @@
 ---
+title: List of Aggregate Functions
 slug: /en/sql-reference/aggregate-functions/reference/
 sidebar_position: 36
 toc_folder_title: Reference
@@ -9,8 +10,6 @@ displayed_sidebar: sqlreference
 
 <!-- import TableOfContentsJSON from './table_of_contents.json' -->
 <!-- import { TableOfContents } from '/src/components/TableOfContents' -->
-
-# List of Aggregate Functions
 
 The following aggregate functions are available in ClickHouse:
 

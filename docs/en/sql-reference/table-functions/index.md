@@ -1,13 +1,11 @@
 ---
+title: Table Functions
 slug: /en/sql-reference/table-functions/
 sidebar_label: Table Functions
-sidebar_position: 1
 ---
 
 <!-- import TableOfContentsJSON from './table_of_contents.json' -->
 <!-- import { TableOfContents } from '/src/components/TableOfContents' -->
-
-# Table Functions
 
 Table functions are methods for constructing tables.
 
@@ -27,7 +25,7 @@ You can use table functions in:
 You can’t use table functions if the [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
 :::
 
-## List of Table Functions
+# List of Table Functions
 
 The following table functions are available in ClickHouse:
 
