@@ -631,7 +631,8 @@ void executeQueryWithParallelReplicas(
             std::move(analyzed_read_from_merge_tree),
             local_replica_index.value());
 
-        if (!with_parallel_replicas)
+        /// If there's only one replica or the source is empty, just read locally.
+        if (!with_parallel_replicas || pools_to_use.size() == 1)
         {
             query_plan = std::move(*local_plan);
             return;

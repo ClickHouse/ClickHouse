@@ -51,6 +51,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);
+    context->setSetting("allow_experimental_ts_to_grid_aggregate_function", 1);
 }
 
 }
