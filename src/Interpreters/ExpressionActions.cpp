@@ -434,7 +434,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             //required_columns.push_back({node->result_name, node->result_type});
         }
 
-        actions.push_back({node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        actions.emplace_back(node, arguments, free_position, lazy_executed_nodes.contains(node));
 
         for (const auto & parent : cur_info.parents)
         {
@@ -473,6 +473,18 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         input_positions[input->result_name].emplace_back(pos);
     }
 }
+
+ExpressionActions::Action::Action(
+    const ExpressionActions::Node * node_,
+    const ExpressionActions::Arguments & arguments_,
+    size_t result_position_,
+    bool could_lazy_executed_)
+    : node(node_)
+    , arguments(arguments_)
+    , result_position(result_position_)
+    , could_lazy_executed(could_lazy_executed_)
+    , worth_lazy_executed(could_lazy_executed_)
+{}
 
 
 static WriteBuffer & operator << (WriteBuffer & out, const ExpressionActions::Argument & argument)
@@ -566,27 +578,74 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
     }
 }
 
-namespace
+static bool couldExecuteLazily(const ExpressionActions::Action & action)
 {
-    /// This struct stores context needed to execute actions.
-    ///
-    /// Execution model is following:
-    ///   * execution is performed over list of columns (with fixed size = ExpressionActions::num_columns)
-    ///   * every argument has fixed position in columns list, every action has fixed position for result
-    ///   * if argument is not needed anymore (Argument::needed_later == false), it is removed from list
-    ///   * argument for INPUT is in inputs[inputs_pos[argument.pos]]
-    ///
-    /// Columns on positions `ExpressionActions::result_positions` are inserted back into block.
-    struct ExecutionContext
-    {
-        ColumnsWithTypeAndName & inputs;
-        ColumnsWithTypeAndName columns = {};
-        std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows = 0;
-    };
+    return action.could_lazy_executed  && action.worth_lazy_executed;
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
+void ExpressionActions::executeFunctionAction(
+    const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
+{
+    auto & columns = execution_context.columns;
+    auto & num_rows = execution_context.num_rows;
+    auto & res_column = columns[action.result_position];
+    if (res_column.type || res_column.column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
+
+    res_column.type = action.node->result_type;
+    res_column.name = action.node->result_name;
+
+    if (action.node->column)
+    {
+        /// Do not execute function if it's result is already known.
+        res_column.column = action.node->column->cloneResized(num_rows);
+        /// But still need to remove unused arguments.
+        for (const auto & argument : action.arguments)
+        {
+            if (!argument.needed_later)
+                columns[argument.pos] = {};
+        }
+        return;
+    }
+
+    ColumnsWithTypeAndName arguments(action.arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (!action.arguments[i].needed_later)
+            arguments[i] = std::move(columns[action.arguments[i].pos]);
+        else
+            arguments[i] = columns[action.arguments[i].pos];
+    }
+
+    if (couldExecuteLazily(action))
+        res_column.column
+            = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::FunctionExecute);
+        if (action.node->is_function_compiled)
+            ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+
+        res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+        if (res_column.column->getDataType() != res_column.type->getColumnType())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
+                action.node->function->getName(),
+                res_column.type->getName(),
+                res_column.column->getName(),
+                action.toString(),
+                Block(arguments).dumpStructure());
+        }
+    }
+}
+
+void ExpressionActions::executeAction(
+    const ExpressionActions::Action & action,
+    ExecutionContext & execution_context,
+    bool dry_run,
+    bool allow_duplicates_in_input)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -596,56 +655,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            auto & res_column = columns[action.result_position];
-            if (res_column.type || res_column.column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
-
-            res_column.type = action.node->result_type;
-            res_column.name = action.node->result_name;
-
-            if (action.node->column)
-            {
-                /// Do not execute function if it's result is already known.
-                res_column.column = action.node->column->cloneResized(num_rows);
-                /// But still need to remove unused arguments.
-                for (const auto & argument : action.arguments)
-                {
-                    if (!argument.needed_later)
-                        columns[argument.pos] = {};
-                }
-                break;
-            }
-
-            ColumnsWithTypeAndName arguments(action.arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-            {
-                if (!action.arguments[i].needed_later)
-                    arguments[i] = std::move(columns[action.arguments[i].pos]);
-                else
-                    arguments[i] = columns[action.arguments[i].pos];
-            }
-
-            if (action.is_lazy_executed)
-                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::FunctionExecute);
-                if (action.node->is_function_compiled)
-                    ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-
-                res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-                if (res_column.column->getDataType() != res_column.type->getColumnType())
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
-                        action.node->function->getName(),
-                        res_column.type->getName(),
-                        res_column.column->getName(),
-                        action.toString(),
-                        Block(arguments).dumpStructure());
-                }
-            }
+            executeFunctionAction(action, execution_context, dry_run);
             break;
         }
 
@@ -733,7 +743,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
 {
     ExecutionContext execution_context
     {
@@ -809,7 +819,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input)
 {
     size_t num_rows = block.rows();
 
@@ -987,6 +997,50 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     }
 
     return false;
+}
+
+void AdaptiveExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
+{
+    ExpressionActions::execute(block, num_rows, dry_run, allow_duplicates_in_input);
+    updateLazyExecuteSchedule(num_rows);
+}
+
+void AdaptiveExpressionActions::updateLazyExecuteSchedule(size_t current_batch_rows)
+{
+    const size_t update_on_every_rows = 20000;
+    if (!has_lazy_actions)
+        return;
+
+    current_round_input_rows += current_batch_rows;
+    if (current_round_input_rows < update_on_every_rows)
+        return;
+
+    findNotWithLazyExecutedActions();
+    updateHasLazyActions();
+    current_round_input_rows = 0;
+}
+
+void AdaptiveExpressionActions::findNotWithLazyExecutedActions()
+{
+    for (auto & action : actions)
+    {
+        if (!action.could_lazy_executed || !action.worth_lazy_executed)
+            continue;
+        auto & profile = action.current_round_profile;
+        if (!profile.executed_rows)
+            continue;
+
+        auto estimate_full_execute_elapsed = static_cast<double>(profile.executed_elapsed) / profile.executed_rows * current_round_input_rows;
+        if (estimate_full_execute_elapsed < profile.masked_execute_side_elapsed)
+            action.worth_lazy_executed = false;
+    }
+}
+
+void AdaptiveExpressionActions::updateHasLazyActions()
+{
+    has_lazy_actions = false;
+    for (const auto & action : actions)
+        has_lazy_actions |= action.could_lazy_executed && action.worth_lazy_executed;
 }
 
 void ExpressionActionsChain::addStep(NameSet non_constant_inputs)

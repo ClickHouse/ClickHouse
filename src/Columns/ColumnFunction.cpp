@@ -329,6 +329,17 @@ DataTypePtr ColumnFunction::getResultType() const
 
 ColumnWithTypeAndName ColumnFunction::reduce() const
 {
+    return reduceImpl<false>(nullptr);
+}
+
+ColumnWithTypeAndName ColumnFunction::reduce(FunctionExecuteProfile & profile) const
+{
+    return reduceImpl<true>(&profile);
+}
+
+template <bool with_profile>
+ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profile [[maybe_unused]]) const
+{
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
 
@@ -350,15 +361,34 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
             for (size_t i : settings.arguments_with_disabled_lazy_execution)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
-                    columns[i] = arg->reduce();
+                {
+                    if constexpr (with_profile)
+                    {
+                        profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                        auto & arg_profile = profile->argument_profiles.back().second;
+                        columns[i] = arg->reduceImpl<with_profile>(&arg_profile);
+                    }
+                    else
+                        columns[i] = arg->reduceImpl<false>(nullptr);
+                }
             }
         }
         else
         {
-            for (auto & col : columns)
+            for (size_t i = 0; i < columns.size(); ++i)
             {
+                auto & col = columns[i];
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
-                    col = arg->reduce();
+                {
+                    if constexpr (with_profile)
+                    {
+                        profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                        auto & arg_profile = profile->argument_profiles.back().second;
+                        columns[i] = arg->reduceImpl<with_profile>(&arg_profile);
+                    }
+                    else
+                        col = arg->reduceImpl<false>(nullptr);
+                }
             }
         }
     }
@@ -369,7 +399,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-    res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
+    res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false, profile);
     if (res.column->getDataType() != res.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -381,6 +411,12 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     {
         res.column = recursiveRemoveLowCardinality(res.column);
         res.type = recursiveRemoveLowCardinality(res.type);
+    }
+
+    if constexpr (with_profile)
+    {
+        for (const auto & arg_profile : profile->argument_profiles)
+            profile->executed_elapsed += arg_profile.second.executed_elapsed;
     }
     return res;
 }
