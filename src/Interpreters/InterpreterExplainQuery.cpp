@@ -557,9 +557,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context),
-                    BuildQueryPipelineSettings::fromContext(context));
+                auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings(context));
 
                 if (settings.graph)
                 {
@@ -621,9 +619,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context),
-                BuildQueryPipelineSettings::fromContext(context));
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;
