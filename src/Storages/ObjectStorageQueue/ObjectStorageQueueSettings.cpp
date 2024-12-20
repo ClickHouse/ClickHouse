@@ -34,7 +34,7 @@ namespace ErrorCodes
     DECLARE(UInt64, polling_backoff_ms, 30 * 1000, "Polling backoff", 0) \
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
-    DECLARE(UInt32, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
+    DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
     DECLARE(UInt64, max_processed_files_before_commit, 100, "Number of files which can be processed before being committed to keeper", 0) \
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper", 0) \
     DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper", 0) \
@@ -82,10 +82,13 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     const StorageObjectStorageQueue & storage) const
 {
     MutableColumns & res_columns = params.res_columns;
+    auto settings_changes_ast = storage.getInMemoryMetadataPtr()->settings_changes;
+    if (!settings_changes_ast)
+        return;
 
     /// We cannot use setting.isValueChanged(), because we do not store initial settings in storage.
     /// Therefore check if the setting was changed via table metadata.
-    const auto & settings_changes = storage.getInMemoryMetadataPtr()->settings_changes->as<ASTSetQuery>()->changes;
+    const auto & settings_changes = settings_changes_ast->as<ASTSetQuery>()->changes;
     auto is_changed = [&](const std::string & setting_name) -> bool
     {
         return settings_changes.end() != std::find_if(
