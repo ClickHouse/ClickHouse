@@ -12,8 +12,7 @@ sidebar_label: "Квота"
 
 ``` sql
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
-    [IN access_storage_type]
-    [KEYED BY {user_name | ip_address | client_key | client_key,user_name | client_key,ip_address} | NOT KEYED]
+    [KEYED BY {user_name | ip_address | client_key | client_key, user_name | client_key, ip_address} | NOT KEYED]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
         {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]

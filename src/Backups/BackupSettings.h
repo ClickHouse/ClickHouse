@@ -77,11 +77,6 @@ struct BackupSettings
     /// Allow to create backup with broken projections.
     bool allow_backup_broken_projections = false;
 
-    /// Whether dependents of access entities should be written along with the access entities.
-    /// For example, if a role is granted to a user and we're making a backup of system.roles (but not system.users)
-    /// this is whether the backup will contain information to grant the role to the corresponding user again.
-    bool write_access_entities_dependents = true;
-
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
@@ -98,13 +93,8 @@ struct BackupSettings
     /// UUID of the backup. If it's not set it will be generated randomly.
     std::optional<UUID> backup_uuid;
 
-    /// The maximum read speed in bytes per second for a backup. Zero means unlimited.
-    std::optional<UInt64> max_backup_bandwidth;
-
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
-
-    static bool isAsync(const ASTBackupQuery & query);
 
     struct Util
     {

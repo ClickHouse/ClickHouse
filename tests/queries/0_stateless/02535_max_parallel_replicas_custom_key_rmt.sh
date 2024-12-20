@@ -7,13 +7,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function run_with_custom_key {
     echo "query='$1' with custom_key='$2'"
-    for filter_type in 'custom_key_sampling' 'custom_key_range'; do
+    for filter_type in 'default' 'range'; do
         for max_replicas in {1..3}; do
             echo "filter_type='$filter_type' max_replicas=$max_replicas"
             query="$1 SETTINGS max_parallel_replicas=$max_replicas\
-, enable_parallel_replicas='1' \
-, parallel_replicas_mode ='$filter_type'\
 , parallel_replicas_custom_key='$2'\
+, parallel_replicas_custom_key_filter_type='$filter_type'\
 , parallel_replicas_for_non_replicated_merge_tree=1 \
 , cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost'"
             $CLICKHOUSE_CLIENT --query="$query"

@@ -116,7 +116,7 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
-    auto settings = getReadSettings();
+    ReadSettings settings;
     settings.enable_filesystem_cache = false;
     settings.remote_fs_method = RemoteFSReadMethod::read;
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
@@ -126,80 +126,72 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     std::mutex mutex;
     InMemoryDirectoryPathMap::Map map;
-    try
+    for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
     {
-        for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
-        {
-            ++num_files;
-            auto file = iterator->current();
-            String path = file->getPath();
-            auto remote_metadata_path = std::filesystem::path(path);
-            if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
-                continue;
+        ++num_files;
+        auto file = iterator->current();
+        String path = file->getPath();
+        auto remote_metadata_path = std::filesystem::path(path);
+        if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
+            continue;
 
-            runner(
-                [remote_metadata_path, path, &object_storage, &mutex, &map, &log, &settings, &metadata_key_prefix]
+        runner(
+            [remote_metadata_path, path, &object_storage, &mutex, &map, &log, &settings, &metadata_key_prefix]
+            {
+                setThreadName("PlainRWMetaLoad");
+
+                StoredObject object{path};
+                String local_path;
+                Poco::Timestamp last_modified{};
+
+                try
                 {
-                    setThreadName("PlainRWMetaLoad");
+                    auto read_buf = object_storage->readObject(object, settings);
+                    readStringUntilEOF(local_path, *read_buf);
+                    auto object_metadata = object_storage->tryGetObjectMetadata(path);
+                    /// It ok if a directory was removed just now.
+                    /// We support attaching a filesystem that is concurrently modified by someone else.
+                    if (!object_metadata)
+                        return;
+                    /// Assuming that local and the object storage clocks are synchronized.
+                    last_modified = object_metadata->last_modified;
+                }
+#if USE_AWS_S3
+                catch (const S3Exception & e)
+                {
+                    /// It is ok if a directory was removed just now.
+                    if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+                        return;
+                    throw;
+                }
+#endif
+                catch (...)
+                {
+                    throw;
+                }
 
-                    StoredObject object{path};
-                    String local_path;
-                    Poco::Timestamp last_modified{};
+                chassert(remote_metadata_path.has_parent_path());
+                chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
+                auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
+                auto rel_path = std::filesystem::path(std::move(suffix));
+                std::pair<Map::iterator, bool> res;
+                {
+                    std::lock_guard lock(mutex);
+                    res = map.emplace(
+                        std::filesystem::path(local_path).parent_path(),
+                        InMemoryDirectoryPathMap::RemotePathInfo{rel_path.parent_path(), last_modified.epochTime(), {}});
+                }
 
-                    try
-                    {
-                        auto read_buf = object_storage->readObject(object, settings);
-                        readStringUntilEOF(local_path, *read_buf);
-                        auto object_metadata = object_storage->tryGetObjectMetadata(path);
-                        /// It ok if a directory was removed just now.
-                        /// We support attaching a filesystem that is concurrently modified by someone else.
-                        if (!object_metadata)
-                            return;
-                        /// Assuming that local and the object storage clocks are synchronized.
-                        last_modified = object_metadata->last_modified;
-                    }
-    #if USE_AWS_S3
-                    catch (const S3Exception & e)
-                    {
-                        /// It is ok if a directory was removed just now.
-                        if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
-                            return;
-                        throw;
-                    }
-    #endif
-                    catch (...)
-                    {
-                        throw;
-                    }
-
-                    chassert(remote_metadata_path.has_parent_path());
-                    chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
-                    auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
-                    auto rel_path = std::filesystem::path(std::move(suffix));
-                    std::pair<Map::iterator, bool> res;
-                    {
-                        std::lock_guard lock(mutex);
-                        res = map.emplace(
-                            std::filesystem::path(local_path).parent_path(),
-                            InMemoryDirectoryPathMap::RemotePathInfo{rel_path.parent_path(), last_modified.epochTime(), {}});
-                    }
-
-                    /// This can happen if table replication is enabled, then the same local path is written
-                    /// in `prefix.path` of each replica.
-                    if (!res.second)
-                        LOG_WARNING(
-                            log,
-                            "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
-                            local_path,
-                            res.first->second.path,
-                            rel_path.parent_path().string());
-                });
-        }
-    }
-    catch (...)
-    {
-        runner.waitForAllToFinish();
-        throw;
+                /// This can happen if table replication is enabled, then the same local path is written
+                /// in `prefix.path` of each replica.
+                if (!res.second)
+                    LOG_WARNING(
+                        log,
+                        "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
+                        local_path,
+                        res.first->second.path,
+                        rel_path.parent_path().string());
+            });
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -254,23 +246,23 @@ MetadataStorageFromPlainRewritableObjectStorage::~MetadataStorageFromPlainRewrit
     CurrentMetrics::sub(metric, path_map->map.size());
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::exists(const std::string & path) const
 {
-    if (existsDirectory(path))
+    if (isDirectory(path))
         return true;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::isFile(const std::string & path) const
 {
-    if (existsDirectory(path))
+    if (isDirectory(path))
         return false;
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std::string & path) const
+bool MetadataStorageFromPlainRewritableObjectStorage::isDirectory(const std::string & path) const
 {
     return path_map->getRemotePathInfoIfExists(path) != std::nullopt;
 }

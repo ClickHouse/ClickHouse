@@ -144,7 +144,8 @@ echo 9
 $CLICKHOUSE_CLIENT \
    --server_logs_file=/dev/null \
    --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_date >= yesterday() and message like '%find_me%';
-   select * from system.text_log where event_date >= yesterday() and message like '%TOPSECRET=TOPSECRET%' SETTINGS max_rows_to_read = 0"  --ignore-error
+   select * from system.text_log where event_date >= yesterday() and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error 
+
 echo 'finish'
 rm -f "$tmp_file" >/dev/null 2>&1
 rm -f "$tmp_file2" >/dev/null 2>&1

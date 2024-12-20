@@ -34,6 +34,8 @@ public:
 
     ASTPtr clone() const override;
 
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
     bool isExtendedStorageDefinition() const;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
@@ -46,9 +48,6 @@ public:
         f(reinterpret_cast<void **>(&ttl_table));
         f(reinterpret_cast<void **>(&settings));
     }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -68,6 +67,8 @@ public:
 
     ASTPtr clone() const override;
 
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
     bool empty() const
     {
         return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
@@ -83,9 +84,6 @@ public:
         f(reinterpret_cast<void **>(&projections));
         f(reinterpret_cast<void **>(&primary_key_from_columns));
     }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -102,12 +100,10 @@ public:
     bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate{false};
     bool is_create_empty{false};    /// CREATE TABLE ... EMPTY AS SELECT ...
-    bool is_clone_as{false};    /// CREATE TABLE ... CLONE AS ...
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
     bool has_uuid{false}; // CREATE TABLE x UUID '...'
 
     ASTColumns * columns_list = nullptr;
-    ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
 
     ASTPtr watermark_function;
@@ -136,8 +132,6 @@ public:
     bool attach_short_syntax{false};
 
     std::optional<String> attach_from_path = std::nullopt;
-
-    std::optional<bool> attach_as_replicated = std::nullopt;
 
     bool replace_table{false};
     bool create_or_replace{false};
@@ -182,12 +176,11 @@ public:
     bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ViewTarget::To); }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&columns_list));
-        f(reinterpret_cast<void **>(&aliases_list));
         f(reinterpret_cast<void **>(&storage));
         f(reinterpret_cast<void **>(&targets));
         f(reinterpret_cast<void **>(&as_table_function));

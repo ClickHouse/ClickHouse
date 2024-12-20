@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <Storages/MemorySettings.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -106,7 +105,7 @@ private:
                 context,
                 table_name,
                 std::make_shared<StorageMemory>(
-                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}, MemorySettings{}));
+                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
 

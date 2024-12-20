@@ -1,8 +1,6 @@
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
-
-#include <iostream>
 #include <vector>
 
 #include <sys/types.h>
@@ -42,7 +40,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
+void setUserAndGroup(std::string arg_uid, std::string arg_gid)
 {
     static constexpr size_t buf_size = 16384; /// Linux man page says it is enough. Nevertheless, we will check if it's not enough and throw.
     std::unique_ptr<char[]> buf(new char[buf_size]);

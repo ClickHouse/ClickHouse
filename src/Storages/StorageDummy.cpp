@@ -51,8 +51,10 @@ ReadFromDummy::ReadFromDummy(
     const StorageSnapshotPtr & storage_snapshot_,
     const ContextPtr & context_,
     const StorageDummy & storage_)
-    : SourceStepWithFilter(SourceStepWithFilter::applyPrewhereActions(
-                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info),
+    : SourceStepWithFilter(
+        DataStream{
+            .header = SourceStepWithFilter::applyPrewhereActions(
+                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info)},
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -64,7 +66,7 @@ ReadFromDummy::ReadFromDummy(
 
 void ReadFromDummy::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipe pipe(std::make_shared<SourceFromSingleChunk>(getOutputHeader()));
+    Pipe pipe(std::make_shared<SourceFromSingleChunk>(getOutputStream().header));
     pipeline.init(std::move(pipe));
 }
 

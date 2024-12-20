@@ -63,14 +63,12 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            for (const auto & name : query.names)
-                res.emplace_back(AccessType::DROP_USER, name);
+            res.emplace_back(AccessType::DROP_USER);
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            for (const auto & name : query.names)
-                res.emplace_back(AccessType::DROP_ROLE, name);
+            res.emplace_back(AccessType::DROP_ROLE);
             return res;
         }
         case AccessEntityType::SETTINGS_PROFILE:

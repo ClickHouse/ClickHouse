@@ -48,11 +48,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
