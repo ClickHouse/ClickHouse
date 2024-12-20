@@ -90,31 +90,41 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
-    // Check the validity of offsets.
-    if (begin_type == BoundaryType::Offset
-        && !((begin_offset.getType() == Field::Types::UInt64
-                || begin_offset.getType() == Field::Types::Int64)
-            && begin_offset.safeGet<Int64>() >= 0
-            && begin_offset.safeGet<Int64>() < INT_MAX))
+    // Check the validity of offsets. Note that while the offsets for ROWS and
+    // GROUPS are specified in numbers of rows and must be integer, the offsets
+    // for RANGE are specified in units of the ORDER BY column and can be
+    // fractional. For example, we might want to order by time and consider the
+    // rows no further than 0.5 seconds from the given one.
+    // The preliminary check for ROWS and GROUPS frames is done here, and the
+    // RANGE offsets are coerced to the ORDER BY column type and checked for
+    // validity by the window transform itself.
+    if (type == FrameType::ROWS || type == FrameType::GROUPS)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
-            type,
-            applyVisitor(FieldVisitorToString(), begin_offset),
-            begin_offset.getType());
-    }
+        if (begin_type == BoundaryType::Offset
+                && !((begin_offset.getType() == Field::Types::UInt64
+                      || begin_offset.getType() == Field::Types::Int64)
+                     && begin_offset.safeGet<Int64>() >= 0
+                     && begin_offset.safeGet<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                            type,
+                            applyVisitor(FieldVisitorToString(), begin_offset),
+                            begin_offset.getType());
+        }
 
-    if (end_type == BoundaryType::Offset
-        && !((end_offset.getType() == Field::Types::UInt64
-                || end_offset.getType() == Field::Types::Int64)
-            && end_offset.safeGet<Int64>() >= 0
-            && end_offset.safeGet<Int64>() < INT_MAX))
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
-            type,
-            applyVisitor(FieldVisitorToString(), end_offset),
-            end_offset.getType());
+        if (end_type == BoundaryType::Offset
+                && !((end_offset.getType() == Field::Types::UInt64
+                      || end_offset.getType() == Field::Types::Int64)
+                     && end_offset.safeGet<Int64>() >= 0
+                     && end_offset.safeGet<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                            type,
+                            applyVisitor(FieldVisitorToString(), end_offset),
+                            end_offset.getType());
+        }
     }
 
     // Check relative positioning of offsets.
