@@ -289,7 +289,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
-
+    extern const ServerSettingsBool dictionaries_lazy_load;
 }
 
 namespace ErrorCodes
@@ -2998,15 +2998,15 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 }
 
 
-void Context::tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const
+void Context::tryCreateEmbeddedDictionaries() const
 {
-    if (!config.getBool("dictionaries_lazy_load", true))
+    if (!shared->server_settings[ServerSetting::dictionaries_lazy_load])
         static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
 void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
 {
-    bool dictionaries_lazy_load = config.getBool("dictionaries_lazy_load", true);
+    bool dictionaries_lazy_load = shared->server_settings[ServerSetting::dictionaries_lazy_load];
     auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
     std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
 
