@@ -24,7 +24,7 @@ void ASTProjectionDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettin
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
     ++frame_nested.indent;
-    query->formatImpl(ostr, settings, state, frame_nested);
+    query->format(ostr, settings, state, frame_nested);
     ostr << nl_or_nothing << indent_str << ")";
 }
 

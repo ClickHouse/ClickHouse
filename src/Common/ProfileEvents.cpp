@@ -210,6 +210,10 @@
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
     \
+    M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
+    M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
+    M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
+    \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.", ValueType::Number) \
     \

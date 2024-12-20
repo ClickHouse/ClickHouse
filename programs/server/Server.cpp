@@ -60,6 +60,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/UseSSL.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -284,6 +285,9 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsBool use_legacy_mongodb_integration;
+    extern const ServerSettingsBool dictionaries_lazy_load;
+    extern const ServerSettingsBool wait_dictionaries_load_at_startup;
 }
 
 }
@@ -928,10 +932,10 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -1391,6 +1395,23 @@ try
     if (oom_score)
         setOOMScore(oom_score, log);
 #endif
+
+    std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
+
+    SCOPE_EXIT({
+        if (cancellation_task)
+            CancellationChecker::getInstance().terminateThread();
+    });
+
+    if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
+    {
+        auto cancellation_task_holder = global_context->getSchedulePool().createTask(
+            "CancellationChecker",
+            [] { CancellationChecker::getInstance().workerFunction(); }
+        );
+        cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
+        (*cancellation_task)->activateAndSchedule();
+    }
 
     global_context->setRemoteHostFilter(config());
     global_context->setHTTPHeaderFilter(config());
@@ -2391,7 +2412,7 @@ try
         {
             global_context->loadOrReloadDictionaries(config());
 
-            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
+            if (!server_settings[ServerSetting::dictionaries_lazy_load] && server_settings[ServerSetting::wait_dictionaries_load_at_startup])
                 global_context->waitForDictionariesLoad();
         }
         catch (...)
@@ -2403,7 +2424,7 @@ try
         /// try to load embedded dictionaries immediately, throw on error and die
         try
         {
-            global_context->tryCreateEmbeddedDictionaries(config());
+            global_context->tryCreateEmbeddedDictionaries();
         }
         catch (...)
         {
