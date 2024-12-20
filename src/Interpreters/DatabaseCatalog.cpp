@@ -1401,6 +1401,17 @@ void DatabaseCatalog::removeDetachedTableInfo(const TableMarkedAsDropped & table
         return;
 
     database_ptr->removeDetachedTableInfo(table.table_id);
+}
+
+void DatabaseCatalog::removeDetachedPermanentlyFlag(const TableMarkedAsDropped & table)
+{
+    auto database = tryGetDatabase(table.table_id.getDatabaseName());
+    if (!database)
+        return;
+
+    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
+    if (!database_ptr)
+        return;
 
     database_ptr->DatabaseOnDisk::removeDetachedPermanentlyFlag(getContext(), table.table_id.getNameForLogs(), table.metadata_path, true);
 }
@@ -1425,10 +1436,14 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         disk->removeRecursive(data_path);
     }
 
+    const bool table_detached = table.table->is_detached.load(std::memory_order_relaxed);
+    if (table_detached)
+        removeDetachedPermanentlyFlag(table);
+
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));
 
-    if (table.table->is_detached.load(std::memory_order_relaxed))
+    if (table_detached)
         removeDetachedTableInfo(table);
 
     removeUUIDMappingFinally(table.table_id.uuid);

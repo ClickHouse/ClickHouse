@@ -314,6 +314,7 @@ private:
     void reloadDisksTask();
 
     void removeDetachedTableInfo(const TableMarkedAsDropped & table);
+    void removeDetachedPermanentlyFlag(const TableMarkedAsDropped & table);
 
     static constexpr size_t reschedule_time_ms = 100;
 
