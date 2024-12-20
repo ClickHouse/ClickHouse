@@ -202,6 +202,11 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
+    bool mutationVersionsEquivalent(
+        const DataPartPtr & left,
+        const DataPartPtr & right,
+        std::unique_lock<std::mutex> & lock);
+
     MergeMutateSelectedEntryPtr selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
@@ -217,13 +222,6 @@ private:
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
-
-    /// For current mutations queue, returns maximum version of mutation for a part,
-    /// with respect of mutations which would not change it.
-    /// Returns 0 if there is no such mutation in active status.
-    UInt64 getCurrentMutationVersion(
-        const DataPartPtr & part,
-        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
     /// Merges have to be aware of the outdated part's levels inside designated merge range.
