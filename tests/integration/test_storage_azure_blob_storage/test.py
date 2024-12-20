@@ -1380,7 +1380,7 @@ def test_format_detection(cluster):
 
     azure_query(
         node,
-        f"create table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1')",
+        f"create or replace table test_format_detection engine=AzureBlobStorage('{connection_string}', 'cont', 'test_format_detection1')",
     )
     result = azure_query(
         node,
