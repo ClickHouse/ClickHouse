@@ -39,14 +39,13 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-using TreeNodeMap = std::unordered_map<const IQueryTreeNode *, const IQueryTreeNode *>;
-
 static bool areParallelReplicasEnabledForTable(const TableNode & table_node, const ContextPtr & context)
 {
     const auto * as_mat_view = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
     const auto & storage = as_mat_view ? as_mat_view->getTargetTable() : table_node.getStorage();
 
-    if (!std::dynamic_pointer_cast<MergeTreeData>(storage))
+    /// Here we check StorageDummy as well, to support a query tree with replaced storages.
+    if (!std::dynamic_pointer_cast<MergeTreeData>(storage) && !typeid_cast<StorageDummy *>(storage.get()))
         return false;
 
     if (!storage->supportsReplication() && !context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree])
@@ -64,7 +63,7 @@ static bool areParallelReplicasEnabledForTable(const TableNode & table_node, con
 /// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
 ///
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
-std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node, const TreeNodeMap * node_to_original, const ContextPtr & context)
+std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::vector<const QueryNode *> res;
 
@@ -76,18 +75,7 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTr
         {
             case QueryTreeNodeType::TABLE:
             {
-                /// Storage may have been replaced with StorageDummy for analysis, but here we need
-                /// the real storage (to check if it's replicated, and to check if the original
-                /// TableNode has FINAL).
-                auto original_node = query_tree_node;
-                if (node_to_original)
-                {
-                    auto it = node_to_original->find(query_tree_node);
-                    if (it != node_to_original->end())
-                        original_node = it->second;
-                }
-
-                const auto & table_node = original_node->as<TableNode &>();
+                const auto & table_node = query_tree_node->as<TableNode &>();
                 if (areParallelReplicasEnabledForTable(table_node, context))
                     return res;
 
@@ -169,30 +157,33 @@ public:
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+            const auto & storage = storage_snapshot->storage;
 
             auto storage_dummy = std::make_shared<StorageDummy>(
-                storage_snapshot->storage.getStorageID(),
+                storage.getStorageID(),
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
-                storage_snapshot);
+                storage_snapshot,
+                storage.isMergeTree(),
+                storage.supportsReplication());
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());
+            if (table_node && table_node->hasTableExpressionModifiers())
+                dummy_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
 
             dummy_table_node->setAlias(node->getAlias());
-            inverse_map.emplace(dummy_table_node.get(), node.get());
             replacement_map.emplace(node.get(), std::move(dummy_table_node));
         }
     }
 
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
-    TreeNodeMap inverse_map;
 };
 
-std::tuple<QueryTreeNodePtr, TreeNodeMap> replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
+QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
 {
     ReplaceTableNodeToDummyVisitor visitor(context);
     visitor.visit(query);
 
-    return {query->cloneAndReplace(visitor.replacement_map), std::move(visitor.inverse_map)};
+    return query->cloneAndReplace(visitor.replacement_map);
 }
 
 #ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
@@ -326,7 +317,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
-    auto stack = getSupportingParallelReplicasQuery(query_tree_node.get(), nullptr, context);
+    auto stack = getSupportingParallelReplicasQuery(query_tree_node.get(), context);
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
         return nullptr;
@@ -340,7 +331,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
     /// Here we replace tables to dummy, in order to build a temporary query plan for parallel replicas analysis.
-    auto [updated_query_tree, node_to_original] = replaceTablesWithDummyTables(query_tree_node, mutable_context);
+    auto updated_query_tree = replaceTablesWithDummyTables(query_tree_node, mutable_context);
 
     SelectQueryOptions options;
     Planner planner(updated_query_tree, options, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
@@ -350,7 +341,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// We updated a query_tree with dummy storages, and mapping is using updated_query_tree now.
     /// But QueryNode result should be taken from initial query tree.
     /// So that we build a list of candidates again, and call findQueryForParallelReplicas for it.
-    auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get(), &node_to_original, context);
+    auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get(), context);
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
     const auto * res = findQueryForParallelReplicas(new_stack, mapping, context->getSettingsRef());
 

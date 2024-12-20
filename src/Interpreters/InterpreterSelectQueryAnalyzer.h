@@ -81,8 +81,6 @@ private:
     SelectQueryOptions select_query_options;
     QueryTreeNodePtr query_tree;
     Planner planner;
-
-    void checkParallelReplicasSettings(const QueryPlan & query_plan) const;
 };
 
 }
