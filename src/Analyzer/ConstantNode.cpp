@@ -2,6 +2,7 @@
 
 #include <Analyzer/FunctionNode.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
@@ -21,34 +22,44 @@
 namespace DB
 {
 
-ConstantNode::ConstantNode(ConstantValuePtr constant_value_, QueryTreeNodePtr source_expression_)
+ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
-    , value_string(applyVisitor(FieldVisitorToString(), constant_value->getValue()))
 {
     source_expression = std::move(source_expression_);
 }
 
-ConstantNode::ConstantNode(ConstantValuePtr constant_value_)
+ConstantNode::ConstantNode(ConstantValue constant_value_)
     : ConstantNode(constant_value_, nullptr /*source_expression*/)
 {}
 
+ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_)
+    : ConstantNode(ConstantValue{std::move(constant_column_), value_data_type_})
+{}
+
+ConstantNode::ConstantNode(ColumnPtr constant_column_)
+    : ConstantNode(constant_column_, applyVisitor(FieldToDataType(), (*constant_column_)[0]))
+{}
+
 ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
-    : ConstantNode(std::make_shared<ConstantValue>(convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_))
+    : ConstantNode(ConstantValue{convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_})
 {}
 
 ConstantNode::ConstantNode(Field value_)
     : ConstantNode(value_, applyVisitor(FieldToDataType(), value_))
 {}
 
-bool ConstantNode::requiresCastCall() const
+String ConstantNode::getValueStringRepresentation() const
 {
-    const auto & constant_value_literal = constant_value->getValue();
-    bool need_to_add_cast_function = false;
-    auto constant_value_literal_type = constant_value_literal.getType();
-    WhichDataType constant_value_type(constant_value->getType());
+    return applyVisitor(FieldVisitorToString(), getValue());
+}
 
-    switch (constant_value_literal_type)
+bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type)
+{
+    bool need_to_add_cast_function = false;
+    WhichDataType constant_value_type(data_type);
+
+    switch (type)
     {
         case Field::Types::String:
         {
@@ -59,7 +70,7 @@ bool ConstantNode::requiresCastCall() const
         case Field::Types::Int64:
         case Field::Types::Float64:
         {
-            WhichDataType constant_value_field_type(applyVisitor(FieldToDataType(), constant_value_literal));
+            WhichDataType constant_value_field_type(field_type);
             need_to_add_cast_function = constant_value_field_type.idx != constant_value_type.idx;
             break;
         }
@@ -88,10 +99,16 @@ bool ConstantNode::requiresCastCall() const
         }
     }
 
-    // Add cast if constant was created as a result of constant folding.
-    // Constant folding may lead to type transformation and literal on shard
-    // may have a different type.
-    return need_to_add_cast_function || source_expression != nullptr;
+    return need_to_add_cast_function;
+}
+
+bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type)
+{
+    WhichDataType which_field_type(field_type);
+    if (which_field_type.isNullable() || which_field_type.isArray())
+        return true;
+
+    return field_type->getTypeId() != data_type->getTypeId();
 }
 
 bool ConstantNode::receivedFromInitiatorServer() const
@@ -116,9 +133,9 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     if (mask_id)
         buffer << "[HIDDEN id: " << mask_id << "]";
     else
-        buffer << constant_value->getValue().dump();
+        buffer << getValue().dump();
 
-    buffer << ", constant_value_type: " << constant_value->getType()->getName();
+    buffer << ", constant_value_type: " << constant_value.getType()->getName();
 
     if (!mask_id && getSourceExpression())
     {
@@ -129,30 +146,39 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
 void ConstantNode::convertToNullable()
 {
-    constant_value = std::make_shared<ConstantValue>(constant_value->getValue(), makeNullableSafe(constant_value->getType()));
+    constant_value = { makeNullableSafe(constant_value.getColumn()), makeNullableSafe(constant_value.getType()) };
 }
 
 bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
 
-    if (value_string != rhs_typed.value_string || constant_value->getValue() != rhs_typed.constant_value->getValue())
+    const auto & value_type = constant_value.getType();
+    const auto & rhs_value_type = rhs_typed.constant_value.getType();
+    if ((isArray(value_type) || isTuple(value_type) || isMap(value_type) ||
+         isArray(rhs_value_type) || isTuple(rhs_value_type) || isMap(rhs_value_type))
+        && !value_type->equals(*rhs_value_type)
+    )
         return false;
 
-    return !compare_options.compare_types || constant_value->getType()->equals(*rhs_typed.constant_value->getType());
+    const auto & column = constant_value.getColumn();
+    const auto & rhs_column = rhs_typed.constant_value.getColumn();
+
+    if (column->getDataType() != rhs_column->getDataType() ||  column->compareAt(0, 0, *rhs_column, 1) != 0)
+        return false;
+
+    return !compare_options.compare_types || constant_value.getType()->equals(*rhs_typed.constant_value.getType());
 }
 
 void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
 {
+    constant_value.getColumn()->updateHashFast(hash_state);
     if (compare_options.compare_types)
     {
-        auto type_name = constant_value->getType()->getName();
+        auto type_name = constant_value.getType()->getName();
         hash_state.update(type_name.size());
         hash_state.update(type_name);
     }
-
-    hash_state.update(value_string.size());
-    hash_state.update(value_string);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
@@ -162,14 +188,16 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    const auto & constant_value_literal = constant_value->getValue();
-    const auto & constant_value_type = constant_value->getType();
-    auto constant_value_ast = std::make_shared<ASTLiteral>(constant_value_literal);
+    const auto & constant_value_type = constant_value.getType();
+    auto constant_value_ast = std::make_shared<ASTLiteral>(getValue());
 
     if (!options.add_cast_for_constants)
         return constant_value_ast;
 
-    if (requiresCastCall())
+    // Add cast if constant was created as a result of constant folding.
+    // Constant folding may lead to type transformation and literal on shard
+    // may have a different type.
+    if (source_expression != nullptr || requiresCastCall(constant_value_ast->value.getType(), applyVisitor(FieldToDataType(), constant_value_ast->value), getResultType()))
     {
         /** Value for DateTime64 is Decimal64, which is serialized as a string literal.
           * If we serialize it as is, DateTime64 would be parsed from that string literal, which can be incorrect.
@@ -182,7 +210,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         {
             const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(constant_value_end_type.get());
             DecimalField<Decimal64> decimal_value;
-            if (constant_value_literal.tryGet<DecimalField<Decimal64>>(decimal_value))
+            if (constant_value_ast->value.tryGet<DecimalField<Decimal64>>(decimal_value))
             {
                 WriteBufferFromOwnString ostr;
                 writeDateTimeText(decimal_value.getValue(), date_time_type->getScale(), ostr, date_time_type->getTimeZone());

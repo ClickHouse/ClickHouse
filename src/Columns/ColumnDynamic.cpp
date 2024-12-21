@@ -304,6 +304,22 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
+std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) const
+{
+    const auto & variant_col = getVariantColumn();
+    /// Check if value is not in shared variant.
+    if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
+        return variant_col.getValueNameAndType(n);
+
+    /// We should deeserialize value from shared variant.
+    const auto & shared_variant = getSharedVariant();
+    auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
+    ReadBufferFromMemory buf(value_data.data, value_data.size);
+    auto type = decodeDataType(buf);
+    const auto col = type->createColumn();
+    type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
+    return col->getValueNameAndType(0);
+}
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertFrom(const IColumn & src_, size_t n)

@@ -1,3 +1,5 @@
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnCompressed.h>
 #include <IO/WriteBufferFromString.h>
@@ -77,6 +79,29 @@ void ColumnMap::get(size_t n, Field & res) const
 
     for (size_t i = 0; i < size; ++i)
         map.push_back(getNestedData()[offset + i]);
+}
+
+std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n) const
+{
+    const auto & offsets = getNestedColumn().getOffsets();
+    size_t offset = offsets[n - 1];
+    size_t size = offsets[n] - offsets[n - 1];
+
+    String value_name {"["};
+    DataTypes element_types;
+    element_types.reserve(size);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto & [value, type] = getNestedData().getValueNameAndType(offset + i);
+        element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
+    }
+    value_name += "]";
+
+    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
