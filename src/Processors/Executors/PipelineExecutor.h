@@ -85,6 +85,7 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::atomic_size_t threads = 0;
+    std::mutex spawn_lock;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -111,6 +112,7 @@ private:
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
     void spawnThreads();
+    void spawnThreadsImpl() TSA_REQUIRES(spawn_lock);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
