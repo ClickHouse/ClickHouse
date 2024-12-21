@@ -1,5 +1,7 @@
 #pragma once
 
+#include <config.h>
+
 #include <optional>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
@@ -39,11 +41,11 @@ public:
 
     virtual ~ICommand() = default;
 
-    void execute(const Strings & commands, DisksClient & client);
+    void execute(const Strings & arguments, DisksClient & client);
 
     virtual void executeImpl(const CommandLineOptions & options, DisksClient & client) = 0;
 
-    CommandLineOptions processCommandLineArguments(const Strings & commands);
+    CommandLineOptions processCommandLineArguments(const Strings & arguments);
 
 protected:
     template <typename T>
@@ -128,7 +130,8 @@ DB::CommandPtr makeCommandSwitchDisk();
 DB::CommandPtr makeCommandGetCurrentDiskAndPath();
 DB::CommandPtr makeCommandHelp(const DisksApp & disks_app);
 DB::CommandPtr makeCommandTouch();
-#if CLICKHOUSE_CLOUD
+DB::CommandPtr makeCommandInit();
+#ifdef CLICKHOUSE_CLOUD
 DB::CommandPtr makeCommandPackedIO();
 #endif
 }

@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 
@@ -84,7 +85,7 @@ public:
         else
         {
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+                ErrorCodes::FILE_DOESNT_EXIST,
                 "cannot stat '{}' on disk '{}': No such file or directory",
                 path_from,
                 disk_from.getDisk()->getName());
