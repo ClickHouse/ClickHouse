@@ -187,7 +187,7 @@ std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nod
         if (!analyzed)
             continue;
 
-        if (candidate.sum_marks >= ordinary_reading_marks)
+        if (candidate.sum_marks > ordinary_reading_marks)
             continue;
 
         if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
