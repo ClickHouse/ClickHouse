@@ -5,6 +5,7 @@
 #include <IO/VarInt.h>
 #include <Core/Block.h>
 #include <base/EnumReflection.h>
+#include <Common/isValidUTF8.h>
 
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -18,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -191,6 +193,7 @@ SerializationInfoByName::SerializationInfoByName(
     const NamesAndTypesList & columns,
     const SerializationInfo::Settings & settings)
 {
+
     if (settings.isAlwaysDefault())
         return;
 
@@ -285,8 +288,13 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(object, oss);
-
-    writeString(oss.str(), out);
+    auto json_str = oss.str();
+    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(json_str.data()), json_str.size()))
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization of the JSON are not valaid utf8 string. Probably non-utf8 character was used in the schema."
+                        "The serialization string: {}", json_str);
+    }
+    writeString(json_str, out);
 }
 
 SerializationInfoByName SerializationInfoByName::readJSON(
