@@ -60,7 +60,7 @@ function partContained(part, target_left, target_right)
 // Part alignment is done based on layer and it's "target" size.
 // (Alignment is important to avoid fragmentation)
 // Lower resulting part sizes get absolute priority over higher ones.
-export function* floatLayerMerges({insertPartSize, layerBases})
+export function* floatLayerMerges({insertPartSize, layerBases, mergeRight})
 {
     const sizes = targetSizesForBases(insertPartSize, layerBases);
     const layerFunc = layerFuncForBases(sizes);
@@ -126,12 +126,18 @@ export function* floatLayerMerges({insertPartSize, layerBases})
                     max_right_bytes = part.right_bytes;
                     if (!partContained(part, target_left, target_right))
                     {
-                        allowed = true; // We reached end of target interval
-                        break;
+                        // Add last part on the layer to the last merge on the layer
+                        if (!mergeRight || end < active_parts.length - 1)
+                        {
+                            allowed = true; // We reached end of target interval
+                            break;
+                        }
                     }
                     if (part.merging)
                         break;
-                    if (layerFunc(part.bytes) != layer)
+                    const partLayer = layerFunc(part.bytes);
+                    if (  (!mergeRight && partLayer != layer)
+                        || (mergeRight && partLayer > layer))
                         break;
                 }
 
@@ -141,7 +147,7 @@ export function* floatLayerMerges({insertPartSize, layerBases})
                 {
                     const future_left = max_right_bytes;
                     const future_right = max_right_bytes + insertPartSize;
-                    if (!contained(future_left, future_right, target_left, target_right))
+                    if (mergeRight || !contained(future_left, future_right, target_left, target_right))
                     {
                         // Most probably next inserted part will be not contained in the target interval
                         allowed = true;
