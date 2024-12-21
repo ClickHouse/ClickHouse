@@ -11,8 +11,15 @@ namespace DB
 {
 
 StorageDummy::StorageDummy(
-    const StorageID & table_id_, const ColumnsDescription & columns_, const StorageSnapshotPtr & original_storage_snapshot_)
-    : IStorage(table_id_), original_storage_snapshot(original_storage_snapshot_)
+    const StorageID & table_id_,
+    const ColumnsDescription & columns_,
+    const StorageSnapshotPtr & original_storage_snapshot_,
+    bool is_merge_tree_,
+    bool supports_replication_)
+    : IStorage(table_id_)
+    , original_storage_snapshot(original_storage_snapshot_)
+    , is_merge_tree(is_merge_tree_)
+    , supports_replication(supports_replication_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
