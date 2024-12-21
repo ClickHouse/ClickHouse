@@ -73,6 +73,12 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     }
 }
 
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, bool profile_processors_)
+    : PipelineExecutor(processors, elem)
+{
+    profile_processors = profile_processors || profile_processors_;
+}
+
 PipelineExecutor::~PipelineExecutor()
 {
     if (process_list_element)
