@@ -65,6 +65,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
         }
     },
     {"24.12",
@@ -84,6 +85,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"skip_redundant_aliases_in_udf", false, false, "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
+            {"least_greatest_legacy_null_behavior", false, false, "New setting"},
             /// Release closed. Please use 25.1
         }
     },
