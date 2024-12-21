@@ -617,8 +617,10 @@ public:
       */
     virtual void shutdown(bool is_drop = false) { UNUSED(is_drop); } // NOLINT
 
-    /// Called before shutdown() to flush data to underlying storage
-    /// Data in memory need to be persistent
+    /// Called before shutdown() to flush data to underlying storage.
+    /// Might be called multiple times; only the first call needs to be processed.
+    /// Data in memory need to be persistent. Any background work that affects other tables
+    /// (e.g. materialized view refreshes that create/drop tables) needs to be stopped.
     virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type

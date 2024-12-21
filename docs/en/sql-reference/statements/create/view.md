@@ -56,7 +56,7 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 
 ``` sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE]
-[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
@@ -165,6 +165,7 @@ REFRESH EVERY|AFTER interval [OFFSET interval]
 [APPEND]
 [TO[db.]name] [(columns)] [ENGINE = engine] 
 [EMPTY]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
