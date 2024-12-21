@@ -121,6 +121,7 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
         if (optimization_settings.optimize_sorting_by_input_stream_properties
             && !sorting_step->hasPartitions() && sorting_step->getType() == SortingStep::Type::Full)
         {
+            /// Convert Sorting to FinishSorting based on plan's sorting properties.
             auto common_prefix = commonPrefix(properties->sort_description, sorting_step->getSortDescription());
             if (!common_prefix.empty())
                 /// Buffering is useful for reading from MergeTree, and it is applied in optimizeReadInOrder only.

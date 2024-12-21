@@ -9,7 +9,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
+size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & /*settings*/)
 {
     auto & parent = parent_node->step;
     auto * filter = typeid_cast<FilterStep *>(parent.get());
