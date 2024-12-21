@@ -3148,6 +3148,16 @@ void Context::waitAllBackupsAndRestores() const
         shared->backups_worker->waitAll();
 }
 
+BackupsInMemoryHolder & Context::getBackupsInMemory()
+{
+    return backups_in_memory;
+}
+
+const BackupsInMemoryHolder & Context::getBackupsInMemory() const
+{
+    return backups_in_memory;
+}
+
 
 void Context::setProgressCallback(ProgressCallback callback)
 {
