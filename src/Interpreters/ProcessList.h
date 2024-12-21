@@ -120,6 +120,7 @@ protected:
     bool is_cancelling { false };
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
+    std::atomic<bool> needs_to_stop_by_timeout { false };
 
     mutable std::mutex cancel_mutex;
     CancelReason cancel_reason { CancelReason::UNDEFINED };
@@ -251,6 +252,9 @@ public:
 
     bool isKilled() const { return is_killed; }
 
+    void enableStopByTimeout() { needs_to_stop_by_timeout = true; }
+    bool isStoppedByTimeout() const { return needs_to_stop_by_timeout; }
+
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
 
@@ -262,9 +266,9 @@ public:
     /// Removes a pipeline to the QueryStatus
     void removePipelineExecutor(PipelineExecutor * e);
 
-    /// Checks the query time limits (cancelled or timeout)
+    /// Throws an exception if query is killed
     bool checkTimeLimit();
-    /// Same as checkTimeLimit but it never throws
+
     [[nodiscard]] bool checkTimeLimitSoft();
 
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches

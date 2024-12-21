@@ -45,12 +45,6 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
 
 bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits)
 {
-    for (const auto & limits : storage_limits)
-    {
-        if (!limits.local_limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.local_limits.timeout_overflow_mode))
-            return false;
-    }
-
     size_t rows_approx = 0;
     if ((rows_approx = total_rows_approx.exchange(0)) != 0)
     {
