@@ -952,9 +952,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (!table->isMergeTree())
                         return false;
 
-                    if (typeid_cast<const StorageDummy *>(table.get()))
-                        return false;
-
                     if (!table->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
                         return false;
 

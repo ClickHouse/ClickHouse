@@ -15,7 +15,6 @@ public:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const StorageSnapshotPtr & original_storage_snapshot_ = nullptr,
-        bool is_merge_tree_ = false,
         bool supports_replication_ = false);
 
     std::string getName() const override { return "StorageDummy"; }
@@ -63,7 +62,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    bool isMergeTree() const override { return is_merge_tree; }
     bool supportsReplication() const override { return supports_replication; }
 
 private:
@@ -71,7 +69,6 @@ private:
 
     /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
     StorageSnapshotPtr original_storage_snapshot;
-    const bool is_merge_tree;
     const bool supports_replication;
 };
 

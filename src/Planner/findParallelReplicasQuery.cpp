@@ -42,7 +42,7 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
     const auto * as_mat_view = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
     const auto & storage = as_mat_view ? as_mat_view->getTargetTable() : table_node.getStorage();
 
-    if (!storage->isMergeTree())
+    if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;
 
     if (!storage->supportsReplication() && !context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree])
@@ -160,7 +160,6 @@ public:
                 storage.getStorageID(),
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
                 storage_snapshot,
-                storage.isMergeTree(),
                 storage.supportsReplication());
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());

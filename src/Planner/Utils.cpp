@@ -435,7 +435,6 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
                 storage.getStorageID(),
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
                 storage_snapshot,
-                storage.isMergeTree(),
                 storage.supportsReplication());
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
