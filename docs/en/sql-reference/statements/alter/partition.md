@@ -154,6 +154,13 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same storage policy.
 - The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table’s indices and projections.
 
+### Behavior Clarification
+
+- Parts are copied from the source table.
+- Interaction with replica states is handled to ensure consistency.
+- Mutation versioning is used to track and ensure complete partition copying.
+- All parts are copied exactly once using block number tracking.
+
 ## MOVE PARTITION TO TABLE
 
 ``` sql

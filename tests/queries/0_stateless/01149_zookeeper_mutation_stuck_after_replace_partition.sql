@@ -43,5 +43,33 @@ alter table rmt drop partition '0';
 set replication_alter_partitions_sync=1;
 alter table rmt drop column s;
 
+-- Example test case
+INSERT INTO test_table PARTITION p1 VALUES (1, 'a');
+ALTER TABLE test_table REPLACE PARTITION p1 FROM source_table;
+-- ...additional test cases...
+
+-- Test stale replica handling
+SET replica_is_active_node = 0;
+INSERT INTO rmt VALUES (5, '5');
+ALTER TABLE rmt REPLACE PARTITION '0' FROM mt;
+SET replica_is_active_node = 1;
+SELECT * FROM rmt ORDER BY n;
+
+-- Test complete partition copying
+INSERT INTO mt VALUES (6, '6'), (7, '7');
+ALTER TABLE rmt REPLACE PARTITION '0' FROM mt;
+SELECT count(*) FROM rmt WHERE n IN (6, 7);
+
+-- Test mutation versioning
+SET mutations_sync = 2;
+ALTER TABLE rmt UPDATE s = concat(s, '_updated') WHERE 1;
+ALTER TABLE rmt REPLACE PARTITION '0' FROM mt;
+SELECT s FROM rmt WHERE n IN (6, 7);
+
+-- Test part uniqueness 
+INSERT INTO mt VALUES (8, '8');
+ALTER TABLE rmt REPLACE PARTITION '0' FROM mt;
+SELECT count(*) FROM rmt WHERE n = 8;
+
 drop table mt;
 drop table rmt sync;
