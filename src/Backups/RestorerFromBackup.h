@@ -104,14 +104,20 @@ private:
     void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
 
-    void createDatabases();
+    void createAndCheckDatabases();
+    void createAndCheckDatabase(const String & database_name);
+    void createAndCheckDatabaseImpl(const String & database_name);
     void createDatabase(const String & database_name) const;
     void checkDatabase(const String & database_name);
 
     void applyCustomStoragePolicy(ASTPtr query_ptr);
 
     void removeUnresolvedDependencies();
-    void createTables();
+
+    void createAndCheckTables();
+    void createAndCheckTablesWithSameDependencyLevel(const std::vector<StorageID> & table_ids);
+    void createAndCheckTable(const QualifiedTableName & table_name);
+    void createAndCheckTableImpl(const QualifiedTableName & table_name);
     void createTable(const QualifiedTableName & table_name);
     void checkTable(const QualifiedTableName & table_name);
 
