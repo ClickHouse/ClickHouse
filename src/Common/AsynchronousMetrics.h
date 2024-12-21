@@ -112,12 +112,7 @@ private:
     /// Protects saved values.
     mutable SharedMutex values_mutex;
     /// Values store the result of the last update prepared for reading.
-#ifdef OS_LINUX
     AsynchronousMetricValues values TSA_GUARDED_BY(values_mutex);
-#else
-    /// When SharedMutex == std::shared_mutex it may not be annotated with the 'capability'.
-    AsynchronousMetricValues values;
-#endif
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
