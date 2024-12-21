@@ -13,7 +13,7 @@ namespace DB
 
 BlockIO InterpreterShowEnginesQuery::execute()
 {
-    return executeQuery("SELECT * FROM system.table_engines ORDER BY name", getContext(), QueryFlags{ .internal = true }).second;
+    return executeQuery("SELECT * FROM system.table_engines ORDER BY name", nullptr, getContext(), QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowEnginesQuery(InterpreterFactory & factory)
