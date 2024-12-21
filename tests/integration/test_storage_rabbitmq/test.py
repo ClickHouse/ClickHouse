@@ -28,6 +28,7 @@ instance = cluster.add_instance(
         "configs/rabbitmq.xml",
         "configs/macros.xml",
         "configs/named_collection.xml",
+        "configs/dead_letter_queue.xml",
     ],
     user_configs=["configs/users.xml"],
     with_rabbitmq=True,
@@ -2119,6 +2120,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     instance.query(
         """
         DROP TABLE IF EXISTS test.consume;
+        DROP TABLE IF EXISTS test.view SYNC;
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
             ORDER BY key;
@@ -3886,7 +3888,10 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
 def test_attach_broken_table(rabbitmq_cluster):
     instance.query(
-        f"ATTACH TABLE rabbit_queue UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'"
+        f"""
+        DROP TABLE IF EXISTS rabbit_queue;
+        ATTACH TABLE rabbit_queue UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'
+        """
     )
 
     error = instance.query_and_get_error("SELECT * FROM rabbit_queue")
@@ -3942,11 +3947,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
     )
 
-    instance3.replace_in_config(
-        "/etc/clickhouse-server/config.d/mergetree.xml",
-        "parts_to_throw_insert>0",
-        "parts_to_throw_insert>10",
-    )
+    instance3.query("ALTER TABLE test.view MODIFY SETTING parts_to_throw_insert=10")
     instance3.restart_clickhouse()
 
     count = [0]
@@ -3984,7 +3985,28 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     connection.close()
 
 
-def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
+def view_test(expected_num_messages, *_):
+    result = instance.query(f"SELECT COUNT(1) FROM test.errors")
+
+    assert int(result) == expected_num_messages
+
+
+def dead_letter_queue_test(expected_num_messages, exchange_name):
+    result = instance.query(f"SELECT * FROM system.dead_letter_queue FORMAT Vertical")
+
+    logging.debug(f"system.dead_letter_queue content is {result}")
+
+    rows = int(
+        instance.query(
+            f"SELECT count() FROM system.dead_letter_queue WHERE rabbitmq_exchange_name = '{exchange_name}'"
+        )
+    )
+    assert rows == expected_num_messages
+
+
+def rabbitmq_reject_broken_messages(
+    rabbitmq_cluster, handle_error_mode, additional_dml, check_method
+):
     credentials = pika.PlainCredentials("root", "clickhouse")
     parameters = pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
@@ -3992,9 +4014,11 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    deadletter_exchange = "deadletter_exchange_handle_error_mode_stream"
-    deadletter_queue = "deadletter_queue_handle_error_mode_stream"
+    deadletter_exchange = f"deadletter_exchange_handle_error_mode_{handle_error_mode}"
+    deadletter_queue = f"deadletter_queue_handle_error_mode_{handle_error_mode}"
     channel.exchange_declare(exchange=deadletter_exchange)
+
+    exchange = f"select_{handle_error_mode}_{int(time.time())}"
 
     result = channel.queue_declare(queue=deadletter_queue)
     channel.queue_bind(
@@ -4012,11 +4036,11 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
         CREATE TABLE test.rabbit (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_cluster.rabbitmq_host}:5672',
-                     rabbitmq_exchange_name = 'select',
+                     rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n',
-                     rabbitmq_handle_error_mode = 'stream',
+                     rabbitmq_handle_error_mode = '{handle_error_mode}',
                      rabbitmq_queue_settings_list='x-dead-letter-exchange={deadletter_exchange}';
 
 
@@ -4024,15 +4048,15 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
              ENGINE = MergeTree()
              ORDER BY tuple();
 
-        CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS
-                SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error);
-
         CREATE TABLE test.data (key UInt64, value UInt64)
              ENGINE = MergeTree()
              ORDER BY key;
 
         CREATE MATERIALIZED VIEW test.view TO test.data AS
                 SELECT key, value FROM test.rabbit;
+
+        {additional_dml};
+
         """
     )
 
@@ -4045,7 +4069,7 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
             messages.append("Broken message " + str(i))
 
     for message in messages:
-        channel.basic_publish(exchange="select", routing_key="", body=message)
+        channel.basic_publish(exchange=exchange, routing_key="", body=message)
 
     time.sleep(1)
 
@@ -4080,4 +4104,27 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
         assert f"Broken message {i}" in str(letter)
         i += 2
 
+    result = instance.query(f"SELECT * FROM test.errors FORMAT Vertical")
+    logging.debug(f"test.errors contains {result}")
+
+    check_method(len(dead_letters), exchange)
+
     connection.close()
+
+
+def test_rabbitmq_reject_broken_messages_stream(rabbitmq_cluster):
+    rabbitmq_reject_broken_messages(
+        rabbitmq_cluster,
+        "stream",
+        "CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error)",
+        view_test,
+    )
+
+
+def test_rabbitmq_reject_broken_messages_dead_letter_queue(rabbitmq_cluster):
+    rabbitmq_reject_broken_messages(
+        rabbitmq_cluster,
+        "dead_letter_queue",
+        "",
+        dead_letter_queue_test,
+    )
