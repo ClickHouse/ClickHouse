@@ -6,8 +6,8 @@ scipy==1.12.0
 pyarrow==18.0.0
 grpcio==1.47.0
 protobuf==4.25.3
+clickhouse-driver==0.2.7
 
 # performance tests >>
-clickhouse_driver
 scipy==1.12.0
 # << performance tests

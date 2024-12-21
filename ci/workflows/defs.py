@@ -545,8 +545,8 @@ class Jobs:
             "amd_debug,non-parallel",
             "amd_release,parallel",
             "amd_release,non-parallel",
-            "arm_asan,parallel",
-            "arm_asan,non-parallel",
+            "arm_release,parallel",
+            "arm_release,non-parallel",
         ],
         runs_on=[
             [RunnerLabels.BUILDER_AMD],
@@ -561,8 +561,8 @@ class Jobs:
             [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
             [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
             [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
-            [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
-            [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
+            [ArtifactNames.CH_ARM_RELEASE, ArtifactNames.CH_ODBC_B_ARM_RELEASE],
+            [ArtifactNames.CH_ARM_RELEASE, ArtifactNames.CH_ODBC_B_ARM_RELEASE],
         ],
     )
 

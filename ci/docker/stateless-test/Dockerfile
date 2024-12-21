@@ -115,7 +115,7 @@ ENV HOME="/home"
 ENV TEMP_DIR="/tmp/praktika"
 ENV PATH="/wd/tests:/tmp/praktika/input:$PATH"
 
-RUN npm install -g azurite@3.30.0 \
+RUN npm install -g azurite@3.33.0 \
     && npm install -g tslib && npm install -g node
 
 ENV PYTHONPATH=".:./ci"
