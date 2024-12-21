@@ -149,6 +149,9 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE = (
         "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
+    STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
+        "Stateless tests (release, parallel replicas on replicated db, s3)"
+    )
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
@@ -649,6 +652,7 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST_UBSAN,
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
+    JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE,
 ]
 
 # Jobs that run in Merge Queue if it's enabled
