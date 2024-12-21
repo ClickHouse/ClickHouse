@@ -585,6 +585,20 @@ void ConfigProcessor::doIncludesRecursive(
             doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
         }
     }
+
+    // Track parts state for complete partition copying
+    UInt64 mutation_version = allocateNewBlockNumber();
+    std::set<String> processed_parts;
+
+    // Ensure all parts with block number < mutation_version are copied
+    for (const auto & part : source_parts)
+    {
+        if (part.block_number < mutation_version && !processed_parts.contains(part.name))
+        {
+            copyPartData(part);
+            processed_parts.insert(part.name);
+        }
+    }
 }
 
 ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & config_path)
@@ -790,6 +804,22 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     config->insertBefore(new_node, config->firstChild());
     new_node = config->createComment(comment.str());
     config->insertBefore(new_node, config->firstChild());
+
+    // Check replica staleness
+    bool is_stale = checkReplicaStaleness();
+    
+    // Get complete list of parts from source table
+    PartsVector source_parts = getSourceTableParts();
+
+    // Ensure all parts are copied even if replica is stale
+    if (is_stale)
+    {
+        for (const auto & part : source_parts)
+        {
+            if (!part_exists(part.name))
+                copyPartData(part);
+        }
+    }
 
     return config;
 }
