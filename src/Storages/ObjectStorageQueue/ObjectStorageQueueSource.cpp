@@ -504,7 +504,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
         const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
         auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
-        const auto & path = reader.getObjectInfo()->getPath();
+        const auto & path = file_metadata->getPath();
+
+        LOG_TEST(log, "Processing file: {}", path);
 
         if (isCancelled())
         {
@@ -559,6 +561,12 @@ Chunk ObjectStorageQueueSource::generateImpl()
                      path, file_status->processed_rows);
         }
 
+        if (processed_files.empty() || processed_files.back()->getPath() != path)
+        {
+            processed_files.push_back(file_metadata);
+            progress->processed_files += 1;
+        }
+
         try
         {
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueuePullMicroseconds);
@@ -607,9 +615,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
         file_status->setProcessingEndTime();
         file_status.reset();
         reader = {};
-
-        processed_files.push_back(file_metadata);
-        progress->processed_files += 1;
 
         if (commit_settings.max_processed_files_before_commit
             && progress->processed_files == commit_settings.max_processed_files_before_commit)
