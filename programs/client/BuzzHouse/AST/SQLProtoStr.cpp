@@ -39,7 +39,8 @@ CONV_FN_QUOTE(Column, col)
 
 CONV_FN_QUOTE(ColumnPath, ic)
 {
-    const uint32_t nquote = quote + 1, quotes = (1 << quote);
+    const uint32_t nquote = quote + 1;
+    const uint32_t quotes = (1 << quote);
 
     for (uint32_t i = 0; i < quotes; i++)
     {

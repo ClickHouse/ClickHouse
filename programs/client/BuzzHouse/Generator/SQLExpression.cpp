@@ -43,7 +43,7 @@ int StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * ex
     const uint32_t nsuboption = rg.nextLargeNumber();
     const std::string & last_col
         = expr->path().sub_cols_size() ? expr->path().sub_cols(expr->path().sub_cols_size() - 1).column() : expr->path().col().column();
-    const bool has_nested = last_col == "keys" || last_col == "values" || last_col == "null" || last_col.rfind("size", 0) == 0;
+    const bool has_nested = last_col == "keys" || last_col == "values" || last_col == "null" || startsWith(last_col, "size");
 
     if (!has_nested)
     {

@@ -590,8 +590,8 @@ int StatementGenerator::generateMergeTreeEngineDetails(
                 for (int j = 0; j < npkey; j++)
                 {
                     if (tpk.exprs(j).expr().has_comp_expr() && tpk.exprs(j).expr().comp_expr().has_expr_stc()
-                        && static_cast<size_t>(tpk.exprs(j).expr().comp_expr().expr_stc().col().path().sub_cols_size() + 1)
-                            == entry.path.size())
+                        && (tpk.exprs(j).expr().comp_expr().expr_stc().col().path().sub_cols_size() + 1)
+                            == static_cast<int>(entry.path.size()))
                     {
                         bool ok = true;
                         const ExprColumn & oecol = tpk.exprs(j).expr().comp_expr().expr_stc().col();
