@@ -435,10 +435,21 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
     {
         case 0:
         {
-            const auto r = fuzz_rand() % 3;
-            def.frame_type = r == 0 ? WindowFrame::FrameType::ROWS
-                : r == 1 ? WindowFrame::FrameType::RANGE
-                    : WindowFrame::FrameType::GROUPS;
+            // Change the frame type.
+            static const auto frame_types = std::to_array({
+                WindowFrame::FrameType::ROWS,
+                WindowFrame::FrameType::RANGE,
+                WindowFrame::FrameType::GROUPS,
+                WindowFrame::FrameType::SESSION
+            });
+            def.frame_type = frame_types[fuzz_rand() % size(frame_types)];
+            if (def.frame_type == WindowFrame::FrameType::SESSION)
+            {
+                // Have to initialize the window threshold when switching to
+                // SESSION frame, so that we don't get an invalid AST where it
+                // is not initialized.
+                def.session_window_threshold = std::make_shared<ASTLiteral>(getRandomField(0));
+            }
             break;
         }
         case 1:

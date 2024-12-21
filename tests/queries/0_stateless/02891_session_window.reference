@@ -1,0 +1,53 @@
+-- { echoOn }
+
+select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n session 1);
+1	[1]
+20	[20]
+22	[22]
+24	[24]
+100	[100,101]
+101	[100,101]
+select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n session 2);
+1	[1]
+20	[20,22,24]
+22	[20,22,24]
+24	[20,22,24]
+100	[100,101]
+101	[100,101]
+select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n session 100);
+1	[1,20,22,24,100,101]
+20	[1,20,22,24,100,101]
+22	[1,20,22,24,100,101]
+24	[1,20,22,24,100,101]
+100	[1,20,22,24,100,101]
+101	[1,20,22,24,100,101]
+select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n desc session 2);
+101	[101,100]
+100	[101,100]
+24	[24,22,20]
+22	[24,22,20]
+20	[24,22,20]
+1	[1]
+select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n desc session 100);
+101	[101,100,24,22,20,1]
+100	[101,100,24,22,20,1]
+24	[101,100,24,22,20,1]
+22	[101,100,24,22,20,1]
+20	[101,100,24,22,20,1]
+1	[101,100,24,22,20,1]
+-- Fractional session window thresholds are also useful, e.g. to process bursts of events occurring less than 0.5 second apart.
+select arrayJoin([1, 2.0, 2.1, 2.2, 10.0, 10.1])::float n, groupArray(n) over (order by n session 0.5);
+1	[1]
+2	[2,2.1,2.2]
+2.1	[2,2.1,2.2]
+2.2	[2,2.1,2.2]
+10	[10,10.1]
+10.1	[10,10.1]
+-- Test some wrong things
+select 1 n, count() over (order by n session 0.5); -- { serverError 69 }
+select 1 n, count() over (order by n session -1); -- { serverError 69 }
+select 1 n, count() over (order by n session 0); -- { serverError 36 }
+select 1 n, count() over (order by n session 'what'); -- { serverError BAD_ARGUMENTS }
+select 1 n, count() over (session 1); -- { serverError 36 }
+select 1 n, count() over (order by n, n+1 session 1); -- { serverError 36 }
+select 'a' n, count() over (order by n session 1); -- { serverError 48 }
