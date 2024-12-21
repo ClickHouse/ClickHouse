@@ -1854,7 +1854,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
         while (!stack.empty())
         {
-            auto & cur_node = stack.top().node;
+            const auto * cur_node = stack.top().node;
             stack.pop();
 
             for (const auto * child : cur_node->children)
