@@ -622,7 +622,7 @@ try
         auto write_buffers = used_output.out_delayed_and_compressed_holder->getResultBuffers();
         /// cancel the rest unused buffers
         for (auto & wb : write_buffers)
-            if (wb.unique())
+            if (wb.use_count() == 1)
                 wb->cancel();
 
         used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
