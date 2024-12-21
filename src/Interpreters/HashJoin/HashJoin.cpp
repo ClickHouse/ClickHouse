@@ -671,7 +671,7 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                     prefer_use_maps_all,
                     [&](auto kind_, auto strictness_, auto & map)
                     {
-                        size_t size = HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
+                        HashJoinMethods<kind_, strictness_, std::decay_t<decltype(map)>>::insertFromBlockImpl(
                             *this,
                             data->type,
                             map,
@@ -687,9 +687,6 @@ bool HashJoin::addBlockToJoin(ScatteredBlock & source_block, bool check_limits)
                         if (flag_per_row)
                             used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(
                                 &stored_block->getSourceBlock());
-                        else if (is_inserted)
-                            /// Number of buckets + 1 value from zero storage
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(size + 1);
                     });
             }
 
@@ -1647,4 +1644,21 @@ void HashJoin::tryRerangeRightTableData()
     data->sorted = true;
 }
 
+void HashJoin::onBuildPhaseFinish()
+{
+    bool prefer_use_maps_all = table_join->getMixedJoinExpression() != nullptr;
+    for (auto & map : data->maps)
+    {
+        joinDispatch(
+            kind,
+            strictness,
+            map,
+            prefer_use_maps_all,
+            [this](auto kind_, auto strictness_, auto & map_)
+            {
+                used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
+                    map_.getBufferSizeInCells(data->type) + 1);
+            });
+    }
+}
 }

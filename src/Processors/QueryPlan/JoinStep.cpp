@@ -242,7 +242,7 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
         default_totals = true;
     }
 
-    auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(pipeline.getNumStreams());
+    auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
