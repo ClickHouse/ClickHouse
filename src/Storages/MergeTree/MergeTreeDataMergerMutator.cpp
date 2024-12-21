@@ -669,7 +669,7 @@ String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
     assert(best_partition_it != partitions_info.end());
 
     if ((static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
-        || static_cast<size_t>(best_partition_it->second.num_parts) == 1)
+        || static_cast<size_t>(best_partition_it->second.num_parts) == 1 || static_cast<size_t>(best_partition_it->second.sum_bytes) > max_total_size_to_merge)
         return {};
 
     return best_partition_it->first;
