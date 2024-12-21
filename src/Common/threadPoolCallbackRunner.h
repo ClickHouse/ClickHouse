@@ -74,7 +74,7 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, c
 /// When creating a runner on stack, you MUST make sure that it's created (and destroyed) before local objects captured by task lambda.
 
 template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
-class ThreadPoolCallbackRunnerLocal
+class ThreadPoolCallbackRunnerLocal final
 {
     PoolT & pool;
     std::string thread_name;
@@ -149,9 +149,9 @@ public:
 
     void operator() (Callback && callback, Priority priority = {})
     {
+        auto promise = std::make_shared<std::promise<Result>>();
         auto & task = tasks.emplace_back(std::make_shared<Task>());
-
-        std::shared_ptr<std::promise<Result>> promise = std::make_shared<std::promise<Result>>();
+        task->future = promise->get_future();
 
         auto task_func = [task, thread_group = CurrentThread::getGroup(), my_thread_name = thread_name, my_callback = std::move(callback), promise]() mutable -> void
         {
@@ -191,8 +191,6 @@ public:
             executeCallback(*promise, my_callback);
         };
 
-        task->future = promise->get_future();
-
         try
         {
             /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
@@ -222,8 +220,14 @@ public:
     void waitForAllToFinishAndRethrowFirstError()
     {
         waitForAllToFinish();
+
         for (auto & task : tasks)
-            task->future.get();
+        {
+            /// task->future may be invalid if waitForAllToFinishAndRethrowFirstError() is called multiple times
+            /// and previous call has already rethrown the exception and has not cleared tasks.
+            if (task->future.valid())
+                task->future.get();
+        }
 
         tasks.clear();
     }
