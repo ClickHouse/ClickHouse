@@ -219,7 +219,7 @@ def main():
 "hash does not exist --- ru/operations/system-tables/query_log.html --> #system-tables-introduction",
 "hash does not exist --- ru/operations/system-tables/query_log.html --> #system_tables-events",
 "hash does not exist --- ru/operations/settings/settings.html --> #glob_expansion_max_elements",
-"hash does not exist --- ru/operations/settings/permissions-for-queries.html --> #permissions_for_queries",
+# "hash does not exist --- ru/operations/settings/permissions-for-queries.html --> #permissions_for_queries",
     }
 
     test_sw.reset()
