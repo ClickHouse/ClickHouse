@@ -639,13 +639,12 @@ String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
         return {};
     }
 
-    bool enable_max_bytes_limit = (*data_settings)[MergeTreeSetting::enable_max_bytes_limit_for_min_age_to_force_merge];
     const auto is_partition_invalid = [&](const auto & partition)
     {
         if (partition.num_parts == 1)
             return true;
 
-        if (!max_total_size_to_merge || !enable_max_bytes_limit)
+        if (!max_total_size_to_merge || !(*data_settings)[MergeTreeSetting::enable_max_bytes_limit_for_min_age_to_force_merge])
             return false;
 
         return partition.sum_bytes > max_total_size_to_merge;
@@ -669,9 +668,8 @@ String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
 
     assert(best_partition_it != partitions_info.end());
 
-    bool is_size_invalid = enable_max_bytes_limit && max_total_size_to_merge && (static_cast<size_t>(best_partition_it->second.sum_bytes) > max_total_size_to_merge);
     if ((static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
-        || static_cast<size_t>(best_partition_it->second.num_parts) == 1 || is_size_invalid)
+        || is_partition_invalid(best_partition_it->second))
         return {};
 
     return best_partition_it->first;
