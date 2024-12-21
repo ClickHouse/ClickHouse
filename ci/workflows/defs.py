@@ -264,6 +264,7 @@ class JobNames:
     PERFORMANCE = "Performance comparison"
     COMPATIBILITY = "Compatibility check"
     Docs = "Docs check"
+    DOCKER_SERVER = "Docker server"
 
 
 class ToolSet:
@@ -757,4 +758,16 @@ class Jobs:
         digest_config=Job.CacheDigestConfig(
             include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
         ),
+    )
+    docker_job = Job.Config(
+        name=JobNames.DOCKER_SERVER,
+        runs_on=[RunnerLabels.STYLE_CHECK_ARM],
+        command="python3 ./ci/jobs/docker_server_from_binary.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/docker_server_from_binary.py",
+                "./ci/docker/clickhouse-server",
+            ],
+        ),
+        requires=[ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ARM_RELEASE],
     )
