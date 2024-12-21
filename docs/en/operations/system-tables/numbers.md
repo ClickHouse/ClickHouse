@@ -1,4 +1,5 @@
 ---
+title: numbers
 slug: /en/operations/system-tables/numbers
 ---
 # numbers

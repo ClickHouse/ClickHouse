@@ -1,4 +1,5 @@
 ---
+title: asynchronous_metrics
 slug: /en/operations/system-tables/asynchronous_metrics
 ---
 # asynchronous_metrics

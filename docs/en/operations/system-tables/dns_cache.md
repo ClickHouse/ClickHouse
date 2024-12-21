@@ -1,4 +1,5 @@
 ---
+title: dns_cache
 slug: /en/operations/system-tables/dns_cache
 ---
 # dns_cache

@@ -1,4 +1,5 @@
 ---
+title: replicated_fetches
 slug: /en/operations/system-tables/replicated_fetches
 ---
 # replicated_fetches

@@ -1,4 +1,5 @@
 ---
+title: stochasticLogisticRegression
 slug: /en/sql-reference/aggregate-functions/reference/stochasticlogisticregression
 sidebar_position: 193
 ---

@@ -1,4 +1,5 @@
 ---
+title: scheduler
 slug: /en/operations/system-tables/scheduler
 ---
 # scheduler

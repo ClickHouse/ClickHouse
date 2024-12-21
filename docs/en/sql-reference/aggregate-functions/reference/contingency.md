@@ -1,4 +1,5 @@
 ---
+title: contingency
 slug: /en/sql-reference/aggregate-functions/reference/contingency
 sidebar_position: 116
 ---

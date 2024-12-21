@@ -1,4 +1,5 @@
 ---
+title: user_processes
 slug: /en/operations/system-tables/user_processes
 ---
 # user_processes

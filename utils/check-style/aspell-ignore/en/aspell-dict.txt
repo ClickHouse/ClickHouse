@@ -1039,6 +1039,8 @@ TablesLoaderBackgroundThreadsActive
 TablesLoaderForegroundThreads
 TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
+TableOfContentsJSON
+TableOfContents
 TargetSpecific
 Telegraf
 TemplateIgnoreSpaces
@@ -2721,6 +2723,7 @@ sql
 sqlalchemy
 sqlinsert
 sqlite
+sqlreference
 sqrt
 src
 srcReplicas

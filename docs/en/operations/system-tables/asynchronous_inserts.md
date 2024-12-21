@@ -1,4 +1,5 @@
 ---
+title: asynchronous_inserts
 slug: /en/operations/system-tables/asynchronous_inserts
 ---
 # asynchronous_inserts

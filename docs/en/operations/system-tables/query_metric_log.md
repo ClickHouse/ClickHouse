@@ -1,4 +1,5 @@
 ---
+title: query_metric_log
 slug: /en/operations/system-tables/query_metric_log
 ---
 # query_metric_log

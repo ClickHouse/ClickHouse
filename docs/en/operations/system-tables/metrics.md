@@ -1,4 +1,5 @@
 ---
+title: metrics
 slug: /en/operations/system-tables/metrics
 ---
 # metrics
