@@ -9,6 +9,7 @@ enum class MergeSelectorAlgorithm : uint8_t
     SIMPLE,
     STOCHASTIC_SIMPLE,
     TRIVIAL,
+    COMPLEX,
 };
 
 }
