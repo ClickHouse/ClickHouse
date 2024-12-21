@@ -813,6 +813,7 @@ class SettingsRandomizer:
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_joined_block_size_rows": lambda: random.randint(8000, 100000),
+        "min_joined_block_size_bytes": lambda: random.randint(524288 // 2, 4 * 524288),
         "max_threads": lambda: 32 if random.random() < 0.03 else random.randint(1, 3),
         "optimize_append_index": lambda: random.randint(0, 1),
         "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
@@ -926,6 +927,14 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
         "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
+        "grace_hash_join_initial_buckets": lambda: random.randint(1, 16),
+        "grace_hash_join_max_buckets": lambda: 1024 * random.randint(0, 4),
+        "join_to_sort_minimum_perkey_rows": lambda: random.randint(1, 100),
+        "join_to_sort_maximum_table_rows": lambda: random.randint(1000, 100000),
+        "allow_experimental_join_right_table_sorting": lambda: True,
+        "allow_experimental_join_condition": lambda: True,
+        "join_output_by_rowlist_perkey_rows_threshold": lambda: random.randint(0, 10),
+        "max_rows_in_set_to_optimize_join": lambda: random.randint(0, 100),
     }
 
     @staticmethod
