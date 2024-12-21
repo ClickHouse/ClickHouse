@@ -4,12 +4,14 @@ import glob
 import json
 import multiprocessing
 import os
+import platform
 import re
 import signal
 import subprocess
 import sys
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -169,6 +171,39 @@ class Shell:
         )
 
     @classmethod
+    def check_parallel(
+        cls,
+        commands,
+        verbose=False,
+        max_workers=None,
+    ):
+        if verbose:
+            print(
+                f"Run in parallel: [{len(commands)}], workers [{max_workers or len(commands)}]"
+            )
+
+        def execute(command):
+            return cls.get_res_stdout_stderr(command, verbose=True)
+
+        with ThreadPoolExecutor(max_workers=max_workers or len(commands)) as executor:
+            futures = {
+                executor.submit(execute, command): command for command in commands
+            }
+            results = []
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception:
+                    results.append(False)
+        failed = False
+        for res, out_, err in results:
+            if res != 0:
+                print(f"Check Parallel failed, err: [{(res, out_, err)}]")
+                failed = True
+        return not failed
+
+    @classmethod
     def run(
         cls,
         command,
@@ -322,6 +357,21 @@ class Shell:
 
 
 class Utils:
+
+    @staticmethod
+    def is_arm():
+        arch = platform.machine()
+        if "arm" in arch.lower() or "aarch" in arch.lower():
+            return True
+        return False
+
+    @staticmethod
+    def is_amd():
+        arch = platform.machine()
+        if "x86_64" in arch.lower() or "amd64" in arch.lower():
+            return True
+        return False
+
     @staticmethod
     def terminate_process_group(pid, force=False):
         if not force:

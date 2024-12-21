@@ -42,17 +42,6 @@ class ClickHouseProc:
 
         self.minio_proc = None
 
-    def start_hdfs(self, log_file_path):
-        command = ["./ci/jobs/scripts/functional_tests/setup_hdfs_minicluster.sh"]
-        with open(log_file_path, "w") as log_file:
-            process = subprocess.Popen(
-                command, stdout=log_file, stderr=subprocess.STDOUT
-            )
-        print(
-            f"Started setup_hdfs_minicluster.sh asynchronously with PID {process.pid}"
-        )
-        return True
-
     def start_minio(self, test_type, log_file_path):
         command = [
             "./ci/jobs/scripts/functional_tests/setup_minio.sh",
