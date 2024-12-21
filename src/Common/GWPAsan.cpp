@@ -159,7 +159,7 @@ void printReport([[maybe_unused]] uintptr_t fault_address)
 {
     const auto logger = getLogger("GWPAsan");
     const auto * state = GuardedAlloc.getAllocatorState();
-    if (uintptr_t internal_error_ptr = __gwp_asan_get_internal_crash_address(state); internal_error_ptr)
+    if (uintptr_t internal_error_ptr = __gwp_asan_get_internal_crash_address(state, fault_address); internal_error_ptr)
         fault_address = internal_error_ptr;
 
     const gwp_asan::AllocationMetadata * allocation_meta = __gwp_asan_get_metadata(state, GuardedAlloc.getMetadataRegion(), fault_address);
