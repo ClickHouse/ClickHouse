@@ -650,7 +650,8 @@ void DefaultCoordinator::processPartsFurther(
 
         while (!part.description.ranges.empty() && current_marks_amount < min_number_of_marks)
         {
-            auto & range = part.description.ranges.front();
+            /// Copy the range here to avoid container overflow (we might call pop_front() in a loop).
+            auto range = part.description.ranges.front();
 
             /// Parts are divided into segments of `mark_segment_size` granules staring from 0-th granule
             for (size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
