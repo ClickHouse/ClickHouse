@@ -59,12 +59,6 @@ bool equals(const T & first, const T & second)
     return first_string_stream.str() == second_string_stream.str();
 }
 
-#if 0
-bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
-{
-    return equals(first, second);
-}
-#endif
 bool operator==(const Poco::JSON::Array & first, const Poco::JSON::Array & second)
 {
     return equals(first, second);
