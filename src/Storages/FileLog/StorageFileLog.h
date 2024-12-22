@@ -190,7 +190,6 @@ private:
     size_t getPollTimeoutMillisecond() const;
 
     bool streamToViews();
-    // bool checkDependencies(const StorageID & table_id);
 
     bool updateFileInfos();
 

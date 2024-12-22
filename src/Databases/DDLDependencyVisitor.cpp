@@ -17,7 +17,6 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
-#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Poco/String.h>
@@ -84,6 +83,7 @@ namespace
                     visitFunction(*function);
             }
         }
+
     private:
         ASTPtr create_query;
         std::unordered_set<const IAST *> skip_asts;
@@ -108,52 +108,29 @@ namespace
                         const auto & table_id = target.table_id;
                         if (!table_id.table_name.empty())
                         {
-                            /// TO target_table (for materialized views)
-                            // QualifiedTableName target_name{table_id.database_name, table_id.table_name};
-                            // auto target_name = table_id.getQualifiedName();
-                            // if (target_name.database.empty())
-                            //     target_name.database = current_database;
-                            // view_dependencies.emplace(target_name);
-                            // view_dependencies.emplace(table_name);
                             mv_to_dependency = table_id;
                             if (mv_to_dependency->getDatabaseName().empty())
                                 mv_to_dependency->database_name = current_database;
                             dependencies.emplace(mv_to_dependency->getQualifiedName());
                         }
-                        // else if (target.inner_uuid != UUIDHelpers::Nil)
                         else if (create.uuid != UUIDHelpers::Nil && target.inner_uuid != UUIDHelpers::Nil)
-                        {
-                            // mv_to_dependency = QualifiedTableName{current_database, ".inner_id." + toString(target.inner_uuid)};
                             mv_to_dependency = StorageID{table_name.database, ".inner_id." + toString(create.uuid), target.inner_uuid};
-                            // dependencies.emplace(mv_to_dependency->getQualifiedName());
-                        }
                         else
-                        {
                             mv_to_dependency = StorageID{table_name.database, ".inner." + table_name.table};
-                            // dependencies.emplace(mv_to_dependency->getQualifiedName());
-                        }
                     }
                     else if (target.kind == ViewTarget::Kind::Inner)
                     {
                         if (target.inner_uuid != UUIDHelpers::Nil)
-                        {
                             mv_to_dependency = StorageID{table_name.database, ".inner_id." + toString(target.inner_uuid), target.inner_uuid};
-                        }
                         else
-                        {
                             mv_to_dependency = StorageID{table_name.database, ".inner." + target.table_id.getQualifiedName().table};
-                        }
                     }
 
                     if (mv_to_dependency)
                     {
                         if (mv_to_dependency->getDatabaseName().empty())
                             mv_to_dependency->database_name = current_database;
-                        LOG_DEBUG(&Poco::Logger::get("DDLDependencyVisitor"), "mv_to_dependency {} (target.kind == ViewTarget::Kind::Inner {}, target.inner_uuid != UUIDHelpers::Nil {})", mv_to_dependency.value(), target.kind == ViewTarget::Kind::Inner, target.inner_uuid != UUIDHelpers::Nil);
                     }
-
-                    else
-                        LOG_DEBUG(&Poco::Logger::get("DDLDependencyVisitor"), "mv_to_dependency is empty");
                 }
             }
 
@@ -168,11 +145,8 @@ namespace
 
             /// Visit nested select query only for views, for other cases it's not
             /// an actual dependency as it will be executed only once to fill the table.
-            if (create.select)
-            {
-                if (!create.isView())
-                    skip_asts.insert(create.select);
-            }
+            if (create.select && !create.isView())
+                skip_asts.insert(create.select);
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)
@@ -560,7 +534,6 @@ namespace
 
 CreateQueryDependencies getDependenciesFromCreateQuery(const ContextPtr & global_global_context, const QualifiedTableName & table_name, const ASTPtr & ast, const String & current_database, bool can_throw)
 {
-    LOG_DEBUG(&Poco::Logger::get("DDLDependencyVisitor"), "getDependenciesFromCreateQuery for {}", ast->formatForLogging());
     DDLDependencyVisitor::Data data{global_global_context, table_name, ast, current_database, can_throw};
     DDLDependencyVisitor::Visitor visitor{data};
     visitor.visit(ast);

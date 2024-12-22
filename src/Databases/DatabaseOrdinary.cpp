@@ -316,12 +316,6 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
     LOG_INFO(log, "Metadata processed, database {} has {} tables, {} dictionaries and {} materialized views in total.",
              TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database, materialized_views_in_database);
-
-    // if (materialized_views_in_database)
-    // {
-
-    // }
-
 }
 
 void DatabaseOrdinary::loadTableFromMetadata(
@@ -346,8 +340,6 @@ void DatabaseOrdinary::loadTableFromMetadata(
             mode);
 
         attachTable(local_context, table_name, table, getTableDataPath(query));
-
-        table->pushDependencies();
     }
     catch (Exception & e)
     {

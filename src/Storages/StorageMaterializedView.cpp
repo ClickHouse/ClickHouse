@@ -742,18 +742,6 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         refresher->rename(new_table_id, getTargetTableId());
 }
 
-void StorageMaterializedView::pushDependencies()
-{
-    // // assert(!dependencies_are_tracked);
-    // if (!dependencies_are_tracked)
-    // {
-    //     auto metadata_snapshot = getInMemoryMetadataPtr();
-    //     const auto & select_query = metadata_snapshot->getSelectQuery();
-    //     if (!select_query.select_table_id.empty())
-    //         DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
-    //     dependencies_are_tracked = true;
-    // }
-}
 
 void StorageMaterializedView::startup()
 {
@@ -769,26 +757,6 @@ void StorageMaterializedView::startup()
         }
     }
 
-    // assert(!dependencies_are_tracked);
-    // if (!dependencies_are_tracked)
-    // {
-    //     auto metadata_snapshot = getInMemoryMetadataPtr();
-    //     const auto & select_query = metadata_snapshot->getSelectQuery();
-    //     if (!select_query.select_table_id.empty())
-    //         DatabaseCatalog::instance().addViewDependency(select_query.select_table_id, getStorageID());
-    //     dependencies_are_tracked = true;
-    // }
-    // if (!dependencies_are_tracked)
-    // {
-    //     auto metadata_snapshot = getInMemoryMetadataPtr();
-    //     const auto & select_query = metadata_snapshot->getSelectQuery();
-    //     if (!select_query.select_table_id.empty())
-    //         DatabaseCatalog::instance().addViewDependency(StorageID{select_query.select_table_id.getQualifiedName()}, StorageID{getStorageID().getQualifiedName()});
-    //     dependencies_are_tracked = true;
-    // }
-
-    // pushDependencies();
-
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto & select_query = metadata_snapshot->getSelectQuery();
     if (!select_query.select_table_id.empty())
@@ -801,8 +769,6 @@ void StorageMaterializedView::startup()
             LOG_DEBUG(&Poco::Logger::get("StorageMaterializedView"), "select_query.select_table_id {} depends on {}, while dependency o put is {} => {}", select_query.select_table_id, full_table_name, select_query.select_table_id, getStorageID().getFullTableName());
         }
     }
-
-
 
     if (refresher)
         refresher->startup();

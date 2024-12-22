@@ -585,10 +585,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part moves between shards are not supported by storage {}", getName());
     }
 
-    virtual void pushDependencies()
-    {
-    }
-
 
     /** If the table have to do some complicated work on startup,
       *  that must be postponed after creation of table object

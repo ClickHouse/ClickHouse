@@ -403,28 +403,17 @@ static void extractDependentTable(ContextPtr context, ASTPtr & query, String & s
 
 UInt32 StorageWindowView::getCleanupBound()
 {
-    LOG_TRACE(log, "top of getWindowLowerBound");
     if (max_fired_watermark == 0)
-    {
-        LOG_TRACE(log, "max_fired_watermark == 0");
         return 0;
-    }
 
     if (is_proctime)
-    {
-        LOG_TRACE(log, "is_proctime");
         return max_fired_watermark;
-    }
-
 
     auto w_bound = max_fired_watermark;
     if (allowed_lateness)
         w_bound = addTime(w_bound, lateness_kind, -lateness_num_units, *time_zone);
 
-    auto lb = getWindowLowerBound(w_bound);
-    LOG_TRACE(log, "getWindowLowerBound: {}", lb);
-
-    return lb;
+    return getWindowLowerBound(w_bound);
 }
 
 ASTPtr StorageWindowView::getCleanupQuery()
@@ -505,8 +494,6 @@ void StorageWindowView::alter(
     InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
     create_interpreter.setInternal(true);
     create_interpreter.execute();
-
-    // DatabaseCatalog::instance().addViewDependency(select_table_id, table_id);
 
     shutdown_called = false;
 
@@ -1705,8 +1692,6 @@ void StorageWindowView::startup()
 {
     if (disabled_due_to_analyzer)
         return;
-
-    // DatabaseCatalog::instance().addViewDependency(select_table_id, getStorageID());
 
     fire_task->activate();
     clean_cache_task->activate();

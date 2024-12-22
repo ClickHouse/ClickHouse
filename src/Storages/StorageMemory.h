@@ -5,7 +5,6 @@
 #include <mutex>
 
 #include <Core/NamesAndTypes.h>
-// #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 
 #include <Common/MultiVersion.h>
