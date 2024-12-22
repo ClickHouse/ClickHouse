@@ -55,7 +55,7 @@ KAFKA_CONSUMER_GROUP_NEW = "new_cg"
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/named_collection.xml"],
+    main_configs=["configs/kafka.xml", "configs/named_collection.xml", "configs/async.xml"],
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table

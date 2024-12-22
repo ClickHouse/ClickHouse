@@ -45,7 +45,7 @@ void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler
 
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name);
 
-bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
+// bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 }

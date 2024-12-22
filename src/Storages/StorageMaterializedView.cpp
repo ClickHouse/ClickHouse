@@ -77,13 +77,6 @@ namespace ActionLocks
     extern const StorageActionBlockType ViewRefresh;
 }
 
-static inline String generateInnerTableName(const StorageID & view_id)
-{
-    if (view_id.hasUUID())
-        return ".inner_id." + toString(view_id.uuid);
-    return ".inner." + view_id.getTableName();
-}
-
 /// Remove columns from target_header that does not exist in src_header
 static void removeNonCommonColumns(const Block & src_header, Block & target_header)
 {
@@ -945,6 +938,15 @@ void StorageMaterializedView::updateTargetTableId(std::optional<String> database
     if (table_name)
         target_table_id.table_name = *std::move(table_name);
 }
+
+String StorageMaterializedView::generateInnerTableName(const StorageID & view_id)
+{
+    if (view_id.hasUUID())
+        return ".inner_id." + toString(view_id.uuid);
+    return ".inner." + view_id.getTableName();
+}
+
+
 
 void registerStorageMaterializedView(StorageFactory & factory)
 {

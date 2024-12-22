@@ -147,7 +147,7 @@ private:
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
 
     bool streamToViews();
-    bool checkDependencies(const StorageID & table_id);
+    // bool checkDependencies(const StorageID & table_id);
 };
 
 }

@@ -1033,19 +1033,17 @@ void StorageKafka2::threadFunc(size_t idx)
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-        if (num_views)
-        {
+        // size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        // if (num_views)
+        // {
             auto start_time = std::chrono::steady_clock::now();
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled && num_created_consumers > 0)
             {
                 maybe_stall_reason.reset();
-                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                if (DatabaseCatalog::instance().getDependentViews(table_id).empty())
                     break;
-
-                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 // Exit the loop & reschedule if some stream stalled
                 if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
@@ -1061,7 +1059,7 @@ void StorageKafka2::threadFunc(size_t idx)
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
                 }
-            }
+            // }
         }
     }
     catch (...)
