@@ -586,11 +586,8 @@ void ConfigProcessor::doIncludesRecursive(
         }
     }
 
-    // Track parts state for complete partition copying
     UInt64 mutation_version = allocateNewBlockNumber();
     std::set<String> processed_parts;
-
-    // Ensure all parts with block number < mutation_version are copied
     for (const auto & part : source_parts)
     {
         if (part.block_number < mutation_version && !processed_parts.contains(part.name))
@@ -805,13 +802,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     new_node = config->createComment(comment.str());
     config->insertBefore(new_node, config->firstChild());
 
-    // Check replica staleness
     bool is_stale = checkReplicaStaleness();
-    
-    // Get complete list of parts from source table
     PartsVector source_parts = getSourceTableParts();
-
-    // Ensure all parts are copied even if replica is stale
     if (is_stale)
     {
         for (const auto & part : source_parts)
@@ -820,7 +812,6 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 copyPartData(part);
         }
     }
-
     return config;
 }
 
