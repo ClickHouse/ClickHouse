@@ -7,7 +7,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     #    anyways, we can keep the debug mode disabled.
 
     # https://libcxx.llvm.org/Hardening.html
-    set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG")
+    set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE")
 endif ()
 
 add_subdirectory(contrib/libcxxabi-cmake)
