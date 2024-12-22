@@ -6,10 +6,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <numeric>
 
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -171,13 +171,13 @@ void TablesLoader::buildDependencyGraph()
         if (!new_ref_dependencies.dependencies.empty())
             referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
 
-        if (!new_ref_dependencies.mv_to_dependency.table.empty())
+        if (new_ref_dependencies.mv_to_dependency)
         {
-            mv_to_dependencies.addDependency(StorageID{table_name}, StorageID{new_ref_dependencies.mv_to_dependency});
+            mv_to_dependencies.addDependency(StorageID{table_name}, new_ref_dependencies.mv_to_dependency.value());
         }
-        if (!new_ref_dependencies.mv_from_dependency.table.empty())
+        if (new_ref_dependencies.mv_from_dependency)
         {
-            mv_from_dependencies.addDependency(StorageID{new_ref_dependencies.mv_from_dependency}, StorageID{table_name});
+            mv_from_dependencies.addDependency(new_ref_dependencies.mv_from_dependency.value(), StorageID{table_name});
         }
 
         if (!new_loading_dependencies.empty())

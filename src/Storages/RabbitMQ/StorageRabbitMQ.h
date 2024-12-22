@@ -192,7 +192,7 @@ private:
     void streamToViewsImpl();
     /// Return true on successful stream attempt.
     bool tryStreamToViews();
-    bool hasDependencies(const StorageID & table_id);
+    // bool hasDependencies(const StorageID & table_id);
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 

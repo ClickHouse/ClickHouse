@@ -2,6 +2,7 @@
 
 #include <Core/QualifiedTableName.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <unordered_set>
 
@@ -13,8 +14,8 @@ using TableNamesSet = std::unordered_set<QualifiedTableName>;
 struct CreateQueryDependencies
 {
     TableNamesSet dependencies;
-    QualifiedTableName mv_to_dependency;
-    QualifiedTableName mv_from_dependency;
+    std::optional<StorageID> mv_to_dependency;
+    std::optional<StorageID> mv_from_dependency;
 };
 
 

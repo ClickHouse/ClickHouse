@@ -1026,31 +1026,30 @@ RabbitMQConsumerPtr StorageRabbitMQ::createConsumer()
         connection->getHandler(), queues, ++consumer_id, unique_strbase, log, queue_size);
 }
 
-bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
-{
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
+// bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
+// {
+//     // Check if all dependencies are attached
+//     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+//     LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
 
-    if (view_ids.empty())
-        return false;
+//     if (view_ids.empty())
+//         return false;
 
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
+//     // Check the dependencies are ready?
+//     for (const auto & view_id : view_ids)
+//     {
+//         auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
+//         if (!view)
+//             return false;
 
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-    }
+//         // If it materialized view, check it's target table
+//         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+//         if (materialized_view && !materialized_view->tryGetTargetTable())
+//             return false;
+//     }
 
-    return true;
-}
-
+//     return true;
+// }
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
@@ -1115,7 +1114,7 @@ void StorageRabbitMQ::streamToViewsImpl()
         // Keep streaming as long as there are attached views and streaming is not cancelled
         while (!shutdown_called && num_created_consumers > 0)
         {
-            if (!hasDependencies(table_id))
+            if (DatabaseCatalog::instance().getDependentViews(table_id).empty())
                 break;
 
             LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
@@ -1286,7 +1285,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         return true;
     }
 
-    if (!hasDependencies(getStorageID()))
+    if (DatabaseCatalog::instance().getDependentViews(getStorageID()).empty())
     {
         /// Do not commit to rabbitmq if the dependency was removed.
         LOG_TRACE(log, "No dependencies, reschedule");

@@ -427,8 +427,8 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 }
 
 
-bool checkDependencies(const StorageID & /*table_id*/, const ContextPtr& /*context*/)
-{
+// bool checkDependencies(const StorageID & /*table_id*/, const ContextPtr& /*context*/)
+// {
     // // Check if all dependencies are attached
     // auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     // if (view_ids.empty())
@@ -455,8 +455,8 @@ bool checkDependencies(const StorageID & /*table_id*/, const ContextPtr& /*conte
     //         return false;
     // }
 
-    return true;
-}
+//     return true;
+// }
 
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
