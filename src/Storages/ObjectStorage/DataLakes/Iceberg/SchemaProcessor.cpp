@@ -8,6 +8,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include "base/scope_guard.h"
+#include <Common/logger_useful.h>
+#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -57,12 +59,12 @@ bool equals(const T & first, const T & second)
     return first_string_stream.str() == second_string_stream.str();
 }
 
-
+#if 0
 bool operator==(const Poco::JSON::Object & first, const Poco::JSON::Object & second)
 {
     return equals(first, second);
 }
-
+#endif
 bool operator==(const Poco::JSON::Array & first, const Poco::JSON::Array & second)
 {
     return equals(first, second);
@@ -313,20 +315,13 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
             auto [old_json, old_node] = old_node_it->second;
             if (field->isObject("type"))
             {
-                if (*old_json != *field)
+                const ActionsDAG::Node * node = old_node;
+                if (old_json->getValue<String>("name") != name)
                 {
-                    throw Exception(
-                        ErrorCodes::UNSUPPORTED_METHOD,
-                        "Schema evolution is not supported for complex types yet, field id is {}, old schema id is {}, new schema id "
-                        "is {}",
-                        id,
-                        old_id,
-                        new_id);
+                    node = &dag->addAlias(*old_node, name);
                 }
-                else
-                {
-                    outputs.push_back(old_node);
-                }
+
+                outputs.push_back(node);
             }
             else
             {
@@ -359,17 +354,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         }
         else
         {
-            if (field->isObject("type"))
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "Adding a default column with id {} and complex type is not supported yet. Old schema id is {}, new schema id is "
-                    "{}",
-                    id,
-                    old_id,
-                    new_id);
-            }
-            if (!type->isNullable())
+            if (!type->isNullable() && !field->isObject("type"))
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,

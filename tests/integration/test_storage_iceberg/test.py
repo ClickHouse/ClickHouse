@@ -1091,6 +1091,69 @@ def test_evolved_schema_simple(
         ],
     )
 
+    execute_spark_query(
+        f"""
+        ALTER TABLE {TABLE_NAME}
+        ADD COLUMNS (
+            go STRUCT<b1: Float, b2: Float>
+        );
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (3.0, 12, -9.13, 'BBB', named_struct('b1', 1.23, 'b2', 4.56));
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["b", "Nullable(Float64)"],
+            ["f", "Nullable(Int64)"],
+            ["c", "Decimal(12, 2)"],
+            ["e", "Nullable(String)"],
+            ["go", "Tuple(\\n    b1 Nullable(Float32),\\n    b2 Nullable(Float32))"],
+        ],
+        [
+            ["3", "-30", "7.12", "AAA", "(NULL,NULL)"],
+            ["3", "12", "-9.13", "BBB", "(1.23,4.56)"],
+            ["3", "12", "-9.13", "BBB", "(NULL,NULL)"],
+            ["3.4", "\\N", "-9.13", "\\N", "(NULL,NULL)"],
+            ["5", "7", "18.1", "\\N", "(NULL,NULL)"],
+            ["\\N", "4", "7.12", "\\N", "(NULL,NULL)"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+        ALTER TABLE {TABLE_NAME}
+        RENAME COLUMN go TO bo;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["b", "Nullable(Float64)"],
+            ["f", "Nullable(Int64)"],
+            ["c", "Decimal(12, 2)"],
+            ["e", "Nullable(String)"],
+            ["bo", "Tuple(\\n    b1 Nullable(Float32),\\n    b2 Nullable(Float32))"],
+        ],
+        [
+            ["3", "-30", "7.12", "AAA", "(NULL,NULL)"],
+            ["3", "12", "-9.13", "BBB", "(1.23,4.56)"],
+            ["3", "12", "-9.13", "BBB", "(NULL,NULL)"],
+            ["3.4", "\\N", "-9.13", "\\N", "(NULL,NULL)"],
+            ["5", "7", "18.1", "\\N", "(NULL,NULL)"],
+            ["\\N", "4", "7.12", "\\N", "(NULL,NULL)"],
+        ],
+    )
+
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -1446,8 +1509,10 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
             CREATE TABLE {TABLE_NAME}   (
                 address STRUCT<
                     house_number : DOUBLE,
-                    city: STRING,
-                    zip: INT
+                    city: STRUCT<
+                        name: STRING,
+                        zip: INT
+                    >
                 >,
                 animals ARRAY<INT>
             )
@@ -1458,7 +1523,7 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-            INSERT INTO {TABLE_NAME} VALUES (named_struct('house_number', 3, 'city', 'Singapore', 'zip', 12345), ARRAY(4, 7));
+            INSERT INTO {TABLE_NAME} VALUES (named_struct('house_number', 3, 'city', named_struct('name', 'Singapore', 'zip', 12345)), ARRAY(4, 7));
         """
     )
 
@@ -1471,9 +1536,19 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
         """
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY ALL")
-
-    assert "UNSUPPORTED_METHOD" in error
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 
+             'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)),\\n    appartment Nullable(Int32))'],
+            ['animals',
+                'Array(Nullable(Int32))'],
+        ],
+        [
+            ["(3,('Singapore',12345),NULL)", '[4,7]']
+        ],
+    )
 
     execute_spark_query(
         f"""
@@ -1485,13 +1560,11 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
         instance,
         table_function,
         [
-            [
-                "address",
-                "Tuple(\\n    house_number Nullable(Float64),\\n    city Nullable(String),\\n    zip Nullable(Int32))",
-            ],
+            ['address', 
+             'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
             ["animals", "Array(Nullable(Int32))"],
         ],
-        [["(3,'Singapore',12345)", "[4,7]"]],
+        [["(3,('Singapore',12345))", "[4,7]"]],
     )
 
     execute_spark_query(
@@ -1500,9 +1573,21 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
         """
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY ALL")
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
+            ['animals',
+                'Array(Nullable(Int64))'],
+        ],
+        [
+           ["(3,('Singapore',12345))", '[4,7]']
+        ]
+    )
+    #error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY ALL")
 
-    assert "UNSUPPORTED_METHOD" in error
+    #assert "UNSUPPORTED_METHOD" in error
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
