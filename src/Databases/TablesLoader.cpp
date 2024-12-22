@@ -109,11 +109,7 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     LoadTaskPtrs result;
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
     TablesDependencyGraph all_startup_dependencies("AllStartupMvDependencies");
-    // all_startup_dependencies.mergeWith(all_loading_dependencies);
     all_startup_dependencies.mergeWith(mv_to_dependencies);
-
-
-    // std::vector<StorageID, StorageID> dep_pair;
 
     for (auto table_id : mv_from_dependencies.getTables())
     {
@@ -122,11 +118,9 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
             all_startup_dependencies.addDependency(table_id, storage_id);
     }
 
-
-    // all_startup_dependencies.mergeWith(mv_from_dependencies, /*add_only*/ true);
     all_startup_dependencies.log();
 
-    for (const auto & table_id : /* all_loading_dependencies.getTables() */ all_startup_dependencies.getTablesSortedByDependency())
+    for (const auto & table_id : all_startup_dependencies.getTablesSortedByDependency())
     {
         /// Gather tasks to startup before this table
         LoadTaskPtrs startup_mv_dependency_tasks;
@@ -172,13 +166,9 @@ void TablesLoader::buildDependencyGraph()
             referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
 
         if (new_ref_dependencies.mv_to_dependency)
-        {
             mv_to_dependencies.addDependency(StorageID{table_name}, new_ref_dependencies.mv_to_dependency.value());
-        }
         if (new_ref_dependencies.mv_from_dependency)
-        {
             mv_from_dependencies.addDependency(new_ref_dependencies.mv_from_dependency.value(), StorageID{table_name});
-        }
 
         if (!new_loading_dependencies.empty())
             loading_dependencies.addDependencies(table_name, new_loading_dependencies);

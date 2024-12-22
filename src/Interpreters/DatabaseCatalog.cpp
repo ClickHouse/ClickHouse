@@ -881,11 +881,8 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, ContextPt
 void DatabaseCatalog::addViewDependency(const StorageID & source_table_id, const StorageID & view_id)
 {
     std::lock_guard lock{databases_mutex};
-    LOG_DEBUG(log, "addViewDependency (before)");
-    view_dependencies.log();
-
     view_dependencies.addDependency(source_table_id, view_id);
-    LOG_DEBUG(log, "addViewDependency (after)");
+    LOG_DEBUG(log, "addViewDependency");
     view_dependencies.log();
 }
 
@@ -1460,38 +1457,15 @@ void DatabaseCatalog::addDependencies(
         referential_dependencies.addDependencies(table_name, new_referential_dependencies);
     if (!new_loading_dependencies.empty())
         loading_dependencies.addDependencies(table_name, new_loading_dependencies);
-    // if (!new_view_dependencies.empty())
-    //     for (auto & new_view_dependency : new_view_dependencies)
-    //         if (!new_view_dependency.table.empty())
-    //             view_dependencies.addDependency(StorageID{new_view_dependency}, StorageID{table_name});
-
-
-    view_dependencies.log();
-
 
     if (!new_view_dependencies.empty())
     {
-
         for (auto & new_view_dependency : new_view_dependencies)
         {
-            LOG_DEBUG(log, "new_view_dependency {}", new_view_dependency.getFullName());
             view_dependencies.addDependency(StorageID{new_view_dependency}, StorageID{table_name});
-            // addViewDependency(StorageID{new_view_dependency}, StorageID{table_name});
         }
-
     }
-
     view_dependencies.log();
-
-
-
-    // for (auto table_id : new_view_dependencies.getTables())
-    // {
-    //     auto storage_id_vector = mv_from_dependencies.getDependencies(table_id);
-    //     for (auto storage_id : storage_id_vector)
-    //         view_dependencies.addDependency(storage_id, table_id);
-    // }
-
 }
 
 void DatabaseCatalog::addDependencies(
@@ -1505,7 +1479,6 @@ void DatabaseCatalog::addDependencies(
 
     for (auto & table_id : new_view_dependencies.getTables())
         for (auto & dependency : new_view_dependencies.getDependencies(table_id))
-            // view_dependencies.addDependency(dependency, table_id);
             view_dependencies.addDependency(table_id, dependency);
 }
 

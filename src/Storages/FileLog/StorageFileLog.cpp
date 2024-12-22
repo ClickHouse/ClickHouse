@@ -629,32 +629,6 @@ size_t StorageFileLog::getPollTimeoutMillisecond() const
                                                      : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
-// bool StorageFileLog::checkDependencies(const StorageID & table_id)
-// {
-//     // Check if all dependencies are attached
-//     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-//     if (view_ids.empty())
-//         return true;
-
-//     for (const auto & view_id : view_ids)
-//     {
-//         auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-//         if (!view)
-//             return false;
-
-//         // If it materialized view, check it's target table
-//         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-//         if (materialized_view && !materialized_view->tryGetTargetTable())
-//             return false;
-
-//         // Check all its dependencies
-//         if (!checkDependencies(view_id))
-//             return false;
-//     }
-
-//     return true;
-// }
-
 size_t StorageFileLog::getTableDependentCount() const
 {
     auto table_id = getStorageID();

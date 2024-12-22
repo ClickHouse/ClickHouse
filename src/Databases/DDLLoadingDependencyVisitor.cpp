@@ -148,7 +148,6 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
         extractTableNameFromArgument(*storage.engine, data, 3);
     else if (storage.engine->name == "Dictionary")
         extractTableNameFromArgument(*storage.engine, data, 0);
-
 #if USE_LIBPQXX
     else if (storage.engine->name == "MaterializedPostgreSQL")
     {
