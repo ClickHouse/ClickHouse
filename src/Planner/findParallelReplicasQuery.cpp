@@ -39,8 +39,7 @@ namespace ErrorCodes
 
 static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context [[maybe_unused]])
 {
-    const auto * as_mat_view = typeid_cast<const StorageMaterializedView *>(table_node.getStorage().get());
-    const auto & storage = as_mat_view ? as_mat_view->getTargetTable() : table_node.getStorage();
+    const auto & storage = table_node.getStorage();
 
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;
