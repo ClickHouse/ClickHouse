@@ -650,8 +650,7 @@ void DefaultCoordinator::processPartsFurther(
 
         while (!part.description.ranges.empty() && current_marks_amount < min_number_of_marks)
         {
-            /// Copy the range here to avoid container overflow (we might call pop_front() in a loop).
-            auto range = part.description.ranges.front();
+            auto & range = part.description.ranges.front();
 
             /// Parts are divided into segments of `mark_segment_size` granules staring from 0-th granule
             for (size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
@@ -666,7 +665,11 @@ void DefaultCoordinator::processPartsFurther(
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())
+                    {
                         part.description.ranges.pop_front();
+                        /// Range is taken fully. Proceed further to the next one.
+                        break;
+                    }
                     else
                     {
                         range.begin += taken;
@@ -679,7 +682,12 @@ void DefaultCoordinator::processPartsFurther(
                     enqueueSegment(part.description.info, cur_segment, owner);
                     range.begin += cur_segment.getNumberOfMarks();
                     if (range.getNumberOfMarks() == 0)
+                    {
                         part.description.ranges.pop_front();
+                        /// Range is taken fully. Proceed further to the next one.
+                        break;
+                    }
+                        
                 }
             }
         }
