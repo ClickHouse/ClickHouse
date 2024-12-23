@@ -2153,7 +2153,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
 **Syntax**
 
 ``` sql
-arrayROCAUC(arr_scores, arr_labels[, scale])
+arrayROCAUC(arr_scores, arr_labels[, scale, arr_partial_offsets])
 ```
 
 Alias: `arrayAUC`, `arrayAUCROC`.
@@ -2163,6 +2163,16 @@ Alias: `arrayAUC`, `arrayAUCROC`.
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
 - `scale` - Optional. Whether to return the normalized area. If false, returns the area under the (True Positives) TP x (False Positives) FP curve instead. Default value: true. [Bool]
+- `arr_partial_offsets` - Optional. Array of four integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC or for calculating (partial AUC constrained by FPR)[https://en.wikipedia.org/wiki/Partial_Area_Under_the_ROC_Curve#Partial_AUC_obtained_by_constraining_FPR]. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`].
+    - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
+    - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
+    - `total_positives`: The total number of positive samples in the entire dataset.
+    - `total_negatives`: The total number of negative samples in the entire dataset.
+
+    **Important:** When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` passed should be only a partition of the entire dataset, containing an interval of scores. The dataset should be divided into contiguous partitions, where each partition contains the samples whose scores fall within specific ranges. For example:
+
+    - One partition could contain all scores in the range [0, 0.5).
+    - Another partition could contain scores in the range [0.5, 1.0].
 
 **Returned value**
 
@@ -2184,7 +2194,7 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## arrayAUCPR
+## arrayPRAUC
 
 Calculates the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
@@ -2195,15 +2205,24 @@ For more details, please see [here](https://developers.google.com/machine-learni
 **Syntax**
 
 ``` sql
-arrayAUCPR(arr_scores, arr_labels)
+arrayPRAUC(arr_scores, arr_labels[, arr_partial_offsets])
 ```
 
-Alias: `arrayPRAUC`
+Alias: `arrayAUCPR`
 
 **Arguments**
 
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
+- `arr_partial_offsets` - Optional. Array of three integers for calculating a partial area under the PR curve (equivalent to a vertical band of the PR space) instead of the whole AUC. This option is useful for distributed computation of the PR AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`].
+    - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
+    - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
+    - `total_positives`: The total number of positive samples in the entire dataset.
+
+    **Important:** When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` passed should be only a partition of the entire dataset, containing an interval of scores. The dataset should be divided into contiguous partitions, where each partition contains the samples whose scores fall within specific ranges. For example:
+
+    - One partition could contain all scores in the range [0, 0.5).
+    - Another partition could contain scores in the range [0.5, 1.0].
 
 **Returned value**
 
@@ -2214,13 +2233,13 @@ Returns PR-AUC value with type Float64.
 Query:
 
 ``` sql
-select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+select arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
 
 ``` text
-┌─arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+┌─arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                              0.8333333333333333 │
 └─────────────────────────────────────────────────┘
 ```

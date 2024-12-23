@@ -53,7 +53,8 @@ select arrayROCAUC([0.1, 0.35, 0.4, 0.8], [1, 0, 1, 0], false);
 select arrayROCAUC([0, 0, 1, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 select arrayROCAUC([0.1, 0.35], [0, 0, 1, 1]); -- { serverError BAD_ARGUMENTS }
 select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], materialize(true)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], true, true); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], true, [0, 0, 0], true); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 -- alias
 select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], false);
+select arrayAUCROC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], false);
