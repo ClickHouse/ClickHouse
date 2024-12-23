@@ -253,21 +253,18 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.attach_short_syntax = true;
         create.setDatabase(database_name);
     }
-    else if (!create.storage || !create.storage->engine)
+    else if (!create.storage)
     {
         /// For new-style databases engine is explicitly specified in .sql
         /// When attaching old-style database during server startup, we must always use Ordinary engine
         if (create.attach)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
-        if (!create.storage)
-        {
-            auto storage = std::make_shared<ASTStorage>();
-            create.set(create.storage, storage);
-        }
         auto engine = std::make_shared<ASTFunction>();
+        auto storage = std::make_shared<ASTStorage>();
         engine->name = "Atomic";
         engine->no_empty_args = true;
-        create.storage->set(create.storage->engine, engine);
+        storage->set(storage->engine, engine);
+        create.set(create.storage, storage);
     }
     else if ((create.columns_list
               && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
