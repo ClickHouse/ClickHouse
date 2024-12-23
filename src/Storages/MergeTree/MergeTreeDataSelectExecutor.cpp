@@ -1612,7 +1612,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     for (const auto & part_or_projection : prev_parts)
     {
         if (query_status)
-            query_status->checkIfKilledAndThrow();
+            query_status->checkTimeLimit();
 
         fiu_do_on(FailPoints::slowdown_index_analysis,
         {
