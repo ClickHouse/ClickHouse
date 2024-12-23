@@ -66,7 +66,7 @@ public:
 
     virtual std::string getTableName(uint32_t) { return std::string(); }
 
-    virtual void getTypeString(RandomGenerator &, SQLType *, std::string &) const { }
+    virtual void columnTypeAsString(RandomGenerator &, SQLType *, std::string &) const { }
 
     bool
     performIntegration(RandomGenerator & rg, const uint32_t tname, const bool can_shuffle, std::vector<ColumnPathChain> & entries) override
@@ -101,7 +101,7 @@ public:
                 }
                 buf += entry.getBottomName();
                 buf += " ";
-                getTypeString(rg, tp, buf);
+                columnTypeAsString(rg, tp, buf);
                 buf += " ";
                 buf += ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable, false, false, false>(tp)) ? "" : "NOT ";
                 buf += "NULL";
@@ -281,7 +281,7 @@ public:
         return true;
     }
 
-    void getTypeString(RandomGenerator & rg, SQLType * tp, std::string & out) const override { tp->MySQLtypeName(rg, out, false); }
+    void columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const override { tp->MySQLtypeName(rg, out, false); }
 
     ~MySQLIntegration() override
     {
@@ -416,7 +416,10 @@ public:
 
     void truncateStatement(std::string & outbuf) override { outbuf += "TRUNCATE"; }
 
-    void getTypeString(RandomGenerator & rg, SQLType * tp, std::string & out) const override { tp->PostgreSQLtypeName(rg, out, false); }
+    void columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const override
+    {
+        tp->PostgreSQLtypeName(rg, out, false);
+    }
 
     bool performQuery(const std::string & query) override
     {
@@ -505,7 +508,7 @@ public:
 
     void truncateStatement(std::string & outbuf) override { outbuf += "DELETE FROM"; }
 
-    void getTypeString(RandomGenerator & rg, SQLType * tp, std::string & out) const override { tp->SQLitetypeName(rg, out, false); }
+    void columnTypeAsString(RandomGenerator & rg, SQLType * tp, std::string & out) const override { tp->SQLitetypeName(rg, out, false); }
 
     bool performQuery(const std::string & query) override
     {
