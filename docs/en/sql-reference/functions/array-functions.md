@@ -2169,7 +2169,7 @@ Alias: `arrayAUC`, `arrayAUCROC`.
     - `total_positives`: The total number of positive samples in the entire dataset.
     - `total_negatives`: The total number of negative samples in the entire dataset.
 
-    **Important:** When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` passed should be only a partition of the entire dataset, containing an interval of scores. The dataset should be divided into contiguous partitions, where each partition contains the samples whose scores fall within specific ranges. For example:
+    **Important:** When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` passed should be only a partition of the entire dataset, containing an interval of scores. The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range. For example:
 
     - One partition could contain all scores in the range [0, 0.5).
     - Another partition could contain scores in the range [0.5, 1.0].
@@ -2219,7 +2219,7 @@ Alias: `arrayAUCPR`
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
 
-    **Important:** When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` passed should be only a partition of the entire dataset, containing an interval of scores. The dataset should be divided into contiguous partitions, where each partition contains the samples whose scores fall within specific ranges. For example:
+    **Important:** When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` passed should be only a partition of the entire dataset, containing an interval of scores. The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range. For example:
 
     - One partition could contain all scores in the range [0, 0.5).
     - Another partition could contain scores in the range [0.5, 1.0].
