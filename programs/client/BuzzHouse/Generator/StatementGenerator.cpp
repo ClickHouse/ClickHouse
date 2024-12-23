@@ -484,7 +484,7 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         buf.resize(0);
         for (uint64_t i = 0; i < nrows; i++)
         {
-            uint32_t j = 0;
+            uint64_t j = 0;
             const uint64_t next_nested_rows = nested_rows_dist(rg.generator);
 
             if (i != 0)
