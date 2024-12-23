@@ -119,7 +119,7 @@ PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPre
     return mergable_ranges;
 }
 
-tl::expected<bool, PreformattedMessage> canMergeAllParts(const PartsRange & range, const AllowedMergingPredicate & can_merge)
+tl::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const AllowedMergingPredicate & can_merge)
 {
     const PartProperties * prev_part = nullptr;
 
@@ -131,7 +131,7 @@ tl::expected<bool, PreformattedMessage> canMergeAllParts(const PartsRange & rang
         prev_part = &part;
     }
 
-    return true;
+    return {};
 }
 
 std::unordered_map<String, PartsRanges> combineByPartitions(PartsRanges && ranges)

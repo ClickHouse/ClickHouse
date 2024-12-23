@@ -998,7 +998,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions)
 {
-    const auto can_merge = [this, &lock](const PartProperties * left, const PartProperties * right) -> tl::expected<bool, PreformattedMessage>
+    const auto can_merge = [this, &lock](const PartProperties * left, const PartProperties * right) -> tl::expected<void, PreformattedMessage>
     {
         /// This predicate is checked for the first part of each range.
         /// (left = nullptr, right = "first part of partition")
@@ -1007,7 +1007,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
             if (currently_merging_mutating_parts.contains(right->part_info))
                 return tl::make_unexpected(PreformattedMessage::create("Some part currently in a merging or mutating process"));
 
-            return true;
+            return {};
         }
 
         assert(left && right);
@@ -1029,17 +1029,29 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
                     "Parts have different projection sets: {{}} in '{}' and {{}} in '{}'",
                     fmt::join(left->projection_names, ", "), left->name, fmt::join(right->projection_names, ", "), right->name));
 
-        return true;
+        return {};
     };
 
-    const auto is_background_memory_usage_ok = []() -> tl::expected<bool, PreformattedMessage>
+    const auto is_background_memory_usage_ok = []() -> tl::expected<void, PreformattedMessage>
     {
         if (canEnqueueBackgroundTask())
-            return true;
+            return {};
 
         return tl::make_unexpected(PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
+    };
+
+    const auto construct_future_part = [&](MergeSelectorChoice choice) -> tl::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    {
+        if (auto future_part = InMemoryPartsFinder(*this).constructFuturePart(choice))
+            return future_part;
+
+        /// In some rare case when user drops part from the select_result we cannot construct future part.
+        return tl::make_unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
+        });
     };
 
     const auto select_without_hint = [&]() -> tl::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
@@ -1068,17 +1080,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
             MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
             /*partitions_hint=*/std::nullopt);
 
-        if (!select_result.has_value())
-            return tl::make_unexpected(std::move(select_result.error()));
-
-        if (auto future_part = InMemoryPartsFinder(*this).constructFuturePart(select_result.value()))
-            return future_part;
-
-        /// In some rare case when user drops part from the select_result we cannot construct future part.
-        return tl::make_unexpected(SelectMergeFailure{
-            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-            .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
-        });
+        return select_result.and_then(construct_future_part);
     };
 
     const auto select_in_partition = [&]() -> tl::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
@@ -1139,14 +1141,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
                     return tl::make_unexpected(select_result.error());
             }
 
-            if (auto future_part = InMemoryPartsFinder(*this).constructFuturePart(select_result.value()))
-                return future_part;
-
-            /// In some rare case when user drops part from the select_result we cannot construct future part.
-            return tl::make_unexpected(SelectMergeFailure{
-                .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
-            });
+            return select_result.and_then(construct_future_part);
         }
     };
 

@@ -24,7 +24,7 @@ struct SelectMergeFailure {
     PreformattedMessage explanation = {};
 };
 
-using AllowedMergingPredicate = std::function<tl::expected<bool, PreformattedMessage>(const PartProperties *, const PartProperties *)>;
+using AllowedMergingPredicate = std::function<tl::expected<void, PreformattedMessage>(const PartProperties *, const PartProperties *)>;
 
 /** Can select parts for background processes and do them.
  * Currently helps with merges, mutations and moves
