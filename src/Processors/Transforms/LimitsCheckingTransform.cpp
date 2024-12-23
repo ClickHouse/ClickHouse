@@ -6,7 +6,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
