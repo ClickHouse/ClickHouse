@@ -272,6 +272,10 @@ else ()
     set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
 endif ()
 
+if (COMPILER_CACHE STREQUAL "chcache")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+endif()
+
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
@@ -596,8 +600,6 @@ endif()
 include (cmake/sanitize_targets.cmake)
 
 if (COMPILER_CACHE STREQUAL "chcache")
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
-
     get_all_targets(all_targets)
     set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
     foreach(target ${all_targets})

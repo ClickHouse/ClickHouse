@@ -114,7 +114,12 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
     buffer << ", constant_value: ";
     if (mask_id)
-        buffer << "[HIDDEN id: " << mask_id << "]";
+    {
+        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
+            buffer << "[HIDDEN]";
+        else
+            buffer << "[HIDDEN id: " << mask_id << "]";
+    }
     else
         buffer << constant_value->getValue().dump();
 
