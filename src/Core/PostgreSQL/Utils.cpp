@@ -8,7 +8,9 @@
 namespace postgres
 {
 
-ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, String user, String password)
+ConnectionInfo formatConnectionString(
+    String dbname, String host, UInt16 port, String user, String password, size_t connect_timeout,
+    SSLMode ssl_mode, String ssl_root_cert)
 {
     DB::WriteBufferFromOwnString out;
     out << "dbname=" << DB::quote << dbname
@@ -16,7 +18,11 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
         << " port=" << port
         << " user=" << DB::quote << user
         << " password=" << DB::quote << password
-        << " connect_timeout=2";
+        << " application_name=clickhouse"
+        << " connect_timeout=" << connect_timeout
+        << " sslmode=" << DB::SettingFieldSSLMode(ssl_mode).toString();
+    if (!ssl_root_cert.empty())
+        out << " sslrootcert=" << DB::quote << ssl_root_cert;
     return {out.str(), host + ':' + DB::toString(port)};
 }
 

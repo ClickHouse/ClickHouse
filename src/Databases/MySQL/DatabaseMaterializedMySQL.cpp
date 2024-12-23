@@ -253,8 +253,8 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
         }
         MySQLClient client(configuration.host, configuration.port, configuration.username, configuration.password);
-        auto mysql_pool
-            = mysqlxx::Pool(configuration.database, configuration.host, configuration.username, configuration.password, configuration.port);
+        auto mysql_pool = mysqlxx::Pool(configuration.database, configuration.host, configuration.username, configuration.password, configuration.port,
+                configuration.ssl_root_cert, configuration.ssl_mode);
 
         auto materialize_mode_settings = std::make_unique<MaterializedMySQLSettings>();
 

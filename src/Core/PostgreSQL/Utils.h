@@ -5,8 +5,10 @@
 #if USE_LIBPQXX
 
 #include <pqxx/pqxx>
+#include <Core/SettingsEnums.h>
 #include <Core/Types.h>
 #include "Connection.h"
+#include "PoolWithFailover.h"
 #include <Common/Exception.h>
 
 namespace pqxx
@@ -17,8 +19,14 @@ namespace pqxx
 
 namespace postgres
 {
+    using SSLMode = DB::SSLMode;
 
-ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, String user, String password);
+ConnectionInfo formatConnectionString(
+    String dbname, String host, UInt16 port, String user, String password,
+    size_t connect_timeout = POSTGRESQL_POOL_DEFAULT_CONNECT_TIMEOUT_SEC,
+    SSLMode ssl_mode = SSLMode::PREFER,
+    String ssl_root_cert = ""
+);
 
 String getConnectionForLog(const String & host, UInt16 port);
 

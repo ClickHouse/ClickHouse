@@ -59,6 +59,8 @@ public:
         String username = "default";
         String password;
         String database;
+        MySQLSSLMode ssl_mode = MySQLSSLMode::PREFER;
+        String ssl_root_cert;
         String table;
 
         bool replace_query = false;

@@ -1,3 +1,4 @@
+#include "Core/SettingsEnums.h"
 #if __has_include(<mysql.h>)
 #include <mysql.h>
 #else
@@ -49,13 +50,14 @@ Connection::Connection(
     const char* ssl_ca,
     const char* ssl_cert,
     const char* ssl_key,
+    DB::MySQLSSLMode ssl_mode,
     unsigned timeout,
     unsigned rw_timeout,
     bool enable_local_infile,
     bool opt_reconnect)
     : Connection()
 {
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, ssl_mode, timeout, rw_timeout, enable_local_infile, opt_reconnect);
 }
 
 Connection::Connection(const std::string & config_name)
@@ -79,6 +81,7 @@ void Connection::connect(const char* db,
     const char * ssl_ca,
     const char * ssl_cert,
     const char * ssl_key,
+    DB::MySQLSSLMode ssl_mode,
     unsigned timeout,
     unsigned rw_timeout,
     bool enable_local_infile,
@@ -111,8 +114,15 @@ void Connection::connect(const char* db,
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Specifies particular ssl key and certificate if it needs
-    if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    if (ssl_mode != DB::MySQLSSLMode::DISABLE) {
+        if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    }
+    if (ssl_mode == DB::MySQLSSLMode::VERIFY_FULL) {
+        static const char enable = 1;
+        if (mysql_options(driver.get(), MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &enable))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    }
 
     if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
@@ -159,4 +169,3 @@ MYSQL * Connection::getDriver()
 }
 
 }
-

@@ -313,6 +313,27 @@ DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompress
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
+enum class SSLMode
+{
+    DISABLE = 0,
+    ALLOW = 1,
+    PREFER = 2,
+    REQUIRE = 3,
+    VERIFY_CA = 4,
+    VERIFY_FULL = 5,
+};
+
+DECLARE_SETTING_ENUM(SSLMode)
+
+// Only this subset of SSL modes are supported for MySQL
+enum class MySQLSSLMode {
+    DISABLE = 0,
+    PREFER = 2,
+    VERIFY_FULL = 5,
+};
+
+DECLARE_SETTING_ENUM(MySQLSSLMode)
+
 enum class Dialect
 {
     clickhouse,

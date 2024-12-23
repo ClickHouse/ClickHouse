@@ -200,13 +200,15 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 for (const auto & replica : replicas.second)
                     context->getRemoteHostFilter().checkHostAndPort(replica.host, toString(replica.port));
         }
-
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration.replicas_configurations,
             settings.postgresql_connection_pool_size,
             settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+            settings.postgresql_connection_pool_max_tries,
+            settings.postgresql_connection_pool_auto_close_connection,
+            settings.postgresql_connection_pool_connect_timeout,
+            settings.postgresql_connection_pool_ssl_mode,
+            settings.postgresql_connection_pool_ssl_root_cert);
 
         PostgreSQLDictionarySource::Configuration dictionary_configuration
         {

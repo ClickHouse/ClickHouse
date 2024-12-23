@@ -1,4 +1,5 @@
 #include <mysqlxx/mysqlxx.h>
+#include "Core/SettingsEnums.h"
 
 #include <chrono>
 #include <iostream>
@@ -51,7 +52,7 @@ int main(int, char **)
     const char * remote_mysql = "localhost";
     const std::string test_query = "SHOW DATABASES";
 
-    mysqlxx::Pool mysql_conn_pool("", remote_mysql, "default", "10203040", 3306);
+    mysqlxx::Pool mysql_conn_pool("", remote_mysql, "default", "10203040", 3306, "", DB::MySQLSSLMode::PREFER);
 
     size_t iteration = 0;
     while (++iteration)

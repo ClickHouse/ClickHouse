@@ -163,12 +163,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             {
                 auto current_configuration{configuration};
                 current_configuration.addresses = parseRemoteDescriptionForExternalDatabase(shard_address, max_addresses, 5432);
-                auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    current_configuration,
-                    settings.postgresql_connection_pool_size,
-                    settings.postgresql_connection_pool_wait_timeout,
-                    POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-                    settings.postgresql_connection_pool_auto_close_connection);
+                auto pool = postgres::PoolWithFailover::create(configuration, settings);
                 shards.insert(std::make_shared<StoragePostgreSQL>(
                     args.table_id, std::move(pool), configuration.table, args.columns, args.constraints, String{}, context));
             }

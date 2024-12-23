@@ -1,4 +1,5 @@
 #include "MySQLDictionarySource.h"
+#include "Core/SettingsEnums.h"
 
 
 #if USE_MYSQL
@@ -45,7 +46,7 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
     "update_lag", "dont_check_update_time",
     "query", "where", "name" /* name_collection */, "socket",
     "share_connection", "fail_on_connection_loss", "close_connection",
-    "ssl_ca", "ssl_cert", "ssl_key",
+    "ssl_mode", "ssl_root_cert",
     "enable_local_infile", "opt_reconnect",
     "connect_timeout", "mysql_connect_timeout",
     "mysql_rw_timeout", "rw_timeout"};
@@ -126,23 +127,13 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
+                    named_collection->getOrDefault<String>("ssl_root_cert", ""),
+                    SettingFieldMySQLSSLModeTraits::fromString(named_collection->getOrDefault<String>("ssl_mode", "prefer")),
                     mysql_settings));
         }
         else
         {
-            dictionary_configuration.emplace(MySQLDictionarySource::Configuration{
-                .db = config.getString(settings_config_prefix + ".db", ""),
-                .table = config.getString(settings_config_prefix + ".table", ""),
-                .query = config.getString(settings_config_prefix + ".query", ""),
-                .where = config.getString(settings_config_prefix + ".where", ""),
-                .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
-                .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-                .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-                .dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false)
-            });
-
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(
-                mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL dictionary source configuration must use a named collection");
         }
 
         if (dictionary_configuration->query.empty() && dictionary_configuration->table.empty())

@@ -30,7 +30,7 @@
 	url = https://github.com/google/re2
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
-	url = https://github.com/ClickHouse/mariadb-connector-c
+	url = https://github.com/aiven/mariadb-connector-c
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc

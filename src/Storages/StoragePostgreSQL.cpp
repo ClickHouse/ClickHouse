@@ -11,6 +11,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <Core/Settings.h>
+#include "Core/SettingsEnums.h"
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -465,7 +466,9 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
         required_arguments.insert("table");
 
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
+        named_collection,
+        required_arguments,
+        {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache", "ssl_root_cert", "ssl_mode"});
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -488,6 +491,11 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
         configuration.table = named_collection.get<String>("table");
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
+    String ssl_mode = named_collection.getOrDefault<String>("ssl_mode", "");
+    if (!ssl_mode.empty()) {
+        configuration.ssl_mode = SettingFieldSSLModeTraits::fromString(ssl_mode);
+    }
+    configuration.ssl_root_cert = named_collection.getOrDefault<String>("ssl_root_cert", "");
 
     return configuration;
 }
@@ -546,11 +554,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
         const auto & settings = args.getContext()->getSettingsRef();
-        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+        auto pool = postgres::PoolWithFailover::create(configuration, settings);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,

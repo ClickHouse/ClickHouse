@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/SettingsEnums.h"
 #include "config.h"
 
 #if USE_LIBPQXX
@@ -55,6 +56,8 @@ public:
         String username = "default";
         String password;
         String database;
+        std::optional<SSLMode> ssl_mode;
+        String ssl_root_cert;
         String table;
         String schema;
         String on_conflict;

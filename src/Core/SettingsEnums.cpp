@@ -91,6 +91,18 @@ IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
      {"best_effort_us", FormatSettings::DateTimeInputFormat::BestEffortUS}})
 
+IMPLEMENT_SETTING_ENUM(SSLMode,ErrorCodes::BAD_ARGUMENTS,
+    {{"disable",     SSLMode::DISABLE},
+     {"allow",       SSLMode::ALLOW},
+     {"prefer",      SSLMode::PREFER},
+     {"require",     SSLMode::REQUIRE},
+     {"verify-ca",   SSLMode::VERIFY_CA},
+     {"verify-full", SSLMode::VERIFY_FULL}})
+
+IMPLEMENT_SETTING_ENUM(MySQLSSLMode,ErrorCodes::BAD_ARGUMENTS,
+    {{"disable",     MySQLSSLMode::DISABLE},
+     {"prefer",      MySQLSSLMode::PREFER},
+     {"verify-full", MySQLSSLMode::VERIFY_FULL}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"simple",         FormatSettings::DateTimeOutputFormat::Simple},

@@ -7,6 +7,7 @@
 
 #include "ConnectionHolder.h"
 #include <mutex>
+#include <Core/SettingsEnums.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StoragePostgreSQL.h>
@@ -15,9 +16,13 @@
 static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
 static constexpr inline auto POSTGRESQL_POOL_WAIT_TIMEOUT = 5000;
 static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 2;
+static constexpr inline auto POSTGRESQL_POOL_DEFAULT_CONNECT_TIMEOUT_SEC = 10;
+static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SSL_MODE = DB::SSLMode::PREFER;
+static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SSL_ROOT_CERT = "";
 
 namespace postgres
 {
+    using SSLMode = DB::SSLMode;
 
 class PoolWithFailover
 {
@@ -25,19 +30,29 @@ class PoolWithFailover
 using RemoteDescription = std::vector<std::pair<String, uint16_t>>;
 
 public:
+    static std::shared_ptr<PoolWithFailover> create(
+        const DB::StoragePostgreSQL::Configuration & configuration,
+        const DB::Settings & settings);
+
     PoolWithFailover(
         const DB::ExternalDataSourcesConfigurationByPriority & configurations_by_priority,
         size_t pool_size,
         size_t pool_wait_timeout,
         size_t max_tries_,
-        bool auto_close_connection_);
+        bool auto_close_connection_,
+        size_t connect_timeout,
+        SSLMode ssl_mode,
+        String ssl_root_cert);
 
     explicit PoolWithFailover(
         const DB::StoragePostgreSQL::Configuration & configuration,
         size_t pool_size,
         size_t pool_wait_timeout,
         size_t max_tries_,
-        bool auto_close_connection_);
+        bool auto_close_connection_,
+        size_t connect_timeout,
+        SSLMode ssl_mode,
+        String ssl_root_cert);
 
     PoolWithFailover(const PoolWithFailover & other) = delete;
 

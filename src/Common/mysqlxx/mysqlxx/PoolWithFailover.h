@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/SettingsEnums.h"
 #include "Pool.h"
 
 
@@ -119,6 +120,8 @@ namespace mysqlxx
             const RemoteDescription & addresses,
             const std::string & user,
             const std::string & password,
+            const std::string & ssl_ca,
+            DB::MySQLSSLMode ssl_mode,
             unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,

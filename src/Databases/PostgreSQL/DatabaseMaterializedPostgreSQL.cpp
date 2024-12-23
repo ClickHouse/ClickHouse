@@ -1,4 +1,5 @@
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#include "Core/SettingsEnums.h"
 
 #if USE_LIBPQXX
 
@@ -529,8 +530,10 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
 
+        const auto & settings = args.context->getSettingsRef();
         auto connection_info = postgres::formatConnectionString(
-            configuration.database, configuration.host, configuration.port, configuration.username, configuration.password);
+            configuration.database, configuration.host, configuration.port, configuration.username, configuration.password,
+            settings.postgresql_connection_pool_connect_timeout, configuration.ssl_mode.value_or(SSLMode::PREFER), configuration.ssl_root_cert);
 
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)

@@ -561,6 +561,10 @@ class IColumn;
     M(UInt64, postgresql_connection_pool_size, 16, "Connection pool size for PostgreSQL table engine and database engine.", 0) \
     M(UInt64, postgresql_connection_pool_wait_timeout, 5000, "Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.", 0) \
     M(Bool, postgresql_connection_pool_auto_close_connection, false, "Close connection before returning connection to the pool.", 0) \
+    M(UInt64, postgresql_connection_pool_max_tries, 5, "Connection pool maximum number of attempts to connect.", 0) \
+    M(UInt64, postgresql_connection_pool_connect_timeout, 10, "Connection pool timeout in seconds during a single connection attempt, on a single address.", 0) \
+    M(SSLMode, postgresql_connection_pool_ssl_mode, SSLMode::PREFER, "Connection pool SSL mode when connecting to source server.", 0) \
+    M(String, postgresql_connection_pool_ssl_root_cert, "", "Connection pool SSL root certificate to authenticate the source server when using verify-ca or verify-full. Will use ~/.postgresql/root.crt if empty.", 0) \
     M(UInt64, glob_expansion_max_elements, 1000, "Maximum number of allowed addresses (For external storages, table functions, etc).", 0) \
     M(UInt64, odbc_bridge_connection_pool_size, 16, "Connection pool size for each connection settings string in ODBC bridge.", 0) \
     M(Bool, odbc_bridge_use_connection_pooling, true, "Use connection pooling in ODBC bridge. If set to false, a new connection is created every time", 0) \
