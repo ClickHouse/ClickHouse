@@ -686,6 +686,7 @@ void DefaultCoordinator::processPartsFurther(
                         part.description.ranges.pop_front();
                         /// Range is taken fully. Proceed further to the next one.
                         break;
+                    }
                 }
             }
         }
