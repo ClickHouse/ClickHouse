@@ -8,13 +8,10 @@ namespace DB
 
 class VisiblePartsCollector : public IPartsCollector
 {
-    MergeTreeData::DataPartsVector collectInitial() const;
-    MergeTreeData::DataPartsVector filterByPartitions(MergeTreeData::DataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_hint) const;
+    MergeTreeDataPartsVector collectInitial() const;
+    MergeTreeDataPartsVector filterByPartitions(MergeTreeDataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_hint) const;
     PartsRanges filterByTxVisibility(
-        MergeTreeData::DataPartsVector && parts,
-        const StorageMetadataPtr & metadata_snapshot,
-        const StoragePolicyPtr & storage_policy,
-        const time_t & current_time) const;
+        MergeTreeDataPartsVector && parts, const StorageMetadataPtr & metadata_snapshot, const StoragePolicyPtr & storage_policy, const time_t & current_time) const;
 
 public:
     explicit VisiblePartsCollector(const MergeTreeData & data_, const MergeTreeTransactionPtr & tx_);

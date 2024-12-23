@@ -29,7 +29,7 @@ std::string astToString(ASTPtr ast_ptr)
     return queryToString(ast_ptr);
 }
 
-std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeData::DataPartPtr part)
+std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part)
 {
     if (!metadata_snapshot->hasAnyTTL())
         return std::nullopt;
@@ -42,7 +42,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
     };
 }
 
-std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeData::DataPartPtr part, time_t current_time)
+std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part, time_t current_time)
 {
     if (!metadata_snapshot->hasAnyRecompressionTTL())
         return std::nullopt;
@@ -63,7 +63,7 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
     return std::nullopt;
 }
 
-std::set<std::string> getCalculatedProjectionNames(MergeTreeData::DataPartPtr part)
+std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & part)
 {
     std::set<std::string> projection_names;
 
@@ -75,7 +75,7 @@ std::set<std::string> getCalculatedProjectionNames(MergeTreeData::DataPartPtr pa
 }
 
 PartProperties buildPartProperties(
-    MergeTreeData::DataPartPtr && part,
+    const MergeTreeDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
@@ -97,7 +97,7 @@ PartProperties buildPartProperties(
 
 }
 
-MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial() const
+MergeTreeDataPartsVector VisiblePartsCollector::collectInitial() const
 {
     if (!tx)
     {
@@ -112,8 +112,8 @@ MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial() const
     /// If parts all_1_1_0 and all_3_3_0 are active and visible for merge transaction, then we would try to merge them.
     /// But it's wrong, because all_2_2_0 may become active again if transaction will roll back.
     /// That's why we must include some outdated parts into `data_part`, more precisely, such parts that removal is not committed.
-    MergeTreeData::DataPartsVector active_parts;
-    MergeTreeData::DataPartsVector outdated_parts;
+    MergeTreeDataPartsVector active_parts;
+    MergeTreeDataPartsVector outdated_parts;
 
     {
         auto lock = data.lockParts();
@@ -143,7 +143,7 @@ MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial() const
     }
 
     /// Restore "active" parts set from selected active and outdated parts
-    auto remove_pred = [&](const MergeTreeData::DataPartPtr & part)
+    auto remove_pred = [&](const MergeTreeDataPartPtr & part)
     {
         return active_parts_set.getContainingPart(part->info) != part->name;
     };
@@ -151,7 +151,7 @@ MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial() const
     std::erase_if(active_parts, remove_pred);
     std::erase_if(outdated_parts, remove_pred);
 
-    MergeTreeData::DataPartsVector data_parts;
+    MergeTreeDataPartsVector data_parts;
     std::merge(
         active_parts.begin(),
         active_parts.end(),
@@ -163,8 +163,7 @@ MergeTreeData::DataPartsVector VisiblePartsCollector::collectInitial() const
     return data_parts;
 }
 
-MergeTreeData::DataPartsVector
-VisiblePartsCollector::filterByPartitions(MergeTreeData::DataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_hint) const
+MergeTreeDataPartsVector VisiblePartsCollector::filterByPartitions(MergeTreeDataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_hint) const
 {
     if (!partitions_hint)
         return parts;
@@ -178,12 +177,12 @@ VisiblePartsCollector::filterByPartitions(MergeTreeData::DataPartsVector && part
 }
 
 PartsRanges VisiblePartsCollector::filterByTxVisibility(
-    MergeTreeData::DataPartsVector && parts,
+    MergeTreeDataPartsVector && parts,
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time) const
 {
-    using PartsIt = MergeTreeData::DataPartsVector::iterator;
+    using PartsIt = MergeTreeDataPartsVector::iterator;
     const bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
 
     auto build_next_range = [&](PartsIt & parts_it)
@@ -192,7 +191,7 @@ PartsRanges VisiblePartsCollector::filterByTxVisibility(
 
         while (parts_it != parts.end())
         {
-            MergeTreeData::DataPartPtr part = std::move(*parts_it++);
+            MergeTreeDataPartPtr part = std::move(*parts_it++);
 
             /// Cannot merge parts if some of them are not visible in current snapshot
             /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
@@ -204,7 +203,7 @@ PartsRanges VisiblePartsCollector::filterByTxVisibility(
                 return range;
 
             /// Otherwise include part to possible ranges
-            range.push_back(buildPartProperties(std::move(part), metadata_snapshot, storage_policy, current_time, has_volumes_with_disabled_merges));
+            range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time, has_volumes_with_disabled_merges));
         }
 
         return range;
