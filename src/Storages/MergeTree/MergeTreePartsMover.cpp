@@ -51,10 +51,10 @@ struct PartsComparatorByOldestData
             return std::forward_as_tuple(f->getMinTimeOfDataInsertion(), f->getMaxTimeOfDataInsertion()) >
                 std::forward_as_tuple(s->getMinTimeOfDataInsertion(), s->getMaxTimeOfDataInsertion());
         }
-        /// Backoff if new files not generated.
-
-        /// What should we do if there is no minmax time column in the table? Should we add more backoffs, like comparing by the part name.
-        return f->getMinMaxTime() < s->getMinMaxTime();
+        /// Backoff if files with insert time not generated.
+        auto first_minmax_time = f->getMinMaxTime();
+        auto second_minmax_time = s->getMinMaxTime();
+        return std::tie(first_minmax_time, f->name) < std::tie(second_minmax_time, s->name);
     }
 };
 

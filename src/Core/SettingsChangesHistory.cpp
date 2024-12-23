@@ -98,6 +98,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
+            {"allow_generate_min_max_data_insert_file", false, false, "New setting."},
+        }
+    },
+    {"24.12",
         {
             /// Release closed. Please use 25.1
             {"allow_experimental_database_iceberg", false, false, "New setting."},
