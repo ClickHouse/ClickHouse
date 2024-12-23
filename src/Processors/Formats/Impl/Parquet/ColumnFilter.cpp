@@ -62,6 +62,23 @@ template<> struct PhysicTypeTraits<DateTime64>
     using simd_idx_type = xsimd::batch<simd_internal_type>;
 };
 
+template<> struct PhysicTypeTraits<Decimal32>
+{
+    using simd_internal_type = Int32;
+    using simd_type = xsimd::batch<simd_internal_type>;
+    using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
+    using simd_idx_type = xsimd::batch<simd_internal_type>;
+};
+
+template<> struct PhysicTypeTraits<Decimal64>
+{
+    using simd_internal_type = Int64;
+    using simd_type = xsimd::batch<simd_internal_type>;
+    using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
+    using simd_idx_type = xsimd::batch<simd_internal_type>;
+};
+
+
 template <typename T, typename S>
 void FilterHelper::filterPlainFixedData(const S* src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read)
 {
@@ -129,6 +146,10 @@ template void FilterHelper::filterPlainFixedData<Float32, Float32>(const Float32
 template void FilterHelper::filterPlainFixedData<Float64, Float64>(const Float64* src, PaddedPODArray<Float64> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<DateTime64, Int64>(const Int64* src, PaddedPODArray<DateTime64> & dst, const RowSet & row_set, size_t rows_to_read);
 template void FilterHelper::filterPlainFixedData<DateTime64, DateTime64>(const DateTime64* src, PaddedPODArray<DateTime64> & dst, const RowSet & row_set, size_t rows_to_read);
+template void FilterHelper::filterPlainFixedData<Decimal32, Decimal32>(Decimal32 const*, DB::PaddedPODArray<Decimal32>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Decimal64, Decimal64>(Decimal64 const*, DB::PaddedPODArray<Decimal64>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Decimal32, Int32>(Int32 const*, DB::PaddedPODArray<Decimal32>&, DB::RowSet const&, size_t);
+template void FilterHelper::filterPlainFixedData<Decimal64, Int64>(Int64 const*, DB::PaddedPODArray<Decimal64>&, DB::RowSet const&, size_t);
 
 template <typename T>
 void FilterHelper::gatherDictFixedValue(

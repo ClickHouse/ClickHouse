@@ -152,6 +152,10 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
 
 arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & column_metadata)
 {
+    // From ComputeColumnChunkRange() in contrib/arrow/cpp/src/parquet/file_reader.cc:
+    //  > The Parquet MR writer had a bug in 1.2.8 and below where it didn't include the
+    //  > dictionary page header size in total_compressed_size and total_uncompressed_size
+    //  > (see IMPALA-694). We add padding to compensate.
     int64_t col_start = column_metadata.data_page_offset();
     if (column_metadata.has_dictionary_page() && column_metadata.dictionary_page_offset() > 0
         && col_start > column_metadata.dictionary_page_offset())

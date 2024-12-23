@@ -440,6 +440,43 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY,
         throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "ParquetColumnReaderFactory: unsupported precision {} type length {}", precision, type_length);
 }
 
+template <>
+SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::Decimal32, false>(
+    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & )
+{
+    auto precision = scan_spec.column_desc->type_precision();
+    auto scale = scan_spec.column_desc->type_scale();
+    return std::make_shared<NumberColumnDirectReader<DataTypeDecimal32, Int32>>(std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal32>(precision, scale));
+}
+
+template <>
+SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::Decimal32, true>(
+    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & )
+{
+    auto precision = scan_spec.column_desc->type_precision();
+    auto scale = scan_spec.column_desc->type_scale();
+    return std::make_shared<NumberDictionaryReader<DataTypeDecimal32, Int32>>(std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal32>(precision, scale));
+}
+
+template <>
+SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Decimal64, false>(
+    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & )
+{
+    auto precision = scan_spec.column_desc->type_precision();
+    auto scale = scan_spec.column_desc->type_scale();
+    return std::make_shared<NumberColumnDirectReader<DataTypeDecimal64, Int64>>(std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal64>(precision, scale));
+}
+
+template <>
+SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Decimal64, true>(
+    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & )
+{
+    auto precision = scan_spec.column_desc->type_precision();
+    auto scale = scan_spec.column_desc->type_scale();
+    return std::make_shared<NumberDictionaryReader<DataTypeDecimal64, Int64>>(std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal64>(precision, scale));
+}
+
+
 ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::isOptional(const bool is_optional)
 {
     is_optional_ = is_optional;
@@ -528,6 +565,13 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
             else
                 leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, false>(std::move(page_reader_creator), scan_spec, logical_type);
         }
+        else if (converted_type == parquet::ConvertedType::DECIMAL)
+        {
+            if (dictionary_)
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Decimal64, true>(std::move(page_reader_creator), scan_spec, logical_type);
+            else
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Decimal64, false>(std::move(page_reader_creator), scan_spec, logical_type);
+        }
     }
     else if (physical_type == parquet::Type::INT32)
     {
@@ -594,6 +638,13 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, true>(std::move(page_reader_creator), scan_spec, logical_type);
             else
                 leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, false>(std::move(page_reader_creator), scan_spec, logical_type);
+        }
+        else if (converted_type == parquet::ConvertedType::DECIMAL)
+        {
+            if (dictionary_)
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Decimal32, true>(std::move(page_reader_creator), scan_spec, logical_type);
+            else
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Decimal32, false>(std::move(page_reader_creator), scan_spec, logical_type);
         }
     }
     else if (physical_type == parquet::Type::BOOLEAN)
@@ -864,7 +915,7 @@ SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodeP
                 throw Exception(ErrorCodes::PARQUET_EXCEPTION, "{} not found in struct node {}", name, struct_node->name());
             }
         }
-        return std::make_shared<StructColumnReader>(readers, target_type);
+        return std::make_shared<StructColumnReader>(rep_level, def_level, readers, target_type);
     }
 }
 ColumnReaderBuilder::ColumnReaderBuilder(

@@ -479,6 +479,16 @@ public:
 
     virtual bool isLeafReader() const { return true; }
 
+    virtual void setParent(SelectiveColumnReader * parent_)
+    {
+        if (parent_)
+        {
+            parent = parent_;
+            parent_rl = parent->maxRepetitionLevel();
+            parent_dl = parent->maxDefinitionLevel();
+        }
+    }
+
 protected:
     void decodePage();
     virtual void skipPageIfNeed();
@@ -497,6 +507,9 @@ protected:
     ScanSpec scan_spec;
     std::unique_ptr<PlainDecoder> plain_decoder;
     bool plain = true;
+    SelectiveColumnReader * parent = nullptr;
+    int16_t parent_rl = 0;
+    int16_t parent_dl = 0;
 };
 
 class BooleanColumnReader : public SelectiveColumnReader
@@ -740,7 +753,11 @@ public:
     size_t levelsOffset() const override;
     void advance(size_t rows, bool force) override { child->advance(rows, force); }
     size_t minimumAvailableLevels() override { return child->minimumAvailableLevels(); }
-
+    void setParent(SelectiveColumnReader * parent_) override
+    {
+        SelectiveColumnReader::setParent(parent_);
+        child->setParent(this);
+    }
 private:
     void applyLazySkip();
 
@@ -777,6 +794,8 @@ public:
     ListColumnReader(int16_t rep_level_, int16_t def_level_, const SelectiveColumnReaderPtr child_)
         : SelectiveColumnReader(nullptr, ScanSpec{}), children({child_}), def_level(def_level_), rep_level(rep_level_)
     {
+        for (auto & child : children)
+            child->setParent(this);
     }
 
 protected:
@@ -784,6 +803,8 @@ protected:
     ListColumnReader(int16_t rep_level_, int16_t def_level_, const std::vector<SelectiveColumnReaderPtr> & children_)
         : SelectiveColumnReader(nullptr, ScanSpec{}), children({children_}), def_level(def_level_), rep_level(rep_level_)
     {
+        for (auto & child : children)
+            child->setParent(this);
     }
 
 public:
@@ -835,9 +856,11 @@ public:
 class StructColumnReader : public SelectiveColumnReader
 {
 public:
-    StructColumnReader(const std::unordered_map<String, SelectiveColumnReaderPtr> & children_, DataTypePtr structType_)
-        : SelectiveColumnReader(nullptr, ScanSpec{}), children(children_), structType(structType_)
+    StructColumnReader(int16_t rep_level_, int16_t def_level_, const std::unordered_map<String, SelectiveColumnReaderPtr> & children_, DataTypePtr structType_)
+        : SelectiveColumnReader(nullptr, ScanSpec{}), rep_level(rep_level_), def_level(def_level_), children(children_), structType(structType_)
     {
+        for (auto & child : children)
+            child.second->setParent(this);
     }
     ~StructColumnReader() override = default;
     String getName() override { return "StructColumnReader"; }
@@ -852,11 +875,15 @@ public:
     void advance(size_t rows, bool force) override;
     size_t minimumAvailableLevels() override;
     bool isLeafReader() const override  { return true; }
+    int16_t maxDefinitionLevel() const override { return def_level; }
+    int16_t maxRepetitionLevel() const override { return rep_level; }
 
     const PaddedPODArray<Int16> & getDefinitionLevels() override;
     const PaddedPODArray<Int16> & getRepetitionLevels() override;
 
 private:
+    int16_t rep_level = 0;
+    int16_t def_level = 0;
     std::unordered_map<String, SelectiveColumnReaderPtr> children;
     DataTypePtr structType;
 };

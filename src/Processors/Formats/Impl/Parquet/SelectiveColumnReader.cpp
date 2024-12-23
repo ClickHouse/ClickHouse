@@ -899,14 +899,14 @@ void OptionalColumnReader::nextBatchNullMapIfNeeded(size_t rows_to_read)
 {
     if (!cur_null_map.empty())
         return;
-    cur_null_map.resize(rows_to_read);
-    std::fill(cur_null_map.begin(), cur_null_map.end(), 0);
+    cur_null_map.resize_fill(rows_to_read, 0);
     cur_null_count = 0;
     const auto & def_levels = child->getDefinitionLevels();
     if (def_levels.empty())
         return;
     size_t start = child->levelsOffset();
     int16_t max_def_level = maxDefinitionLevel();
+    int16_t max_rep_level = maxRepetitionLevel();
     size_t read = 0;
     size_t count = 0;
     while (read < rows_to_read)
@@ -914,8 +914,17 @@ void OptionalColumnReader::nextBatchNullMapIfNeeded(size_t rows_to_read)
         auto idx = start + count;
         if (def_levels[idx] < max_def_level - 1)
         {
-            count++;
-            continue;
+            // for struct reader, when struct is null, child field would be null.
+            if (max_rep_level == parent_rl)
+            {
+                cur_null_map[read] = 1;
+                cur_null_count++;
+            }
+            else
+            {
+                count++;
+                continue;
+            }
         }
         if (def_levels[idx] == max_def_level - 1)
         {
@@ -1451,9 +1460,20 @@ void DictDecoder::decodeString(
     size_t rows_to_read)
 {
     const bool has_set = row_set.has_value();
-    for (size_t i = 0; i < rows_to_read; i++)
+    if (has_set)
     {
-        if (!has_set || row_set.value().get(i))
+        for (size_t i = 0; i < rows_to_read; i++)
+        {
+            if (row_set.value().get(i))
+            {
+                const String & value = dict[idx_buffer[i]];
+                appendString(chars, string_offsets, value);
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows_to_read; i++)
         {
             const String & value = dict[idx_buffer[i]];
             appendString(chars, string_offsets, value);
@@ -1892,7 +1912,7 @@ template <typename T, typename S>
 void PlainDecoder::decodeFixedValueSpace(
     PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
 {
-    auto count = decodeFixedValueSpaceInternal(data, page_data.buffer, row_set, null_map, rows_to_read);
+    auto count = decodeFixedValueSpaceInternal(data, reinterpret_cast<const S *>(page_data.buffer), row_set, null_map, rows_to_read);
     page_data.checkAndConsume(count * sizeof(S));
     offsets.consume(rows_to_read);
 }
@@ -1970,32 +1990,30 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
             int16_t dl = has_def_level ? def_levels[idx] : 0;
             if (rl <= rep_level)
             {
-                if (count) [[likely]]
+                if (last_row_level_idx < count)
                 {
-                    if (!(!array_size && def_levels[idx-1] < def_level && rep_levels[idx-1] < rep_level && rep_levels[idx] < rep_level))
+                    rows_read+=finished;
+                    if (has_filter)
                     {
-                        rows_read+=finished;
-                        if (has_filter)
+                        auto valid = row_set->get(rows_read - 1);
+                        if (valid)
                         {
-                            auto valid = row_set->get(rows_read - 1);
-                            if (valid)
-                            {
-                                insertManyToFilter(child_filter, true, array_size);
-                                appendRecord(array_size);
-                            }
-                            else
-                                insertManyToFilter(child_filter, false, array_size);
+                            insertManyToFilter(child_filter, true, array_size);
+                            appendRecord(array_size);
                         }
                         else
-                            appendRecord(array_size);
-                        array_size = 0;
+                            insertManyToFilter(child_filter, false, array_size);
                     }
+                    else
+                        appendRecord(array_size);
+                    array_size = 0;
                     if (rows_read >= rows_to_read && finished)
                         break;
                 }
                 if (has_def_level && dl < def_level)
                 {
-                    if (rl != rep_level)
+                    // skip empty record in parent level
+                    if (rl != rep_level && (!parent || (parent && dl <= parent_dl)))
                     {
                         count++;
                         last_row_level_idx = count;
@@ -2447,6 +2465,8 @@ template class NumberColumnDirectReader<DataTypeDate, Int32>;
 template class NumberColumnDirectReader<DataTypeDateTime, Int32>;
 template class NumberColumnDirectReader<DataTypeDateTime64, Int64>;
 template class NumberColumnDirectReader<DataTypeDateTime, Int64>;
+template class NumberColumnDirectReader<DataTypeDecimal32, Int32>;
+template class NumberColumnDirectReader<DataTypeDecimal64, Int64>;
 template class FixedLengthColumnDirectReader<DataTypeFixedString>;
 template class FixedLengthColumnDirectReader<DataTypeDecimal32>;
 template class FixedLengthColumnDirectReader<DataTypeDecimal64>;
@@ -2472,6 +2492,8 @@ template class NumberDictionaryReader<DataTypeDate, Int32>;
 template class NumberDictionaryReader<DataTypeDateTime, Int32>;
 template class NumberDictionaryReader<DataTypeDateTime64, Int64>;
 template class NumberDictionaryReader<DataTypeDateTime, Int64>;
+template class NumberDictionaryReader<DataTypeDecimal32, Int32>;
+template class NumberDictionaryReader<DataTypeDecimal64, Int64>;
 template class FixedLengthColumnDictionaryReader<DataTypeFixedString, String>;
 template class FixedLengthColumnDictionaryReader<DataTypeDecimal32, Decimal32>;
 template class FixedLengthColumnDictionaryReader<DataTypeDecimal64, Decimal64>;
