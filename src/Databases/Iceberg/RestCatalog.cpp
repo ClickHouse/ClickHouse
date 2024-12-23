@@ -21,8 +21,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
-#include <Server/HTTP/HTMLForm.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
