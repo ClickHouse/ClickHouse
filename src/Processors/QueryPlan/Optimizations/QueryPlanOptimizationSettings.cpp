@@ -31,6 +31,7 @@ namespace Setting
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
+    extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsBool query_plan_split_filter;
 }
 
@@ -81,6 +82,8 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.force_use_projection = settings.optimize_projection && from[Setting::force_optimize_projection];
     settings.force_projection_name = settings.optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
     settings.optimize_use_implicit_projections = settings.optimize_projection && from[Setting::optimize_use_implicit_projections];
+
+    settings.join_swap_table = from[Setting::query_plan_join_swap_table].get();
 
     return settings;
 }
