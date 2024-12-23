@@ -48,7 +48,7 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
         return false;
 
     /// Parallel replicas not supported with FINAL.
-    if (table_node.getTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+    if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
         return false;
 
     return true;
