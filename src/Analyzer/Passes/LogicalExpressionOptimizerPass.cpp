@@ -962,12 +962,14 @@ private:
 
         /// Step 1: identify constants, and store comparing pairs in hash
         QueryTreeNodes constants;
-        std::unordered_map<QueryTreeNodePtr, QueryTreeNodes> greater_pairs;
+        /// Record a>b or a>=b pairs, for the bool value, > ==> false, >= ==> true as it has equal.
+        using QueryTreeNodeWithEquals = std::vector<std::pair<QueryTreeNodePtr, bool>>;
+        std::unordered_map<QueryTreeNodePtr, QueryTreeNodeWithEquals> greater_pairs;
 
         for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
-            const auto valid_functions = std::unordered_set<std::string>{"less", "greater"};
+            const auto valid_functions = std::unordered_set<std::string>{"less", "greater", "lessOrEquals", "greaterOrEquals"};
             if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
                 continue;
 
@@ -980,78 +982,57 @@ private:
             {
                 if (rhs->as<ConstantNode>())
                     constants.push_back(rhs);
-                greater_pairs[rhs].push_back(lhs);
+                greater_pairs[rhs].push_back({lhs, false});
             }
             else if (function_name == "greater")
             {
                 if (lhs->as<ConstantNode>())
                     constants.push_back(lhs);
-                greater_pairs[lhs].push_back(rhs);
+                greater_pairs[lhs].push_back({rhs, false});
+            }
+            else if (function_name == "lessOrEquals")
+            {
+                if (rhs->as<ConstantNode>())
+                    constants.push_back(rhs);
+                greater_pairs[rhs].push_back({lhs, true});
+            }
+            else if (function_name == "greaterOrEquals")
+            {
+                if (lhs->as<ConstantNode>())
+                    constants.push_back(lhs);
+                greater_pairs[lhs].push_back({rhs, true});
             }
         }
 
-        // for (const auto & con : constants)
-        //     std::cout<<con->dumpTree()<<std::endl;
-
-        // for (const auto & p : greater_pairs)
-        //     for (const auto & v : p.second)
-        //         std::cout<<v->dumpTree()<<" < "<<p.first->dumpTree()<<std::endl;
-
-        // std::cout<<"step2"<<std::endl;
-
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(QueryTreeNodePtr, const ConstantNode *)> findPairs = [&](QueryTreeNodePtr current, const ConstantNode * constant)
+        std::function<void(QueryTreeNodePtr, const ConstantNode *, bool)> findPairs
+            = [&](QueryTreeNodePtr current, const ConstantNode * constant, bool equal_transfer)
         {
             if (auto it = greater_pairs.find(current); it != greater_pairs.end())
             {
                 for (const auto & left : it->second)
                 {
                     /// Non-sense to have both sides as constant
-                    if (constant && !left->as<ConstantNode>())
+                    if (constant && !left.first->as<ConstantNode>())
                     {
-                        // std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<" "<<constant->dumpTree()<<std::endl;
-                        const auto and_node = std::make_shared<FunctionNode>("less");
-                        and_node->getArguments().getNodes().push_back(left->clone());
+                        auto compare_function_name = equal_transfer && left.second ? "lessOrEquals" : "less";
+                        const auto and_node = std::make_shared<FunctionNode>(compare_function_name);
+                        and_node->getArguments().getNodes().push_back(left.first->clone());
                         and_node->getArguments().getNodes().push_back(constant->clone());
-                        and_node->resolveAsFunction(FunctionFactory::instance().get("less", getContext()));
+                        and_node->resolveAsFunction(FunctionFactory::instance().get(compare_function_name, getContext()));
                         function_node.getArguments().getNodes().push_back(and_node);
-                        // for (const auto & argument : function_node.getArguments())
-                        // {
-                        //     std::cout<<argument->dumpTree()<<std::endl;
-                        // }
                     }
-                    // else
-                    //     std::cout<<left->dumpTree()<<" < "<<current->dumpTree()<<std::endl;
 
-                    findPairs(left, constant ? constant : current->as<ConstantNode>());
+                    findPairs(left.first, constant ? constant : current->as<ConstantNode>(), equal_transfer ? left.second : false);
                 }
             }
         };
 
         for (const auto & constant : constants)
-            findPairs(constant, nullptr);
+            findPairs(constant, nullptr, true);
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.resolveAsFunction(and_function_resolver);
-
-        // std::cout<<std::endl;
-        // for (const auto & argument : function_node.getArguments())
-        // {
-        //     std::cout<<argument->dumpTree()<<std::endl;
-        // }
-
-        // const auto & expected_argument_types = function_node.getArgumentTypes();
-        // size_t expected_argument_types_size = expected_argument_types.size();
-        // auto actual_argument_columns = function_node.getArgumentColumns();
-
-        // if (expected_argument_types_size != actual_argument_columns.size())
-        //     throw Exception(ErrorCodes::LOGICAL_ERROR,
-        //         "Function {} expects {} arguments but has {}",
-        //         function_node.toAST()->formatForErrorMessage(),
-        //         expected_argument_types_size,
-        //         actual_argument_columns.size());
-
-        /// Step 3: remove some loose comparing pairs
     }
 
     void tryReplaceOrEqualsChainWithIn(QueryTreeNodePtr & node)
