@@ -1,5 +1,3 @@
-#pragma once
-
 #include <Common/logger_useful.h>
 
 #include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
@@ -41,19 +39,22 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseTTLMerge(
     const PartitionIdToTTLs & next_recompress_times,
     time_t current_time) const
 {
-    const size_t max_size = (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
-    TTLPartDeleteMergeSelector drop_ttl_selector(next_delete_times, current_time);
-
-    /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
-    if (auto parts = drop_ttl_selector.select(ranges, max_size); !parts.empty())
-        return MergeSelectorChoice{std::move(parts), MergeType::TTLDelete};
-
-    if (!(*data_settings)[MergeTreeSetting::ttl_only_drop_parts])
+    /// Regular delete ttl has higher priority
     {
-        TTLRowDeleteMergeSelector delete_ttl_selector(next_delete_times, current_time);
+        const size_t max_size = (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
+        TTLPartDeleteMergeSelector drop_ttl_selector(next_delete_times, current_time);
 
-        if (auto parts = delete_ttl_selector.select(ranges, max_total_size_to_merge); !parts.empty())
+        /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
+        if (auto parts = drop_ttl_selector.select(ranges, max_size); !parts.empty())
             return MergeSelectorChoice{std::move(parts), MergeType::TTLDelete};
+
+        if (!(*data_settings)[MergeTreeSetting::ttl_only_drop_parts])
+        {
+            TTLRowDeleteMergeSelector delete_ttl_selector(next_delete_times, current_time);
+
+            if (auto parts = delete_ttl_selector.select(ranges, max_total_size_to_merge); !parts.empty())
+                return MergeSelectorChoice{std::move(parts), MergeType::TTLDelete};
+        }
     }
 
     if (metadata_snapshot->hasAnyRecompressionTTL())
