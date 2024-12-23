@@ -73,6 +73,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int THERE_IS_NO_QUERY;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DATABASE_NOT_EMPTY;
@@ -750,7 +751,7 @@ static void writeFieldsToColumn(
             return true;
         };
 
-        const auto & write_data_to_column = [&](auto * casted_column, auto from_type, auto to_type)
+        const auto & write_data_to_column = [&](auto * cast_column, auto from_type, auto to_type)
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -758,39 +759,39 @@ static void writeFieldsToColumn(
                 const Field & value = row_data[column_index];
 
                 if (write_data_to_null_map(value, index))
-                    casted_column->insertValue(static_cast<decltype(to_type)>(value.template safeGet<decltype(from_type)>()));
+                    cast_column->insertValue(static_cast<decltype(to_type)>(value.template safeGet<decltype(from_type)>()));
             }
         };
 
-        if (ColumnInt8 * casted_int8_column = typeid_cast<ColumnInt8 *>(&column_to))
-            write_data_to_column(casted_int8_column, UInt64(), Int8());
-        else if (ColumnInt16 * casted_int16_column = typeid_cast<ColumnInt16 *>(&column_to))
-            write_data_to_column(casted_int16_column, UInt64(), Int16());
-        else if (ColumnInt64 * casted_int64_column = typeid_cast<ColumnInt64 *>(&column_to))
-            write_data_to_column(casted_int64_column, UInt64(), Int64());
-        else if (ColumnUInt8 * casted_uint8_column = typeid_cast<ColumnUInt8 *>(&column_to))
-            write_data_to_column(casted_uint8_column, UInt64(), UInt8());
-        else if (ColumnUInt16 * casted_uint16_column = typeid_cast<ColumnUInt16 *>(&column_to))
-            write_data_to_column(casted_uint16_column, UInt64(), UInt16());
-        else if (ColumnUInt32 * casted_uint32_column = typeid_cast<ColumnUInt32 *>(&column_to))
-            write_data_to_column(casted_uint32_column, UInt64(), UInt32());
-        else if (ColumnUInt64 * casted_uint64_column = typeid_cast<ColumnUInt64 *>(&column_to))
-            write_data_to_column(casted_uint64_column, UInt64(), UInt64());
-        else if (ColumnFloat32 * casted_float32_column = typeid_cast<ColumnFloat32 *>(&column_to))
-            write_data_to_column(casted_float32_column, Float64(), Float32());
-        else if (ColumnFloat64 * casted_float64_column = typeid_cast<ColumnFloat64 *>(&column_to))
-            write_data_to_column(casted_float64_column, Float64(), Float64());
-        else if (ColumnDecimal<Decimal32> * casted_decimal_32_column = typeid_cast<ColumnDecimal<Decimal32> *>(&column_to))
-            write_data_to_column(casted_decimal_32_column, Decimal32(), Decimal32());
-        else if (ColumnDecimal<Decimal64> * casted_decimal_64_column = typeid_cast<ColumnDecimal<Decimal64> *>(&column_to))
-            write_data_to_column(casted_decimal_64_column, Decimal64(), Decimal64());
-        else if (ColumnDecimal<Decimal128> * casted_decimal_128_column = typeid_cast<ColumnDecimal<Decimal128> *>(&column_to))
-            write_data_to_column(casted_decimal_128_column, Decimal128(), Decimal128());
-        else if (ColumnDecimal<Decimal256> * casted_decimal_256_column = typeid_cast<ColumnDecimal<Decimal256> *>(&column_to))
-            write_data_to_column(casted_decimal_256_column, Decimal256(), Decimal256());
-        else if (ColumnDecimal<DateTime64> * casted_datetime_64_column = typeid_cast<ColumnDecimal<DateTime64> *>(&column_to))
-            write_data_to_column(casted_datetime_64_column, DateTime64(), DateTime64());
-        else if (ColumnInt32 * casted_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
+        if (ColumnInt8 * cast_int8_column = typeid_cast<ColumnInt8 *>(&column_to))
+            write_data_to_column(cast_int8_column, UInt64(), Int8());
+        else if (ColumnInt16 * cast_int16_column = typeid_cast<ColumnInt16 *>(&column_to))
+            write_data_to_column(cast_int16_column, UInt64(), Int16());
+        else if (ColumnInt64 * cast_int64_column = typeid_cast<ColumnInt64 *>(&column_to))
+            write_data_to_column(cast_int64_column, UInt64(), Int64());
+        else if (ColumnUInt8 * cast_uint8_column = typeid_cast<ColumnUInt8 *>(&column_to))
+            write_data_to_column(cast_uint8_column, UInt64(), UInt8());
+        else if (ColumnUInt16 * cast_uint16_column = typeid_cast<ColumnUInt16 *>(&column_to))
+            write_data_to_column(cast_uint16_column, UInt64(), UInt16());
+        else if (ColumnUInt32 * cast_uint32_column = typeid_cast<ColumnUInt32 *>(&column_to))
+            write_data_to_column(cast_uint32_column, UInt64(), UInt32());
+        else if (ColumnUInt64 * cast_uint64_column = typeid_cast<ColumnUInt64 *>(&column_to))
+            write_data_to_column(cast_uint64_column, UInt64(), UInt64());
+        else if (ColumnFloat32 * cast_float32_column = typeid_cast<ColumnFloat32 *>(&column_to))
+            write_data_to_column(cast_float32_column, Float64(), Float32());
+        else if (ColumnFloat64 * cast_float64_column = typeid_cast<ColumnFloat64 *>(&column_to))
+            write_data_to_column(cast_float64_column, Float64(), Float64());
+        else if (ColumnDecimal<Decimal32> * cast_decimal_32_column = typeid_cast<ColumnDecimal<Decimal32> *>(&column_to))
+            write_data_to_column(cast_decimal_32_column, Decimal32(), Decimal32());
+        else if (ColumnDecimal<Decimal64> * cast_decimal_64_column = typeid_cast<ColumnDecimal<Decimal64> *>(&column_to))
+            write_data_to_column(cast_decimal_64_column, Decimal64(), Decimal64());
+        else if (ColumnDecimal<Decimal128> * cast_decimal_128_column = typeid_cast<ColumnDecimal<Decimal128> *>(&column_to))
+            write_data_to_column(cast_decimal_128_column, Decimal128(), Decimal128());
+        else if (ColumnDecimal<Decimal256> * cast_decimal_256_column = typeid_cast<ColumnDecimal<Decimal256> *>(&column_to))
+            write_data_to_column(cast_decimal_256_column, Decimal256(), Decimal256());
+        else if (ColumnDecimal<DateTime64> * cast_datetime_64_column = typeid_cast<ColumnDecimal<DateTime64> *>(&column_to))
+            write_data_to_column(cast_datetime_64_column, DateTime64(), DateTime64());
+        else if (ColumnInt32 * cast_int32_column = typeid_cast<ColumnInt32 *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -800,19 +801,19 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     if (value.getType() == Field::Types::UInt64)
-                        casted_int32_column->insertValue(static_cast<Int32>(value.safeGet<Int32>()));
+                        cast_int32_column->insertValue(static_cast<Int32>(value.safeGet<Int32>()));
                     else if (value.getType() == Field::Types::Int64)
                     {
                         /// For MYSQL_TYPE_INT24
                         const Int32 & num = static_cast<Int32>(value.safeGet<Int32>());
-                        casted_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
+                        cast_int32_column->insertValue(num & 0x800000 ? num | 0xFF000000 : num);
                     }
                     else
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
                 }
             }
         }
-        else if (ColumnString * casted_string_column = typeid_cast<ColumnString *>(&column_to))
+        else if (ColumnString * cast_string_column = typeid_cast<ColumnString *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -822,11 +823,11 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     const String & data = value.safeGet<const String &>();
-                    casted_string_column->insertData(data.data(), data.size());
+                    cast_string_column->insertData(data.data(), data.size());
                 }
             }
         }
-        else if (ColumnFixedString * casted_fixed_string_column = typeid_cast<ColumnFixedString *>(&column_to))
+        else if (ColumnFixedString * cast_fixed_string_column = typeid_cast<ColumnFixedString *>(&column_to))
         {
             for (size_t index = 0; index < rows_data.size(); ++index)
             {
@@ -836,7 +837,7 @@ static void writeFieldsToColumn(
                 if (write_data_to_null_map(value, index))
                 {
                     const String & data = value.safeGet<const String &>();
-                    casted_fixed_string_column->insertData(data.data(), data.size());
+                    cast_fixed_string_column->insertData(data.data(), data.size());
                 }
             }
         }
@@ -1047,6 +1048,7 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
             exception.code() != ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY &&
             exception.code() != ErrorCodes::THERE_IS_NO_QUERY &&
             exception.code() != ErrorCodes::QUERY_WAS_CANCELLED &&
+            exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT &&
             exception.code() != ErrorCodes::TABLE_ALREADY_EXISTS &&
             exception.code() != ErrorCodes::UNKNOWN_DATABASE &&
             exception.code() != ErrorCodes::DATABASE_ALREADY_EXISTS &&

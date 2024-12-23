@@ -15,6 +15,7 @@ from helpers.wait_for_helpers import (
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +26,6 @@ def cluster():
             "node",
             main_configs=[
                 "configs/config.xml",
-                "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
             ],
@@ -39,11 +39,11 @@ def cluster():
         cluster.add_instance(
             "node_with_limited_disk",
             main_configs=[
-                "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
             ],
             with_minio=True,
+            stay_alive=True,
             tmpfs=[
                 "/jbod1:size=2M",
             ],
@@ -54,6 +54,13 @@ def cluster():
         logging.info("Cluster started")
         run_s3_mocks(cluster)
 
+        for _, node in cluster.instances.items():
+            node.stop_clickhouse()
+            node.copy_file_to_container(
+                os.path.join(CONFIG_DIR, "config.d", "storage_conf.xml"),
+                "/etc/clickhouse-server/config.d/storage_conf.xml",
+            )
+            node.start_clickhouse()
         yield cluster
     finally:
         cluster.shutdown()
@@ -735,6 +742,15 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     check_no_objects_after_drop(cluster)
 
+    # Restore
+    replace_config(
+        config_path,
+        "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
+        "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
+    )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
 
 @pytest.mark.parametrize("node_name", ["node"])
 def test_s3_no_delete_objects(cluster, node_name):
@@ -954,10 +970,10 @@ def test_s3_engine_heavy_write_check_mem(
     )
 
     broken_s3.setup_fake_multpartuploads()
-    slow_responces = 10
+    slow_responses = 10
     slow_timeout = 15
     broken_s3.setup_slow_answers(
-        10 * 1024 * 1024, timeout=slow_timeout, count=slow_responces
+        10 * 1024 * 1024, timeout=slow_timeout, count=slow_responses
     )
 
     query_id = f"INSERT_INTO_S3_ENGINE_QUERY_ID_{in_flight}"
@@ -983,7 +999,7 @@ def test_s3_engine_heavy_write_check_mem(
     assert int(memory_usage) > 0.8 * memory
 
     # The more in_flight value is the less time CH waits.
-    assert int(wait_inflight) / 1000 / 1000 > slow_responces * slow_timeout / in_flight
+    assert int(wait_inflight) / 1000 / 1000 > slow_responses * slow_timeout / in_flight
 
     check_no_objects_after_drop(cluster, node_name=node_name)
 
@@ -1004,12 +1020,15 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
         " SETTINGS"
         " storage_policy='broken_s3'",
     )
+
+    uuid = node.query("SELECT uuid FROM system.tables WHERE name='s3_test'")
+
     node.query("SYSTEM STOP MERGES s3_test")
 
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_slow_answers(10 * 1024 * 1024, timeout=10, count=50)
 
-    query_id = f"INSERT_INTO_S3_DISK_QUERY_ID"
+    query_id = f"INSERT_INTO_S3_DISK_QUERY_ID_{uuid}"
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(50000000)"
         f" SETTINGS max_memory_usage={2*memory}"

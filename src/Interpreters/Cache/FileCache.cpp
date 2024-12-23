@@ -247,7 +247,15 @@ CachePriorityGuard::Lock FileCache::lockCache() const
 
 CachePriorityGuard::Lock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout) const
 {
-    return acquire_timeout.has_value() ? cache_guard.tryLockFor(acquire_timeout.value()) : cache_guard.tryLock();
+    if (acquire_timeout.has_value())
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
+        return cache_guard.tryLockFor(acquire_timeout.value());
+    }
+    else
+    {
+        return cache_guard.tryLock();
+    }
 }
 
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
@@ -584,7 +592,8 @@ FileCache::getOrSet(
     size_t file_size,
     const CreateFileSegmentSettings & create_settings,
     size_t file_segments_limit,
-    const UserInfo & user)
+    const UserInfo & user,
+    std::optional<size_t> boundary_alignment_)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
 
@@ -596,8 +605,9 @@ FileCache::getOrSet(
     /// 2. max_file_segments_limit
     FileSegment::Range result_range = initial_range;
 
-    const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, boundary_alignment);
-    auto aligned_end_offset = std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, boundary_alignment), file_size) - 1;
+    const size_t alignment = boundary_alignment_.value_or(boundary_alignment);
+    const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
+    auto aligned_end_offset = std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size) - 1;
 
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);
@@ -1330,7 +1340,8 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
         user = getCommonUser();
     }
 
-    UInt64 offset = 0, size = 0;
+    UInt64 offset = 0;
+    UInt64 size = 0;
     for (; key_it != fs::directory_iterator(); key_it++)
     {
         const fs::path key_directory = key_it->path();

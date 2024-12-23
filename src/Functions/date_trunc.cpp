@@ -151,10 +151,10 @@ public:
         auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context);
 
         if (arguments.size() == 2)
-            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
+            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
 
         temp_columns[2] = arguments[2];
-        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
+        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
     }
 
     bool hasInformationAboutMonotonicity() const override

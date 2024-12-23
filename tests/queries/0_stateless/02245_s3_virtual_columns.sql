@@ -13,3 +13,4 @@ create table test_02245_2 (a UInt64, _path Int32) engine = S3(s3_conn, filename=
 insert into test_02245_2 select 1, 2 settings s3_truncate_on_insert=1;
 select * from test_02245_2;
 select _path, isNotNull(_etag) from test_02245_2;
+select count() from test_02245_2 where _etag IN (select _etag from test_02245_2);

@@ -54,6 +54,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
 ParallelReadingExtension::ParallelReadingExtension(
@@ -110,13 +111,15 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
     }
 
-    if (!prewhere_actions.steps.empty())
-        LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions.steps.size(), prewhere_actions.dumpConditions());
+    bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
+    if (has_prewhere_actions_steps)
+        LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
 
-    if (prewhere_info)
-        LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
-            prewhere_info->prewhere_actions.dumpDAG(),
-            (!prewhere_actions.steps.empty() ? prewhere_actions.dump() : std::string("<nullptr>")));
+    if (prewhere_info || has_prewhere_actions_steps)
+        LOG_TEST(log, "PREWHERE conditions: {}, Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
+            has_prewhere_actions_steps ? prewhere_actions.dumpConditions() : std::string("<nullptr>"),
+            prewhere_info ? prewhere_info->prewhere_actions.dumpDAG() : std::string("<nullptr>"),
+            has_prewhere_actions_steps ? prewhere_actions.dump() : std::string("<nullptr>"));
 }
 
 String MergeTreeSelectProcessor::getName() const
@@ -180,7 +183,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 break;
             throw;
         }

@@ -1231,7 +1231,15 @@ Execute a pipeline for reading dictionary source in several threads. It's suppor
 Prefer more precise (but slower) float parsing algorithm
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.
+Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+
+Possible values:
+
+- `ignore` — Silently ignore overflows. The result is random.
+- `throw` — Throw an exception in case of conversion overflow.
+- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+Default value: `ignore`.
 )", 0) \
     DECLARE(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, R"(
 Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple
@@ -1242,6 +1250,36 @@ Set the quoting rule for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
+)", 0) \
+    DECLARE(String, composed_data_type_output_format_mode, "default", R"(
+Set output format mode for composed data types like Array, Map, Tuple. Possible values: 'default', 'spark'.
+
+In 'default' mode, the output format is the same as in the previous versions of ClickHouse,
+    - Arrays are displayed without spaces between elements.
+    - Maps use curly braces `{}` and colons `:` to separate keys and values.
+    - Tuples are displayed with single quotes around string elements.
+
+Example of 'default' mode:
+
+```
+┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
+│ [1,2,3]   │ {'a':1,'b':2}       │ (123,'abc')  │
+└───────────┴─────────────────────┴──────────────┘
+```
+
+In 'spark' mode, the output format is similar to Apache Spark:
+    - Arrays are displayed with spaces between elements.
+    - Maps use curly braces `{}` and arrows `->` to separate keys and values.
+    - Tuples are displayed without single quotes around string elements.
+
+Example of 'spark' mode:
+
+```
+┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
+│ [1, 2, 3] │ {a -> 1, b -> 2}    │ (123, abc)   │
+└───────────┴─────────────────────┴──────────────┘
+```
+
 )", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS

@@ -84,6 +84,8 @@ public:
     /// Must be called after all @joinBlock calls.
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
+    bool rightTableCanBeReranged() const override;
+    void tryRerangeRightTableData() override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
@@ -132,7 +134,7 @@ private:
     Names left_key_names;
     Names right_key_names;
 
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
 
     Buckets buckets;
     mutable SharedMutex rehash_mutex;
