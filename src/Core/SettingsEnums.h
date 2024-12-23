@@ -283,6 +283,35 @@ enum class StreamingHandleErrorMode
 
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
+enum class KafkaSASLMechanism
+{
+    GSSAPI = 0,
+    PLAIN,
+    SCRAM_SHA_256,
+    SCRAM_SHA_512,
+    OAUTHBEARER,
+};
+
+DECLARE_SETTING_ENUM(KafkaSASLMechanism)
+
+enum class KafkaSecurityProtocol
+{
+    PLAINTEXT = 0,
+    SSL,
+    SASL_PLAINTEXT,
+    SASL_SSL
+};
+
+DECLARE_SETTING_ENUM(KafkaSecurityProtocol)
+
+enum class KafkaSSLEndpointIdentificationAlgorithm
+{
+    NONE = 0,
+    HTTPS,
+};
+
+DECLARE_SETTING_ENUM(KafkaSSLEndpointIdentificationAlgorithm)
+
 enum class ShortCircuitFunctionEvaluation
 {
     ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.

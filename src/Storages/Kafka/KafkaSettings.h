@@ -38,6 +38,15 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     M(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after rabbitmq_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
     M(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
     M(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
+    /* Authentication settings */ \
+    M(KafkaSASLMechanism, kafka_sasl_mechanism, KafkaSASLMechanism::GSSAPI, "SASL mechanism to use for authentication.", 0) \
+    M(String, kafka_sasl_username, "", "SASL username for use with the PLAIN and SASL-SCRAM-.. mechanisms.", 0) \
+    M(String, kafka_sasl_password, "", "SASL password for use with the PLAIN and SASL-SCRAM-.. mechanisms.", 0) \
+    M(KafkaSecurityProtocol, kafka_security_protocol, KafkaSecurityProtocol::PLAINTEXT, "Protocol used to communicate with brokers.", 0) \
+    M(KafkaSSLEndpointIdentificationAlgorithm, kafka_ssl_endpoint_identification_algorithm, KafkaSSLEndpointIdentificationAlgorithm::NONE, "Endpoint identification algorithm to validate broker hostname using broker certificate.", 0) \
+    M(String, kafka_ssl_ca_location, "", "File or directory path to CA certificate(s) for verifying the broker's key.", 0) \
+    M(String, kafka_ssl_certificate_location, "", "Path to client's public key (PEM) used for authentication.", 0) \
+    M(String, kafka_ssl_key_location, "", "Path to client's private key (PEM) used for authentication.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \

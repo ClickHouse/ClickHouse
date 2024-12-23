@@ -842,6 +842,30 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
     for (const auto & topic : topics)
         loadTopicConfig(kafka_config, config, collection_name, CONFIG_KAFKA_TAG, topic);
 
+    // Update configuration from engine settings
+    if (kafka_settings->kafka_sasl_mechanism.changed)
+        kafka_config.set(
+            "sasl.mechanism",
+            DB::SettingFieldKafkaSASLMechanism(kafka_settings->kafka_sasl_mechanism.value).toString());
+    if (kafka_settings->kafka_sasl_username.changed)
+        kafka_config.set("sasl.username", kafka_settings->kafka_sasl_username.value);
+    if (kafka_settings->kafka_sasl_password.changed)
+        kafka_config.set("sasl.password", kafka_settings->kafka_sasl_password.value);
+    if (kafka_settings->kafka_security_protocol.changed)
+        kafka_config.set(
+            "security.protocol",
+            DB::SettingFieldKafkaSecurityProtocol(kafka_settings->kafka_security_protocol.value).toString());
+    if (kafka_settings->kafka_ssl_endpoint_identification_algorithm.changed)
+        kafka_config.set(
+            "ssl.endpoint.identification.algorithm",
+            DB::SettingFieldKafkaSSLEndpointIdentificationAlgorithm(kafka_settings->kafka_ssl_endpoint_identification_algorithm.value).toString());
+    if (kafka_settings->kafka_ssl_ca_location.changed)
+        kafka_config.set("ssl.ca.location", kafka_settings->kafka_ssl_ca_location.value);
+    if (kafka_settings->kafka_ssl_certificate_location.changed)
+        kafka_config.set("ssl.certificate.location", kafka_settings->kafka_ssl_certificate_location.value);
+    if (kafka_settings->kafka_ssl_key_location.changed)
+        kafka_config.set("ssl.key.location", kafka_settings->kafka_ssl_key_location.value);
+
     // No need to add any prefix, messages can be distinguished
     kafka_config.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
     {

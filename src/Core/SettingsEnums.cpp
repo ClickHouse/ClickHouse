@@ -147,6 +147,23 @@ IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      StreamingHandleErrorMode::DEFAULT},
      {"stream",       StreamingHandleErrorMode::STREAM}})
 
+IMPLEMENT_SETTING_ENUM(KafkaSASLMechanism,ErrorCodes::BAD_ARGUMENTS,
+    {{"GSSAPI",         KafkaSASLMechanism::GSSAPI},
+     {"PLAIN",          KafkaSASLMechanism::PLAIN},
+     {"SCRAM-SHA-256",  KafkaSASLMechanism::SCRAM_SHA_256},
+     {"SCRAM-SHA-512",  KafkaSASLMechanism::SCRAM_SHA_512},
+     {"OAUTHBEARER",    KafkaSASLMechanism::OAUTHBEARER}})
+
+IMPLEMENT_SETTING_ENUM(KafkaSecurityProtocol,ErrorCodes::BAD_ARGUMENTS,
+    {{"plaintext",      KafkaSecurityProtocol::PLAINTEXT},
+     {"ssl",            KafkaSecurityProtocol::SSL},
+     {"sasl_plaintext", KafkaSecurityProtocol::SASL_PLAINTEXT},
+     {"sasl_ssl",       KafkaSecurityProtocol::SASL_SSL}})
+
+IMPLEMENT_SETTING_ENUM(KafkaSSLEndpointIdentificationAlgorithm,ErrorCodes::BAD_ARGUMENTS,
+    {{"none",           KafkaSSLEndpointIdentificationAlgorithm::NONE},
+     {"https",          KafkaSSLEndpointIdentificationAlgorithm::HTTPS}})
+
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
