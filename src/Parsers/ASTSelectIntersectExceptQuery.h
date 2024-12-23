@@ -23,6 +23,8 @@ public:
         INTERSECT_DISTINCT,
     };
 
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     ASTs getListOfSelects() const;
@@ -31,9 +33,6 @@ public:
 
     /// Final operator after applying visitor.
     Operator final_operator = Operator::UNKNOWN;
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

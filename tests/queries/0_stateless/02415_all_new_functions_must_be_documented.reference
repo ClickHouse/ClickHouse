@@ -321,6 +321,7 @@ geohashDecode
 geohashEncode
 geohashesInBox
 getMacro
+getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSizeOfEnumType

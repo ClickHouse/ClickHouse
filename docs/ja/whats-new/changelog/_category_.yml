@@ -1,0 +1,7 @@
+position: 10
+label: 'Changelog'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Changelog

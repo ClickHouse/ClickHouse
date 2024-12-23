@@ -14,8 +14,6 @@ public:
     bool isNone() const { return none; }
     String getID(char) const override { return "DatabaseOrNone"; }
     ASTPtr clone() const override { return std::make_shared<ASTDatabaseOrNone>(*this); }
-
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 }

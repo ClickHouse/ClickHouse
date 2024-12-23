@@ -49,8 +49,6 @@ AutoML
 Autocompletion
 AvroConfluent
 AzureQueue
-Azurite
-arrayNormalizedGini
 BFloat
 BIGINT
 BIGSERIAL
@@ -351,7 +349,6 @@ GetResolution
 GetUnidirectionalEdge
 GetUnidirectionalEdgeBoundary
 GetUnidirectionalEdgesFromHexagon
-Gini
 GitLab
 GlobalThread
 GlobalThreadActive

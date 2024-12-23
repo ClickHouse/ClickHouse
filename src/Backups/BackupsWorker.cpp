@@ -352,12 +352,8 @@ struct BackupsWorker::BackupStarter
         , query_context(context_)
         , backup_context(Context::createCopy(query_context))
     {
-        backup_settings = BackupSettings::fromBackupQuery(*backup_query);
-
         backup_context->makeQueryContext();
-        backup_context->checkSettingsConstraints(backup_settings.core_settings, SettingSource::QUERY);
-        backup_context->applySettingsChanges(backup_settings.core_settings);
-
+        backup_settings = BackupSettings::fromBackupQuery(*backup_query);
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
@@ -728,12 +724,8 @@ struct BackupsWorker::RestoreStarter
         , query_context(context_)
         , restore_context(Context::createCopy(query_context))
     {
-        restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
-
         restore_context->makeQueryContext();
-        restore_context->checkSettingsConstraints(restore_settings.core_settings, SettingSource::QUERY);
-        restore_context->applySettingsChanges(restore_settings.core_settings);
-
+        restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_restore = restore_settings.internal;

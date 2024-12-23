@@ -1012,13 +1012,11 @@ bool TableJoin::allowParallelHashJoin() const
     return true;
 }
 
-ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
+ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context) const
 {
     ASTPtr expression_list = rightKeysList();
     auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
-    ExpressionAnalyzer analyzer(expression_list, syntax_result, context);
-    analyzer.getPreparedSets() = std::move(prepared_sets);
-    return analyzer.getActionsDAG(true, false);
+    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
 size_t TableJoin::getMaxMemoryUsage() const
