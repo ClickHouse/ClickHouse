@@ -327,14 +327,12 @@ DataTypePtr ColumnFunction::getResultType() const
     return function->getResultType();
 }
 
-ColumnWithTypeAndName ColumnFunction::reduce() const
+ColumnWithTypeAndName ColumnFunction::reduce(FunctionExecuteProfile * profile) const
 {
-    return reduceImpl<false>(nullptr);
-}
-
-ColumnWithTypeAndName ColumnFunction::reduce(FunctionExecuteProfile & profile) const
-{
-    return reduceImpl<true>(&profile);
+    if (profile)
+        return reduceImpl<true>(profile);
+    else
+        return reduceImpl<false>(nullptr);
 }
 
 template <bool with_profile>
@@ -400,6 +398,15 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false, profile);
+
+#if 1
+    if constexpr (with_profile)
+    {
+        for (const auto & arg_profile : profile->argument_profiles)
+            profile->executed_elapsed += arg_profile.second.executed_elapsed;
+    }
+#endif
+
     if (res.column->getDataType() != res.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -413,11 +420,6 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
         res.type = recursiveRemoveLowCardinality(res.type);
     }
 
-    if constexpr (with_profile)
-    {
-        for (const auto & arg_profile : profile->argument_profiles)
-            profile->executed_elapsed += arg_profile.second.executed_elapsed;
-    }
     return res;
 }
 
