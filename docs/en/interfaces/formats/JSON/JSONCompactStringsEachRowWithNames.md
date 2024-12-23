@@ -1,16 +1,16 @@
 ---
 title : JSONCompactStringsEachRowWithNames
 slug : /en/interfaces/formats/JSONCompactStringsEachRowWithNames
-tags : [JSONCompactStringsEachRowWithNames]
+keywords : [JSONCompactStringsEachRowWithNames]
 ---
 
-# Description
+## Description
 
 Differs from `JSONCompactEachRow` format in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 
 :::note
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,

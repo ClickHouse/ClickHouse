@@ -1,10 +1,10 @@
 ---
 title : TabSeparated
 slug : /en/interfaces/formats/TabSeparated
-tags : [TabSeparated]
+keywords : [TabSeparated]
 ---
 
-# Description
+## Description
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is followed by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
@@ -33,7 +33,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-23      1406958
 ```
 
-# Data Formatting {#tabseparated-data-formatting}
+## Data Formatting {#tabseparated-data-formatting}
 
 Integer numbers are written in decimal form. Numbers can contain an extra “+” character at the beginning (ignored when parsing, and not recorded when formatting). Non-negative numbers can’t contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
@@ -98,9 +98,9 @@ SELECT * FROM nestedt FORMAT TSV
 1  [1]    ['a']
 ```
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 
 - [format_tsv_null_representation](/docs/en/operations/settings/settings-formats.md/#format_tsv_null_representation) - custom NULL representation in TSV format. Default value - `\N`.
 - [input_format_tsv_empty_as_default](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_empty_as_default) - treat empty fields in TSV input as default values. Default value - `false`. For complex default expressions [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) must be enabled too.

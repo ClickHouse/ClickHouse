@@ -1,15 +1,15 @@
 ---
 title : Avro
 slug : /en/interfaces/formats/Avro
-tags : [Avro]
+keywords : [Avro]
 ---
 
-# Description
+## Description
 
 [Apache Avro](https://avro.apache.org/) is a row-oriented data serialization framework developed within Apache’s Hadoop project.
 ClickHouse Avro format supports reading and writing [Avro data files](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
-# Data Types Matching
+## Data Types Matching
 
 The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -49,10 +49,9 @@ As a result, when producing Avro from ClickHouse, we have to always include the 
 
 Unsupported Avro logical data types: `time-millis`, `time-micros`, `duration`
 
-# Example Usage
+## Example Usage
 
-
-## Inserting Data
+### Inserting Data
 
 To insert data from an Avro file into ClickHouse table:
 
@@ -69,7 +68,7 @@ Data types of ClickHouse table columns can differ from the corresponding fields 
 
 While importing data, when field is not found in schema and setting [input_format_avro_allow_missing_fields](/docs/en/operations/settings/settings-formats.md/#input_format_avro_allow_missing_fields) is enabled, default value will be used instead of error.
 
-## Selecting Data
+### Selecting Data
 
 To select data from ClickHouse table into an Avro file:
 
@@ -84,7 +83,7 @@ Column names must:
 
 Output Avro file compression and sync interval can be configured with [output_format_avro_codec](/docs/en/operations/settings/settings-formats.md/#output_format_avro_codec) and [output_format_avro_sync_interval](/docs/en/operations/settings/settings-formats.md/#output_format_avro_sync_interval) respectively.
 
-## Example Data
+### Example Data
 
 Using the ClickHouse [DESCRIBE](/docs/en/sql-reference/statements/describe-table) function, you can quickly view the inferred format of an Avro file like the following example. This example includes the URL of a publicly accessible Avro file in the ClickHouse S3 public bucket:
 
@@ -110,4 +109,4 @@ DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/h
 └────────────────────────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-# Format Settings
+## Format Settings

@@ -1,10 +1,10 @@
 ---
 title : XML
 slug : /en/interfaces/formats/XML
-tags : [XML]
+keywords : [XML]
 ---
 
-# Description
+## Description
 
 XML format is suitable only for output, not for parsing. Example:
 
@@ -77,8 +77,8 @@ In string values, the characters `<` and `&` are escaped as `<` and `&`.
 
 Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 
 ## XML {#xml}

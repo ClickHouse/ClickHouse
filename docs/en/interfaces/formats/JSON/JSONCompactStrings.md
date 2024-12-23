@@ -1,11 +1,11 @@
 ---
 title : JSONCompactStrings
 slug : /en/interfaces/formats/JSONCompactStrings
-tags : [JSONCompactStrings]
+keywords : [JSONCompactStrings]
 ---
 
-# Description
+## Description
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

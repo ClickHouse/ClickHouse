@@ -1,10 +1,10 @@
 ---
 title : Prometheus
 slug : /en/interfaces/formats/Prometheus
-tags : [Prometheus]
+keywords : [Prometheus]
 ---
 
-# Description
+## Description
 
 Expose metrics in [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
 
@@ -17,7 +17,7 @@ Several consequent rows may refer to the one metric with different labels. The t
 
 There are special requirements for labels for `histogram` and `summary`, see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. Special rules applied to row with labels `{'count':''}` and `{'sum':''}`, they'll be converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
 
-# Example Usage
+## Example Usage
 
 **Example:**
 
@@ -77,4 +77,4 @@ rpc_duration_seconds_count 2693
 something_weird{problem="division by zero"} +Inf -3982045
 ```
 
-# Format Settings
+## Format Settings

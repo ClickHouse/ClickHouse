@@ -1,10 +1,10 @@
 ---
 title : MySQLDump
 slug : /en/interfaces/formats/MySQLDump
-tags : [MySQLDump]
+keywords : [MySQLDump]
 ---
 
-# Description
+## Description
 
 ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html).
 It reads all data from INSERT queries belonging to one table in dump. If there are more than one table, by default it reads data from the first one.
@@ -15,7 +15,7 @@ columns with unknown names will be skipped if setting [input_format_skip_unknown
 This format supports schema inference: if the dump contains CREATE query for the specified table, the structure is extracted from it, otherwise schema is inferred from the data of INSERT queries.
 
 
-# Example Usage
+## Example Usage
 
 Examples:
 
@@ -71,4 +71,4 @@ FROM file(dump.sql, MySQLDump)
 └───┘
 ```
 
-# Format Settings
+## Format Settings

@@ -1,11 +1,11 @@
 ---
 title : HiveText
 slug : /en/interfaces/formats/HiveText
-tags : [HiveText]
+keywords : [HiveText]
 ---
 
-# Description
+## Description
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

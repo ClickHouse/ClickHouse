@@ -1,14 +1,14 @@
 ---
 title : MsgPack
 slug : /en/interfaces/formats/MsgPack
-tags : [MsgPack]
+keywords : [MsgPack]
 ---
 
-# Description
+## Description
 
 ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
 
-# Data Types Matching
+## Data Types Matching
 
 | MessagePack data type (`INSERT`)                                   | ClickHouse data type                                                                                    | MessagePack data type (`SELECT`) |
 |--------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|----------------------------------|
@@ -33,7 +33,7 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 | `int 64`                                                           | [Decimal64](/docs/en/sql-reference/data-types/decimal.md)                                               | `int 64`                         |
 | `bin 8`                                                            | [Decimal128/Decimal256](/docs/en/sql-reference/data-types/decimal.md)                                   | `bin 8 `                         |
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -45,7 +45,7 @@ $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 2
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
 ```
 
-# Format Settings
+## Format Settings
 
 - [input_format_msgpack_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_msgpack_number_of_columns) - the number of columns in inserted MsgPack data. Used for automatic schema inference from data. Default value - `0`.
 - [output_format_msgpack_uuid_representation](/docs/en/operations/settings/settings-formats.md/#output_format_msgpack_uuid_representation) - the way how to output UUID in MsgPack format. Default value - `EXT`.

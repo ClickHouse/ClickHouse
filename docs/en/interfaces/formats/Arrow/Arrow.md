@@ -1,15 +1,15 @@
 ---
 title : Arrow
 slug : /en/interfaces/formats/Arrow
-tags : [Arrow]
+keywords : [Arrow]
 ---
 
-# Description
+## Description
 
 [Apache Arrow](https://arrow.apache.org/) comes with two built-in columnar storage formats. ClickHouse supports read and write operations for these formats.
 `Arrow` is Apache Arrow’s "file mode" format. It is designed for in-memory random access.
 
-# Data Types Matching
+## Data Types Matching
 
 The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -48,9 +48,9 @@ Unsupported Arrow data types: `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
 The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
-# Example Usage
+## Example Usage
 
-## Inserting Data
+### Inserting Data
 
 You can insert Arrow data from a file into ClickHouse table by the following command:
 
@@ -58,7 +58,7 @@ You can insert Arrow data from a file into ClickHouse table by the following com
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-## Selecting Data
+### Selecting Data
 
 You can select data from a ClickHouse table and save them into some file in the Arrow format by the following command:
 
@@ -66,7 +66,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
 ```
 
-# Format Settings 
+## Format Settings 
 
 - [output_format_arrow_low_cardinality_as_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_low_cardinality_as_dictionary) - enable output ClickHouse LowCardinality type as Dictionary Arrow type. Default value - `false`.
 - [output_format_arrow_use_64_bit_indexes_for_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_use_64_bit_indexes_for_dictionary) - use 64-bit integer type for Dictionary indexes. Default value - `false`.

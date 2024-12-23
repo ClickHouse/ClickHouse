@@ -1,13 +1,13 @@
 ---
 title : PrettyNoEscapesMonoBlock
 slug : /en/interfaces/formats/PrettyNoEscapesMonoBlock
-tags : [PrettyNoEscapesMonoBlock]
+keywords : [PrettyNoEscapesMonoBlock]
 ---
 
-# Description
+## Description
 
 Differs from [PrettyNoEscapes](#prettynoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

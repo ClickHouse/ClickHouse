@@ -1,10 +1,10 @@
 ---
 title : TSVWithNamesAndTypes
 slug : /en/interfaces/formats/TSVWithNamesAndTypes
-tags : [TSVWithNamesAndTypes]
+keywords : [TSVWithNamesAndTypes]
 ---
 
-# Description
+## Description
 
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
 
@@ -18,6 +18,6 @@ the types from input data will be compared with the types of the corresponding c
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

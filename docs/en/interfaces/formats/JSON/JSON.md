@@ -1,10 +1,10 @@
 ---
 title : JSON
 slug : /en/interfaces/formats/JSON
-tags : [JSON]
+keywords : [JSON]
 ---
 
-# Description
+## Description
 
 Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information: the total number of output rows, and the number of rows that could have been output if there weren’t a LIMIT. Example:
 
@@ -75,9 +75,9 @@ If the query contains GROUP BY, rows_before_limit_at_least is the exact number o
 
 ClickHouse supports [NULL](/docs/en/sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_denormals) to 1.
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 
 # See Also
 

@@ -1,10 +1,10 @@
 ---
 title : RowBinaryWithNames
 slug : /en/interfaces/formats/RowBinaryWithNames
-tags : [RowBinaryWithNames]
+keywords : [RowBinaryWithNames]
 ---
 
-# Description
+## Description
 
 Similar to [RowBinary](#rowbinary), but with added header:
 
@@ -17,6 +17,6 @@ the columns from input data will be mapped to the columns from the table by thei
 Otherwise, the first row will be skipped.
 :::
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

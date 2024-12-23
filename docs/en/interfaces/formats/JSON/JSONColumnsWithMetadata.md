@@ -1,15 +1,15 @@
 ---
 title : JSONColumnsWithMetadata
 slug : /en/interfaces/formats/JSONColumnsWithMetadata
-tags : [JSONColumnsWithMetadata]
+keywords : [JSONColumnsWithMetadata]
 ---
 
-# Description
+## Description
 
 Differs from JSONColumns format in that it also contains some metadata and statistics (similar to JSON format).
 Output format buffers all data in memory and then outputs them as a single block, so, it can lead to high memory consumption.
 
-# Example Usage
+## Example Usage
 
 Example:
 ```json
@@ -54,4 +54,4 @@ Example:
 For JSONColumnsWithMetadata input format, if setting [input_format_json_validate_types_from_metadata](/docs/en/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to 1,
 the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
-# Format Settings
+## Format Settings

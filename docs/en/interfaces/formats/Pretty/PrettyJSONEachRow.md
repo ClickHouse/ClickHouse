@@ -1,14 +1,14 @@
 ---
 title : PrettyJSONEachRow
 slug : /en/interfaces/formats/PrettyJSONEachRow
-tags : [PrettyJSONEachRow]
+keywords : [PrettyJSONEachRow]
 ---
 
-# Description
+## Description
 
 Differs from JSONEachRow only in that JSON is pretty formatted with new line delimiters and 4 space indents. Suitable only for output.
 
-# Example Usage
+## Example Usage
 
 Example
 
@@ -40,6 +40,6 @@ Example
 }
 ```
 
-# Format Settings
+## Format Settings
 
 

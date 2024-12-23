@@ -1,16 +1,16 @@
 ---
 title : CustomSeparatedWithNamesAndTypes
 slug : /en/interfaces/formats/CustomSeparatedWithNamesAndTypes
-tags : [CustomSeparatedWithNamesAndTypes]
+keywords : [CustomSeparatedWithNamesAndTypes]
 ---
 
-# Description
+## Description
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 
 :::note
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,

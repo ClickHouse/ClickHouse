@@ -1,10 +1,10 @@
 ---
 title : CustomSeparated
 slug : /en/interfaces/formats/CustomSeparated
-tags : [CustomSeparated]
+keywords : [CustomSeparated]
 ---
 
-# Description
+## Description
 
 Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from the following settings:
 - [format_custom_field_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_field_delimiter)
@@ -20,9 +20,9 @@ It does not use escaping rules settings and delimiters from format strings.
 
 There is also the `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 
 Additional settings:
 - [input_format_custom_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_custom_detect_header) - enables automatic detection of header with names and types if any. Default value - `true`.

@@ -1,11 +1,11 @@
 ---
 title : LineAsStringWithNamesAndTypes
 slug : /en/interfaces/formats/LineAsStringWithNamesAndTypes
-tags : [LineAsStringWithNamesAndTypes]
+keywords : [LineAsStringWithNamesAndTypes]
 ---
 
-# Description
+## Description
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

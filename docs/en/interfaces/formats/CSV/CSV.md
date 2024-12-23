@@ -1,13 +1,12 @@
 ---
 title : CSV
 slug : /en/interfaces/formats/CSV
-tags : [CSV]
+keywords : [CSV]
 ---
 
-# Description
+## Description
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
-
 When formatting, rows are enclosed in double quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](/docs/en/operations/settings/settings-formats.md/#format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first, the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
 ``` bash
@@ -23,9 +22,9 @@ When parsing, all values can be parsed either with or without quotes. Both doubl
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to the ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](/docs/en/operations/settings/settings-formats.md/#input_format_csv_enum_as_number) to optimize ENUM parsing.
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 
 - [format_csv_delimiter](/docs/en/operations/settings/settings-formats.md/#format_csv_delimiter) - the character to be considered as a delimiter in CSV data. Default value - `,`.
 - [format_csv_allow_single_quotes](/docs/en/operations/settings/settings-formats.md/#format_csv_allow_single_quotes) - allow strings in single quotes. Default value - `true`.

@@ -1,11 +1,11 @@
 ---
 title : PrettyNDJSON
 slug : /en/interfaces/formats/PrettyNDJSON
-tags : [PrettyNDJSON]
+keywords : [PrettyNDJSON]
 ---
 
-# Description
+## Description
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

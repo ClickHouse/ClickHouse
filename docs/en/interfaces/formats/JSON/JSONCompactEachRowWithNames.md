@@ -1,11 +1,11 @@
 ---
 title : JSONCompactEachRowWithNames
 slug : /en/interfaces/formats/JSONCompactEachRowWithNames
-tags : [JSONCompactEachRowWithNames]
+keywords : [JSONCompactEachRowWithNames]
 ---
 
-# Description
+## Description
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

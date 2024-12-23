@@ -1,10 +1,10 @@
 ---
 title : DWARF
 slug : /en/interfaces/formats/DWARF
-tags : [DWARF]
+keywords : [DWARF]
 ---
 
-# Description
+## Description
 
 Parses DWARF debug symbols from an ELF file (executable, library, or object file). Similar to `dwarfdump`, but much faster (hundreds of MB/s) and with SQL. Produces one row for each Debug Information Entry (DIE) in the `.debug_info` section. Includes "null" entries that the DWARF encoding uses to terminate lists of children in the tree.
 Quick background: `.debug_info` consists of *units*, corresponding to compilation units. Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root. Each DIE has a *tag* and a list of *attributes*. Each attribute has a *name* and a *value* (and also a *form*, which specifies how the value is encoded). The DIEs represent things from the source code, and their *tag* tells what kind of thing it is. E.g. there are functions (tag = `subprogram`), classes/structs/enums (`class_type`/`structure_type`/`enumeration_type`), variables (`variable`), function arguments (`formal_parameter`). The tree structure mirrors the corresponding source code. E.g. a `class_type` DIE can contain `subprogram` DIEs representing methods of the class.
@@ -28,7 +28,7 @@ Outputs the following columns:
     - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
     - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
 
-# Example Usage
+## Example Usage
 
 Example: find compilation units that have the most function definitions (including template instantiations and functions from included header files):
 ```sql
@@ -52,7 +52,7 @@ LIMIT 3
 Peak memory usage: 271.92 MiB.
 ```
 
-# Format Settings
+## Format Settings
 
 
 

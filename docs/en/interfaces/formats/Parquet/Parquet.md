@@ -1,14 +1,14 @@
 ---
 title : Parquet
 slug : /en/interfaces/formats/Parquet
-tags : [Parquet]
+keywords : [Parquet]
 ---
 
-# Description
+## Description
 
 [Apache Parquet](https://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
-# Data Types Matching {#data-types-matching-parquet}
+## Data Types Matching {#data-types-matching-parquet}
 
 The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -44,9 +44,9 @@ Unsupported Parquet data types: `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](/docs/en/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
-# Example Usage
+## Example Usage
 
-## Inserting and Selecting Data {#inserting-and-selecting-data-parquet}
+### Inserting and Selecting Data {#inserting-and-selecting-data-parquet}
 
 You can insert Parquet data from a file into ClickHouse table by the following command:
 
@@ -62,7 +62,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/table-engines/integrations/hdfs.md).
 
-# Format Settings
+## Format Settings
 
 - [output_format_parquet_row_group_size](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_row_group_size) - row group size in rows while data output. Default value - `1000000`.
 - [output_format_parquet_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_string_as_string) - use Parquet String type instead of Binary for String columns. Default value - `false`.

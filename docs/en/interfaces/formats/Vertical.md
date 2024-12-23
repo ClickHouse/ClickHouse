@@ -1,15 +1,15 @@
 ---
 title : Vertical
 slug : /en/interfaces/formats/Vertical
-tags : [Vertical]
+keywords : [Vertical]
 ---
 
-# Description
+## Description
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
 [NULL](/docs/en/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -39,5 +39,5 @@ test: string with 'quotes' and      with some special
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-# Format Settings
+## Format Settings
 

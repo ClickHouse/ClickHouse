@@ -1,14 +1,14 @@
 ---
 title : JSONCompact
 slug : /en/interfaces/formats/JSONCompact
-tags : [JSONCompact]
+keywords : [JSONCompact]
 ---
 
-# Description
+## Description
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -50,5 +50,5 @@ Example:
 }
 ```
 
-# Format Settings
+## Format Settings
 

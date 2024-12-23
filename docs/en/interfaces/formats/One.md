@@ -1,15 +1,15 @@
 ---
 title : One
 slug : /en/interfaces/formats/One
-tags : [One]
+keywords : [One]
 ---
 
-# Description
+## Description
 
 Special input format that doesn't read any data from file and returns only one row with column of type `UInt8`, name `dummy` and value `0` (like `system.one` table).
 Can be used with virtual columns `_file/_path`  to list all files without reading actual data.
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -34,4 +34,4 @@ Result:
 └──────────────┘
 ```
 
-# Format Settings
+## Format Settings

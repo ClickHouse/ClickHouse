@@ -1,10 +1,10 @@
 ---
 title : Template
 slug : /en/interfaces/formats/Template
-tags : [Template]
+keywords : [Template]
 ---
 
-# Description
+## Description
 
 This format allows specifying a custom format string with placeholders for values with a specified escaping rule.
 
@@ -54,9 +54,9 @@ The placeholders `data`, `totals`, `min` and `max` must not have escaping rule s
 If the `format_template_resultset` setting is an empty string, `${data}` is used as the default value.
 For insert queries format allows skipping some columns or fields if prefix or suffix (see example).
 
-# Example Usage
+## Example Usage
 
-## Selecting Data
+### Selecting Data
 
 Select example:
 
@@ -111,7 +111,7 @@ Result:
 </html>
 ```
 
-## Inserting Data
+### Inserting Data
 
 Insert example:
 
@@ -143,7 +143,7 @@ Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Du
 `PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows:` in suffix will be ignored.
 All delimiters in the input data must be strictly equal to delimiters in specified format strings.
 
-# Format Settings
+## Format Settings
 
 
 

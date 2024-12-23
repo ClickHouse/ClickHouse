@@ -1,15 +1,15 @@
 ---
 title : JSONAsString
 slug : /en/interfaces/formats/JSONAsString
-tags : [JSONAsString]
+keywords : [JSONAsString]
 ---
 
-# Description
+## Description
 
 In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
 This format can only be parsed for a table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted. Once you collect the whole JSON object to string you can use [JSON functions](/docs/en/sql-reference/functions/json-functions.md) to process it.
 
-# Example Usage
+## Example Usage
 
 Query:
 
@@ -50,4 +50,4 @@ Result:
 └────────────────────────────┘
 ```
 
-# Format Settings
+## Format Settings

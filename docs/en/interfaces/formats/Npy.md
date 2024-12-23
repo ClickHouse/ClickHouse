@@ -1,14 +1,14 @@
 ---
 title : Npy
 slug : /en/interfaces/formats/Npy
-tags : [Npy]
+keywords : [Npy]
 ---
 
-# Description
+## Description
 
 This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse:
 
-# Data Types Matching {#data_types-matching}
+## Data Types Matching {#data_types-matching}
 
 
 | Npy data type (`INSERT`) | ClickHouse data type                                            | Npy data type (`SELECT`) |
@@ -26,7 +26,7 @@ This function is designed to load a NumPy array from a .npy file into ClickHouse
 | `S`, `U`                 | [String](/docs/en/sql-reference/data-types/string.md)           | `S`                     |
 |                          | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `S`                     |
 
-# Example Usage
+## Example Usage
 
 ## Saving an array in .npy format using Python
 
@@ -60,4 +60,4 @@ You can select data from a ClickHouse table and save them into some file in the 
 $ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
 ```
 
-# Format Settings
+## Format Settings

@@ -1,14 +1,14 @@
 ---
 title : SQLInsert
 slug : /en/interfaces/formats/SQLInsert
-tags : [SQLInsert]
+keywords : [SQLInsert]
 ---
 
-# Description
+## Description
 
 Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -26,7 +26,7 @@ INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
 
 To read data output by this format you can use [MySQLDump](#mysqldump) input format.
 
-# Format Settings
+## Format Settings
 
 - [output_format_sql_insert_max_batch_size](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_max_batch_size) - The maximum number of rows in one INSERT statement. Default value - `65505`.
 - [output_format_sql_insert_table_name](/docs/en/operations/settings/settings-formats.md/#output_format_sql_insert_table_name) - The name of the table in the output INSERT query. Default value - `'table'`.

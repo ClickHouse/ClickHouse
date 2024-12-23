@@ -1,10 +1,10 @@
 ---
 title : Pretty
 slug : /en/interfaces/formats/Pretty
-tags : [Pretty]
+keywords : [Pretty]
 ---
 
-# Description
+## Description
 
 Outputs data as Unicode-art tables, also using ANSI-escape sequences for setting colours in the terminal.
 A full grid of the table is drawn, and each row occupies two lines in the terminal.
@@ -12,7 +12,7 @@ Each result block is output as a separate table. This is necessary so that block
 
 [NULL](/docs/en/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
-# Example Usage
+## Example Usage
 
 Example (shown for the [PrettyCompact](#prettycompact) format):
 
@@ -70,6 +70,6 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-# Format Settings
+## Format Settings
 
 

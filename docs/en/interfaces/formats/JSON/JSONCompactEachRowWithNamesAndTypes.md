@@ -1,11 +1,11 @@
 ---
 title : JSONCompactEachRowWithNamesAndTypes
 slug : /en/interfaces/formats/JSONCompactEachRowWithNamesAndTypes
-tags : [JSONCompactEachRowWithNamesAndTypes]
+keywords : [JSONCompactEachRowWithNamesAndTypes]
 ---
 
-# Description
+## Description
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

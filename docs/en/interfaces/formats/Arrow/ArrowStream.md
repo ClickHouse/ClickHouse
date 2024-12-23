@@ -1,14 +1,14 @@
 ---
 title : ArrowStream
 slug : /en/interfaces/formats/ArrowStream
-tags : [ArrowStream]
+keywords : [ArrowStream]
 ---
 
-# Description
+## Description
 
 `ArrowStream` is Apache Arrow’s “stream mode” format. It is designed for in-memory stream processing.
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 

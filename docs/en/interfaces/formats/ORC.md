@@ -1,14 +1,14 @@
 ---
 title : ORC
 slug : /en/interfaces/formats/ORC
-tags : [ORC]
+keywords : [ORC]
 ---
 
-# Description
+## Description
 
 [Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the [Hadoop](https://hadoop.apache.org/) ecosystem.
 
-# Data Types Matching {#data-types-matching-orc}
+## Data Types Matching {#data-types-matching-orc}
 
 The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -37,9 +37,9 @@ The table below shows supported data types and how they match ClickHouse [data t
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 - The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
-# Example Usage
+## Example Usage
 
-## Inserting Data {#inserting-data-orc}
+### Inserting Data {#inserting-data-orc}
 
 You can insert ORC data from a file into ClickHouse table by the following command:
 
@@ -47,7 +47,7 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-## Selecting Data {#selecting-data-orc}
+### Selecting Data {#selecting-data-orc}
 
 You can select data from a ClickHouse table and save them into some file in the ORC format by the following command:
 
@@ -55,7 +55,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
 ```
 
-# Format Settings
+## Format Settings
 
 - [output_format_arrow_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
 - [output_format_orc_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_orc_compression_method) - compression method used in output ORC format. Default value - `none`.

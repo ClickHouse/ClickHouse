@@ -1,14 +1,14 @@
 ---
 title : JSONCompactStringsEachRow
 slug : /en/interfaces/formats/JSONCompactStringsEachRow
-tags : [JSONCompactStringsEachRow]
+keywords : [JSONCompactStringsEachRow]
 ---
 
-# Description
+## Description
 
 Differs from JSONCompactEachRow only in that data fields are output in strings, not in typed JSON values.
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -18,5 +18,5 @@ Example:
 ["44", "hello", "[0,1,2,3]"]
 ```
 
-# Format Settings
+## Format Settings
 

@@ -1,10 +1,10 @@
 ---
 title : ParquetMetadata
 slug : /en/interfaces/formats/ParquetMetadata
-tags : [ParquetMetadata]
+keywords : [ParquetMetadata]
 ---
 
-# Description
+## Description
 
 Special format for reading Parquet file metadata (https://parquet.apache.org/docs/file-format/metadata/). It always outputs one row with the next structure/content:
 - num_columns - the number of columns
@@ -43,7 +43,7 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
             - min - the minimum value of the column chunk
             - max - the maximum column of the column chunk
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -138,7 +138,7 @@ SELECT * FROM file(data.parquet, ParquetMetadata) format PrettyJSONEachRow
 }
 ```
 
-# Format Settings
+## Format Settings
 
 ## ParquetMetadata {data-format-parquet-metadata}
 

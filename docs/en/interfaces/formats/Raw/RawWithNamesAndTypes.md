@@ -1,11 +1,11 @@
 ---
 title : RawWithNamesAndTypes
 slug : /en/interfaces/formats/RawWithNamesAndTypes
-tags : [RawWithNamesAndTypes]
+keywords : [RawWithNamesAndTypes]
 ---
 
-# Description
+## Description
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

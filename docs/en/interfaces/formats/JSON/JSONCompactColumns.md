@@ -4,12 +4,12 @@ slug : /en/interfaces/formats/JSONCompactColumns
 tags : [JSONCompactColumns]
 ---
 
-# Description
+## Description
 
 In this format, all data is represented as a single JSON Array.
 Note that JSONCompactColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption
 
-# Example Usage
+## Example Usage
 
 Example:
 ```json
@@ -22,5 +22,5 @@ Example:
 
 Columns that are not present in the block will be filled with default values (you can use  [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
 
-# Format Settings
+## Format Settings
 

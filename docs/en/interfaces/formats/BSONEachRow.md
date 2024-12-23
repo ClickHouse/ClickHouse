@@ -1,15 +1,15 @@
 ---
 title : BSONEachRow
 slug : /en/interfaces/formats/BSONEachRow
-tags : [BSONEachRow]
+keywords : [BSONEachRow]
 ---
 
-# Description
+## Description
 
 In this format, ClickHouse formats/parses data as a sequence of BSON documents without any separator between them.
 Each row is formatted as a single document and each column is formatted as a single BSON document field with column name as a key.
 
-# Data Types Matching
+## Data Types Matching
 
 For output it uses the following correspondence between ClickHouse types and BSON types:
 
@@ -68,9 +68,9 @@ Big integers and decimals (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) 
 This format does not work properly on Big-Endian platforms.
 :::
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings
 
 - [output_format_bson_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_bson_string_as_string) - use BSON String type instead of Binary for String columns. Default value - `false`.
 - [input_format_bson_skip_fields_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for format BSONEachRow. Default value - `false`.

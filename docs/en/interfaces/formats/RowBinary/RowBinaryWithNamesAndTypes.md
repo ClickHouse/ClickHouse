@@ -1,10 +1,10 @@
 ---
 title : RowBinaryWithNamesAndTypes
 slug : /en/interfaces/formats/RowBinaryWithNamesAndTypes
-tags : [RowBinaryWithNamesAndTypes]
+keywords : [RowBinaryWithNamesAndTypes]
 ---
 
-# Description
+## Description
 
 Similar to [RowBinary](#rowbinary), but with added header:
 
@@ -20,6 +20,6 @@ If setting [input_format_with_types_use_header](/docs/en/operations/settings/set
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 :::
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

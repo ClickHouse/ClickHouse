@@ -1,14 +1,14 @@
 ---
 title : JSONObjectEachRow
 slug : /en/interfaces/formats/JSONObjectEachRow
-tags : [JSONObjectEachRow]
+keywords : [JSONObjectEachRow]
 ---
 
-# Description
+## Description
 
 In this format, all data is represented as a single JSON Object, each row is represented as a separate field of this object similar to JSONEachRow format.
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -77,7 +77,7 @@ desc file('data.json', JSONObjectEachRow) settings format_json_object_each_row_c
 ```
 
 
-## Inserting Data {#json-inserting-data}
+### Inserting Data {#json-inserting-data}
 
 ``` sql
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS example_table
 When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
 :::
 
-## Selecting Data {#json-selecting-data}
+### Selecting Data {#json-selecting-data}
 
 Consider the `UserActivity` table as an example:
 
@@ -137,7 +137,7 @@ Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 seque
 Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
 :::
 
-## Usage of Nested Structures {#jsoneachrow-nested}
+### Usage of Nested Structures {#jsoneachrow-nested}
 
 If you have a table with [Nested](/docs/en/sql-reference/data-types/nested-data-structures/index.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json) setting.
 
@@ -196,7 +196,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-# Format Settings
+## Format Settings
 
 - [input_format_import_nested_json](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json) - map nested JSON data to nested tables (it works for JSONEachRow format). Default value - `false`.
 - [input_format_json_read_bools_as_numbers](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.

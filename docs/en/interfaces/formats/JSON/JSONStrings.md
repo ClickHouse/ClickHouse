@@ -1,14 +1,14 @@
 ---
 title : JSONStrings
 slug : /en/interfaces/formats/JSONStrings
-tags : [JSONStrings]
+keywords : [JSONStrings]
 ---
 
-# Description
+## Description
 
 Differs from JSON only in that data fields are output in strings, not in typed JSON values.
 
-# Example Usage
+## Example Usage
 
 Example:
 
@@ -62,5 +62,5 @@ Example:
 }
 ```
 
-# Format Settings
+## Format Settings
 

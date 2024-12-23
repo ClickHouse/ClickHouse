@@ -1,11 +1,11 @@
 ---
 title : NDJSON
 slug : /en/interfaces/formats/NDJSON
-tags : [NDJSON]
+keywords : [NDJSON]
 ---
 
-# Description
+## Description
 
-# Example Usage
+## Example Usage
 
-# Format Settings
+## Format Settings

@@ -1,11 +1,10 @@
 ---
 title : RawBLOB
 slug : /en/interfaces/formats/RawBLOB
-tags : [RawBLOB]
+keywords : [RawBLOB]
 ---
 
-# Description
-
+## Description
 
 In this format, all input data is read to a single value. It is possible to parse only a table with a single field of type [String](/docs/en/sql-reference/data-types/string.md) or similar.
 The result is output in binary format without delimiters and escaping. If more than one value is output, the format is ambiguous, and it will be impossible to read the data back.
@@ -36,7 +35,7 @@ When an empty data is passed to the `RawBLOB` input, ClickHouse throws an except
 Code: 108. DB::Exception: No data to insert
 ```
 
-# Example Usage
+## Example Usage
 
 
 ``` bash
@@ -51,4 +50,4 @@ Result:
 f9725a22f9191e064120d718e26862a9  -
 ```
 
-# Format Settings
+## Format Settings
