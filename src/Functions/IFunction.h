@@ -40,8 +40,8 @@ struct FunctionExecuteProfile
 {
     size_t executed_rows = 0;
     size_t executed_elapsed = 0;
-    size_t masked_execute_rows = 0;
-    size_t masked_execute_side_elapsed = 0;
+    size_t short_circuit_select_rows = 0;
+    size_t short_circuit_side_elapsed = 0;
     std::vector<std::pair<size_t, FunctionExecuteProfile>> argument_profiles;
 };
 
@@ -192,6 +192,9 @@ public:
 #if USE_EMBEDDED_COMPILER
 
     virtual bool isCompilable() const { return false; }
+    // Whether `execute` throws exception on invalid input. For example, a%b throws exception when b is zero.
+    // But this doesn't include invalid argument types.
+    virtual bool isNoExcept() const { return false; }
 
     /** Produce LLVM IR code that operates on scalar values. See `toNativeType` in DataTypes/Native.h
       * for supported value types and how they map to LLVM types.
@@ -560,6 +563,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    virtual bool isNoExcept() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
