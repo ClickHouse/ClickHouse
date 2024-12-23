@@ -59,8 +59,10 @@ protected:
                 {DataTypeDateTime(window_view_timezone).createColumnConst(block.rows(), watermark)->convertToFullColumnIfConst()},
                 block.rows());
         }
-
-        return Chunk(block.getColumns(), block.rows());
+        else
+        {
+            return Chunk(block.getColumns(), block.rows());
+        }
     }
 
     std::pair<Block, UInt32> generateImpl()
@@ -98,9 +100,11 @@ protected:
             blocks_with_watermark.pop_front();
             return res;
         }
-
-        last_heartbeat_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-        return {getHeader(), 0};
+        else
+        {
+            last_heartbeat_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
+            return {getHeader(), 0};
+        }
     }
 
 private:

@@ -31,7 +31,7 @@ namespace DB
 class QueryPriorities
 {
 public:
-    using Priority = size_t;
+    using Priority = int;
 
 private:
     friend struct Handle;

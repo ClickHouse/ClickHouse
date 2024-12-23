@@ -28,17 +28,21 @@ WHERE type_1 = \'all\'
 (Expression)
 ExpressionTransform × 2
   (Filter)
-  FilterTransform × 6
-    (Aggregating)
-    ExpressionTransform × 2
-      AggregatingTransform × 2
-        Copy 1 → 2
-          (Expression)
-          ExpressionTransform
-            (Expression)
-            ExpressionTransform
-              (ReadFromMergeTree)
-              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+  FilterTransform × 2
+    (Filter)
+    FilterTransform × 2
+      (Filter)
+      FilterTransform × 2
+        (Aggregating)
+        ExpressionTransform × 2
+          AggregatingTransform × 2
+            Copy 1 → 2
+              (Expression)
+              ExpressionTransform
+                (Expression)
+                ExpressionTransform
+                  (ReadFromMergeTree)
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 (Expression)
 ExpressionTransform × 2
   (Filter)
@@ -64,10 +68,14 @@ ExpressionTransform × 2
   ExpressionTransform × 2
     AggregatingTransform × 2
       Copy 1 → 2
-        (Expression)
-        ExpressionTransform
-          (ReadFromMergeTree)
-          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+        (Filter)
+        FilterTransform
+          (Filter)
+          FilterTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromMergeTree)
+              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 (Expression)
 ExpressionTransform × 2
   (Aggregating)

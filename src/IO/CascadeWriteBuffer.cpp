@@ -36,7 +36,7 @@ void CascadeWriteBuffer::nextImpl()
         curr_buffer->position() = position();
         curr_buffer->next();
     }
-    catch (const WriteBuffer::CurrentBufferExhausted &)
+    catch (const MemoryWriteBuffer::CurrentBufferExhausted &)
     {
         if (curr_buffer_num < num_sources)
         {
@@ -54,53 +54,32 @@ void CascadeWriteBuffer::nextImpl()
 }
 
 
-CascadeWriteBuffer::WriteBufferPtrs CascadeWriteBuffer::getResultBuffers()
+void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 {
-    if (!curr_buffer)
-        return {};
+    finalize();
 
     /// Sync position with underlying buffer before invalidating
     curr_buffer->position() = position();
 
-    auto result = std::move(prepared_sources);
+    res = std::move(prepared_sources);
 
     curr_buffer = nullptr;
     curr_buffer_num = num_sources = 0;
     prepared_sources.clear();
     lazy_sources.clear();
-
-    // we do not need this object any more
-    cancel();
-
-    return result;
 }
 
 void CascadeWriteBuffer::finalizeImpl()
 {
-    WriteBuffer::finalizeImpl();
-
     if (curr_buffer)
         curr_buffer->position() = position();
 
     for (auto & buf : prepared_sources)
     {
         if (buf)
+        {
             buf->finalize();
-    }
-
-}
-
-void CascadeWriteBuffer::cancelImpl() noexcept
-{
-    WriteBuffer::cancelImpl();
-
-    if (curr_buffer)
-        curr_buffer->position() = position();
-
-    for (auto & buf : prepared_sources)
-    {
-        if (buf)
-            buf->cancel();
+        }
     }
 }
 
@@ -110,7 +89,7 @@ WriteBuffer * CascadeWriteBuffer::setNextBuffer()
     {
         if (!prepared_sources[curr_buffer_num])
         {
-            auto prev_buf = (curr_buffer_num > 0) ? prepared_sources[curr_buffer_num - 1] : nullptr;
+            WriteBufferPtr prev_buf = (curr_buffer_num > 0) ? prepared_sources[curr_buffer_num - 1] : nullptr;
             prepared_sources[curr_buffer_num] = lazy_sources[curr_buffer_num - first_lazy_source_num](prev_buf);
         }
     }
@@ -127,5 +106,14 @@ WriteBuffer * CascadeWriteBuffer::setNextBuffer()
 
     return res;
 }
+
+
+CascadeWriteBuffer::~CascadeWriteBuffer()
+{
+    /// Sync position with underlying buffer before exit
+    if (curr_buffer)
+        curr_buffer->position() = position();
+}
+
 
 }

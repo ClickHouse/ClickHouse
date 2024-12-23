@@ -38,7 +38,8 @@ BlockIO InterpreterUndropQuery::execute()
 
     if (undrop.table)
         return executeToTable(undrop);
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to undrop, both names are empty");
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to undrop, both names are empty");
 }
 
 BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
@@ -63,7 +64,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
 
     database->checkMetadataFilenameAvailability(table_id.table_name);
 
-    DatabaseCatalog::instance().undropTable(table_id);
+    DatabaseCatalog::instance().dequeueDroppedTableCleanup(table_id);
     return {};
 }
 

@@ -54,11 +54,10 @@ void SerializationNamed::serializeBinaryBulkStateSuffix(
 
 void SerializationNamed::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * cache) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
     addToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkStatePrefix(settings, state, cache);
+    nested_serialization->deserializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
 }
 

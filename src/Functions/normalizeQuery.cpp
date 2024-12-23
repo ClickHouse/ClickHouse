@@ -19,19 +19,17 @@ template <bool keep_names>
 struct Impl
 {
     static constexpr auto name = keep_names ? "normalizeQueryKeepNames" : "normalizeQuery";
-
-    static void vector(
-        const ColumnString::Chars & data,
+    static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
-        res_offsets.resize(input_rows_count);
+        size_t size = offsets.size();
+        res_offsets.resize(size);
         res_data.reserve(data.size());
 
         ColumnString::Offset prev_src_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             ColumnString::Offset curr_src_offset = offsets[i];
 
@@ -45,7 +43,7 @@ struct Impl
         }
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot apply function normalizeQuery to fixed string.");
     }

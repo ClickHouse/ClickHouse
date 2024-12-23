@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import logging
-import random
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
@@ -16,9 +15,6 @@ class Token:
     user: Union[AuthenticatedUser, NamedUser]
     value: str
     rest: int
-
-
-SAFE_REQUESTS_LIMIT = 1000
 
 
 def get_parameter_from_ssm(
@@ -61,7 +57,7 @@ ROBOT_TOKEN = None  # type: Optional[Token]
 
 
 def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
-    global ROBOT_TOKEN  # pylint:disable=global-statement
+    global ROBOT_TOKEN
     if ROBOT_TOKEN is not None:
         return ROBOT_TOKEN.value
     client = boto3.client("ssm", region_name="us-east-1")
@@ -73,15 +69,10 @@ def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
     }
     assert tokens
 
-    token_items = list(tokens.items())
-    random.shuffle(token_items)
-
-    best_token: Optional[Token] = None
-
-    for name, value in token_items:
+    for name, value in tokens.items():
         gh = Github(value, per_page=100)
         try:
-            # Do not spend additional request to API by accessing user.login unless
+            # Do not spend additional request to API by accessin user.login unless
             # the token is chosen by the remaining requests number
             user = gh.get_user()
             rest, _ = gh.rate_limiting
@@ -93,14 +84,13 @@ def get_best_robot_token(tokens_path: str = "/github-tokens") -> str:
             )
             continue
         logging.info("Get token with %s remaining requests", rest)
-        if best_token is None:
-            best_token = Token(user, value, rest)
-        elif best_token.rest < rest:
-            best_token = Token(user, value, rest)
-        if best_token.rest > SAFE_REQUESTS_LIMIT:
-            break
-    assert best_token
-    ROBOT_TOKEN = best_token
+        if ROBOT_TOKEN is None:
+            ROBOT_TOKEN = Token(user, value, rest)
+            continue
+        if ROBOT_TOKEN.rest < rest:
+            ROBOT_TOKEN.user, ROBOT_TOKEN.value, ROBOT_TOKEN.rest = user, value, rest
+
+    assert ROBOT_TOKEN
     logging.info(
         "User %s with %s remaining requests is used",
         ROBOT_TOKEN.user.login,

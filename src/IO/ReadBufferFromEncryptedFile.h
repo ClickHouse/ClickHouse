@@ -30,7 +30,7 @@ public:
 
     void setReadUntilEnd() override { in->setReadUntilEnd(); }
 
-    std::optional<size_t> tryGetFileSize() override { return in->tryGetFileSize(); }
+    size_t getFileSize() override { return in->getFileSize(); }
 
 private:
     bool nextImpl() override;

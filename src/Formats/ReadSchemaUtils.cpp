@@ -1,5 +1,3 @@
-#include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
@@ -12,12 +10,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 input_format_max_rows_to_read_for_schema_inference;
-    extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
-    extern const SettingsSchemaInferenceMode schema_inference_mode;
-}
 
 namespace ErrorCodes
 {
@@ -106,7 +98,7 @@ std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
 try
 {
     NamesAndTypesList names_and_types;
-    SchemaInferenceMode mode = context->getSettingsRef()[Setting::schema_inference_mode];
+    SchemaInferenceMode mode = context->getSettingsRef().schema_inference_mode;
     if (format_name && mode == SchemaInferenceMode::UNION && !FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(*format_name, context, format_settings))
     {
         String additional_message;
@@ -138,9 +130,9 @@ try
         std::vector<std::pair<NamesAndTypesList, String>> schemas_for_union_mode;
         std::string exception_messages;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference
-                                                  : context->getSettingsRef()[Setting::input_format_max_rows_to_read_for_schema_inference];
+                                                  : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
         size_t max_bytes_to_read = format_settings ? format_settings->max_bytes_to_read_for_schema_inference
-                                                   : context->getSettingsRef()[Setting::input_format_max_bytes_to_read_for_schema_inference];
+                                                                             : context->getSettingsRef().input_format_max_bytes_to_read_for_schema_inference;
         size_t iterations = 0;
         while (true)
         {
@@ -171,7 +163,7 @@ try
                         return {*iterator_data.cached_columns, *format_name};
                     }
 
-                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFileName());
                     continue;
                 }
 
@@ -257,7 +249,7 @@ try
 
                     if (!names_and_types.empty())
                         read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
                 }
                 catch (...)
                 {
@@ -418,7 +410,7 @@ try
                         throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
                     read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
                 }
 
                 if (format_name && mode == SchemaInferenceMode::DEFAULT)
@@ -534,9 +526,9 @@ try
 }
 catch (Exception & e)
 {
-    auto file_path = read_buffer_iterator.getLastFilePath();
-    if (!file_path.empty())
-        e.addMessage(fmt::format("(in file/uri {})", file_path));
+    auto file_name = read_buffer_iterator.getLastFileName();
+    if (!file_name.empty())
+        e.addMessage(fmt::format("(in file/uri {})", file_name));
     throw;
 }
 
@@ -577,7 +569,7 @@ SchemaCache::Keys getKeysForSchemaCache(
     /// For example, for Protobuf format additional information is the path to the schema
     /// and message name.
     String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);
-    String schema_inference_mode(magic_enum::enum_name(context->getSettingsRef()[Setting::schema_inference_mode].value));
+    String schema_inference_mode(magic_enum::enum_name(context->getSettingsRef().schema_inference_mode.value));
     SchemaCache::Keys cache_keys;
     cache_keys.reserve(sources.size());
     std::transform(

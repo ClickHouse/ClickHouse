@@ -53,8 +53,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state,
-            SubstreamsDeserializeStatesCache * cache) const override;
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
@@ -81,10 +80,7 @@ private:
     template <typename ReturnType = void>
     ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const;
 
-    template <typename ReturnType>
-    ReturnType deserializeTupleJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, auto && deserialize_element) const;
-
-    template <typename ReturnType>
+    template <typename ReturnType = void>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 
     template <typename ReturnType = void>

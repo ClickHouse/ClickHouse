@@ -13,10 +13,8 @@ echo '%language=C++
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #pragma GCC diagnostic ignored "-Wunused-macros"
-// NOLINTBEGIN(modernize-macro-to-enum)
 %}
 # List generated using https://publicsuffix.org/list/public_suffix_list.dat
 %%' > tldLookup.gperf
 grep -v "//" public_suffix_list.dat | grep . | grep "\." | grep -ve "\..*\..*" >> tldLookup.gperf
 echo "%%" >> tldLookup.gperf
-echo '// NOLINTEND(modernize-macro-to-enum)' >> tldLookup.gperf

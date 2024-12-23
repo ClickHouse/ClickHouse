@@ -1,3 +1,5 @@
+version: '2.3'
+
 services:
   kerberizedhdfs1:
     cap_add:

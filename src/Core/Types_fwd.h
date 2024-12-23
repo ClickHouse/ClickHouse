@@ -21,7 +21,6 @@ using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
 using UInt256 = wide::integer<256, unsigned>;
-class BFloat16;
 
 namespace DB
 {
@@ -33,7 +32,7 @@ struct IPv6;
 
 struct Null;
 
-enum class TypeIndex : uint8_t;
+enum class TypeIndex;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;

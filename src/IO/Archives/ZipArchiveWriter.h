@@ -43,8 +43,6 @@ public:
     /// (Unless an error appeared and the archive is in fact no longer needed.)
     void finalize() override;
 
-    void cancel() noexcept override;
-
     /// Supported compression methods.
     static constexpr const char kStore[] = "store";
     static constexpr const char kDeflate[] = "deflate";
@@ -54,7 +52,7 @@ public:
     static constexpr const char kXz[] = "xz";
 
     /// Some compression levels.
-    enum class CompressionLevels : int8_t
+    enum class CompressionLevels
     {
         kDefault = kDefaultCompressionLevel,
         kFast = 2,

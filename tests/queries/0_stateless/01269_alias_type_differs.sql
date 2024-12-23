@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS data_01269;
 CREATE TABLE data_01269
 (

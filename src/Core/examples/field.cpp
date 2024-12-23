@@ -37,7 +37,7 @@ int main(int argc, char ** argv)
         std::cerr << applyVisitor(to_string, field) << std::endl;
     }
 
-    field.safeGet<Array &>().push_back(field);
+    field.get<Array &>().push_back(field);
     std::cerr << applyVisitor(to_string, field) << std::endl;
 
     std::cerr << (field < field2) << std::endl;

@@ -26,6 +26,7 @@ class Logger;
 namespace DB
 {
 
+class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
 class QueryPlan;
@@ -173,13 +174,13 @@ private:
 
     /// Different stages of query execution.
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
-    void executeWhere(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
+    void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
-        QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
+        QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info);
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
-    void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
-    void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
-    static void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description);
+    void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsDAGPtr & expression, bool remove_filter, bool overflow_row, bool final);
+    void executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
+    static void executeExpression(QueryPlan & query_plan, const ActionsDAGPtr & expression, const std::string & description);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
@@ -190,16 +191,16 @@ private:
     void executeLimitBy(QueryPlan & query_plan);
     void executeLimit(QueryPlan & query_plan);
     void executeOffset(QueryPlan & query_plan);
-    static void executeProjection(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression);
+    static void executeProjection(QueryPlan & query_plan, const ActionsDAGPtr & expression);
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
-    std::optional<UInt64> getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas);
+    std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
 
-    enum class Modificator : uint8_t
+    enum class Modificator
     {
         ROLLUP = 0,
         CUBE = 1,
@@ -239,7 +240,7 @@ private:
     Block source_header;
 
     /// Actions to calculate ALIAS if required.
-    std::optional<ActionsDAG> alias_actions;
+    ActionsDAGPtr alias_actions;
 
     /// The subquery interpreter, if the subquery
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;

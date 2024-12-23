@@ -3,7 +3,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -99,7 +98,11 @@ static void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     columns[i]->insert(snapshot.peak_memory_usage);
 }
 
-DB::Block getSampleBlock()
+void getProfileEvents(
+    const String & host_name,
+    DB::InternalProfileEventsQueuePtr profile_queue,
+    DB::Block & block,
+    ThreadIdToCountersSnapshot & last_sent_snapshots)
 {
     using namespace DB;
     static const NamesAndTypesList column_names_and_types = {
@@ -115,16 +118,8 @@ DB::Block getSampleBlock()
     for (auto const & name_and_type : column_names_and_types)
         temp_columns.emplace_back(name_and_type.type, name_and_type.name);
 
-    return Block(std::move(temp_columns));
-}
-
-DB::Block getProfileEvents(
-    const String & host_name,
-    DB::InternalProfileEventsQueuePtr profile_queue,
-    ThreadIdToCountersSnapshot & last_sent_snapshots)
-{
-    using namespace DB;
-
+    block = std::move(temp_columns);
+    MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();
     ThreadIdToCountersSnapshot new_snapshots;
 
@@ -144,9 +139,6 @@ DB::Block getProfileEvents(
     }
     last_sent_snapshots = std::move(new_snapshots);
 
-    auto block = getSampleBlock();
-    MutableColumns columns = block.mutateColumns();
-
     dumpProfileEvents(group_snapshot, columns, host_name);
     dumpMemoryTracker(group_snapshot, columns, host_name);
 
@@ -162,8 +154,6 @@ DB::Block getProfileEvents(
     bool empty = columns[0]->empty();
     if (!empty)
         block.setColumns(std::move(columns));
-
-    return block;
 }
 
 }
