@@ -806,16 +806,22 @@ std::string ACMEClient::requestChallenge(const std::string & uri)
     Poco::URI parsed_url(uri);
     parsed_url.getPathSegments(uri_segments);
 
+    /// We've already validated prefix, segments[2] should be our token.
+    if (uri_segments.size() < 3)
+        return "";
+    std::string token_from_uri = uri_segments[2];
+
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
     Coordination::Stat challenge_stat;
     std::string challenge;
 
-    /// TODO limit size?
-    std::string token_from_uri = uri.substr(std::string(ACME_CHALLENGE_HTTP_PATH).size());
-
-    auto response = zk->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "challenges" / token_from_uri, challenge, &challenge_stat);
+    auto response = zk->tryGet(
+        fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "challenges" / token_from_uri,
+        challenge,
+        &challenge_stat
+    );
     if (!response)
         return "";
 
