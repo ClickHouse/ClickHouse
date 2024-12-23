@@ -13,6 +13,7 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
+#include <iostream>
 
 // NOLINTBEGIN(*)
 
@@ -977,7 +978,12 @@ public:
         {
             auto new_numerator = toBitInt256(numerator);
             auto new_denominator = toBitInt256(denominator);
-            return fromBitInt256(new_numerator / new_denominator);
+            auto new_quotient = new_numerator / new_denominator;
+            auto new_remainder = new_numerator % new_denominator;
+            numerator = fromBitInt256(new_remainder);
+            // std::cout << "divide: " << toString(Field(numerator)) << " / " << toString(Field(denominator)) << " = "
+                    //   << toString(Field(numerator)) << std::endl;
+            return fromBitInt256(new_quotient);
         }
 
         if constexpr (Bits == 128 && sizeof(base_type) == 8)
@@ -1057,6 +1063,8 @@ public:
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);
+            // std::cout << "modulo: " << toString(Field(remainder)) << " / " << toString(Field(denominator)) << " = " << toString(Field(res))
+                    //   << std::endl;
             return remainder;
         }
         else
