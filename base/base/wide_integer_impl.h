@@ -981,8 +981,6 @@ public:
             auto new_quotient = new_numerator / new_denominator;
             auto new_remainder = new_numerator % new_denominator;
             numerator = fromBitInt256(new_remainder);
-            // std::cout << "divide: " << toString(Field(numerator)) << " / " << toString(Field(denominator)) << " = "
-                    //   << toString(Field(numerator)) << std::endl;
             return fromBitInt256(new_quotient);
         }
 
@@ -1063,8 +1061,6 @@ public:
 
             if (std::is_same_v<Signed, signed> && is_negative(lhs))
                 remainder = operator_unary_minus(remainder);
-            // std::cout << "modulo: " << toString(Field(remainder)) << " / " << toString(Field(denominator)) << " = " << toString(Field(res))
-                    //   << std::endl;
             return remainder;
         }
         else
