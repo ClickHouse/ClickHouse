@@ -2869,10 +2869,10 @@ void ClientBase::runInteractive()
     }
     while (true);
 
-    if (isNewYearMode())
-        output_stream << "Happy new year." << std::endl;
+    if (christmasMode())
+        output_stream << "Merry Christmas!" << std::endl;
     else if (isChineseNewYearMode(local_tz))
-        output_stream << "Happy Chinese new year. 春节快乐!" << std::endl;
+        output_stream << "Happy Chinese New Year! 春节快乐!" << std::endl;
     else
         output_stream << "Bye." << std::endl;
 }

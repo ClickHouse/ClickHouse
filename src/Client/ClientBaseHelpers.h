@@ -14,7 +14,7 @@ namespace DB
 class Context;
 
 /// Should we celebrate a bit?
-bool isNewYearMode();
+bool christmasMode();
 
 bool isChineseNewYearMode(const String & local_tz);
 

@@ -20,7 +20,7 @@ namespace Setting
 }
 
 /// Should we celebrate a bit?
-bool isNewYearMode()
+bool christmasMode()
 {
     time_t current_time = time(nullptr);
 
