@@ -103,6 +103,16 @@ class _Environment(MetaClasses.Serializable):
                 CHANGE_URL = github_event["head_commit"]["url"]  # commit url
                 PR_NUMBER = 0
                 COMMIT_URL = CHANGE_URL
+            elif "schedule" in github_event:
+                EVENT_TYPE = Workflow.Event.SCHEDULE
+                SHA = os.getenv(
+                    "GITHUB_SHA", "0000000000000000000000000000000000000000"
+                )
+                PR_NUMBER = 0
+                CHANGE_URL = (
+                    github_event["repository"]["html_url"] + "/commit/" + SHA
+                )  # commit url
+                COMMIT_URL = CHANGE_URL
             else:
                 assert False, "TODO: not supported"
         else:

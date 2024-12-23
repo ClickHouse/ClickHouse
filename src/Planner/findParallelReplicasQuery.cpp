@@ -401,6 +401,11 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
                 query_tree_node = array_join_node.getTableExpression().get();
                 break;
             }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                /// TODO: We can parallelize one table
+                return nullptr;
+            }
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = query_tree_node->as<JoinNode &>();
@@ -489,7 +494,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         processed_stage,
         modified_query_ast,
         context,
-        storage_limits);
+        storage_limits,
+        nullptr);
 
     auto converting = ActionsDAG::makeConvertingActions(
         header.getColumnsWithTypeAndName(),
