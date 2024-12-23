@@ -52,7 +52,7 @@ ORDER BY ALL;
 
 SELECT '--';
 
-SELECT 1 FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
 FROM test_table_join_1 AS t1 {{ join_type }} JOIN test_table_join_2 AS t2 USING (test_value); -- { serverError UNKNOWN_IDENTIFIER }
