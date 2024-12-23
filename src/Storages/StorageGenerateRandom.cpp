@@ -150,6 +150,7 @@ size_t estimateValueSize(
     }
 }
 
+}
 
 ColumnPtr fillColumnWithRandomData(
     const DataTypePtr type,
@@ -539,6 +540,8 @@ ColumnPtr fillColumnWithRandomData(
     }
 }
 
+namespace
+{
 
 class GenerateSource : public ISource
 {

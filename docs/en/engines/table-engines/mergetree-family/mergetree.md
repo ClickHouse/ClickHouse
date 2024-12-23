@@ -374,15 +374,15 @@ Users can create [UDF](/docs/en/sql-reference/statements/create/function.md) to 
 ```sql
 CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_nubmer_of_all_grams) * log(2));
+(total_number_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_number_of_all_grams) * log(2));
 
 CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams,  probability_of_false_positives) -> ceil((total_nubmer_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+(total_number_of_all_grams,  probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
 
 CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
 AS
-(total_nubmer_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_nubmer_of_all_grams)), number_of_hash_functions);
+(total_number_of_all_grams, number_of_hash_functions, size_of_bloom_filter_in_bytes) -> pow(1 - exp(-number_of_hash_functions/ (size_of_bloom_filter_in_bytes / total_number_of_all_grams)), number_of_hash_functions);
 
 CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
 AS
@@ -421,7 +421,7 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 #### Special-purpose
 
-- Experimental indexes to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
+- An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
 - An experimental full-text index to support full-text search. See [here](invertedindexes.md) for details.
 
 ### Functions Support {#functions-support}
@@ -684,8 +684,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 **See Also**
 
-- [ttl_only_drop_parts](/docs/en/operations/settings/settings.md/#ttl_only_drop_parts) setting
-
+- [ttl_only_drop_parts](/docs/en/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
 
 ## Disk types
 

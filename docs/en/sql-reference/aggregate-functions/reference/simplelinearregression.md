@@ -18,7 +18,7 @@ Parameters:
 
 Returned values:
 
-Constants `(a, b)` of the resulting line `y = a*x + b`.
+Constants `(k, b)` of the resulting line `y = k*x + b`.
 
 **Examples**
 

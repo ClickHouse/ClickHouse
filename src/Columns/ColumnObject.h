@@ -145,11 +145,12 @@ public:
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
 
-    /// Values of ColumnObject are not comparable.
+    /// Values of ColumnObject are not comparable for less and greater functions.
+    /// But we still support equal comparison.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    int compareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    int doCompareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #endif
     void getExtremes(Field & min, Field & max) const override;
 
@@ -161,6 +162,9 @@ public:
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
+    ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+    void rollback(const ColumnCheckpoint & checkpoint) override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override;
 
@@ -168,12 +172,13 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void finalize() override;
     bool isFinalized() const override;
 
     bool hasDynamicStructure() const override { return true; }
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
@@ -224,6 +229,7 @@ public:
     void setDynamicPaths(const std::vector<String> & paths);
     void setDynamicPaths(const std::vector<std::pair<String, ColumnPtr>> & paths);
     void setMaxDynamicPaths(size_t max_dynamic_paths_);
+    void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);

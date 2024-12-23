@@ -1,3 +1,5 @@
+#include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -5,9 +7,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MetricLog.h>
-#include <base/getFQDNOrHostName.h>
-#include <Common/DateLUTImpl.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -71,6 +70,15 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
     {
         const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
         auto & old_value = prev_profile_events[i];
+
+        /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
+        /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
+        /// It can be reproduced with the following integration tests:
+        /// - test_hedged_requests/test.py::test_receive_timeout2
+        /// - test_secure_socket::test
+        if (new_value < old_value)
+            continue;
+
         elem.profile_events[i] = new_value - old_value;
         old_value = new_value;
     }
@@ -81,7 +89,7 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
         elem.current_metrics[i] = CurrentMetrics::values[i];
     }
 
-    this->add(std::move(elem));
+    add(std::move(elem));
 }
 
 }

@@ -31,7 +31,7 @@ CachedObjectStorage::CachedObjectStorage(
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
-    return cache->createKeyForPath(path);
+    return FileCacheKey::fromPath(path);
 }
 
 ObjectStorageKey
@@ -71,7 +71,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     {
         if (cache->isInitialized())
         {
-            auto cache_key = cache->createKeyForPath(object.remote_path);
+            auto cache_key = FileCacheKey::fromPath(object.remote_path);
             auto global_context = Context::getGlobalContextInstance();
             auto modified_read_settings = read_settings.withNestedBuffer();
 
@@ -146,20 +146,6 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
     /// Add try catch?
     if (cache->isInitialized())
         cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
-}
-
-void CachedObjectStorage::removeObject(const StoredObject & object)
-{
-    removeCacheIfExists(object.remote_path);
-    object_storage->removeObject(object);
-}
-
-void CachedObjectStorage::removeObjects(const StoredObjects & objects)
-{
-    for (const auto & object : objects)
-        removeCacheIfExists(object.remote_path);
-
-    object_storage->removeObjects(objects);
 }
 
 void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)

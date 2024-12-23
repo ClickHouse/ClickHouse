@@ -14,7 +14,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#define AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE = 0xFFFFFF;
 
 
 namespace DB
@@ -155,9 +155,9 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        Int64 current_intersections = 0;
-        Int64 max_intersections = 0;
-        PointType position_of_max_intersections = 0;
+        Int64 current_intersections{};
+        Int64 max_intersections{};
+        PointType position_of_max_intersections{};
 
         /// const_cast because we will sort the array
         auto & array = this->data(place).value;

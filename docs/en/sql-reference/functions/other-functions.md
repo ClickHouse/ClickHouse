@@ -1213,7 +1213,7 @@ SELECT parseTimeDelta('1yr2mo')
 
 ## least
 
-Returns the smaller value of a and b.
+Returns the smallest arguments of one or more input arguments.  NULL arguments are ignored.
 
 **Syntax**
 
@@ -1223,7 +1223,7 @@ least(a, b)
 
 ## greatest
 
-Returns the larger value of a and b.
+Returns the largest arguments of one or more input arguments.  NULL arguments are ignored.
 
 **Syntax**
 
@@ -4389,4 +4389,72 @@ Result:
    ┌─getTypeSerializationStreams('Map(String, Int64)')────────────────────────────────────────────────────────────────┐
 1. │ ['{ArraySizes}','{ArrayElements, TupleElement(keys), Regular}','{ArrayElements, TupleElement(values), Regular}'] │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## globalVariable
+
+Takes a constant string argument and returns the value of the global variable with that name. This function is intended for compatibility with MySQL and not needed or useful for normal operation of ClickHouse. Only few dummy global variables are defined.
+
+**Syntax**
+
+```sql
+globalVariable(name)
+```
+
+**Arguments**
+
+- `name` — Global variable name. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the value of variable `name`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT globalVariable('max_allowed_packet');
+```
+
+Result:
+
+```response
+┌─globalVariable('max_allowed_packet')─┐
+│                             67108864 │
+└──────────────────────────────────────┘
+```
+
+## getMaxTableNameLengthForDatabase
+
+Returns the maximum table name length in a specified database.
+
+**Syntax**
+
+```sql
+getMaxTableNameLengthForDatabase(database_name)
+```
+
+**Arguments**
+
+- `database_name` — The name of the specified database. [String](../data-types/string.md).
+
+**Returned value**
+
+- Returns the length of the maximum table name.
+
+**Example**
+
+Query:
+
+```sql
+SELECT getMaxTableNameLengthForDatabase('default');
+```
+
+Result:
+
+```response
+┌─getMaxTableNameLengthForDatabase('default')─┐
+│                                         206 │
+└─────────────────────────────────────────────┘
 ```

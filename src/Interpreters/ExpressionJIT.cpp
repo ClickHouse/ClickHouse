@@ -266,7 +266,7 @@ public:
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
-        auto col = function.execute(args, function.getResultType(), 1);
+        auto col = function.execute(args, function.getResultType(), 1, /* dry_run = */ false);
         col->get(0, value);
     }
 

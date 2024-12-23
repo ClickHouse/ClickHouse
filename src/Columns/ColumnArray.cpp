@@ -369,6 +369,23 @@ void ColumnArray::popBack(size_t n)
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
+ColumnCheckpointPtr ColumnArray::getCheckpoint() const
+{
+    return std::make_shared<ColumnCheckpointWithNested>(size(), getData().getCheckpoint());
+}
+
+void ColumnArray::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    getData().updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
+void ColumnArray::rollback(const ColumnCheckpoint & checkpoint)
+{
+    getOffsets().resize_assume_reserved(checkpoint.size);
+    getData().rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
 {
     const ColumnArray & rhs = assert_cast<const ColumnArray &>(rhs_);
@@ -645,6 +662,8 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterNumber<Int128>(filt, result_size_hint);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return filterNumber<Int256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+        return filterNumber<BFloat16>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return filterNumber<Float32>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))
@@ -1005,10 +1024,10 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, Perm
             DefaultPartialSort());
 }
 
-ColumnPtr ColumnArray::compress() const
+ColumnPtr ColumnArray::compress(bool force_compression) const
 {
-    ColumnPtr data_compressed = data->compress();
-    ColumnPtr offsets_compressed = offsets->compress();
+    ColumnPtr data_compressed = data->compress(force_compression);
+    ColumnPtr offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
 
@@ -1048,6 +1067,8 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<Int128>(replicate_offsets);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return replicateNumber<Int256>(replicate_offsets);
+    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+        return replicateNumber<BFloat16>(replicate_offsets);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return replicateNumber<Float32>(replicate_offsets);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))

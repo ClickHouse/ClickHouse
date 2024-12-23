@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/BackupConcurrencyCheck.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Common/Logger.h>
 #include <mutex>
@@ -12,19 +13,20 @@ namespace DB
 {
 class ASTCreateQuery;
 
-
 /// Implementation of the IRestoreCoordination interface performing coordination in memory.
 class RestoreCoordinationLocal : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationLocal();
+    RestoreCoordinationLocal(bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_);
     ~RestoreCoordinationLocal() override;
 
-    /// Sets the current stage and waits for other hosts to come to this stage too.
-    void setStage(const String & new_stage, const String & message) override;
-    void setError(const Exception & exception) override;
-    Strings waitForStage(const String & stage_to_wait) override;
-    Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;
+    void setRestoreQueryIsSentToOtherHosts() override {}
+    bool isRestoreQuerySentToOtherHosts() const override { return false; }
+    Strings setStage(const String &, const String &, bool) override { return {}; }
+    bool setError(std::exception_ptr, bool) override { return true; }
+    bool waitOtherHostsFinish(bool) const override { return true; }
+    bool finish(bool) override { return true; }
+    bool cleanup(bool) override { return true; }
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -49,15 +51,16 @@ public:
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
     void generateUUIDForTable(ASTCreateQuery & create_query) override;
 
-    bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
+    ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const override;
 
 private:
     LoggerPtr const log;
+    BackupConcurrencyCheck concurrency_check;
 
-    std::set<std::pair<String /* database_zk_path */, String /* table_name */>> acquired_tables_in_replicated_databases;
-    std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables;
-    std::unordered_map<String, CreateQueryUUIDs> create_query_uuids;
-    std::unordered_set<String /* root_zk_path */> acquired_data_in_keeper_map_tables;
+    std::set<std::pair<String /* database_zk_path */, String /* table_name */>> acquired_tables_in_replicated_databases TSA_GUARDED_BY(mutex);
+    std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, CreateQueryUUIDs> create_query_uuids TSA_GUARDED_BY(mutex);
+    std::unordered_set<String /* root_zk_path */> acquired_data_in_keeper_map_tables TSA_GUARDED_BY(mutex);
 
     mutable std::mutex mutex;
 };

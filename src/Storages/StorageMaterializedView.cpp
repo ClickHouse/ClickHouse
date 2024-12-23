@@ -48,6 +48,16 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_materialized_views_count_for_table;
+}
+
+namespace RefreshSetting
+{
+    extern const RefreshSettingsBool all_replicas;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -135,7 +145,7 @@ StorageMaterializedView::StorageMaterializedView(
     {
         auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
 
-        auto max_materialized_views_count_for_table = getContext()->getServerSettings().max_materialized_views_count_for_table;
+        auto max_materialized_views_count_for_table = getContext()->getServerSettings()[ServerSetting::max_materialized_views_count_for_table];
         if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
             throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
                             "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
@@ -172,7 +182,7 @@ StorageMaterializedView::StorageMaterializedView(
                 RefreshSettings s;
                 if (query.refresh_strategy->settings)
                     s.applyChanges(query.refresh_strategy->settings->changes);
-                refresh_coordinated = !s.all_replicas;
+                refresh_coordinated = !s[RefreshSetting::all_replicas];
             }
             else
             {
@@ -218,10 +228,20 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (!fixed_uuid)
     {
-        if (to_inner_uuid != UUIDHelpers::Nil)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID is not allowed for materialized views with REFRESH without APPEND");
-        if (to_table_id.hasUUID())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "explicit UUID is not allowed for target table of materialized view with REFRESH without APPEND");
+        if (mode >= LoadingStrictnessLevel::ATTACH)
+        {
+            /// Old versions of ClickHouse (when refreshable MV was experimental) could add useless
+            /// UUIDs to attach queries.
+            to_table_id.uuid = UUIDHelpers::Nil;
+            to_inner_uuid = UUIDHelpers::Nil;
+        }
+        else
+        {
+            if (to_inner_uuid != UUIDHelpers::Nil)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "TO INNER UUID is not allowed for materialized views with REFRESH without APPEND");
+            if (to_table_id.hasUUID())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "explicit UUID is not allowed for target table of materialized view with REFRESH without APPEND");
+        }
     }
 
     if (!has_inner_table)
@@ -344,7 +364,7 @@ void StorageMaterializedView::read(
     if (query_plan.isInitialized())
     {
         auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
-        auto target_header = query_plan.getCurrentDataStream().header;
+        auto target_header = query_plan.getCurrentHeader();
 
         /// No need to convert columns that does not exist in MV
         removeNonCommonColumns(mv_header, target_header);
@@ -366,12 +386,13 @@ void StorageMaterializedView::read(
              * In that case underlying table returns joined columns as well.
              */
             converting_actions.removeUnusedActions();
-            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(converting_actions));
+            auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting_actions));
             converting_step->setStepDescription("Convert target table structure to MaterializedView structure");
             query_plan.addStep(std::move(converting_step));
         }
 
         query_plan.addStorageHolder(storage);
+        query_plan.addInterpreterContext(context);
         query_plan.addTableLock(std::move(lock));
     }
 }
@@ -395,6 +416,7 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 
     auto sink = storage->write(query, metadata_snapshot, context, async_insert);
 
+    sink->addInterpreterContext(context);
     sink->addTableLock(lock);
     return sink;
 }

@@ -153,6 +153,12 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "merges")
+            {
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<MergesWebUIRequestHandler>>(server);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
             else
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
                     handler_type, prefix, key);
@@ -247,6 +253,12 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/binary");
     factory.addHandler(binary_handler);
 
+    auto merges_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<MergesWebUIRequestHandler>>(server);
+    merges_handler->attachNonStrictPath("/merges");
+    merges_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/merges");
+    factory.addHandler(merges_handler);
+
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
@@ -263,7 +275,7 @@ void addDefaultHandlersFactory(
 
     auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
     {
-        return std::make_unique<DynamicQueryHandler>(server, "query");
+        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)

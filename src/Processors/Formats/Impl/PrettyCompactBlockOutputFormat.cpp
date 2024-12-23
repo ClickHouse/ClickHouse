@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/PrettyFormatHelpers.h>
 #include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
 
 
@@ -189,7 +190,8 @@ void PrettyCompactBlockOutputFormat::writeRow(
     }
 
     writeCString(grid_symbols.bar, out);
-    writeReadableNumberTip(chunk);
+    if (readable_number_tip)
+        writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
     writeCString("\n", out);
 }
 

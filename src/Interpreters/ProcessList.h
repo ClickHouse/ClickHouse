@@ -14,15 +14,16 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/LockGuard.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
+#include <base/defines.h>
 
 #include <condition_variable>
 #include <list>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -42,6 +43,17 @@ class ThreadStatus;
 class ProcessListEntry;
 
 
+enum CancelReason
+{
+    UNDEFINED,
+    TIMEOUT,
+    CANCELLED_BY_USER,
+
+    /// CANCELLED_BY_ERROR means that there were parallel processes/threads and some of them failed,
+    /// so we cancel other processes/threads with this cancel reason.
+    CANCELLED_BY_ERROR,
+};
+
 /** Information of process list element.
   * To output in SHOW PROCESSLIST query. Does not contain any complex objects, that do something on copy or destructor.
   */
@@ -59,6 +71,7 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
+    CancelReason cancel_reason;
     bool is_all_data_sent;
 
     /// Optional fields, filled by query
@@ -68,6 +81,8 @@ struct QueryStatusInfo
     std::shared_ptr<Settings> query_settings;
     std::string current_database;
 };
+
+using QueryStatusInfoPtr = std::shared_ptr<const QueryStatusInfo>;
 
 /// Query and information about its execution.
 class QueryStatus : public WithContext
@@ -106,6 +121,10 @@ protected:
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
 
+    mutable std::mutex cancel_mutex;
+    CancelReason cancel_reason { CancelReason::UNDEFINED };
+    std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
+
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
@@ -123,6 +142,8 @@ protected:
     /// Be careful using it (this function contains no synchronization).
     /// A weak pointer is used here because it's a ProcessListEntry which owns this QueryStatus, and not vice versa.
     void setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_);
+
+    [[noreturn]] void throwQueryWasCancelled() const TSA_REQUIRES(cancel_mutex);
 
     mutable std::mutex executors_mutex;
 
@@ -164,7 +185,6 @@ protected:
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
-
 public:
     QueryStatus(
         ContextPtr context_,
@@ -223,14 +243,17 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    CancellationCode cancelQuery(bool kill);
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns = 0);
+
+    /// Cancels the current query.
+    /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
+    CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
 
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
 
-    bool isAllDataSent() const { return is_all_data_sent; }
     void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
@@ -325,30 +348,10 @@ public:
     QueryStatusPtr getQueryStatus() const { return *it; }
 };
 
-
-class ProcessListBase
-{
-    mutable std::mutex mutex;
-
-protected:
-    using Lock = std::unique_lock<std::mutex>;
-    struct LockAndBlocker
-    {
-        Lock lock;
-        OvercommitTrackerBlockerInThread blocker;
-    };
-
-    // It is forbidden to do allocations/deallocations with acquired mutex and
-    // enabled OvercommitTracker. This leads to deadlock in the case of OOM.
-    LockAndBlocker safeLock() const noexcept { return { std::unique_lock{mutex}, {} }; }
-    Lock unsafeLock() const noexcept { return std::unique_lock{mutex}; }
-};
-
-
 /** List of currently executing queries.
   * Also implements limit on their number.
   */
-class ProcessList : public ProcessListBase
+class ProcessList
 {
 public:
     using Element = QueryStatusPtr;
@@ -367,6 +370,10 @@ public:
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
+    using Mutex = std::mutex;
+    using Lock = std::unique_lock<Mutex>;
+    using LockAndBlocker = LockAndOverCommitTrackerBlocker<LockGuard, Mutex>;
+
 protected:
     friend class ProcessListEntry;
     friend struct ::OvercommitTracker;
@@ -374,6 +381,7 @@ protected:
     friend struct ::GlobalOvercommitTracker;
 
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
+    mutable Mutex mutex;
 
     /// List of queries
     Container processes;
@@ -395,7 +403,10 @@ protected:
     ThrottlerPtr total_network_throttler;
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
-    QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user);
+    QueryStatusPtr tryGetProcessListElement(const String & current_query_id, const String & current_user) TSA_REQUIRES(mutex);
+
+    /// Finds process with specified query_id.
+    QueryStatusPtr getProcessListElement(const String & query_id) const;
 
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_insert_queries_amount = 0;
@@ -437,42 +448,50 @@ public:
     /// Get current state of process list.
     Info getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
+    // Get current state of a particular process.
+    QueryStatusInfoPtr getQueryInfo(const String & query_id, bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
+
     /// Get current state of process list per user.
     UserInfo getUserInfo(bool get_profile_events = false) const;
 
+    Mutex & getMutex()
+    {
+        return mutex;
+    }
+
     void setMaxSize(size_t max_size_)
     {
-        auto lock = unsafeLock();
+        Lock lock(mutex);
         max_size = max_size_;
     }
 
     size_t getMaxSize() const
     {
-        auto lock = unsafeLock();
+        Lock lock(mutex);
         return max_size;
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
-        auto lock = unsafeLock();
+        Lock lock(mutex);
         max_insert_queries_amount = max_insert_queries_amount_;
     }
 
     size_t getMaxInsertQueriesAmount() const
     {
-        auto lock = unsafeLock();
+        Lock lock(mutex);
         return max_insert_queries_amount;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
-        auto lock = unsafeLock();
+        Lock lock(mutex);
         max_select_queries_amount = max_select_queries_amount_;
     }
 
     size_t getMaxSelectQueriesAmount() const
     {
-        auto lock = unsafeLock();
+        Lock lock(mutex);
         return max_select_queries_amount;
     }
 
@@ -492,8 +511,8 @@ public:
     void decrementWaiters();
 
     /// Try call cancel() for input and output streams of query with specified id and user
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
-    CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+    CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     void killAllQueries();
 };
