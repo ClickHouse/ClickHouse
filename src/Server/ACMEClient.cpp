@@ -1,22 +1,14 @@
+#include <Server/ACMEClient.h>
+
+#if USE_SSL
+
 #include <memory>
 #include <mutex>
 #include <sstream>
-#include <Server/ACMEClient.h>
-#include <openssl/bio.h>
-#include <Poco/DateTimeFormat.h>
-#include <Poco/Timespan.h>
-#include "Common/ZooKeeper/Types.h"
-#include "Server/CertificateReloader.h"
 
-#if USE_SSL
-#include <Core/BackgroundSchedulePool.h>
-#include <Disks/IO/ReadBufferFromWebServer.h>
-#include <IO/HTTPCommon.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <IO/S3/Credentials.h>
-#include <Interpreters/Context.h>
 #include <fmt/core.h>
+
+#include <openssl/bio.h>
 #include <openssl/core_names.h>
 #include <openssl/encoder.h>
 #include <openssl/evp.h>
@@ -26,6 +18,21 @@
 #include <openssl/provider.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
+
+#include <Common/Base64.h>
+#include <Common/Exception.h>
+#include <Common/HTTPConnectionPool.h>
+#include <Common/OpenSSLHelpers.h>
+#include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Disks/IO/ReadBufferFromWebServer.h>
+#include <IO/HTTPCommon.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/S3/Credentials.h>
+#include <Interpreters/Context.h>
 #include <Poco/Base64Encoder.h>
 #include <Poco/Crypto/CryptoStream.h>
 #include <Poco/Crypto/ECKey.h>
@@ -33,6 +40,7 @@
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/RSAKeyImpl.h>
 #include <Poco/Crypto/X509Certificate.h>
+#include <Poco/DateTimeFormat.h>
 #include <Poco/DateTimeFormatter.h>
 #include <Poco/DigestEngine.h>
 #include <Poco/File.h>
@@ -43,13 +51,9 @@
 #include <Poco/SHA1Engine.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
+#include <Poco/Timespan.h>
 #include <Poco/URI.h>
-#include <Common/Base64.h>
-#include <Common/Exception.h>
-#include <Common/HTTPConnectionPool.h>
-#include <Common/OpenSSLHelpers.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/logger_useful.h>
+#include <Server/CertificateReloader.h>
 
 
 namespace DB
@@ -186,7 +190,9 @@ std::optional<std::tuple<Poco::Crypto::EVPPKey, Poco::Crypto::X509Certificate>> 
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
-    std::string pkey, certificate;
+    std::string pkey;
+    std::string certificate;
+
     zk->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domains[0] / "private_key", pkey);
     zk->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domains[0] / "certificate", certificate);
 
@@ -265,8 +271,11 @@ void ACMEClient::initialize(const Poco::Util::AbstractConfiguration & config)
                 bool need_refresh = false;
                 for (const auto & domain : domains)
                 {
-                    Coordination::Stat private_key_stat, certificate_stat;
-                    std::string private_key, certificate;
+                    Coordination::Stat certificate_stat;
+                    Coordination::Stat private_key_stat;
+
+                    std::string private_key;
+                    std::string certificate;
 
                     zookeeper->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "private_key", private_key, &private_key_stat);
                     zookeeper->tryGet(fs::path(ZOOKEEPER_ACME_BASE_PATH) / acme_hostname / "domains" / domain / "certificate", certificate, &certificate_stat);
@@ -407,14 +416,6 @@ void ACMEClient::initialize(const Poco::Util::AbstractConfiguration & config)
             }
         });
 
-    /// First we need to get private key from Keeper,
-    /// or generate one if we have not already.
-    /// This blocks authorization, as key is required for this step.
-
-    /// Next, we start an authorization loop.
-
-    /// On finished authorization we can start accepting orders for certificates.
-
     refresh_key_task = bgpool.createTask(
         "ACMEKeygen",
         [this]
@@ -472,25 +473,6 @@ void ACMEClient::initialize(const Poco::Util::AbstractConfiguration & config)
 
     if (!private_acme_key)
         refresh_key_task->activateAndSchedule();
-
-    // if (!initialized)
-    // {
-    //
-    //     chassert(!key_id.empty());
-
-        // auto order_url = order();
-        // do some kind of event loop here
-        // describe order -> finalize -> wait
-        // describe order -> pull cert
-        // finalizeOrder(fin);
-        // sleepForSeconds(5);
-
-        // auto response = doJWSRequest(fin, "", nullptr);
-        // LOG_DEBUG(log, "Finalize response: {}", response);
-    // }
-
-    /// TODO on initialization go through config and try to reissue all
-    /// expiring/missing certificates.
 }
 
 
@@ -815,12 +797,14 @@ std::string ACMEClient::requestNonce()
 
 std::string ACMEClient::requestChallenge(const std::string & uri)
 {
-    LOG_DEBUG(log, "Requesting challenge for {}", uri);
-
     LOG_DEBUG(log, "Challenge requested for uri: {}", uri);
 
     if (!uri.starts_with(ACME_CHALLENGE_HTTP_PATH))
         return "";
+
+    std::vector<std::string> uri_segments;
+    Poco::URI parsed_url(uri);
+    parsed_url.getPathSegments(uri_segments);
 
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();

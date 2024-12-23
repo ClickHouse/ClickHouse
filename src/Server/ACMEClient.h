@@ -77,17 +77,8 @@ struct ACMEOrder
 
 
 static constexpr auto ACME_CHALLENGE_HTTP_PATH = "/.well-known/acme-challenge/";
-
-///  TODO should we include provider name here?
-///  /clickhouse/acme
-///     /account_private_key
-///     /challenges
-///         /test.example.com
-///
 static constexpr auto ZOOKEEPER_ACME_BASE_PATH = "/clickhouse/acme";
-
 static constexpr auto HTTP_01_CHALLENGE_TYPE = "http-01";
-
 static constexpr auto NONCE_HEADER_NAME = "replay-nonce";
 
 class ACMEClient : private boost::noncopyable
