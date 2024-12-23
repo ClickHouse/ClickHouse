@@ -1,26 +1,24 @@
 #pragma once
 
-#include <unordered_set>
-#include <Poco/Crypto/EVPPKey.h>
 #include "config.h"
-
-#include <Common/ZooKeeper/ZooKeeperLock.h>
 
 #if USE_SSL
 #include <boost/core/noncopyable.hpp>
 
+#include <Common/JSONWebKey.h>
+#include <Common/Logger.h>
+#include <Common/ProxyConfiguration.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <IO/ConnectionTimeouts.h>
+#include <Poco/Crypto/EVPPKey.h>
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/X509Certificate.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/ProxyConfiguration.h>
-#include <Common/JSONWebKey.h>
-#include <Common/Logger.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <IO/ConnectionTimeouts.h>
 
 
 namespace DB
