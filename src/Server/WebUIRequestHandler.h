@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Server/HTTP/HTTPRequestHandler.h>
 
 
@@ -70,15 +72,6 @@ private:
     std::unordered_map<String, String> http_response_headers_override;
 };
 
-class ACMERequestHandler : public HTTPRequestHandler
-{
-private:
-    IServer & server;
-public:
-    explicit ACMERequestHandler(IServer & server_);
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
-};
-
 class JavaScriptWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
@@ -92,6 +85,13 @@ public:
 private:
     /// Overrides for response headers.
     std::unordered_map<String, String> http_response_headers_override;
+};
+
+class ACMERequestHandler : public HTTPRequestHandler
+{
+public:
+    explicit ACMERequestHandler(IServer &) {}
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
 }

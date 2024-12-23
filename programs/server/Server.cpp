@@ -583,9 +583,8 @@ void Server::createServer(
         }
         global_context->registerServerPort(port_name, port);
     }
-    catch (const Poco::Exception & e)
+    catch (const Poco::Exception &)
     {
-        LOG_WARNING(&logger(), "Got exception {}", e.what());
         if (listen_try)
         {
             LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
@@ -3179,12 +3178,6 @@ void Server::createServers(
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
 #if USE_SSL
-                // while (!ACMEClient::ACMEClient::instance().isReady())
-                // {
-                //     LOG_WARNING(&logger(), "Failed to initialize ACME client. Retry in 10 seconds.");
-                //     std::this_thread::sleep_for(std::chrono::seconds(10));
-                // }
-
                 Poco::Net::SecureServerSocket socket;
                 auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
