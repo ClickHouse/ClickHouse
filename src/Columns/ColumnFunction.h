@@ -57,8 +57,7 @@ public:
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce() const;
-    ColumnWithTypeAndName reduce(FunctionExecuteProfile & profile) const;
+    ColumnWithTypeAndName reduce(FunctionExecuteProfile * profile = nullptr) const;
 
     Field operator[](size_t n) const override;
 
