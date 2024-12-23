@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 
+#include <atomic>
 #include <utility>
 
 #include <Backups/IRestoreCoordination.h>
@@ -49,6 +50,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include "base/defines.h"
 
 namespace DB
 {
@@ -808,84 +810,65 @@ void DatabaseReplicated::initDdlWorker()
     ddl_worker_initialized = true;
 }
 
-void DatabaseReplicated::restoreMetadataInZookeeper()
+void DatabaseReplicated::restoreTablesMetadataInKeeper()
 {
-    std::size_t total_tables = 0;
-    std::size_t restored_tables_metadata = 0;
-    std::size_t already_restored_tables_metadata = 0;
-
     auto zookeeper = getZooKeeper();
     auto local_context = getContext();
 
-    for (auto existing_tables_it = getTablesIterator(local_context, {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
-         existing_tables_it->next(), ++total_tables)
+    std::vector<std::string> tables_metadata_in_zk;
+    Coordination::Stat entity_name_stat;
+
+    const auto error_code = zookeeper->tryGetChildren(zookeeper_path + "/metadata", tables_metadata_in_zk, &entity_name_stat);
+
+    if (error_code == Coordination::Error::ZOK && !tables_metadata_in_zk.empty())
+    {
+        UInt64 new_digest{};
+
+        for (auto existing_tables_it = getTablesIterator(local_context, {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
+             existing_tables_it->next())
+        {
+            const String table_name = existing_tables_it->name();
+            const String statement = getObjectDefinitionFromCreateQuery(getCreateTableQuery(table_name, local_context));
+
+            new_digest += DB::getMetadataHash(table_name, statement);
+        }
+
+        std::lock_guard lock{metadata_mutex};
+        tables_metadata_digest += new_digest;
+        assert(checkDigestValid(local_context));
+    }
+    else
     {
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, zookeeper_path, true, "");
 
-        const String table_name = existing_tables_it->name();
-        LOG_TEST(log, "table_name={} was found to restore metadata in zookeeper", table_name);
-
-        assert(!ddl_worker->isCurrentlyActive() || txn);
-
-        const auto ast_create_query_ptr = getCreateTableQuery(table_name, local_context);
-        const auto * create_query = ast_create_query_ptr->as<ASTCreateQuery>();
-        const String statement = getObjectDefinitionFromCreateQuery(create_query->clone());
-
-        const String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(create_query->getTable());
-
-        String table_metadata_zk;
-
-        const bool metadata_exists_in_zk = zookeeper->tryGet(metadata_zk_path, table_metadata_zk);
-        LOG_TEST(log, "table_name={}, metadata_exists_in_zk={}, metadata_zk_path={}", table_name, metadata_exists_in_zk, metadata_zk_path);
-
-        if (metadata_exists_in_zk)
+        UInt64 new_digest{};
         {
-            already_restored_tables_metadata++;
-            LOG_DEBUG(
-                log,
-                "Metadata for table={} already exists in keeper by path={}. Possibly RESTORE DATABASE REPLICA was completed on another "
-                "replica.",
-                table_name,
-                metadata_zk_path);
-
-            LOG_TRACE(log, "local metadata={}", statement);
-            LOG_TRACE(log, "metadata in keeper={}", table_metadata_zk);
-            if (table_metadata_zk != statement)
-            {
-                throw Exception(
-                    ErrorCodes::RESTORE_DATABASE_REPLICA_WITH_DIFFRENT_TABLE_METADATA,
-                    "Metadata for table={} in zookeeper is diffrent from local.",
-                    table_name);
-            }
-            continue;
+            std::lock_guard lock{metadata_mutex};
+            new_digest = tables_metadata_digest;
         }
 
-        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+        for (auto existing_tables_it = getTablesIterator(local_context, {}, /*skip_not_loaded=*/false); existing_tables_it->isValid();
+             existing_tables_it->next())
+        {
+            const String table_name = existing_tables_it->name();
+            LOG_TEST(log, "table_name={} was found to restore metadata in zookeeper", table_name);
 
-        std::lock_guard lock{metadata_mutex};
-        UInt64 new_digest = tables_metadata_digest;
-        new_digest += DB::getMetadataHash(create_query->getTable(), statement);
-        txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+            assert(!ddl_worker->isCurrentlyActive());
 
-        tables_metadata_digest = new_digest;
-        assert(checkDigestValid(local_context));
+            const String statement = getObjectDefinitionFromCreateQuery(getCreateTableQuery(table_name, local_context));
+            const String table_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+            txn->addOp(zkutil::makeCreateRequest(table_metadata_zk_path, statement, zkutil::CreateMode::Persistent));
+
+            std::lock_guard lock{metadata_mutex};
+            new_digest += DB::getMetadataHash(table_name, statement);
+
+            tables_metadata_digest = new_digest;
+            assert(checkDigestValid(local_context));
+        }
+
+        txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), entity_name_stat.version));
 
         txn->commit();
-        restored_tables_metadata++;
-
-        LOG_DEBUG(log, "Metadata for table={} was restored in zookeeper.", table_name);
-    }
-
-    LOG_DEBUG(log, "Metadata in zookeeper was restored for {}/{} tables in current replica.", restored_tables_metadata, total_tables);
-    LOG_DEBUG(
-        log,
-        "Metadata in zookeeper was already restored for {}/{} tables in another replica.",
-        already_restored_tables_metadata,
-        total_tables);
-
-    if (0 < already_restored_tables_metadata && already_restored_tables_metadata < total_tables)
-    {
-        throw Exception(ErrorCodes::RESTORE_DATABASE_REPLICA_WITH_DIFFRENT_TABLE_METADATA, "Partially restored metadata. It's a bug");
     }
 }
 
@@ -1700,15 +1683,14 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
 
     tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::CREATE);
 
-    restoreMetadataInZookeeper();
+    restoreTablesMetadataInKeeper();
 
     {
         std::lock_guard lock{ddl_worker_mutex};
 
-        if (is_probably_dropped.load())
+        if (is_probably_dropped.exchange(false, std::memory_order_relaxed))
         {
             LOG_TRACE(log, "Flag is_probably_dropped is being reset to restore database metadata in keeper.");
-            is_probably_dropped.store(false);
         }
 
         if (ddl_worker)

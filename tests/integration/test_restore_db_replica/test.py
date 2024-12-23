@@ -64,6 +64,7 @@ def failed_alter_table(node, table_name: str):
 def create_table(node, table_name: str):
     assert node.query(
         f"""
+            SET distributed_ddl_task_timeout=10;
             CREATE TABLE repl_db.{table_name} (n UInt32)
             ENGINE = ReplicatedMergeTree
             ORDER BY n PARTITION BY n % 10;
@@ -328,3 +329,80 @@ def test_query_after_restore_db_replica(
     if exists_table:
         node_1.query(f"DROP TABLE repl_db.{exists_table} SYNC")
     node_1.query(f"DROP TABLE repl_db.{changed_table} SYNC")
+
+
+@pytest.mark.parametrize(
+    "restore_firstly_node_where_created",
+    [
+        pytest.param(
+            [node_1, node_2],
+            id="restore node1-node2",
+        ),
+        pytest.param(
+            True,
+            id="restore node2-node1",
+        ),
+    ]
+)
+def test_restore_db_replica_with_diffrent_table_metadata(
+    start_cluster,
+    restore_firstly_node_where_created
+):
+    test_table_1 = "test_table_1"
+    test_table_2 = "test_table_2"
+    
+    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
+    node_2.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
+    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_2} SYNC")
+    node_2.query(f"DROP TABLE IF EXISTS repl_db.{test_table_2} SYNC")
+
+    zk = cluster.get_kazoo_client("zoo1")
+
+    count_test_table_1 = 100
+
+    create_table(node_1, test_table_1)
+    fill_table(node_1, test_table_1, count_test_table_1)
+
+    node_1.stop_clickhouse()
+
+    assert "is not finished on 1 of 2 hosts" in node_2.query_and_get_error(
+        f"""
+            SET distributed_ddl_task_timeout=10;
+            CREATE TABLE repl_db.{test_table_2} (n UInt32)
+            ENGINE = ReplicatedMergeTree
+            ORDER BY n PARTITION BY n % 10;
+        """
+    )
+
+    count_test_table_2 = 10
+
+    fill_table(node_2, test_table_2, count_test_table_2)
+
+    zk_rmr_with_retries(zk, "/clickhouse/repl_db")
+    assert zk.exists("/clickhouse/repl_db") is None
+
+    node_1.start_clickhouse()
+
+    assert ["0"] == node_1.query(f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'").split()
+    assert ["1"] == node_2.query(f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'").split()
+
+    nodes = [node_1, node_2]
+    if restore_firstly_node_where_created:
+        nodes.reverse()
+
+    for node in nodes:
+        node.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
+
+    assert [f"{count_test_table_1}"] == node_1.query(f"SELECT count(*) FROM repl_db.{test_table_1}").split()
+    assert [f"{count_test_table_1}"] == node_2.query(f"SELECT count(*) FROM repl_db.{test_table_1}").split()
+
+    expected_count = ["0"]
+    if restore_firstly_node_where_created:
+        expected_count = ["1"]
+
+    assert expected_count == node_1.query(f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'").split()
+    assert expected_count == node_2.query(f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'").split()
+
+    if restore_firstly_node_where_created:
+        assert [f"{count_test_table_2}"] == node_1.query(f"SELECT count(*) FROM repl_db.{test_table_2}").split()
+        assert [f"{count_test_table_2}"] == node_2.query(f"SELECT count(*) FROM repl_db.{test_table_2}").split()
