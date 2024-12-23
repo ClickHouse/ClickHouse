@@ -2586,7 +2586,7 @@ int StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * 
         * static_cast<uint32_t>(
                               collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                               || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
-    const uint32_t insert = 150 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t insert = 180 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t light_delete = 6 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t truncate = 2
         * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
