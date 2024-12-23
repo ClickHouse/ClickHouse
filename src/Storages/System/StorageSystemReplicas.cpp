@@ -478,7 +478,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
     for (size_t i = 0; i < tables_size; ++i)
     {
         if (query_status)
-            query_status->checkIfKilledAndThrow();
+            query_status->checkTimeLimit();
 
         auto & storage = replicated_tables[(*col_database)[i].safeGet<const String &>()]
             [(*col_table)[i].safeGet<const String &>()];

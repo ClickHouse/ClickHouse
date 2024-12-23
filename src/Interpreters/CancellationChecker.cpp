@@ -8,12 +8,6 @@
 #include <mutex>
 
 
-namespace ProfileEvents
-{
-    extern const Event OverflowBreak;
-    extern const Event OverflowThrow;
-}
-
 namespace DB
 {
 
@@ -58,13 +52,6 @@ void CancellationChecker::cancelTask(QueryToTrack task)
 {
     if (task.query)
     {
-        if (task.overflow_mode == OverflowMode::THROW)
-            ProfileEvents::increment(ProfileEvents::OverflowThrow);
-        else if (task.overflow_mode == OverflowMode::BREAK)
-            ProfileEvents::increment(ProfileEvents::OverflowBreak);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
-
         task.query->enableStopByTimeout();
     }
 }
