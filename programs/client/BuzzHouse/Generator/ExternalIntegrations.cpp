@@ -1,4 +1,4 @@
-#include "ExternalIntegrations.h"
+#include <ExternalIntegrations.h>
 
 #include <cinttypes>
 #include <cstring>
@@ -8,8 +8,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-#include "Hugeint.h"
-#include "UHugeint.h"
+#include <Hugeint.h>
+#include <UHugeint.h>
 
 #include <IO/copyData.h>
 #include <Common/ShellCommand.h>

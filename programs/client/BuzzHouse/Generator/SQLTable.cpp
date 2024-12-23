@@ -1,7 +1,7 @@
 #include <cstdint>
-#include "SQLCatalog.h"
-#include "SQLTypes.h"
-#include "StatementGenerator.h"
+#include <SQLCatalog.h>
+#include <SQLTypes.h>
+#include <StatementGenerator.h>
 
 namespace BuzzHouse
 {

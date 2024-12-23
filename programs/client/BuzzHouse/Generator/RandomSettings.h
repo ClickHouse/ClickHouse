@@ -1,8 +1,8 @@
 #pragma once
 
-#include "FuzzConfig.h"
-#include "RandomGenerator.h"
-#include "SQLProtoStr.h"
+#include <FuzzConfig.h>
+#include <RandomGenerator.h>
+#include <SQLProtoStr.h>
 
 #include <cstdint>
 #include <functional>

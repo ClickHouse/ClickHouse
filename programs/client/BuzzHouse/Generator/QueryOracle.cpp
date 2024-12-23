@@ -1,4 +1,4 @@
-#include "QueryOracle.h"
+#include <QueryOracle.h>
 
 #include <cstdio>
 

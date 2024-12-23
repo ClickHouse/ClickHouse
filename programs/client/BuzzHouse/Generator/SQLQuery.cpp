@@ -1,6 +1,6 @@
 #include <string>
-#include "SQLCatalog.h"
-#include "StatementGenerator.h"
+#include <SQLCatalog.h>
+#include <StatementGenerator.h>
 
 namespace BuzzHouse
 {

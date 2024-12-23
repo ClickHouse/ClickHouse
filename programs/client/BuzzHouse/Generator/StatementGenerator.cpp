@@ -1,7 +1,7 @@
-#include "StatementGenerator.h"
-#include "RandomSettings.h"
-#include "SQLCatalog.h"
-#include "SQLTypes.h"
+#include <RandomSettings.h>
+#include <SQLCatalog.h>
+#include <SQLTypes.h>
+#include <StatementGenerator.h>
 
 #include <algorithm>
 #include <cstdint>

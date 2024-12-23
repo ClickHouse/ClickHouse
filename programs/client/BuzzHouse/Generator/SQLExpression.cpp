@@ -1,7 +1,7 @@
-#include "SQLCatalog.h"
-#include "SQLFuncs.h"
-#include "SQLTypes.h"
-#include "StatementGenerator.h"
+#include <SQLCatalog.h>
+#include <SQLFuncs.h>
+#include <SQLTypes.h>
+#include <StatementGenerator.h>
 
 
 namespace BuzzHouse

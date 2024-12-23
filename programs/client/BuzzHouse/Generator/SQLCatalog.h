@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string>
-#include "RandomGenerator.h"
-#include "SQLTypes.h"
+#include <RandomGenerator.h>
+#include <SQLTypes.h>
 
 namespace BuzzHouse
 {

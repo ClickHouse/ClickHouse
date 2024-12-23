@@ -2,8 +2,8 @@
 
 #include "config.h"
 
-#include "FuzzConfig.h"
-#include "SQLCatalog.h"
+#include <FuzzConfig.h>
+#include <SQLCatalog.h>
 
 #if defined USE_MYSQL && USE_MYSQL
 #    if __has_include(<mysql.h>)
