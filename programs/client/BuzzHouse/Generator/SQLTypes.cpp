@@ -1,4 +1,5 @@
 #include "SQLTypes.h"
+#include <cstdint>
 #include <sys/types.h>
 #include "Hugeint.h"
 #include "StatementGenerator.h"
@@ -1044,10 +1045,11 @@ void StatementGenerator::strAppendBottomValue(RandomGenerator & rg, std::string 
 
 void StatementGenerator::strAppendMap(RandomGenerator & rg, std::string & ret, MapType * mt)
 {
-    const uint32_t limit = rg.nextLargeNumber() % 100;
+    std::uniform_int_distribution<uint64_t> rows_dist(0, fc.max_nested_rows);
+    const uint64_t limit = rows_dist(rg.generator);
 
     ret += "map(";
-    for (uint32_t i = 0; i < limit; i++)
+    for (uint64_t i = 0; i < limit; i++)
     {
         if (i != 0)
         {
@@ -1060,10 +1062,10 @@ void StatementGenerator::strAppendMap(RandomGenerator & rg, std::string & ret, M
     ret += ")";
 }
 
-void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret, SQLType * tp, const uint32_t limit)
+void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret, SQLType * tp, const uint64_t limit)
 {
     ret += "[";
-    for (uint32_t i = 0; i < limit; i++)
+    for (uint64_t i = 0; i < limit; i++)
     {
         if (i != 0)
         {
@@ -1076,7 +1078,9 @@ void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret,
 
 void StatementGenerator::strAppendArray(RandomGenerator & rg, std::string & ret, ArrayType * at)
 {
-    strAppendArray(rg, ret, at->subtype, rg.nextLargeNumber() % 100);
+    std::uniform_int_distribution<uint64_t> rows_dist(0, fc.max_nested_rows);
+
+    strAppendArray(rg, ret, at->subtype, rows_dist(rg.generator));
 }
 
 void StatementGenerator::strAppendTuple(RandomGenerator & rg, std::string & ret, TupleType * at)

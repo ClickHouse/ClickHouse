@@ -223,7 +223,7 @@ private:
     void strAppendBottomValue(RandomGenerator & rg, std::string & ret, SQLType * tp);
     void strAppendMap(RandomGenerator & rg, std::string & ret, MapType * mt);
     void strAppendArray(RandomGenerator & rg, std::string & ret, ArrayType * at);
-    void strAppendArray(RandomGenerator & rg, std::string & ret, SQLType * tp, uint32_t limit);
+    void strAppendArray(RandomGenerator & rg, std::string & ret, SQLType * tp, uint64_t limit);
     void strAppendTuple(RandomGenerator & rg, std::string & ret, TupleType * at);
     void strAppendVariant(RandomGenerator & rg, std::string & ret, VariantType * vtp);
     void strAppendAnyValueInternal(RandomGenerator & rg, std::string & ret, SQLType * tp);

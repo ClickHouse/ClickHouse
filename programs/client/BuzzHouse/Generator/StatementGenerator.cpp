@@ -476,14 +476,16 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 
     if (noption < 901)
     {
-        const uint32_t nrows = rg.nextMediumNumber();
+        std::uniform_int_distribution<uint64_t> rows_dist(0, fc.max_insert_rows);
+        std::uniform_int_distribution<uint64_t> nested_rows_dist(0, fc.max_nested_rows);
+        const uint64_t nrows = rows_dist(rg.generator);
         InsertStringQuery * iquery = ins->mutable_query();
 
         buf.resize(0);
-        for (uint32_t i = 0; i < nrows; i++)
+        for (uint64_t i = 0; i < nrows; i++)
         {
             uint32_t j = 0;
-            const uint32_t next_nested_rows = rg.nextLargeNumber() % 100;
+            const uint64_t next_nested_rows = nested_rows_dist(rg.generator);
 
             if (i != 0)
             {

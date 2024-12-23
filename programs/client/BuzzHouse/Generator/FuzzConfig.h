@@ -129,7 +129,7 @@ public:
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
                                      minio_server = std::nullopt;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, use_dump_table_oracle = true;
-    uint64_t seed = 0;
+    uint64_t seed = 0, max_insert_rows = 100, max_nested_rows = 10;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, time_to_run = 0;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
@@ -175,6 +175,14 @@ public:
             else if (key == "seed")
             {
                 seed = value.getUInt64();
+            }
+            else if (key == "max_insert_rows")
+            {
+                max_insert_rows = value.getUInt64();
+            }
+            else if (key == "max_nested_rows")
+            {
+                max_nested_rows = value.getUInt64();
             }
             else if (key == "max_depth")
             {

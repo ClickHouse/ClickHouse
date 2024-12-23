@@ -430,14 +430,15 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
 void MongoDBIntegration::documentAppendArray(
     RandomGenerator & rg, const std::string & cname, bsoncxx::builder::stream::document & document, ArrayType * at)
 {
-    const uint32_t limit = rg.nextLargeNumber() % 100;
+    std::uniform_int_distribution<uint64_t> nested_rows_dist(0, fc.max_nested_rows);
+    const uint64_t limit = nested_rows_dist(rg.generator);
     auto array = document << cname << bsoncxx::builder::stream::open_array; // Array
     SQLType * tp = at->subtype;
     Nullable * nl;
     VariantType * vtp;
     LowCardinality * lc;
 
-    for (uint32_t i = 0; i < limit; i++)
+    for (uint64_t i = 0; i < limit; i++)
     {
         const uint32_t nopt = rg.nextLargeNumber();
 
