@@ -1,7 +1,7 @@
 ---
 title : TSVRaw
 slug : /en/interfaces/formats/TSVRaw
-tags : [TSVRaw]
+keywords : [TSVRaw]
 ---
 
 ## Description

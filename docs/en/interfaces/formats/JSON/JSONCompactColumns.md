@@ -1,7 +1,7 @@
 ---
 title : JSONCompactColumns
 slug : /en/interfaces/formats/JSONCompactColumns
-tags : [JSONCompactColumns]
+keywords : [JSONCompactColumns]
 ---
 
 ## Description

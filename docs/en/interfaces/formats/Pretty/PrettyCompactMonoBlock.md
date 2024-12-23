@@ -1,7 +1,7 @@
 ---
 title : PrettyCompactMonoBlock
 slug : /en/interfaces/formats/PrettyCompactMonoBlock
-tags : [PrettyCompactMonoBlock]
+keywords : [PrettyCompactMonoBlock]
 ---
 
 ## Description

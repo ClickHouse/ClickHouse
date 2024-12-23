@@ -1,7 +1,7 @@
 ---
 title : JSONEachRowWithProgress
 slug : /en/interfaces/formats/JSONEachRowWithProgress
-tags : [JSONEachRowWithProgress]
+keywords : [JSONEachRowWithProgress]
 ---
 
 ## Description

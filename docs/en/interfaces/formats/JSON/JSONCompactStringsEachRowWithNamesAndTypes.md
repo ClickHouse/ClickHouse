@@ -1,7 +1,7 @@
 ---
 title : JSONCompactStringsEachRowWithNamesAndTypes
 slug : /en/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes
-tags : [JSONCompactStringsEachRowWithNamesAndTypes]
+keywords : [JSONCompactStringsEachRowWithNamesAndTypes]
 ---
 
 ## Description
