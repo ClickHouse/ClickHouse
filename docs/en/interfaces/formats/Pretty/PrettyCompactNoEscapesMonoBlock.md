@@ -1,0 +1,13 @@
+---
+title : PrettyCompactNoEscapesMonoBlock
+slug : /en/interfaces/formats/PrettyCompactNoEscapesMonoBlock
+tags : [PrettyCompactNoEscapesMonoBlock]
+---
+
+# Description
+
+Differs from [PrettyCompactNoEscapes](#prettycompactnoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+# Example Usage
+
+# Format Settings
