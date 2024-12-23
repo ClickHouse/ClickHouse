@@ -5,7 +5,7 @@
 #include <FuzzConfig.h>
 #include <SQLCatalog.h>
 
-#if defined USE_MYSQL && USE_MYSQL
+#if USE_MYSQL
 #    if __has_include(<mysql.h>)
 #        include <mysql.h>
 #    else
@@ -13,7 +13,7 @@
 #    endif
 #endif
 
-#if defined USE_MONGODB && USE_MONGODB
+#if USE_MONGODB
 #    include <bsoncxx/builder/stream/array.hpp>
 #    include <bsoncxx/builder/stream/document.hpp>
 #    include <bsoncxx/json.hpp>
@@ -23,11 +23,11 @@
 #    include <mongocxx/database.hpp>
 #endif
 
-#if defined USE_LIBPQXX && USE_LIBPQXX
+#if USE_LIBPQXX
 #    include <pqxx/pqxx>
 #endif
 
-#if defined USE_SQLITE && USE_SQLITE
+#if USE_SQLITE
 #    include <sqlite3.h>
 #endif
 
