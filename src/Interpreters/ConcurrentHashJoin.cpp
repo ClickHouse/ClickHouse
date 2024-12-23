@@ -41,6 +41,23 @@
 
 using namespace DB;
 
+#define INVOKE_WITH_MAP(TYPE, maps, f) \
+    case HashJoin::Type::TYPE:         \
+        return f(*(maps).TYPE);
+
+#define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
+    case HashJoin::Type::TYPE:                        \
+        return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
+
+#define APPLY_TO_MAP(M, type, ...)                        \
+    switch (type)                                         \
+    {                                                     \
+        APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, __VA_ARGS__) \
+                                                          \
+        default:                                          \
+            UNREACHABLE();                                \
+    }
+
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
@@ -92,6 +109,8 @@ void reserveSpaceInHashMaps(
 {
     if (auto hint = getSizeHint(stats_collecting_params, slots))
     {
+        /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
+        /// we need to preallocate in all buckets of all hash maps.
         const size_t reserve_size = hint->median_size;
         ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
 
@@ -99,21 +118,15 @@ void reserveSpaceInHashMaps(
         /// we preallocate space only in the specific buckets of each `HashJoin` instance.
         auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
         {
-            switch (type)
-            {
-
-            #define M(TYPE)                                                                     \
-                case HashJoin::Type::TYPE:                                                      \
-                    for (size_t j = idx; j < (*maps.TYPE).NUM_BUCKETS; j += slots)              \
-                        (*maps.TYPE).impls[j].reserve(reserve_size / (*maps.TYPE).NUM_BUCKETS); \
-                    break;
-
-                APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
-            #undef M
-
-                default:
-                    UNREACHABLE();
-            }
+            APPLY_TO_MAP(
+                INVOKE_WITH_MAP,
+                type,
+                maps,
+                [&](auto & map)
+                {
+                    for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
+                        map.impls[j].reserve(reserve_size / map.NUM_BUCKETS);
+                })
         };
 
         for (size_t i = 0; i < slots; ++i)
@@ -226,15 +239,17 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 {
     try
     {
+        if (!hash_joins[0]->data->twoLevelMapIsUsed())
+            return;
+
         updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
             // Hash tables destruction may be very time-consuming.
             // Without the following code, they would be destroyed in the current thread (i.e. sequentially).
-            // `InternalHashJoin` is moved here and will be destroyed in the destructor of the lambda function.
             pool->scheduleOrThrow(
-                [join = std::move(hash_joins[i]), thread_group = CurrentThread::getGroup()]()
+                [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup()]()
                 {
                     SCOPE_EXIT_SAFE({
                         if (thread_group)
@@ -244,6 +259,21 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
                     if (thread_group)
                         CurrentThread::attachToGroupIfDetached(thread_group);
                     setThreadName("ConcurrentJoin");
+
+                    auto clear_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
+                    {
+                        APPLY_TO_MAP(
+                            INVOKE_WITH_MAP,
+                            type,
+                            maps,
+                            [&](auto & map)
+                            {
+                                for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
+                                    map.impls[j].clear();
+                            })
+                    };
+                    const auto & right_data = getData(join);
+                    std::visit([&](auto & maps) { return clear_space_in_buckets(maps, right_data->type, i); }, right_data->maps.at(0));
                 });
         }
         pool->wait();
@@ -462,6 +492,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     auto calculate_selector = [&](auto & maps)
     {
         BlockHashes hash;
+
         switch (join.getJoinedData()->type)
         {
         #define M(TYPE)                                                                                                                       \
@@ -470,7 +501,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
                     *maps.TYPE, key_columns, join.getKeySizes().at(0));                                                                       \
                 return hashToSelector(*maps.TYPE, hash, num_shards);
 
-            APPLY_FOR_JOIN_VARIANTS(M)
+                APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
 
             default:
@@ -598,27 +629,22 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
     for (size_t i = 1; i < slots; ++i)
     {
-        auto move_buckets = [&](auto & lhs_map, HashJoin::Type type, auto & rhs_map, size_t idx)
+        auto move_buckets = [&](auto & lhs_maps, HashJoin::Type type, auto & rhs_maps, size_t idx)
         {
-            switch (type)
-            {
-
-            #define M(TYPE)                                                                         \
-                case HashJoin::Type::TYPE:                                                          \
-                    for (size_t j = idx; j < (*lhs_map.TYPE).NUM_BUCKETS; j += slots)               \
-                    {                                                                               \
-                        if (!(*lhs_map.TYPE).impls[j].empty())                                      \
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map"); \
-                        (*lhs_map.TYPE).impls[j] = std::move((*rhs_map.TYPE).impls[j]);             \
-                    }                                                                               \
-                    break;
-
-                APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
-            #undef M
-
-                default:
-                    UNREACHABLE();
-            }
+            APPLY_TO_MAP(
+                INVOKE_WITH_MAPS,
+                type,
+                lhs_maps,
+                rhs_maps,
+                [&](auto & lhs_map, auto & rhs_map)
+                {
+                    for (size_t j = idx; j < lhs_map.NUM_BUCKETS; j += slots)
+                    {
+                        if (!lhs_map.impls[j].empty())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map");
+                        lhs_map.impls[j] = std::move(rhs_map.impls[j]);
+                    }
+                })
         };
 
         std::visit(
@@ -638,3 +664,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     }
 }
 }
+
+#undef INVOKE_WITH_MAP
+#undef INVOKE_WITH_MAPS
+#undef APPLY_TO_MAP

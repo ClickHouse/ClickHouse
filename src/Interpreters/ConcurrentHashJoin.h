@@ -37,7 +37,7 @@ struct SelectQueryInfo;
  * upon build phase completion, we will have thread #0 having a hash map with only buckets {#0, #threads_num, #threads_num*2, ...},
  * thread #1 with only buckets {#1, #threads_num+1, #threads_num*2+1, ...} and so on. To form the resulting hash map,
  * we will merge all these sub-maps in the method `onBuildPhaseFinish`. Please note that this merge could be done in constant time because,
- * for each bucket, only one thread has it non-empty.
+ * for each bucket, only one `HashJoin` instance has it non-empty.
  */
 class ConcurrentHashJoin : public IJoin
 {

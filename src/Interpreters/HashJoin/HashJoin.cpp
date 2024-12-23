@@ -320,7 +320,7 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
     if (!use_two_level_maps)
         return chooseMethod(kind, key_columns, key_sizes);
 
-    // if `use_two_level_maps == false` returns two-level version of the map
+    // if `use_two_level_maps == true` returns two-level version of the map
     switch (auto type = chooseMethod(kind, key_columns, key_sizes))
     {
         case Type::key32:

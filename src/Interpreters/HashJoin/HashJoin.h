@@ -202,7 +202,6 @@ public:
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
-    // clang-format off
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
         M(key8)                        \
@@ -232,14 +231,14 @@ public:
         M(key_fixed_string)
 
     /// Used in ConcurrentHashJoin
-    #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M) \
-        M(two_level_key32)            \
-        M(two_level_key64)            \
-        M(two_level_key_string)       \
-        M(two_level_key_fixed_string) \
-        M(two_level_keys128)          \
-        M(two_level_keys256)          \
-        M(two_level_hashed)
+    #define APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, ...)           \
+        M(two_level_key32 __VA_OPT__(,) __VA_ARGS__)            \
+        M(two_level_key64 __VA_OPT__(,) __VA_ARGS__)            \
+        M(two_level_key_string __VA_OPT__(,) __VA_ARGS__)       \
+        M(two_level_key_fixed_string __VA_OPT__(,) __VA_ARGS__) \
+        M(two_level_keys128 __VA_OPT__(,) __VA_ARGS__)          \
+        M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
+        M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
 
     enum class Type : uint8_t
     {
@@ -254,7 +253,6 @@ public:
     {
         switch (data->type)
         {
-
         #define M(NAME) \
             case Type::NAME: \
                 return true;
@@ -295,11 +293,6 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:
-                    break;
-                case Type::CROSS:
-                    break;
-
             #define M(NAME)                                                                                       \
                 case Type::NAME:                                                                                  \
                     if constexpr (HasConstructorOfNumberOfElements<typename decltype(NAME)::element_type>::value) \
@@ -311,6 +304,9 @@ public:
 
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
+
+                default:
+                    break;
             }
         }
 
@@ -357,7 +353,6 @@ public:
         }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
-    // clang-format on
 
     using MapsOne = MapsTemplate<RowRef>;
     using MapsAll = MapsTemplate<RowRefList>;
