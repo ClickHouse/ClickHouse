@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
 #   include <machine/endian.h>
