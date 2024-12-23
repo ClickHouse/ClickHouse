@@ -439,7 +439,7 @@ private:
             sfunc->set_format(t.file_format);
             buf.resize(0);
             flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
-            for (const auto & entry : entries)
+            for (const auto & entry : remote_entries)
             {
                 SQLType * tp = entry.getBottomType();
 
@@ -457,7 +457,7 @@ private:
                 }
                 first = false;
             }
-            entries.clear();
+            remote_entries.clear();
             sfunc->set_structure(buf);
             if (!t.file_comp.empty())
             {
