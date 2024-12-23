@@ -771,27 +771,27 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
     }
     else if (b.isMySQLEngine() || b.isPostgreSQLEngine() || b.isSQLiteEngine() || b.isMongoDBEngine() || b.isRedisEngine())
     {
-        IntegrationCall next = IntegrationCall::IntMinIO;
+        IntegrationCall next = IntegrationCall::MinIO;
 
         if (b.isMySQLEngine())
         {
-            next = IntegrationCall::IntMySQL;
+            next = IntegrationCall::MySQL;
         }
         else if (b.isPostgreSQLEngine())
         {
-            next = IntegrationCall::IntPostgreSQL;
+            next = IntegrationCall::PostgreSQL;
         }
         else if (b.isSQLiteEngine())
         {
-            next = IntegrationCall::IntSQLite;
+            next = IntegrationCall::SQLite;
         }
         else if (b.isMongoDBEngine())
         {
-            next = IntegrationCall::IntMongoDB;
+            next = IntegrationCall::MongoDB;
         }
         else if (b.isRedisEngine())
         {
-            next = IntegrationCall::IntRedis;
+            next = IntegrationCall::Redis;
         }
         else
         {
@@ -801,7 +801,7 @@ int StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b,
     }
     else if (b.isAnyS3Engine() || b.isHudiEngine() || b.isDeltaLakeEngine() || b.isIcebergEngine())
     {
-        connections.createExternalDatabaseTable(rg, IntegrationCall::IntMinIO, b, entries, te);
+        connections.createExternalDatabaseTable(rg, IntegrationCall::MinIO, b, entries, te);
         if (b.isAnyS3Engine() || b.isIcebergEngine())
         {
             b.file_format = static_cast<InOutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InOutFormat_MAX)) + 1);

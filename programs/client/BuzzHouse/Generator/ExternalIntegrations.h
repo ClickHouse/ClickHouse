@@ -35,7 +35,7 @@
 namespace BuzzHouse
 {
 
-using IntegrationCall = enum IntegrationCall { IntMySQL = 1, IntPostgreSQL = 2, IntSQLite = 3, IntRedis = 4, IntMongoDB = 5, IntMinIO = 6 };
+using IntegrationCall = enum class IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, Redis = 4, MongoDB = 5, MinIO = 6 };
 
 class ClickHouseIntegration
 {
@@ -829,27 +829,27 @@ public:
         requires_external_call_check++;
         switch (dc)
         {
-            case IntegrationCall::IntMySQL:
+            case IntegrationCall::MySQL:
                 next_calls_succeeded.push_back(mysql->performIntegration(rg, b.tname, true, entries));
                 mysql->setEngineDetails(rg, b, tname, te);
                 break;
-            case IntegrationCall::IntPostgreSQL:
+            case IntegrationCall::PostgreSQL:
                 next_calls_succeeded.push_back(postresql->performIntegration(rg, b.tname, true, entries));
                 postresql->setEngineDetails(rg, b, tname, te);
                 break;
-            case IntegrationCall::IntSQLite:
+            case IntegrationCall::SQLite:
                 next_calls_succeeded.push_back(sqlite->performIntegration(rg, b.tname, true, entries));
                 sqlite->setEngineDetails(rg, b, tname, te);
                 break;
-            case IntegrationCall::IntMongoDB:
+            case IntegrationCall::MongoDB:
                 next_calls_succeeded.push_back(mongodb->performIntegration(rg, b.tname, true, entries));
                 mongodb->setEngineDetails(rg, b, tname, te);
                 break;
-            case IntegrationCall::IntRedis:
+            case IntegrationCall::Redis:
                 next_calls_succeeded.push_back(redis->performIntegration(rg, b.tname, true, entries));
                 redis->setEngineDetails(rg, b, tname, te);
                 break;
-            case IntegrationCall::IntMinIO:
+            case IntegrationCall::MinIO:
                 next_calls_succeeded.push_back(minio->performIntegration(rg, b.tname, true, entries));
                 minio->setEngineDetails(rg, b, tname, te);
                 break;
