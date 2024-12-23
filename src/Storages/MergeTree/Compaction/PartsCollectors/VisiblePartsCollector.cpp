@@ -85,6 +85,7 @@ PartProperties buildPartProperties(
     {
         .name = part->name,
         .part_info = part->info,
+        .uuid = part->uuid,
         .projection_names = getCalculatedProjectionNames(part),
         .shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true,
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),

@@ -3,6 +3,8 @@
 #include <optional>
 #include <set>
 
+#include <Core/UUID.h>
+
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 
 namespace DB
@@ -12,7 +14,8 @@ struct PartProperties
 {
     const std::string name;
     const MergeTreePartInfo part_info;
-    const std::set<std::string> projection_names;
+    const UUID uuid = UUIDHelpers::Nil;
+    const std::set<std::string> projection_names = {};
 
     const bool shall_participate_in_merges = true;
     const bool all_ttl_calculated_if_any = false;
@@ -30,14 +33,14 @@ struct PartProperties
         const time_t part_min_ttl = 0;
         const time_t part_max_ttl = 0;
     };
-    const std::optional<GeneralTTLInfo> general_ttl_info;
+    const std::optional<GeneralTTLInfo> general_ttl_info = std::nullopt;
 
     /// Information about recompression TTL for part. Used by Recompress Merge Selector.
     struct RecompressTTLInfo
     {
         const time_t next_recompress_ttl = 0;
     };
-    const std::optional<RecompressTTLInfo> recompression_ttl_info;
+    const std::optional<RecompressTTLInfo> recompression_ttl_info = std::nullopt;
 };
 
 using PartsRange = std::vector<PartProperties>;
