@@ -494,7 +494,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         processed_stage,
         modified_query_ast,
         context,
-        storage_limits);
+        storage_limits,
+        nullptr);
 
     auto converting = ActionsDAG::makeConvertingActions(
         header.getColumnsWithTypeAndName(),

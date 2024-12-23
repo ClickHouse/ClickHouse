@@ -361,6 +361,12 @@ def main():
                     f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {db_path}'
                 )
             res = Shell.check_parallel(cmds, verbose=True)
+            results.append(
+                Result(
+                    name="Download datasets",
+                    status=Result.Status.SUCCESS if res else Result.Status.ERROR,
+                )
+            )
             if res:
                 Shell.check(f"touch {db_path}/.done")
 
