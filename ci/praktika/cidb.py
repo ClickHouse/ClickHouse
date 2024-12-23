@@ -4,11 +4,10 @@ import json
 from typing import Optional
 
 import requests
-
-from ._environment import _Environment
-from .result import Result
-from .settings import Settings
-from .utils import Utils
+from praktika._environment import _Environment
+from praktika.result import Result
+from praktika.settings import Settings
+from praktika.utils import Utils
 
 
 class CIDB:

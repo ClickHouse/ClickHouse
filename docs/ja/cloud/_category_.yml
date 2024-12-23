@@ -1,0 +1,7 @@
+position: 1
+label: 'Benefits'
+collapsible: true
+collapsed: true
+link:
+  type: doc
+  id: en/cloud/index

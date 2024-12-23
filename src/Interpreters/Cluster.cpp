@@ -383,7 +383,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
             continue;
         }
 
-        if (key.contains('.'))
+        if (key.find('.') != String::npos)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Cluster names with dots are not supported: '{}'", key);
 
         /// If old config is set and cluster config wasn't changed, don't update this cluster.

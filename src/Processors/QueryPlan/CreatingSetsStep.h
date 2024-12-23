@@ -66,8 +66,6 @@ public:
     ContextPtr getContext() const { return context; }
     PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
 
-    void serialize(Serialization &) const override {}
-
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 

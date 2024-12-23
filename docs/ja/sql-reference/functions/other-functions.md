@@ -4113,7 +4113,7 @@ SELECT s, lowCardinalityKeys(s) FROM test;
 4. │ cd │ ab                    │
 5. │ ef │                       │
    └────┴───────────────────────┘
-
+```plaintext
     ┌─s──┬─lowCardinalityKeys(s)─┐
  6. │ ab │                       │
  7. │ cd │ ab                    │

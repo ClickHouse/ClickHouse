@@ -38,7 +38,7 @@ protected:
     Strings getNewAndUpdate(const Strings & current_finished_hosts);
     ExecutionStatus getExecutionStatus(const fs::path & status_path);
 
-    ZooKeeperRetriesInfo getRetriesInfo() const;
+    static ZooKeeperRetriesInfo getRetriesInfo();
     static std::pair<String, UInt16> parseHostAndPort(const String & host_id);
 
     String node_path;

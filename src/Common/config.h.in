@@ -2,7 +2,6 @@
 
 #pragma once
 
-#cmakedefine01 CLICKHOUSE_CLOUD
 #cmakedefine01 USE_CPUID
 #cmakedefine01 USE_BASE64
 #cmakedefine01 USE_SSL

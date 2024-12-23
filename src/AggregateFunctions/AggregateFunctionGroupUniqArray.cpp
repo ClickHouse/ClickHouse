@@ -153,7 +153,7 @@ static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false, typename LimitNumElems = std::false_type>
-class AggregateFunctionGroupUniqArrayGeneric final
+class AggregateFunctionGroupUniqArrayGeneric
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData,
         AggregateFunctionGroupUniqArrayGeneric<is_plain_column, LimitNumElems>>
 {
@@ -245,7 +245,7 @@ public:
 
 /// Substitute return type for Date and DateTime
 template <typename HasLimit>
-class AggregateFunctionGroupUniqArrayDate final : public AggregateFunctionGroupUniqArray<DataTypeDate::FieldType, HasLimit>
+class AggregateFunctionGroupUniqArrayDate : public AggregateFunctionGroupUniqArray<DataTypeDate::FieldType, HasLimit>
 {
 public:
     explicit AggregateFunctionGroupUniqArrayDate(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
@@ -254,7 +254,7 @@ public:
 };
 
 template <typename HasLimit>
-class AggregateFunctionGroupUniqArrayDateTime final : public AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType, HasLimit>
+class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType, HasLimit>
 {
 public:
     explicit AggregateFunctionGroupUniqArrayDateTime(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
@@ -263,7 +263,7 @@ public:
 };
 
 template <typename HasLimit>
-class AggregateFunctionGroupUniqArrayIPv4 final : public AggregateFunctionGroupUniqArray<DataTypeIPv4::FieldType, HasLimit>
+class AggregateFunctionGroupUniqArrayIPv4 : public AggregateFunctionGroupUniqArray<DataTypeIPv4::FieldType, HasLimit>
 {
 public:
     explicit AggregateFunctionGroupUniqArrayIPv4(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
