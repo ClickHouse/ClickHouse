@@ -2531,9 +2531,7 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
     assert(left && right);
 
     if (left->part_info.partition_id != right->part_info.partition_id)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} belong to different partitions", left->name, right->name);
-    }
+        return tl::make_unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left->name, right->name));
 
     for (const PartProperties * part : {left, right})
     {

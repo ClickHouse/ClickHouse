@@ -1012,6 +1012,9 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
 
         assert(left && right);
 
+        if (left->part_info.partition_id != right->part_info.partition_id)
+            return tl::make_unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left->name, right->name));
+
         if (currently_merging_mutating_parts.contains(left->part_info) || currently_merging_mutating_parts.contains(right->part_info))
             return tl::make_unexpected(PreformattedMessage::create("Some part currently in a merging or mutating process"));
 
