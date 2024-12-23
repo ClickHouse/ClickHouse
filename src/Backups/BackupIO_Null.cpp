@@ -90,7 +90,7 @@ void registerBackupEngineNull(BackupFactory & factory)
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
         const auto & args = params.backup_info.args;
-        if (args.size() != 0)
+        if (!args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'Null' doesn't take arguments");
 
         if (params.open_mode == IBackup::OpenMode::READ)
