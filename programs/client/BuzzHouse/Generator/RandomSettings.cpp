@@ -828,7 +828,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalse},
     {"validate_mutation_query", trueOrFalse},
     {"validate_polygons", trueOrFalse},
-    {"wait_for_async_insert", trueOrFalse},
+    //{"wait_for_async_insert", trueOrFalse},
     {"write_through_distributed_cache", trueOrFalse}};
 
 std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> mergeTreeTableSettings
