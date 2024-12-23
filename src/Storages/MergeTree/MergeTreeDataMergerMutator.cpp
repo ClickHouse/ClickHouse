@@ -431,7 +431,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
     const auto & parts = ranges.front();
 
     /// Enough disk space to cover the new merge with a margin.
-    const auto required_disk_space = CompactionStatistics::estimateAtLeastAvailableSpace(ranges);
+    const auto required_disk_space = CompactionStatistics::estimateAtLeastAvailableSpace(parts);
     const auto available_disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     if (available_disk_space <= required_disk_space)
     {

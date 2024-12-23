@@ -50,13 +50,12 @@ UInt64 CompactionStatistics::estimateNeededDiskSpace(const MergeTreeData::DataPa
     return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
-UInt64 CompactionStatistics::estimateAtLeastAvailableSpace(const PartsRanges & ranges)
+UInt64 CompactionStatistics::estimateAtLeastAvailableSpace(const PartsRange & range)
 {
     size_t bytes_size = 0;
 
-    for (const auto & range : ranges)
-        for (const auto & part : range)
-            bytes_size += part.size;
+    for (const auto & part : range)
+        bytes_size += part.size;
 
     return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_SELECT);
 }

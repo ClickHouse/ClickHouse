@@ -17,7 +17,7 @@ public:
 
     /** Estimate approximate amount of disk space needed to be free before schedule such merge.
       */
-    static UInt64 estimateAtLeastAvailableSpace(const PartsRanges & ranges);
+    static UInt64 estimateAtLeastAvailableSpace(const PartsRange & range);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
