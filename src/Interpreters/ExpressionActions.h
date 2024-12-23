@@ -37,6 +37,8 @@ public:
         /// True if there is another action which will use this column.
         /// Otherwise column will be removed.
         bool needed_later = false;
+        // the position in `ExpressionActions::actions`
+        size_t actions_pos = 0;
     };
 
     using Arguments = std::vector<Argument>;
@@ -47,15 +49,19 @@ public:
         Arguments arguments;
         size_t result_position;
 
+        bool is_no_except;
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         bool could_lazy_executed;
         /// It's not free to lazy execute one node with short circuit. When the cost of filting out necessary rows and
         /// expanding back to a full column is larger then fully execution of the column, we don't excute it lazily. 
         bool worth_lazy_executed;
+        bool is_short_circuit_function;
+        std::vector<size_t> parents_actions_pos;
         FunctionExecuteProfile current_round_profile;
+        FunctionExecuteProfile accumulate_profile;
 
-        explicit Action(const Node * node_, const Arguments & arguments_, size_t result_position_, bool could_lazy_executed_);
+        explicit Action(const Node * node_, const Arguments & arguments_, size_t result_position_, bool is_no_except_,bool could_lazy_executed_, bool is_short_circuit_function_);
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -152,9 +158,9 @@ protected:
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 
-    void executeAction(const ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run, bool allow_duplicates_in_input);
+    void executeAction(ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run, bool allow_duplicates_in_input);
 
-    virtual void executeFunctionAction(const ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run);
+    virtual void executeFunctionAction(ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run);
 
 
 };
@@ -167,13 +173,15 @@ public:
     ~AdaptiveExpressionActions() override = default;
     void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) override;
 private:
-    bool has_lazy_actions = false;
     size_t current_round_input_rows = 0;
 
-    // void executeFunctionAction(const ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run, bool allow_duplicates_in_input) override {}
+    void executeFunctionAction(ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run) override;
+    void updateFunctionActionProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
     void updateLazyExecuteSchedule(size_t current_batch_rows);
-    void findNotWithLazyExecutedActions();
-    void updateHasLazyActions();
+    void propagateExtraElapsed();
+    void propagateExtraElapsed(ExpressionActions::Action & action, size_t extra_elapsed);
+    void findNotWorthLazyExecutedActions();
+    size_t getLazyActionExecuteElapsed(const ExpressionActions::Action & action, bool need_round);
 };
 
 namespace ExpressionActionsChainSteps

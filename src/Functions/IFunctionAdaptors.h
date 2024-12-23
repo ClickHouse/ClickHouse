@@ -92,6 +92,8 @@ public:
 
     bool hasInformationAboutPreimage() const override { return function->hasInformationAboutPreimage(); }
 
+    bool isNoExcept() const override { return function->isNoExcept(); }
+
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return function->getMonotonicityForRange(type, left, right);
