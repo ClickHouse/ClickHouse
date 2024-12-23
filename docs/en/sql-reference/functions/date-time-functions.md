@@ -195,7 +195,7 @@ makeDateTime64(year, month, day, hour, minute, second[, precision])
 
 **Returned value**
 
-- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).  
+- A date and time created from the supplied arguments. [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
 

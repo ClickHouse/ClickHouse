@@ -43,15 +43,25 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     const Settings & settings = storage_.getContext()->getSettingsRef();
 
     Aggregator::Params params(
-        settings,
         keys,
         aggregates,
         /*overflow_row_=*/ false,
-        /*group_by_two_level_threshold_=*/ 0,
-        /*group_by_two_level_threshold_bytes_=*/ 0,
+        settings[Setting::max_rows_to_group_by],
+        settings[Setting::group_by_overflow_mode],
+        /*group_by_two_level_threshold*/ 0,
+        /*group_by_two_level_threshold_bytes*/ 0,
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set],
         storage_.getContext()->getTempDataOnDisk(),
-        /*only_merge_=*/false,
+        settings[Setting::max_threads],
+        settings[Setting::min_free_disk_space_for_temporary_data],
+        settings[Setting::compile_aggregate_expressions],
+        settings[Setting::min_count_to_compile_aggregate_expression],
+        settings[Setting::max_block_size],
+        settings[Setting::enable_software_prefetch_in_aggregation],
+        /*only_merge=*/false,
+        settings[Setting::optimize_group_by_constant_keys],
+        settings[Setting::min_chunk_bytes_for_parallel_parsing],
         /*stats_collecting_params_=*/{});
 
     aggregator = std::make_unique<Aggregator>(header, params);

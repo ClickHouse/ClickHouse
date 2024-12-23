@@ -7,6 +7,7 @@
 #include <type_traits>
 #include <functional>
 
+#include <base/AlignedUnion.h>
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -300,7 +301,6 @@ concept not_field_or_bool_or_stringlike
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
 static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
-
 
 /** Discriminated union of several types.
   * Made for replacement of `boost::variant`
@@ -672,7 +672,7 @@ public:
     static Field restoreFromDump(std::string_view dump_);
 
 private:
-    std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+    AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
@@ -1011,6 +1011,10 @@ template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf);
+
+
+void writeFieldBinary(const Field & x, WriteBuffer & buf);
+Field readFieldBinary(ReadBuffer & buf);
 
 String toString(const Field & x);
 }
