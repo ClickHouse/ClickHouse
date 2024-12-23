@@ -191,6 +191,7 @@ public:
             /// change the serialization format.
             Element elem;
 #pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-warning-option"  /// Remove after clang20
 #pragma clang diagnostic ignored "-Wnontrivial-memcall"
             memset(&elem, 0, sizeof(elem)); /// NOLINT(bugprone-undefined-memory-manipulation)
 #pragma clang diagnostic pop
