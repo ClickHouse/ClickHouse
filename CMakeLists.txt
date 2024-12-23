@@ -7,6 +7,9 @@ option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
    but is not possible to satisfy" ON)
 
+# This allows to compile some code conditionally in the private build while having byte-identical source files.
+set (CLICKHOUSE_CLOUD 0)
+
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
@@ -347,10 +350,11 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-if (NOT ENABLE_TESTS AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
+if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
     # https://clang.llvm.org/docs/ThinLTO.html
     # Applies to clang and linux only.
     # Disabled when building with tests or sanitizers.
+    # Also disabled with clang-tidy where we don't care about linking
     option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
 endif()
 
