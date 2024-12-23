@@ -15,10 +15,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool use_hive_partitioning;
-}
 
 namespace ErrorCodes
 {
@@ -69,7 +65,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context_->getSettingsRef().use_hive_partitioning)
         sample_path = getPathSample(metadata, context_);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
@@ -123,7 +119,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         auto object_info = iterator->next(0);
         if (object_info)
             return object_info->getPath();
-        return "";
+        else
+            return "";
     });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }

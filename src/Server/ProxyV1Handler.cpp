@@ -8,10 +8,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds receive_timeout;
-}
 
 namespace ErrorCodes
 {
@@ -24,7 +20,7 @@ namespace ErrorCodes
 void ProxyV1Handler::run()
 {
     const auto & settings = server.context()->getSettingsRef();
-    socket().setReceiveTimeout(settings[Setting::receive_timeout]);
+    socket().setReceiveTimeout(settings.receive_timeout);
 
     std::string word;
     bool eol;
@@ -43,8 +39,6 @@ void ProxyV1Handler::run()
     if (word != "TCP4" && word != "TCP6" && word != "UNKNOWN")
         throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
-    bool is_tcp6 = (word == "TCP6");
-
     if (word == "UNKNOWN" && eol)
         return;
 
@@ -55,10 +49,7 @@ void ProxyV1Handler::run()
     if (!readWord(39, word, eol) || eol)
         throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
 
-    if (is_tcp6)
-        stack_data.forwarded_for = "[" + word + "]";
-    else
-        stack_data.forwarded_for = std::move(word);
+    stack_data.forwarded_for = std::move(word);
 
     // read address
     if (!readWord(39, word, eol) || eol)
@@ -67,8 +58,6 @@ void ProxyV1Handler::run()
     // read port
     if (!readWord(5, word, eol) || eol)
         throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "PROXY protocol violation");
-
-    stack_data.forwarded_for += ":" + word;
 
     // read port and "\r\n"
     if (!readWord(5, word, eol) || !eol)

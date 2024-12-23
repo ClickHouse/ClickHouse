@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
@@ -56,8 +57,9 @@ private:
     std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
+    std::atomic_bool allow_use_jemalloc_memory {true};
 
-    std::atomic<Int64> rss{0};
+    static std::atomic<Int64> free_memory_in_allocator_arenas;
 
     Int64 profiler_step = 0;
 
@@ -120,11 +122,6 @@ public:
         return amount.load(std::memory_order_relaxed);
     }
 
-    Int64 getRSS() const
-    {
-        return rss.load(std::memory_order_relaxed);
-    }
-
     // Merges and mutations may pass memory ownership to other threads thus in the end of execution
     // MemoryTracker for background task may have a non-zero counter.
     // This method is intended to fix the counter inside of background_memory_tracker.
@@ -156,6 +153,14 @@ public:
     Int64 getSoftLimit() const
     {
         return soft_limit.load(std::memory_order_relaxed);
+    }
+    void setAllowUseJemallocMemory(bool value)
+    {
+        allow_use_jemalloc_memory.store(value, std::memory_order_relaxed);
+    }
+    bool getAllowUseJemallocMmemory() const
+    {
+        return allow_use_jemalloc_memory.load(std::memory_order_relaxed);
     }
 
     /** Set limit if it was not set.
@@ -244,9 +249,10 @@ public:
     /// Reset the accumulated data.
     void reset();
 
-    /// update values based on external information (e.g. jemalloc's stat)
-    static void updateRSS(Int64 rss_);
-    static void updateAllocated(Int64 allocated_);
+    /// Reset current counter to an RSS value.
+    /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
+    /// We can free this arenas in case of exception to avoid OOM.
+    static void setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

@@ -38,9 +38,6 @@ namespace ProfileEvents
         };
         Timer(Counters & counters_, Event timer_event_, Resolution resolution_);
         Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_);
-        Timer(Timer && other) noexcept
-            : counters(other.counters), timer_event(std::move(other.timer_event)), watch(std::move(other.watch)), resolution(std::move(other.resolution))
-            {}
         ~Timer() { end(); }
         void cancel() { watch.reset(); }
         void restart() { watch.restart(); }
@@ -154,15 +151,6 @@ namespace ProfileEvents
         static const Event num_counters;
     };
 
-    enum class ValueType : uint8_t
-    {
-        Number,
-        Bytes,
-        Milliseconds,
-        Microseconds,
-        Nanoseconds,
-    };
-
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
 
@@ -173,17 +161,11 @@ namespace ProfileEvents
     /// Increment a counter for log messages.
     void incrementForLogMessage(Poco::Message::Priority priority);
 
-    /// Increment time consumed by logging.
-    void incrementLoggerElapsedNanoseconds(UInt64 ns);
-
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);
 
     /// Get description of event by identifier. Returns statically allocated string.
     const char * getDocumentation(Event event);
-
-    /// Get value type of event by identifier. Returns enum value.
-    ValueType getValueType(Event event);
 
     /// Get index just after last event identifier.
     Event end();

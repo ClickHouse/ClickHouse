@@ -29,12 +29,12 @@ static ITransformingStep::Traits getTraits()
 }
 
 FillingStep::FillingStep(
-    const Header & input_header_,
+    const DataStream & input_stream_,
     SortDescription sort_description_,
     SortDescription fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
     bool use_with_fill_by_sorting_prefix_)
-    : ITransformingStep(input_header_, FillingTransform::transformHeader(input_header_, sort_description_), getTraits())
+    : ITransformingStep(input_stream_, FillingTransform::transformHeader(input_stream_.header, sort_description_), getTraits())
     , sort_description(std::move(sort_description_))
     , fill_description(std::move(fill_description_))
     , interpolate_description(interpolate_description_)
@@ -80,8 +80,9 @@ void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void FillingStep::updateOutputHeader()
+void FillingStep::updateOutputStream()
 {
-    output_header = FillingTransform::transformHeader(input_headers.front(), sort_description);
+    output_stream = createOutputStream(
+        input_streams.front(), FillingTransform::transformHeader(input_streams.front().header, sort_description), getDataStreamTraits());
 }
 }

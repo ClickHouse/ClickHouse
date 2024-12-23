@@ -38,16 +38,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_statistics;
-    extern const SettingsSeconds lock_acquire_timeout;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool disable_insertion_and_mutation;
-}
 
 namespace ErrorCodes
 {
@@ -75,7 +65,7 @@ BlockIO InterpreterAlterQuery::execute()
     {
         return executeToDatabase(alter);
     }
-    if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE)
+    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE)
     {
         return executeToTable(alter);
     }
@@ -99,7 +89,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     BlockIO res;
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+        UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
@@ -139,7 +129,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
 
     if (modify_query)
     {
@@ -188,7 +178,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 
-        if (!getContext()->getSettingsRef()[Setting::allow_experimental_statistics]
+        if (!getContext()->getSettingsRef().allow_experimental_statistics
             && (command_ast->type == ASTAlterCommand::ADD_STATISTICS || command_ast->type == ASTAlterCommand::DROP_STATISTICS
                 || command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is now disabled. Turn on allow_experimental_statistics");
@@ -205,13 +195,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
     {
-        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+        if (getContext()->getServerSettings().disable_insertion_and_mutation)
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
     if (!alter_commands.empty())
     {
-        auto alter_lock = table->lockForAlter(getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
+        auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(table, getContext());
         alter_commands.prepare(metadata);
@@ -467,11 +457,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
                     required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
                     break;
                 case DataDestinationType::TABLE:
-                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
                     required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
                     break;
                 case DataDestinationType::SHARD:
-                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
                     required_access.emplace_back(AccessType::MOVE_PARTITION_BETWEEN_SHARDS);
                     break;
                 case DataDestinationType::DELETE:

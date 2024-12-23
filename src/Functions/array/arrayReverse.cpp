@@ -158,7 +158,8 @@ bool FunctionArrayReverse::executeNumber(const IColumn & src_data, const ColumnA
 
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 bool FunctionArrayReverse::executeFixedString(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
@@ -195,7 +196,8 @@ bool FunctionArrayReverse::executeFixedString(const IColumn & src_data, const Co
         }
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
@@ -240,7 +242,8 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
 
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 

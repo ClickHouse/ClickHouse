@@ -146,7 +146,6 @@ TEST(PageCache, DISABLED_Stress)
     auto start_time = std::chrono::steady_clock::now();
 
     std::vector<std::thread> threads;
-    threads.reserve(num_threads);
     for (size_t i = 0; i < num_threads; ++i)
         threads.emplace_back(thread_func);
 
@@ -248,8 +247,6 @@ TEST(PageCache, DISABLED_HitsBench)
             auto start_time = std::chrono::steady_clock::now();
 
             std::vector<std::thread> threads;
-            threads.reserve(num_threads);
-
             for (size_t i = 0; i < num_threads; ++i)
                 threads.emplace_back(thread_func);
 
