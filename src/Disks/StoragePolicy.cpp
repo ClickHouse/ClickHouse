@@ -118,7 +118,7 @@ StoragePolicy::StoragePolicy(
     {
         move_policy = IStoragePolicy::MovePolicy::BY_PART_SIZE;
     }
-    else if (move_policy_str == "by_insert_data_time")
+    else if (move_policy_str == "experimental_by_insert_data_time")
     {
         move_policy = IStoragePolicy::MovePolicy::BY_INSERT_DATA_TIME;
     }

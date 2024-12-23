@@ -45,7 +45,7 @@
                 </cold>
             </volumes>
             <move_factor>0.5</move_factor>
-            <move_policy>by_insert_data_time</move_policy>
+            <move_policy>experimental_by_insert_data_time</move_policy>
         </jbod_time_policy>
     </policies>
 </storage_configuration>
