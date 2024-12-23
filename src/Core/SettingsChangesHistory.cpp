@@ -65,6 +65,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
+            {"use_hive_partitioning", false, true, "Enabled the setting by default."},
         }
     },
     {"24.12",
@@ -117,7 +118,6 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
             {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
             {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},
-            {"use_hive_partitioning", false, true, "Enabled the setting by default."},
         }
     },
     {"24.10",
