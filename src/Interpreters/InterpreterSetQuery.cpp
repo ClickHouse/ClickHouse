@@ -106,8 +106,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                 for (auto it = engine_settings->changes.begin(); it != engine_settings->changes.end();)
                 {
                     String & name = it->name;
-                    if ((!features.supports_settings || !features.has_builtin_setting_fn(name))
-                        && context_->getSettingsRef().hasBuiltin(name))
+                    if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && Settings::hasBuiltin(name))
                     {
                         context_->setSetting(name, it->value);
                         it = engine_settings->changes.erase(it);
