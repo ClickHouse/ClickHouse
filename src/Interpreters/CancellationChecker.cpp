@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 QueryToTrack::QueryToTrack(
     std::shared_ptr<QueryStatus> query_,
     UInt64 timeout_,
