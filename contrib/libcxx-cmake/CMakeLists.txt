@@ -72,18 +72,8 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/verbose_abort.cpp"
 )
 
-# Hardening mode = none.
-# Maybe we can enable it for debug builds.
-set(_LIBCPP_HARDENING_MODE_DEFAULT 2)
-set(_LIBCPP_PSTL_CPU_BACKEND_SERIAL 1)
-set(_LIBCPP_ABI_VERSION 999)
-set(_LIBCPP_ABI_UNSTABLE ON)
-set(_LIBCPP_HAS_NO_VENDOR_AVAILABILITY_ANNOTATIONS ON)
-set(_LIBCPP_ABI_NAMESPACE __1)
-configure_file("${LIBCXX_SOURCE_DIR}/include/__config_site.in" "${LIBCXX_GENERATED_INCLUDE_DIR}/__config_site")
 configure_file("${LIBCXX_SOURCE_DIR}/include/module.modulemap.in" "${LIBCXX_GENERATED_INCLUDE_DIR}/module.modulemap" @ONLY)
-set(generate-cxx-headers "${LIBCXX_GENERATED_INCLUDE_DIR}/__config_site" "${LIBCXX_GENERATED_INCLUDE_DIR}/module.modulemap")
-
+set(generate-cxx-headers "${LIBCXX_GENERATED_INCLUDE_DIR}/module.modulemap")
 add_library(cxx-headers INTERFACE)
 add_dependencies(cxx-headers generate-cxx-headers)
 target_include_directories(cxx-headers INTERFACE ${LIBCXX_GENERATED_INCLUDE_DIR})
