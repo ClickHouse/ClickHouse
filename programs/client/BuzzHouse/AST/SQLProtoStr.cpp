@@ -3924,7 +3924,7 @@ CONV_FN(ExplainQuery, explain)
         ret += ExplainQuery_ExplainValues_Name(explain.expl());
         std::replace(ret.begin(), ret.end(), '_', ' ');
     }
-    if (explain.has_expl() && explain.expl() <= ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE)
+    if (explain.has_expl() && explain.expl() <= ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE && explain.opts_size())
     {
         ret += " ";
         for (int i = 0; i < explain.opts_size(); i++)
