@@ -1,9 +1,5 @@
 set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
 
-# Use the original launchers instead of dummy ones for clang-tidy builds
-# because we need protoc, and this is a dependency.
-set_original_launchers_if_needed()
-
 set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/algorithm.cpp"
 "${LIBCXX_SOURCE_DIR}/src/any.cpp"
@@ -85,5 +81,3 @@ install(
     RUNTIME DESTINATION lib
     LIBRARY DESTINATION lib
 )
-
-set_dummy_launchers_if_needed()

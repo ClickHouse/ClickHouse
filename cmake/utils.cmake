@@ -122,27 +122,38 @@ function(get_target_property_list target outvar)
     set(${outvar} ${${outvar}} PARENT_SCOPE)
 endfunction()
 
+# Some of our targets need to be linked for real. e.g. protoc, llvm-tlbgen and all its dependencies.
 macro(set_original_launchers_if_needed)
     if(ENABLE_DUMMY_LAUNCHERS)
         set(CMAKE_CXX_COMPILER_LAUNCHER ${ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER})
         set(CMAKE_C_COMPILER_LAUNCHER ${ORIGINAL_CMAKE_C_COMPILER_LAUNCHER})
         set(CMAKE_CXX_LINKER_LAUNCHER ${ORIGINAL_CMAKE_CXX_LINKER_LAUNCHER})
         set(CMAKE_C_LINKER_LAUNCHER ${ORIGINAL_CMAKE_C_LINKER_LAUNCHER})
-        set(USING_DUMMY_LAUNCHERS_LAUNCHERS 0)
+        set(LINKER_NAME ${ORIGINAL_LINKER_NAME})
+        set(USING_DUMMY_LAUNCHERS 0)
+
+        # Include again the tools.cmake file to set the real launchers for all tools
+        include(${CMAKE_SOURCE_DIR}/cmake/tools.cmake)
     endif()
 endmacro()
 
+# Set dummy linkers to avoid unnecessary work.
 macro(set_dummy_launchers_if_needed)
     if(ENABLE_DUMMY_LAUNCHERS)
         set(ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER ${CMAKE_CXX_COMPILER_LAUNCHER})
         set(ORIGINAL_CMAKE_C_COMPILER_LAUNCHER ${CMAKE_C_COMPILER_LAUNCHER})
         set(ORIGINAL_CMAKE_CXX_LINKER_LAUNCHER ${CMAKE_CXX_LINKER_LAUNCHER})
         set(ORIGINAL_CMAKE_C_LINKER_LAUNCHER ${CMAKE_C_LINKER_LAUNCHER})
+        set(ORIGINAL_LINKER_NAME ${LINKER_NAME})
 
         set(CMAKE_CXX_COMPILER_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
         set(CMAKE_C_COMPILER_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
         set(CMAKE_CXX_LINKER_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
         set(CMAKE_C_LINKER_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
-        set(USING_DUMMY_LAUNCHERS_LAUNCHERS 1)
+        set(LINKER_NAME "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
+        set(USING_DUMMY_LAUNCHERS 1)
+
+        # Include again the tools.cmake file to set the dummy launchers for all tools
+        include(${CMAKE_SOURCE_DIR}/cmake/tools.cmake)
     endif()
 endmacro()

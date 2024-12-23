@@ -17,8 +17,10 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     # https://libcxx.llvm.org/Hardening.html
 endif ()
 
+set_original_launchers_if_needed()
 add_subdirectory(contrib/libcxxabi-cmake)
 add_subdirectory(contrib/libcxx-cmake)
+set_dummy_launchers_if_needed()
 
 # Exception handling library is embedded into libcxxabi.
 

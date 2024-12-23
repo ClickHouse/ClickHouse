@@ -1,9 +1,5 @@
 set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxxabi")
 
-# Use the original launchers instead of dummy ones for clang-tidy builds
-# because we need protoc, and this is a dependency.
-set_original_launchers_if_needed()
-
 set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/abort_message.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_aux_runtime.cpp"
@@ -51,5 +47,3 @@ install(
     RUNTIME DESTINATION lib
     LIBRARY DESTINATION lib
 )
-
-set_dummy_launchers_if_needed()

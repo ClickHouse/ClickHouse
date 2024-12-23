@@ -1,8 +1,4 @@
 if (GLIBC_COMPATIBILITY)
-    # Use the original launchers instead of dummy ones for clang-tidy builds
-    # because we need protoc, and this is a dependency.
-    set_original_launchers_if_needed()
-
     add_subdirectory(memcpy)
     if(TARGET memcpy)
         set(MEMCPY_LIBRARY memcpy)
@@ -53,7 +49,6 @@ if (GLIBC_COMPATIBILITY)
     target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
-    set_dummy_launchers_if_needed()
 
 elseif (CLICKHOUSE_OFFICIAL_BUILD)
     message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")

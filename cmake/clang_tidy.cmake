@@ -36,9 +36,6 @@ if (ENABLE_CLANG_TIDY)
             # Use a dummy compiler and linker to avoid doing any extra work. Using the compiler with ccache/sccache
             # is not that bad if the cache is hot, but linking takes ~20min.
             set_dummy_launchers_if_needed()
-
-            # We need to include again tools.cmake to override STRIP_PATH.
-            include(cmake/tools.cmake)
         else()
             message(WARNING "Using real compilers along with clang-tidy. This will slow down the build because "
                             "it's compiling and linking for real apart of running the static analysis.")

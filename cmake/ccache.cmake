@@ -4,7 +4,7 @@ include(cmake/utils.cmake)
 
 # Defensive programming: early return to avoid configuring any cache after we've set dummy launchers.
 # If something includes this file by mistake after the first setup, it'd override the dummy launchers.
-if(USING_DUMMY_LAUNCHERS_LAUNCHERS)
+if(USING_DUMMY_LAUNCHERS)
     message(STATUS "Skipping cache integration a second time because dummy launchers are in use")
     return()
 endif()
