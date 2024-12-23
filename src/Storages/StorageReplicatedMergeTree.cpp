@@ -933,7 +933,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
     {
         /// Check if the query was cancelled.
         if (process_list_element)
-            process_list_element->checkIfKilledAndThrow();
+            process_list_element->checkTimeLimit();
 
         /// Invariant: "replicas" does not exist if there is no table or if there are leftovers from incompletely dropped table.
         if (zookeeper->exists(zookeeper_path + "/replicas"))
@@ -1172,7 +1172,7 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
     {
         /// Check if the query was cancelled.
         if (process_list_element)
-            process_list_element->checkIfKilledAndThrow();
+            process_list_element->checkTimeLimit();
 
         Coordination::Stat replicas_stat;
         String replicas_value;
