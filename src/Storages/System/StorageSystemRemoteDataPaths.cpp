@@ -338,7 +338,7 @@ Chunk SystemRemoteDataPathsSource::generate()
     do
     {
         if (query_status)
-            query_status->checkIfKilledAndThrow();
+            query_status->checkTimeLimit();
 
         /// Check if the block is big enough already
         if (max_block_size > 0 && row_count > 0)

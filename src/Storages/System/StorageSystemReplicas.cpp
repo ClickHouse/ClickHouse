@@ -116,7 +116,7 @@ public:
         while (true)
         {
             if (query_status)
-                query_status->checkIfKilledAndThrow();
+                query_status->checkTimeLimit();
 
             /// Try to pick up a request to schedule
             std::tuple<UInt64, StoragePtr, std::shared_ptr<std::promise<ReplicatedTableStatus>>, bool> req;

@@ -181,7 +181,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
 {
     if (process_list_element)
     {
-        bool continuing = !process_list_element->isKilled();
+        bool continuing = process_list_element->checkTimeLimitSoft();
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
@@ -197,7 +197,7 @@ bool PipelineExecutor::checkTimeLimit()
 {
     bool continuing = checkTimeLimitSoft();
     if (!continuing)
-        process_list_element->checkIfKilledAndThrow(); // Will throw if needed
+        process_list_element->checkTimeLimit(); // Will throw if needed
 
     return continuing;
 }

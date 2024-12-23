@@ -700,7 +700,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto process_part = [&](size_t part_index)
         {
             if (query_status)
-                query_status->checkIfKilledAndThrow();
+                query_status->checkTimeLimit();
 
             auto & part = parts[part_index];
 
