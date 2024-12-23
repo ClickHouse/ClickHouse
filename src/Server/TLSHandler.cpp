@@ -6,9 +6,9 @@
 
 
 #if USE_SSL
-#    include <Poco/Net/Utility.h>
-#    include <Poco/StringTokenizer.h>
-#    include <Server/CertificateReloader.h>
+#include <Poco/Net/Utility.h>
+#include <Poco/StringTokenizer.h>
+#include <Server/CertificateReloader.h>
 #endif
 
 #if !defined(USE_SSL) || USE_SSL == 0
@@ -36,7 +36,7 @@ DB::TLSHandler::TLSHandler(
 
     if (params.privateKeyFile.empty() || params.certificateFile.empty())
     {
-        LOG_DEBUG(&Poco::Logger::get("TLSHandler"), "No private key and certificate specified for TLS, using default context.");
+        LOG_DEBUG(&Poco::Logger::get("TLSHandler"), "No private key and/or certificate specified for TLS, using default context.");
         return;
     }
 
@@ -100,8 +100,11 @@ void DB::TLSHandler::run()
 {
 #if USE_SSL
     auto ctx = SSLManager::instance().defaultServerContext();
-    // if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
-    if (config.has("acme"))
+
+    bool keys_are_explicitly_set = !params.privateKeyFile.empty() && !params.certificateFile.empty();
+    bool acme_certificate_provided = config.has("acme");
+
+    if (keys_are_explicitly_set || acme_certificate_provided)
     {
         ctx = SSLManager::instance().getCustomServerContext(prefix);
         if (!ctx)
@@ -115,6 +118,7 @@ void DB::TLSHandler::run()
             ctx = SSLManager::instance().setCustomServerContext(prefix, ctx);
         }
     }
+
     socket() = SecureStreamSocket::attach(socket(), ctx);
     stack_data.socket = socket();
     stack_data.certificate = params.certificateFile;

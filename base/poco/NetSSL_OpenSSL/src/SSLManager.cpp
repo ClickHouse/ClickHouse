@@ -259,7 +259,10 @@ void SSLManager::initDefaultContext(bool server)
 	params.certificateFile = config.getString(prefix + CFG_CERTIFICATE_FILE, params.privateKeyFile);
 	params.caLocation = config.getString(prefix + CFG_CA_LOCATION, "");
 
-	if (server && params.certificateFile.empty() && params.privateKeyFile.empty() && !config.has("acme"))
+    bool keys_are_explicitly_set = !params.privateKeyFile.empty() && !params.certificateFile.empty();
+    bool acme_certificate_provided = config.has("acme");
+
+	if (server && !keys_are_explicitly_set && !acme_certificate_provided)
 		throw SSLException("Configuration error: no certificate file has been specified");
 
 	// optional options for which we have defaults defined

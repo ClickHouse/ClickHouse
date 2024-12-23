@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Server/HTTP/HTTPRequestHandler.h>
 
 
@@ -38,19 +40,17 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 
-class ACMERequestHandler : public HTTPRequestHandler
-{
-private:
-    IServer & server;
-public:
-    explicit ACMERequestHandler(IServer & server_);
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
-};
-
 class JavaScriptWebUIRequestHandler : public HTTPRequestHandler
 {
 public:
     explicit JavaScriptWebUIRequestHandler(IServer &) {}
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+};
+
+class ACMERequestHandler : public HTTPRequestHandler
+{
+public:
+    explicit ACMERequestHandler(IServer &) {}
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 };
 

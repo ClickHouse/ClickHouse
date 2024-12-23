@@ -1,20 +1,20 @@
-#include "WebUIRequestHandler.h"
-#include "IServer.h"
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/WebUIRequestHandler.h>
 
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Util/LayeredConfiguration.h>
+#include <incbin.h>
 
+#include <Common/re2.h>
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-#include <Common/re2.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
-#include <incbin.h>
+#if USE_SSL
+#include <Server/ACMEClient.h>
+#endif
 
-#include "Server/ACMEClient.h"
-#include "config.h"
 
 /// Embedded HTML pages
 INCBIN(resource_play_html, SOURCE_DIR "/programs/server/play.html");
@@ -74,23 +74,6 @@ void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
     handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize});
 }
 
-#if USE_SSL
-/// FIXME not a Web UI
-void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
-{
-    LOG_DEBUG(&Poco::Logger::get("ACME"), "ACME request: {}", request.getURI());
-    auto challenge = ACMEClient::ACMEClient::instance().requestChallenge(request.getURI());
-
-    if (challenge.empty())
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "Not found.\n";
-    }
-
-    handle(request, response, { challenge });
-}
-#endif
-
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     if (request.getURI() == "/js/uplot.js")
@@ -109,5 +92,21 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
 
     handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
+
+#if USE_SSL
+void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    auto challenge = ACMEClient::ACMEClient::instance().requestChallenge(request.getURI());
+
+    if (challenge.empty())
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+        *response.send() << "Not found.\n";
+    }
+
+    handle(request, response, { challenge });
+}
+#endif
+
 
 }

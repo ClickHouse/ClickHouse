@@ -44,12 +44,6 @@ int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_
     if (current_data->certs_chain.empty())
         return -1;
 
-    // auto letsencrypt_configuration = let_encrypt_configuration_data.get();
-    // if (letsencrypt_configuration
-    //     && current->certs_chain.expiresOn().timestamp()
-    //         <= Poco::Timestamp() + Poco::Timespan(3600ll * letsencrypt_configuration->reissue_hours_before, 0))
-    //     CertificateIssuer::instance().UpdateCertificates(*letsencrypt_configuration, callReloadCertificates);
-
     if (auto err = SSL_clear_chain_certs(ssl); err != 1)
     {
         LOG_ERROR(log, "Clear certificates {}", Poco::Net::Utility::getLastError());
@@ -141,10 +135,6 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
 
     // std::string new_cert_path = config.getString(prefix + "certificateFile", "");
     // std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
-
-    // Fetching configuration for possible reissuing let's encrypt certificates
-    // if (config.getBool("LetsEncrypt.enableAutomaticIssue", false))
-    //     let_encrypt_configuration_data.set(std::make_unique<const LetsEncryptConfigurationData>(config));
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
