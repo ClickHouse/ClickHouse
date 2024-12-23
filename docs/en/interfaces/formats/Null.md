@@ -1,7 +1,7 @@
 ---
-title : Null
+title : "Null"
 slug : /en/interfaces/formats/Null
-tags : [Null]
+tags : ["Null"]
 ---
 
 # Description
