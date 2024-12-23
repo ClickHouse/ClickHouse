@@ -185,7 +185,9 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     if (next.is_materialized)
     {
         TableEngine * te = cv->mutable_engine();
-        const bool has_table = collectionHas<SQLTable>([&](const SQLTable & tt) { return tt.numberOfInsertableColumns() == next.ncols; });
+        const bool has_with_cols
+            = collectionHas<SQLTable>([&next](const SQLTable & t) { return t.numberOfInsertableColumns() == next.ncols; }),
+            has_tables = has_with_cols || !tables.empty();
 
         next.teng = getNextTableEngine(rg, false);
         te->set_engine(next.teng);
@@ -203,10 +205,13 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         }
         this->entries.clear();
 
-        if (rg.nextSmallNumber() < (has_table ? 9 : 6))
+        if ((has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6))
         {
-            const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
-                has_table ? [&](const SQLTable & tt) { return tt.numberOfInsertableColumns() == next.ncols; } : attached_tables));
+            const SQLTable & t = has_with_cols
+                ? rg.pickRandomlyFromVector(
+                        filterCollection<SQLTable>([&next](const SQLTable & tt) { return tt.numberOfInsertableColumns() == next.ncols; }))
+                      .get()
+                : rg.pickValueRandomlyFromMap(this->tables);
 
             cv->mutable_to_est()->mutable_table()->set_table("t" + std::to_string(t.tname));
         }

@@ -1056,7 +1056,7 @@ int StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const 
         flatTableColumnPath(
             flat_tuple | flat_nested | flat_json | skip_nested_node,
             t,
-            [&](const SQLColumn & c) { return itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType, true, true, true>(c.tp); });
+            [&itpe](const SQLColumn & c) { return itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType, true, true, true>(c.tp); });
     }
     if (!entries.empty())
     {
