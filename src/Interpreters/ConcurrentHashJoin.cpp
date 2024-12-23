@@ -269,7 +269,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
                             [&](auto & map)
                             {
                                 for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
-                                    map.impls[j].clear();
+                                    map.impls[j].clearAndShrink();
                             })
                     };
                     const auto & right_data = getData(join);
