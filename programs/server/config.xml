@@ -354,8 +354,8 @@
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-             <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
+            <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
@@ -388,6 +388,18 @@
             </invalidCertificateHandler>
         </client>
     </openSSL>
+
+    <!-- Let's Encrypt certificate provider configuration -->
+    <!--
+    <acme>
+        <email>someone@example.com</email>
+        <terms_of_service_agreed>true</terms_of_service_agreed>
+        <domains>
+            <domain>example.com</domain>
+        </domains>
+        <refresh_certificates_interval>60000</refresh_certificates_interval>
+    </acme>
+    -->
 
     <!-- Default root page on http[s] server. -->
     <!--
