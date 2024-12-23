@@ -47,7 +47,8 @@ struct ReadRangeBuffer
     PaddedPODArray<UInt8> buffer;
 };
 
-using ColumnChunkDataPtr = std::shared_ptr<ColumnChunkData>;
+class RowGroupPrefetch;
+using RowGroupPrefetchPtr = std::shared_ptr<RowGroupPrefetch>;
 
 class RowGroupPrefetch
 {
@@ -57,6 +58,8 @@ public:
     void startPrefetch();
     ColumnChunkData readRange(const arrow::io::ReadRange& range);
     bool isEmpty() const { return ranges.empty(); }
+    size_t totalSize() const;
+    bool merge(const RowGroupPrefetchPtr other);
 private:
     struct TaskEntry
     {
@@ -70,12 +73,10 @@ private:
     std::vector<arrow::io::ReadRange> ranges;
     std::vector<ReadRangeBuffer> read_range_buffers;
     std::vector<TaskEntry> tasks;
-    std::mutex chunks_mutex;
     parquet::ArrowReaderProperties arrow_properties;
     bool fetched = false;
 };
 
-using RowGroupPrefetchPtr = std::shared_ptr<RowGroupPrefetch>;
 
 struct RowGroupContext
 {

@@ -811,17 +811,27 @@ SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodeP
         auto full_name = node->path()->ToDotString();
         int column_idx = context.parquet_reader->metaData().schema()->ColumnIndex(*node);
         RowGroupPrefetchPtr row_group_prefetch;
-        if (predicate_columns.contains(full_name))
+        bool conditions = predicate_columns.contains(full_name);
+        if (conditions)
             row_group_prefetch = context.prefetch_conditions;
         else
             row_group_prefetch = context.prefetch;
         auto column_range = getColumnRange(*context.row_group_meta->ColumnChunk(column_idx));
         row_group_prefetch->prefetchRange(column_range);
-        PageReaderCreator creator = [&, row_group_prefetch , column_idx, column_range]
+        PageReaderCreator creator = [&, conditions , column_idx, column_range]
         {
             Stopwatch time;
-            row_group_prefetch->startPrefetch();
-            auto data = row_group_prefetch->readRange(column_range);
+            ColumnChunkData data;
+            if (conditions)
+            {
+                context.prefetch_conditions->startPrefetch();
+                data = context.prefetch_conditions->readRange(column_range);
+            }
+            else
+            {
+                context.prefetch->startPrefetch();
+                data = context.prefetch->readRange(column_range);
+            }
             auto page_reader = std::make_unique<LazyPageReader>(
                 std::make_shared<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
                 context.parquet_reader->readerProperties(),

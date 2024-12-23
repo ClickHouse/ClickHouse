@@ -47,9 +47,28 @@ RowGroupChunkReader::RowGroupChunkReader(
         if (filter)
             filter_columns.push_back(col_with_name.name);
     }
+
+
+//    std::cerr << fmt::format("condition size {}, result size {}\n", prefetch_conditions ? prefetch_conditions->totalSize() : 0,
+//                             prefetch ? prefetch->totalSize() : 0);
+    // try merge read condition columns and result columns;
+    if (prefetch_conditions && prefetch_conditions.get() != prefetch.get()
+        && prefetch_conditions->totalSize() + prefetch->totalSize() < 4_MiB)
+    {
+        bool merged = prefetch_conditions->merge(prefetch);
+        if (merged)
+        {
+            prefetch = prefetch_conditions;
+            context.prefetch = prefetch;
+//            std::cerr << "merged prefetch conditions\n";
+        }
+    }
+
+
     if (prefetch_conditions)
         prefetch_conditions->startPrefetch();
-    prefetch->startPrefetch();
+    else
+        prefetch->startPrefetch();
     selectConditions = std::make_unique<SelectConditions>(reader_columns_mapping, filter_columns, parquet_reader->expression_filters, parquet_reader->header);
 }
 
@@ -116,6 +135,7 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                 }
                 else
                 {
+                    // prefetch column data if needed
 //                    prefetch->startPrefetch();
                     auto & reader = reader_columns_mapping.at(name);
                     auto column = reader->createColumn();
@@ -262,6 +282,26 @@ ColumnChunkData RowGroupPrefetch::readRange(const arrow::io::ReadRange & range)
         throw Exception(
             ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Range was not requested for caching: offset={}, length={}", range.offset, range.length);
     }
+}
+bool RowGroupPrefetch::merge(const RowGroupPrefetchPtr other)
+{
+    if (!other || other->ranges.empty())
+        return false;
+    if (this == other.get())
+        return false;
+    if (&this->file != &other->file || &this->file_mutex!= &other->file_mutex)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RowGroupPrefetch: merge called with different files");
+    if (fetched || other->fetched)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RowGroupPrefetch: merge called after startPrefetch");
+    ranges.insert(ranges.end(), other->ranges.begin(), other->ranges.end());
+    return true;
+}
+size_t RowGroupPrefetch::totalSize() const
+{
+    size_t total_size = 0;
+    for (const auto & range : ranges)
+        total_size += range.length;
+    return total_size;
 }
 
 static IColumn::Filter mergeFilters(std::vector<IColumn::Filter> & filters)
