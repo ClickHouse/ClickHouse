@@ -17,7 +17,26 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_create_with_incorrect_encoding(started_cluster):
+def test_create_with_non_utf(started_cluster):
+    node = node1
+    test_table = "test_table"
+
+    node.query(f"DROP TABLE IF EXISTS {test_table}")
+    node.query_and_get_error(
+        f"""
+        CREATE TABLE `{test_table}`(
+            `привет` Int32,
+            date DateTime
+        ) ENGINE=MergeTree()
+        ORDER BY date PARTITION BY toDate(date)
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.0
+        """.encode(
+            "cp1251"
+        )
+    )
+
+
+def test_insert_with_non_utf_encoding(started_cluster):
     node = node1
     test_table = "test_table"
 
@@ -29,10 +48,10 @@ def test_create_with_incorrect_encoding(started_cluster):
         date DateTime
         ) ENGINE=MergeTree()
         ORDER BY date PARTITION BY toDate(date)
-        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.0
         """.encode(
             "cp1251"
-        )
+        ),
+        settings={"use_non_utf8_chars_in_schema": 1},
     )
     node.query_and_get_error(
         f"INSERT INTO `{test_table}` VALUES (100, '2024-11-22 10:00:00')"
@@ -54,7 +73,7 @@ def test_create_with_incorrect_encoding(started_cluster):
     node.query(f"DROP TABLE {test_table} SYNC")
 
 
-def test_alter_with_incorrect_encoding(started_cluster):
+def test_alter_with_non_utf_encoding(started_cluster):
     node = node1
     test_table = "test_table"
 

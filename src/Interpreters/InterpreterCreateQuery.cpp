@@ -20,6 +20,7 @@
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
+#include <Common/isValidUTF8.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -143,6 +144,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool use_non_utf8_chars_in_schema;
 }
 
 namespace ServerSetting
@@ -180,6 +182,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int INCORRECT_DATA;
 }
 
 namespace fs = std::filesystem;
@@ -1047,15 +1050,20 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & create,
                                                     const InterpreterCreateQuery::TableProperties & properties) const
 {
-    /// Check for duplicates
+    /// Check for duplicates and uft8 format.
     std::set<String> all_columns;
+
+    const auto & settings = getContext()->getSettingsRef();
     for (const auto & column : properties.columns)
     {
         if (!all_columns.emplace(column.name).second)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
-    }
 
-    const auto & settings = getContext()->getSettingsRef();
+        if (!settings[Setting::use_non_utf8_chars_in_schema] && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(column.name.data()), column.name.size()))
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Column name contains non-utf8 characters.");
+        }
+    }
 
     /// If it's not attach and not materialized view to existing table,
     /// we need to validate data types (check for experimental or suspicious types).
