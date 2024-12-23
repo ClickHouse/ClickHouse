@@ -124,7 +124,7 @@ endfunction()
 
 # Some of our targets need to be linked for real. e.g. protoc, llvm-tlbgen and all its dependencies.
 macro(set_original_launchers_if_needed)
-    if(ENABLE_DUMMY_LAUNCHERS)
+    if(ENABLE_DUMMY_LAUNCHERS AND USING_DUMMY_LAUNCHERS)
         set(CMAKE_CXX_COMPILER_LAUNCHER ${ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER})
         set(CMAKE_C_COMPILER_LAUNCHER ${ORIGINAL_CMAKE_C_COMPILER_LAUNCHER})
         set(CMAKE_CXX_LINKER_LAUNCHER ${ORIGINAL_CMAKE_CXX_LINKER_LAUNCHER})
@@ -139,7 +139,7 @@ endmacro()
 
 # Set dummy linkers to avoid unnecessary work.
 macro(set_dummy_launchers_if_needed)
-    if(ENABLE_DUMMY_LAUNCHERS)
+    if(ENABLE_DUMMY_LAUNCHERS AND NOT USING_DUMMY_LAUNCHERS)
         set(ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER ${CMAKE_CXX_COMPILER_LAUNCHER})
         set(ORIGINAL_CMAKE_C_COMPILER_LAUNCHER ${CMAKE_C_COMPILER_LAUNCHER})
         set(ORIGINAL_CMAKE_CXX_LINKER_LAUNCHER ${CMAKE_CXX_LINKER_LAUNCHER})
