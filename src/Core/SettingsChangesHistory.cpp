@@ -39,7 +39,7 @@ String ClickHouseVersion::toString() const
 
 static void addSettingsChanges(
     VersionToSettingsChangesMap & settings_changes_history,
-    const char * version,
+    std::string_view version,
     SettingsChangesHistory::SettingsChanges && changes)
 {
     /// Forbid duplicate versions
@@ -48,9 +48,9 @@ static void addSettingsChanges(
         throw Exception{ErrorCodes::LOGICAL_ERROR, "Detected duplicate version '{}'", ClickHouseVersion(version).toString()};
 }
 
-const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory()
+const VersionToSettingsChangesMap & getSettingsChangesHistory()
 {
-    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history;
+    static VersionToSettingsChangesMap settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
@@ -590,9 +590,9 @@ const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & get
     return settings_changes_history;
 }
 
-const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getMergeTreeSettingsChangesHistory()
+const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {
-    static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> merge_tree_settings_changes_history;
+    static VersionToSettingsChangesMap merge_tree_settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
