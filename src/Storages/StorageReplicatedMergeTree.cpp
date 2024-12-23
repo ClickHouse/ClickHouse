@@ -47,6 +47,10 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/VisiblePartsCollector.h>
+#include <Storages/MergeTree/Compaction/PartsFinders/InMemoryPartsFinder.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -4055,10 +4059,10 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             return AttemptStatus::Limited;
         }
 
-        UInt64 max_source_parts_size_for_merge = merger_mutator.getMaxSourcePartsSizeForMerge(
-            (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue], merges_and_mutations_sum);
-
-        UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
+        UInt64 max_source_parts_size_for_merge = CompactionStatistics::getMaxSourcePartsSizeForMerge(
+            *this, (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue], merges_and_mutations_sum);
+        UInt64 max_source_part_size_for_mutation = CompactionStatistics::getMaxSourcePartSizeForMutation(*this);
+        auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, NO_TRANSACTION_PTR);
 
         bool merge_with_ttl_allowed = merges_and_mutations_queued.merges_with_ttl < (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_with_ttl_in_queue] &&
             getTotalMergesWithTTLInMergeList() < (*storage_settings_ptr)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
@@ -4071,9 +4075,11 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
-            auto lightweight_merge_pred = LocalMergePredicate(queue);
             partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
-                max_source_parts_size_for_merge, lightweight_merge_pred, merge_with_ttl_allowed, NO_TRANSACTION_PTR);
+                parts_collector,
+                LocalMergePredicate(queue),
+                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed});
+
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;
             else
@@ -4081,28 +4087,48 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
 
         PreformattedMessage out_reason;
-        if (can_assign_merge &&
-            merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, *merge_pred,
-                merge_with_ttl_allowed, NO_TRANSACTION_PTR, out_reason, &partitions_to_merge_in) == SelectPartsDecision::SELECTED)
+        if (can_assign_merge)
         {
-            create_result = createLogEntryToMergeParts(
-                zookeeper,
-                future_merged_part->parts,
-                future_merged_part->name,
-                future_merged_part->uuid,
-                future_merged_part->part_format,
-                deduplicate,
-                deduplicate_by_columns,
-                /*cleanup*/ false,
-                nullptr,
-                merge_pred->getVersion(),
-                future_merged_part->merge_type);
+            auto select_merge_result = merger_mutator.selectPartsToMerge(
+                parts_collector,
+                merge_pred.value(),
+                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
+                partitions_to_merge_in);
 
+            if (select_merge_result.has_value())
+            {
+                future_merged_part = InMemoryPartsFinder(*this).constructFuturePart(select_merge_result.value());
+                if (!future_merged_part)
+                {
+                    LOG_DEBUG(log,
+                        "Can't construct future part from source parts. "
+                        "Probably there was a drop part/partition user query or another replica has already executed merge.");
 
-            if (create_result == CreateMergeEntryResult::Ok)
-                return AttemptStatus::EntryCreated;
-            if (create_result == CreateMergeEntryResult::LogUpdated)
-                return AttemptStatus::NeedRetry;
+                    return AttemptStatus::NeedRetry;
+                }
+
+                create_result = createLogEntryToMergeParts(
+                    zookeeper,
+                    future_merged_part->parts,
+                    future_merged_part->name,
+                    future_merged_part->uuid,
+                    future_merged_part->part_format,
+                    deduplicate,
+                    deduplicate_by_columns,
+                    /*cleanup*/ false,
+                    nullptr,
+                    merge_pred->getVersion(),
+                    future_merged_part->merge_type);
+
+                if (create_result == CreateMergeEntryResult::Ok)
+                    return AttemptStatus::EntryCreated;
+                if (create_result == CreateMergeEntryResult::LogUpdated)
+                    return AttemptStatus::NeedRetry;
+            }
+            else
+            {
+                LOG_DEBUG(log, "Failed to select merge: '{}'", select_merge_result.error().explanation.text);
+            }
         }
 
         /// If there are many mutations in queue, it may happen, that we cannot enqueue enough merges to merge all new parts
@@ -6123,39 +6149,59 @@ bool StorageReplicatedMergeTree::optimize(
             }
             ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
 
-            auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
-            if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
-                future_merged_part->uuid = UUIDHelpers::generateV4();
-
-            constexpr const char * unknown_disable_reason = "unknown reason";
-            PreformattedMessage disable_reason = PreformattedMessage::create(unknown_disable_reason);
-            SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
-
-            if (partition_id.empty())
+            const auto select_merge = [&]() -> tl::expected<MergeSelectorChoice, SelectMergeFailure>
             {
-                select_decision = merger_mutator.selectPartsToMerge(
-                    future_merged_part, /* aggressive */ true, (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool],
-                    can_merge, /* merge_with_ttl_allowed */ false, NO_TRANSACTION_PTR, disable_reason);
-            }
-            else
-            {
-                select_decision = merger_mutator.selectAllPartsToMergeWithinPartition(
-                    future_merged_part,
-                    can_merge,
-                    partition_id,
-                    final,
-                    metadata_snapshot,
-                    NO_TRANSACTION_PTR,
-                    disable_reason,
-                    query_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]);
-            }
+                auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, NO_TRANSACTION_PTR);
 
-            /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
-            if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
-                return false;
+                if (partition_id.empty())
+                {
+                    return merger_mutator.selectPartsToMerge(
+                        parts_collector,
+                        can_merge,
+                        MergeSelectorApplier{
+                            .max_total_size_to_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool],
+                            .merge_with_ttl_allowed = false,
+                            .aggressive = true,
+                        },
+                        /*partitions_hint=*/std::nullopt);
+                }
+                else
+                {
+                    return merger_mutator.selectAllPartsToMergeWithinPartition(
+                        metadata_snapshot,
+                        parts_collector,
+                        can_merge,
+                        partition_id,
+                        final,
+                        query_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]);
+                }
+            };
 
-            if (select_decision != SelectPartsDecision::SELECTED)
+            const auto construct_future_part = [&](MergeSelectorChoice choice) -> tl::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
             {
+                auto future_part = InMemoryPartsFinder(*this).constructFuturePart(choice);
+                if (!future_part)
+                    return tl::make_unexpected(SelectMergeFailure{
+                        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                        .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
+                    });
+
+                if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
+                    future_part->uuid = UUIDHelpers::generateV4();
+
+                return future_part;
+            };
+
+            auto select_merge_result = select_merge().and_then(construct_future_part);
+
+            if (!select_merge_result.has_value())
+            {
+                auto error = std::move(select_merge_result.error());
+
+                /// If there is nothing to merge then we treat this merge as successful (needed for optimize final optimization)
+                if (error.reason == SelectMergeFailure::Reason::NOTHING_TO_MERGE)
+                    return false;
+
                 if (try_no + 1 < max_retries)
                 {
                     /// Here we trying to have a similar behaviour to ordinary MergeTree: if some merges are already in progress - let's wait for them to finish.
@@ -6167,23 +6213,25 @@ bool StorageReplicatedMergeTree::optimize(
                     continue;
                 }
 
-                constexpr const char * message_fmt = "Cannot select parts for optimization: {}";
-                assert(disable_reason.text != unknown_disable_reason);
                 if (!partition_id.empty())
-                    disable_reason.text += fmt::format(" (in partition {})", partition_id);
-                return handle_noop(message_fmt, disable_reason.text);
+                    error.explanation.text += fmt::format(" (in partition {})", partition_id);
+
+                return handle_noop("Cannot select parts for optimization: {}", error.explanation.text);
             }
 
             ReplicatedMergeTreeLogEntryData merge_entry;
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
-                zookeeper, future_merged_part->parts,
-                future_merged_part->name,
-                future_merged_part->uuid,
-                future_merged_part->part_format,
-                deduplicate, deduplicate_by_columns,
+                zookeeper,
+                select_merge_result.value()->parts,
+                select_merge_result.value()->name,
+                select_merge_result.value()->uuid,
+                select_merge_result.value()->part_format,
+                deduplicate,
+                deduplicate_by_columns,
                 cleanup,
-                &merge_entry, can_merge.getVersion(),
-                future_merged_part->merge_type);
+                &merge_entry,
+                can_merge.getVersion(),
+                select_merge_result.value()->merge_type);
 
             if (create_result == CreateMergeEntryResult::MissingPart)
             {
@@ -8940,7 +8988,6 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (part->uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} does not have an uuid assigned and it can't be moved between shards", part_name);
 
-
     ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
 
     /// The following block is pretty much copy & paste from StorageReplicatedMergeTree::dropPart to avoid conflicts while this is WIP.
@@ -8954,9 +9001,8 @@ void StorageReplicatedMergeTree::movePartitionToShard(
         }
 
         /// canMergeSinglePart is overlapping with dropPart, let's try to use the same code.
-        PreformattedMessage out_reason;
-        if (!merge_pred.canMergeSinglePart(part, out_reason))
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", out_reason.text);
+        if (auto result = merge_pred.canMergeSinglePart(part->name, part->info, part->uuid); !result.has_value())
+            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", result.error().text);
     }
 
     {
@@ -9215,10 +9261,13 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         /// There isn't a lot we can do otherwise. Can't cancel merges because it is possible that a replica already
         /// finished the merge.
         PreformattedMessage out_reason;
-        if (!merge_pred.canMergeSinglePart(part, out_reason))
+        if (auto result = merge_pred.canMergeSinglePart(part->name, part->info, part->uuid); !result.has_value())
         {
             if (throw_if_noop)
-                throw Exception(out_reason, ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+                throw Exception(result.error(), ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+            else
+                LOG_DEBUG(log, "Cannot drop part: '{}'", result.error().text);
+
             return false;
         }
 
