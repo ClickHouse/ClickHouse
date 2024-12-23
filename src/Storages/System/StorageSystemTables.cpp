@@ -462,7 +462,8 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
-                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
+                    auto const can_create_table = access->isGranted(AccessType::CREATE_TABLE, database_name, table_name);
+                    ASTPtr ast = can_create_table ? database->tryGetCreateTableQuery(table_name, context) : nullptr;
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
                     if (ast_create && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
