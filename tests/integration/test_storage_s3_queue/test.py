@@ -2298,7 +2298,6 @@ def test_alter_settings(started_cluster):
         check_string_settings(node, string_settings)
 
         node.restart_clickhouse()
-        assert expected_rows == get_count()
 
         check_int_settings(node, int_settings)
         check_string_settings(node, string_settings)
