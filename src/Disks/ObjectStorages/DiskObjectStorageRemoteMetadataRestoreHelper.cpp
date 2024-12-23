@@ -367,7 +367,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
             LOG_INFO(disk->log, "Calling restore for key for disk {}", object->relative_path);
 
             /// Skip file operations objects. They will be processed separately.
-            if (object->relative_path.contains("/operations/"))
+            if (object->relative_path.find("/operations/") != String::npos)
                 continue;
 
             const auto [revision, _] = extractRevisionAndOperationFromKey(object->relative_path);
@@ -541,7 +541,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         for (const auto & path : renames)
         {
             /// Skip already detached parts.
-            if (path.contains("/detached/"))
+            if (path.find("/detached/") != std::string::npos)
                 continue;
 
             /// Skip not finished parts. They shouldn't be in 'detached' directory, because CH wouldn't be able to finish processing them.

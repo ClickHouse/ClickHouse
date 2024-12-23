@@ -770,8 +770,7 @@ i
 
 ## indexOf(arr, x)
 
-Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
-If the array does not contain the searched-for value, the function returns 0.
+Returns the index of the first ‘x’ element (starting from 1) if it is in the array, or 0 if it is not.
 
 Example:
 
@@ -786,26 +785,6 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 ```
 
 Elements set to `NULL` are handled as normal values.
-
-## indexOfAssumeSorted(arr, x)
-
-Returns the index of the first element with value ‘x’ (starting from 1) if it is in the array.
-If the array does not contain the searched-for value, the function returns 0.
-Assumes that the array is sorted in ascending order (i.e., the function uses binary search).
-If the array is not sorted, results are undefined.
-If the internal array is of type Nullable, function ‘indexOf‘ will be called.
-
-Example:
-
-``` sql
-SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
-```
-
-``` text
-┌─indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)─┐
-│                                             5 │
-└───────────────────────────────────────────────┘
-```
 
 ## arrayCount(\[func,\] arr1, ...)
 
@@ -2142,18 +2121,15 @@ Result:
 ```
 
 
-## arrayROCAUC
+## arrayAUC
 
-Calculates the Area Under the Curve (AUC), which is a concept in machine learning.
-For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
+Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: <https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve>).
 
 **Syntax**
 
 ``` sql
-arrayROCAUC(arr_scores, arr_labels[, scale])
+arrayAUC(arr_scores, arr_labels[, scale])
 ```
-
-Alias: `arrayAUC`
 
 **Arguments**
 
@@ -2170,56 +2146,15 @@ Returns AUC value with type Float64.
 Query:
 
 ``` sql
-select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
 
 ``` text
-┌─arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
-│                                             0.75 │
-└──────────────────────────────────────────────────┘
-```
-
-## arrayAUCPR
-
-Calculate the area under the precision-recall (PR) curve.
-A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
-The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
-PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
-For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
-
-**Syntax**
-
-``` sql
-arrayAUCPR(arr_scores, arr_labels)
-```
-
-Alias: `arrayPRAUC`
-
-**Arguments**
-
-- `arr_scores` — scores prediction model gives.
-- `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
-
-**Returned value**
-
-Returns PR-AUC value with type Float64.
-
-**Example**
-
-Query:
-
-``` sql
-select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
-```
-
-Result:
-
-``` text
-┌─arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
-│                              0.8333333333333333 │
-└─────────────────────────────────────────────────┘
+┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                                          0.75 │
+└───────────────────────────────────────────────┘
 ```
 
 ## arrayMap(func, arr1, ...)
@@ -3220,41 +3155,6 @@ Result:
 ┌─res─────┐
 │ [3,1,2] │
 └─────────┘
-```
-
-## arrayNormalizedGini
-
-Calculates the normalized Gini coefficient.
-
-**Syntax**
-
-```sql
-arrayNormalizedGini(predicted, label)
-```
-
-**Arguments**
-
-- `predicted` — Predicted values ([Array(T)](../data-types/array.md))
-- `label` — Actual values ([Array(T)](../data-types/array.md))
-
-**Returned Value**
-
-- A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients).
-
-**Examples**
-
-Query:
-
-```sql
-SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2]);
-```
-
-Result:
-
-```
-┌─arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
-│ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
-└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Distance functions

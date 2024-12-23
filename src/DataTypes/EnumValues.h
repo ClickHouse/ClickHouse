@@ -10,7 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename T>
@@ -38,7 +38,7 @@ public:
     {
         auto it = value_to_name_map.find(value);
         if (it == value_to_name_map.end())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value {} in enum", toString(value));
 
         return it;
     }

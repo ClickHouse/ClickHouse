@@ -71,47 +71,23 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeTuple & data_type_tuple)
+String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & data_type_tuple)
 {
-    const auto & names = data_type_tuple.getElementNames();
-    const auto & types = data_type_tuple.getElements();
-
     if (value.getType() == Field::Types::String)
-    {
-        const auto & name = value.safeGet<const String &>();
-        auto pos = data_type_tuple.tryGetPositionByName(name);
-
-        if (!pos)
-            return {};
-
-        return NameAndTypePair{name, types[*pos]};
-    }
+        return value.safeGet<const String &>();
 
     if (value.getType() == Field::Types::UInt64)
-    {
-        size_t index = value.safeGet<UInt64>();
+        return data_type_tuple.getNameByPosition(value.safeGet<UInt64>());
 
-        if (index == 0 || index > types.size())
-            return {};
-
-        return NameAndTypePair{names[index - 1], types[index - 1]};
-    }
-
-    return {};
+    return "";
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeVariant & data_type_variant)
+String getSubcolumnNameForElement(const Field & value, const DataTypeVariant &)
 {
-    if (value.getType() != Field::Types::String)
-        return {};
+    if (value.getType() == Field::Types::String)
+        return value.safeGet<const String &>();
 
-    const auto & name = value.safeGet<const String &>();
-    auto discr = data_type_variant.tryGetVariantDiscriminator(name);
-
-    if (!discr)
-        return {};
-
-    return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
+    return "";
 }
 
 template <typename DataType>
@@ -129,12 +105,12 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         return;
 
     const auto & data_type_concrete = assert_cast<const DataType &>(*ctx.column.type);
-    auto subcolumn = getSubcolumnForElement(second_argument_constant_node->getValue(), data_type_concrete);
+    auto subcolumn_name = getSubcolumnNameForElement(second_argument_constant_node->getValue(), data_type_concrete);
 
-    if (!subcolumn)
+    if (subcolumn_name.empty())
         return;
 
-    NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
+    NameAndTypePair column{ctx.column.name + "." + subcolumn_name, function_node.getResultType()};
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
@@ -316,12 +292,6 @@ public:
         }
 
         if (const auto * /*join_node*/ _ = node->as<JoinNode>())
-        {
-            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
-            return;
-        }
-
-        if (const auto * /*cross_join_node*/ _ = node->as<CrossJoinNode>())
         {
             can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
             return;

@@ -40,8 +40,6 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             std::unique_ptr<Source::GlobIterator> glob_iterator_,
-            ObjectStoragePtr object_storage_,
-            bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_,
             LoggerPtr logger_);
 
@@ -69,9 +67,7 @@ public:
         using Processor = ObjectStorageQueueMetadata::Processor;
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
-        const ObjectStoragePtr object_storage;
         const std::unique_ptr<Source::GlobIterator> glob_iterator;
-        const bool file_deletion_on_processed_enabled;
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
@@ -106,22 +102,12 @@ public:
         size_t max_processing_time_sec_before_commit;
     };
 
-    struct ProcessingProgress
-    {
-        std::atomic<size_t> processed_files = 0;
-        std::atomic<size_t> processed_rows = 0;
-        std::atomic<size_t> processed_bytes = 0;
-        Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
-    };
-    using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
-
     ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
         std::shared_ptr<FileIterator> file_iterator_,
         ConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
-        ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
         const CommitSettings & commit_settings_,
@@ -151,7 +137,6 @@ private:
     const std::shared_ptr<FileIterator> file_iterator;
     const ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
-    const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
     const CommitSettings commit_settings;
@@ -170,6 +155,12 @@ private:
     std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> failed_during_read_files;
 
     Source::ReaderHolder reader;
+
+    size_t processed_rows_from_file = 0;
+    size_t total_processed_rows = 0;
+    size_t total_processed_bytes = 0;
+
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
     Chunk generateImpl();
     void applyActionAfterProcessing(const String & path);

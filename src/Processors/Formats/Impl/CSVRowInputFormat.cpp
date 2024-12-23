@@ -34,7 +34,7 @@ namespace
             return;
         }
         constexpr std::string_view bad_delimiters = " \t\"'.UL";
-        if (bad_delimiters.contains(delimiter))
+        if (bad_delimiters.find(delimiter) != std::string_view::npos)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "CSV format may not work correctly with delimiter '{}'. Try use CustomSeparated format instead",

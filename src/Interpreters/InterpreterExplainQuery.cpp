@@ -74,8 +74,10 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            /// we need to read statistic when `allow_statistics_optimize` is enabled.
+            bool only_analyze = !data.getContext()->getSettingsRef()[Setting::allow_statistics_optimize];
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -390,7 +392,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExplainAnalyzedSyntaxVisitor::Data data(getContext());
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
+            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
             break;
         }
         case ASTExplainQuery::QueryTree:
@@ -439,7 +441,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (need_newline)
                     buf << "\n\n";
 
-                query_tree->toAST()->format(buf, IAST::FormatSettings(false));
+                query_tree->toAST()->format(IAST::FormatSettings(buf, false));
             }
 
             break;
@@ -545,8 +547,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     /* async_isnert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
-                // we do not need it anymore, it would be executed
-                io.pipeline.cancel();
             }
             else
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT and INSERT is supported for EXPLAIN PIPELINE query");
@@ -617,7 +617,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             break;
         }
     }
-    buf.finalize();
     if (insert_buf)
     {
         if (single_line)

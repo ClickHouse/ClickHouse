@@ -92,9 +92,8 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
                                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
                                  Names{"num_values", "null_count", "distinct_count", "min", "max"}),
-                             DataTypeFactory::instance().get("Bool"),
                          },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "have_bloom_filter"}))},
+                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics"}))},
              Names{"num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
@@ -351,8 +350,6 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
             fillColumnStatistics(column_chunk_metadata->statistics(), tuple_column.getColumn(5), row_group_metadata->schema()->Column(column_i)->type_length());
         else
             tuple_column.getColumn(5).insertDefault();
-        bool have_bloom_filter = column_chunk_metadata->bloom_filter_offset().has_value();
-        assert_cast<ColumnUInt8 &>(tuple_column.getColumn(6)).insertValue(have_bloom_filter);
     }
     array_column.getOffsets().push_back(tuple_column.size());
 }
