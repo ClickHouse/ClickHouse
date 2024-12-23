@@ -561,7 +561,7 @@ int QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const bool peer
     return 0;
 }
 
-void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes, const StatementGenerator & gen)
+void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen)
 {
     checkStackSize();
 
@@ -571,18 +571,18 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes,
 
         if (sel.has_select_core())
         {
-            findTablesWithPeersAndReplace(const_cast<SelectStatementCore &>(sel.select_core()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<SelectStatementCore &>(sel.select_core()), gen);
         }
         else if (sel.has_set_query())
         {
-            findTablesWithPeersAndReplace(const_cast<SetQuery &>(sel.set_query()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<SetQuery &>(sel.set_query()), gen);
         }
         if (sel.has_ctes())
         {
-            findTablesWithPeersAndReplace(const_cast<Select &>(sel.ctes().cte().query()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().query()), gen);
             for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
             {
-                findTablesWithPeersAndReplace(const_cast<Select &>(sel.ctes().other_ctes(i).query()), gen);
+                findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().other_ctes(i).query()), gen);
             }
         }
     }
@@ -590,8 +590,8 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes,
     {
         auto & setq = static_cast<SetQuery &>(mes);
 
-        findTablesWithPeersAndReplace(const_cast<Select &>(setq.sel1()), gen);
-        findTablesWithPeersAndReplace(const_cast<Select &>(setq.sel2()), gen);
+        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1()), gen);
+        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2()), gen);
     }
     else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
     {
@@ -599,7 +599,7 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes,
 
         if (ssc.has_from())
         {
-            findTablesWithPeersAndReplace(const_cast<JoinedQuery &>(ssc.from().tos()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(ssc.from().tos()), gen);
         }
     }
     else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
@@ -608,9 +608,9 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes,
 
         for (int i = 0; i < jquery.tos_list_size(); i++)
         {
-            findTablesWithPeersAndReplace(const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen);
         }
-        findTablesWithPeersAndReplace(const_cast<JoinClause &>(jquery.join_clause()), gen);
+        findTablesWithPeersAndReplace(rg, const_cast<JoinClause &>(jquery.join_clause()), gen);
     }
     else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
     {
@@ -620,10 +620,10 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes,
         {
             if (jclause.clauses(i).has_core())
             {
-                findTablesWithPeersAndReplace(const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen);
+                findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen);
             }
         }
-        findTablesWithPeersAndReplace(const_cast<TableOrSubquery &>(jclause.tos()), gen);
+        findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.tos()), gen);
     }
     else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
     {
@@ -643,7 +643,7 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes,
                     buf += tos.joined_table().table_alias().table();
                     tos.clear_joined_table();
                     JoinedTableFunction * jtf = tos.mutable_joined_table_function();
-                    gen.setTableRemote<false>(t, jtf->mutable_tfunc());
+                    gen.setTableRemote<false>(rg, t, jtf->mutable_tfunc());
                     jtf->mutable_table_alias()->set_table(buf);
                     found_tables.insert(tname);
                 }
@@ -651,11 +651,11 @@ void QueryOracle::findTablesWithPeersAndReplace(google::protobuf::Message & mes,
         }
         else if (tos.has_joined_derived_query())
         {
-            findTablesWithPeersAndReplace(const_cast<Select &>(tos.joined_derived_query().select()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<Select &>(tos.joined_derived_query().select()), gen);
         }
         else if (tos.has_joined_query())
         {
-            findTablesWithPeersAndReplace(const_cast<JoinedQuery &>(tos.joined_query()), gen);
+            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen);
         }
     }
 }
@@ -681,13 +681,13 @@ int QueryOracle::optimizePeerTables(const StatementGenerator & gen) const
 }
 
 int QueryOracle::replaceQueryWithTablePeers(
-    const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2)
+    RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2)
 {
     found_tables.clear();
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-    findTablesWithPeersAndReplace(const_cast<Select &>(sq2.inner_query().select().sel()), gen);
+    findTablesWithPeersAndReplace(rg, const_cast<Select &>(sq2.inner_query().select().sel()), gen);
     for (const auto & entry : found_tables)
     {
         SQLQuery next;
@@ -696,7 +696,7 @@ int QueryOracle::replaceQueryWithTablePeers(
         SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
 
         //then insert
-        gen.setTableRemote<false>(t, ins->mutable_tfunction());
+        gen.setTableRemote<false>(rg, t, ins->mutable_tfunction());
         JoinedTable * jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
         if (t.db)

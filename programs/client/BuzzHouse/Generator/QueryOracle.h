@@ -18,7 +18,7 @@ private:
     std::set<uint32_t> found_tables;
     std::vector<std::string> nsettings;
 
-    void findTablesWithPeersAndReplace(google::protobuf::Message & mes, const StatementGenerator & gen);
+    void findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen);
 
 public:
     explicit QueryOracle(const FuzzConfig & ffc) : fc(ffc) { buf.reserve(4096); }
@@ -43,7 +43,8 @@ public:
     /* Replace query with peer tables */
     int truncatePeerTables(const StatementGenerator & gen) const;
     int optimizePeerTables(const StatementGenerator & gen) const;
-    int replaceQueryWithTablePeers(const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
+    int replaceQueryWithTablePeers(
+        RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2);
 };
 
 }

@@ -2413,7 +2413,8 @@ message S3Func {
     required string user = 2;
     required string password = 3;
     required InOutFormat format = 4;
-    optional string fcomp = 5;
+    required string structure = 5;
+    optional string fcomp = 6;
 }
 
 message TableFunction {

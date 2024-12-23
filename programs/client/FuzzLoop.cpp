@@ -620,7 +620,7 @@ bool Client::buzzHouse()
                     (void)qo.processOracleQueryResult(true, !have_error, "Peer table query");
 
                     sq2.Clear();
-                    (void)qo.replaceQueryWithTablePeers(sq1, gen, peer_queries, sq2);
+                    (void)qo.replaceQueryWithTablePeers(rg, sq1, gen, peer_queries, sq2);
                     (void)qo.truncatePeerTables(gen);
                     for (const auto & entry : peer_queries)
                     {

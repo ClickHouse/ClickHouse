@@ -1849,6 +1849,8 @@ CONV_FN(S3Func, sfunc)
     ret += sfunc.password();
     ret += "', '";
     ret += InOutFormat_Name(sfunc.format()).substr(6);
+    ret += "', '";
+    ret += sfunc.structure();
     ret += "'";
     if (sfunc.has_fcomp())
     {

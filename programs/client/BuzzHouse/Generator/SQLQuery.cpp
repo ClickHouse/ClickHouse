@@ -206,7 +206,7 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
             [&](const SQLTable & tt)
             { return tt.isMySQLEngine() || tt.isPostgreSQLEngine() || tt.isSQLiteEngine() || tt.isAnyS3Engine(); }));
 
-        setTableRemote<true>(t, jtf->mutable_tfunc());
+        setTableRemote<true>(rg, t, jtf->mutable_tfunc());
         addTableRelation(rg, true, name, t);
         jtf->mutable_table_alias()->set_table(name);
     }

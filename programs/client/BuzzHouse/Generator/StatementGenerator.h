@@ -382,7 +382,7 @@ private:
     }
 
     template <bool TEngine>
-    int setTableRemote(const SQLTable & t, TableFunction * tfunc) const
+    int setTableRemote(RandomGenerator & rg, const SQLTable & t, TableFunction * tfunc)
     {
         if (!TEngine && t.hasClickHousePeer())
         {
@@ -427,15 +427,38 @@ private:
         }
         else if (TEngine && t.isS3Engine())
         {
+            bool first = true;
             const ServerCredentials & sc = fc.minio_server.value();
             S3Func * sfunc = tfunc->mutable_s3();
 
             sfunc->set_resource(
                 "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + std::to_string(t.tname)
-                + (t.isS3QueueEngine() ? "/*" : ""));
+                + (t.isS3QueueEngine() ? "/" : "") + (rg.nextBool() ? "*" : ""));
             sfunc->set_user(sc.user);
             sfunc->set_password(sc.password);
             sfunc->set_format(t.file_format);
+            buf.resize(0);
+            flatTableColumnPath(0, t, [](const SQLColumn &) { return true; });
+            for (const auto & entry : entries)
+            {
+                SQLType * tp = entry.getBottomType();
+
+                if (!first)
+                {
+                    buf += ", ";
+                }
+                buf += entry.getBottomName();
+                buf += " ";
+                tp->typeName(buf, true);
+                if (entry.nullable.has_value())
+                {
+                    buf += entry.nullable.value() ? "" : " NOT";
+                    buf += " NULL";
+                }
+                first = false;
+            }
+            entries.clear();
+            sfunc->set_structure(buf);
             if (!t.file_comp.empty())
             {
                 sfunc->set_fcomp(t.file_comp);
