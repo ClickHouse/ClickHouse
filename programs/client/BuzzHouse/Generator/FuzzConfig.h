@@ -128,7 +128,7 @@ public:
     std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
                                      minio_server = std::nullopt;
-    bool read_log = false, fuzz_floating_points = true, test_with_fill = true;
+    bool read_log = false, fuzz_floating_points = true, test_with_fill = true, use_dump_table_oracle = true;
     uint64_t seed = 0;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, time_to_run = 0;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
@@ -211,6 +211,10 @@ public:
             else if (key == "test_with_fill")
             {
                 test_with_fill = value.getBool();
+            }
+            else if (key == "use_dump_table_oracle")
+            {
+                use_dump_table_oracle = value.getBool();
             }
             else if (key == "clickhouse")
             {

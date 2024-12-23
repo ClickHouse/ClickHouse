@@ -273,7 +273,7 @@ cat << EOF > $BUZZHOUSE_CONFIG_FILE
     "log_path": "$FUZZER_OUTPUT_SQL_FILE",
     "seed": 0,
     "read_log": false,
-    "fuzz_floating_points": false,
+    "use_dump_table_oracle": false,
     "time_to_run": 180
 }
 EOF
