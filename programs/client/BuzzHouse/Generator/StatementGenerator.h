@@ -74,7 +74,7 @@ const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_disti
                          allow_limit = (1 << 11);
 
 const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), flat_json = (1 << 3),
-                         skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6);
+                         skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6), to_remote_entries = (1 << 7);
 
 class StatementGenerator
 {
@@ -111,7 +111,7 @@ private:
            34,  35,   36,   37,   38,   39,     40,     41,     42,  43,  44,  126, 127, 128, 129, 32766, 32767};
 
     std::vector<uint32_t> ids;
-    std::vector<ColumnPathChain> entries, table_entries;
+    std::vector<ColumnPathChain> entries, table_entries, remote_entries;
     std::vector<std::reference_wrapper<const ColumnPathChain>> filtered_entries;
     std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
     std::vector<std::reference_wrapper<const SQLView>> filtered_views;
@@ -438,7 +438,7 @@ private:
             sfunc->set_password(sc.password);
             sfunc->set_format(t.file_format);
             buf.resize(0);
-            flatTableColumnPath(0, t, [](const SQLColumn &) { return true; });
+            flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
             for (const auto & entry : entries)
             {
                 SQLType * tp = entry.getBottomType();

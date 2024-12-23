@@ -92,7 +92,8 @@ void collectColumnPaths(
 
 void StatementGenerator::flatTableColumnPath(const uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter)
 {
-    auto & res = ((flags & to_table_entries) != 0) ? this->table_entries : this->entries;
+    auto & res = ((flags & to_table_entries) != 0) ? this->table_entries
+                                                   : (((flags & to_remote_entries) != 0) ? this->remote_entries : this->entries);
 
     assert(res.empty());
     for (const auto & entry : t.cols)
