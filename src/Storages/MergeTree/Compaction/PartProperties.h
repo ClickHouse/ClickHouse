@@ -29,16 +29,17 @@ struct PartProperties
     /// Information about different TTLs for part. Used by Part/Row Delete Merge Selectors.
     struct GeneralTTLInfo
     {
-        const bool has_any_non_finished_ttls = false;
-        const time_t part_min_ttl = 0;
-        const time_t part_max_ttl = 0;
+        const bool has_any_non_finished_ttls;
+        const time_t part_min_ttl;
+        const time_t part_max_ttl;
     };
     const std::optional<GeneralTTLInfo> general_ttl_info = std::nullopt;
 
     /// Information about recompression TTL for part. Used by Recompress Merge Selector.
     struct RecompressTTLInfo
     {
-        const time_t next_recompress_ttl = 0;
+        const bool will_change_codec;
+        const time_t next_recompress_ttl;
     };
     const std::optional<RecompressTTLInfo> recompression_ttl_info = std::nullopt;
 };

@@ -55,9 +55,10 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
         const std::string next_codec = astToString(ttl_description->recompression_codec);
         const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
 
-        /// Allow part recompression only if it will change codec. Otherwise there will be no difference in bytes size.
-        if (next_codec != current_codec)
-            return PartProperties::RecompressTTLInfo{ .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL() };
+        return PartProperties::RecompressTTLInfo{
+            .will_change_codec = (next_codec != current_codec),
+            .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
+        };
     }
 
     return std::nullopt;

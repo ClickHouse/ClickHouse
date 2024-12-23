@@ -161,7 +161,11 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     if (!part.shall_participate_in_merges)
         return false;
 
-    return part.recompression_ttl_info.has_value();
+    if (!part.recompression_ttl_info.has_value())
+        return false;
+
+    /// Allow part recompression only if it will change codec. Otherwise there will be no difference in bytes size.
+    return part.recompression_ttl_info->will_change_codec;
 }
 
 }
