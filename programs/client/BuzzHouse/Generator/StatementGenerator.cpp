@@ -186,8 +186,8 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
     {
         TableEngine * te = cv->mutable_engine();
         const bool has_with_cols
-            = collectionHas<SQLTable>([&next](const SQLTable & t) { return t.numberOfInsertableColumns() == next.ncols; }),
-            has_tables = has_with_cols || !tables.empty();
+            = collectionHas<SQLTable>([&next](const SQLTable & t) { return t.numberOfInsertableColumns() == next.ncols; });
+        const bool has_tables = has_with_cols || !tables.empty();
 
         next.teng = getNextTableEngine(rg, false);
         te->set_engine(next.teng);
