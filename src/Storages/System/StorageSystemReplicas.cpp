@@ -508,7 +508,7 @@ Chunk SystemReplicasSource::generate()
     for (; i < futures.size(); ++i)
     {
         if (query_status)
-            query_status->checkIfKilledAndThrow();
+            query_status->checkTimeLimit();
 
         if (rows_added)
         {
