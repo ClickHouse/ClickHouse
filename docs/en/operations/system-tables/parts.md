@@ -18,6 +18,8 @@ Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) – Name of the data part.
 
+- `uuid` ([String](../../sql-reference/data-types/uuid.md)) -  The UUID of data part.
+
 - `part_type` ([String](../../sql-reference/data-types/string.md)) — The data part storing format.
 
     Possible Values:
