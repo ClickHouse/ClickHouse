@@ -116,7 +116,7 @@ int QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
     jt->set_final(t.supportsFinal());
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
@@ -192,7 +192,7 @@ int QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & 
     ff->set_path(nfile.generic_string());
 
     buf.resize(0);
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         SQLType * tp = entry.getBottomType();
@@ -263,7 +263,7 @@ int QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & 
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         gen.columnPathRef(entry, ins->add_cols());
@@ -705,7 +705,7 @@ int QueryOracle::replaceQueryWithTablePeers(
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
         jt->set_final(t.supportsFinal());
-        gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+        gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
             gen.columnPathRef(colRef, ins->add_cols());

@@ -35,7 +35,7 @@
 namespace BuzzHouse
 {
 
-using IntegrationCall = enum class IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, Redis = 4, MongoDB = 5, MinIO = 6 };
+enum class IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, Redis = 4, MongoDB = 5, MinIO = 6 };
 
 class ClickHouseIntegration
 {
@@ -866,19 +866,19 @@ public:
         requires_external_call_check++;
         switch (pt)
         {
-            case PeerTableDatabase::PeerClickHouse:
+            case PeerTableDatabase::ClickHouse:
                 next_calls_succeeded.push_back(clickhouse->performCreatePeerTable(rg, true, t, ct, entries));
                 break;
-            case PeerTableDatabase::PeerMySQL:
+            case PeerTableDatabase::MySQL:
                 next_calls_succeeded.push_back(mysql->performCreatePeerTable(rg, false, t, ct, entries));
                 break;
-            case PeerTableDatabase::PeerPostgreSQL:
+            case PeerTableDatabase::PostgreSQL:
                 next_calls_succeeded.push_back(postresql->performCreatePeerTable(rg, false, t, ct, entries));
                 break;
-            case PeerTableDatabase::PeerSQLite:
+            case PeerTableDatabase::SQLite:
                 next_calls_succeeded.push_back(sqlite->performCreatePeerTable(rg, false, t, ct, entries));
                 break;
-            case PeerTableDatabase::PeerNone:
+            case PeerTableDatabase::None:
                 assert(0);
                 break;
         }
@@ -888,19 +888,19 @@ public:
     {
         switch (t.peer_table)
         {
-            case PeerTableDatabase::PeerClickHouse:
+            case PeerTableDatabase::ClickHouse:
                 clickhouse->truncatePeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerMySQL:
+            case PeerTableDatabase::MySQL:
                 mysql->truncatePeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerPostgreSQL:
+            case PeerTableDatabase::PostgreSQL:
                 postresql->truncatePeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerSQLite:
+            case PeerTableDatabase::SQLite:
                 sqlite->truncatePeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerNone:
+            case PeerTableDatabase::None:
                 break;
         }
     }
@@ -909,13 +909,13 @@ public:
     {
         switch (t.peer_table)
         {
-            case PeerTableDatabase::PeerClickHouse:
+            case PeerTableDatabase::ClickHouse:
                 clickhouse->optimizePeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerMySQL:
-            case PeerTableDatabase::PeerPostgreSQL:
-            case PeerTableDatabase::PeerSQLite:
-            case PeerTableDatabase::PeerNone:
+            case PeerTableDatabase::MySQL:
+            case PeerTableDatabase::PostgreSQL:
+            case PeerTableDatabase::SQLite:
+            case PeerTableDatabase::None:
                 break;
         }
     }
@@ -924,19 +924,19 @@ public:
     {
         switch (t.peer_table)
         {
-            case PeerTableDatabase::PeerClickHouse:
+            case PeerTableDatabase::ClickHouse:
                 clickhouse->dropPeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerMySQL:
+            case PeerTableDatabase::MySQL:
                 mysql->dropPeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerPostgreSQL:
+            case PeerTableDatabase::PostgreSQL:
                 postresql->dropPeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerSQLite:
+            case PeerTableDatabase::SQLite:
                 sqlite->dropPeerTableOnRemote(t);
                 break;
-            case PeerTableDatabase::PeerNone:
+            case PeerTableDatabase::None:
                 break;
         }
     }

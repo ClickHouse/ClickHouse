@@ -7,11 +7,11 @@
 namespace BuzzHouse
 {
 
-using ColumnSpecial = enum ColumnSpecial { NONE = 0, SIGN = 1, IS_DELETED = 2, VERSION = 3 };
+enum class ColumnSpecial { NONE = 0, SIGN = 1, IS_DELETED = 2, VERSION = 3 };
 
-using DetachStatus = enum DetachStatus { ATTACHED = 0, DETACHED = 1, PERM_DETACHED = 2 };
+enum class DetachStatus { ATTACHED = 0, DETACHED = 1, PERM_DETACHED = 2 };
 
-using PeerTableDatabase = enum PeerTableDatabase { PeerNone = 0, PeerMySQL = 1, PeerPostgreSQL = 2, PeerSQLite = 3, PeerClickHouse = 4 };
+enum class PeerTableDatabase { None = 0, MySQL = 1, PostgreSQL = 2, SQLite = 3, ClickHouse = 4 };
 
 struct SQLColumn
 {
@@ -70,7 +70,7 @@ public:
     }
     ~SQLColumn() { delete tp; }
 
-    bool CanBeInserted() const { return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT; }
+    bool canBeInserted() const { return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT; }
 };
 
 struct SQLIndex
@@ -82,7 +82,7 @@ public:
 struct SQLDatabase
 {
 public:
-    DetachStatus attached = ATTACHED;
+    DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
 
@@ -95,10 +95,10 @@ public:
     bool is_temp = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    DetachStatus attached = ATTACHED;
+    DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption = std::nullopt;
     TableEngineValues teng = TableEngineValues::Null;
-    PeerTableDatabase peer_table = PeerTableDatabase::PeerNone;
+    PeerTableDatabase peer_table = PeerTableDatabase::None;
     std::string file_comp;
     InOutFormat file_format;
 
@@ -154,15 +154,15 @@ public:
             || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine();
     }
 
-    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::PeerNone; }
+    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }
 
-    bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::PeerMySQL; }
+    bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::MySQL; }
 
-    bool hasPostgreSQLPeer() const { return peer_table == PeerTableDatabase::PeerPostgreSQL; }
+    bool hasPostgreSQLPeer() const { return peer_table == PeerTableDatabase::PostgreSQL; }
 
-    bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::PeerSQLite; }
+    bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::SQLite; }
 
-    bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::PeerClickHouse; }
+    bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
 };
 
 struct SQLTable : SQLBase
@@ -180,7 +180,7 @@ public:
 
         for (const auto & entry : cols)
         {
-            res += entry.second.CanBeInserted() ? 1 : 0;
+            res += entry.second.canBeInserted() ? 1 : 0;
         }
         return res;
     }

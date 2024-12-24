@@ -196,7 +196,7 @@ int StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView 
         for (uint32_t i = 0; i < next.ncols; i++)
         {
             std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
-            entries.push_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
+            entries.push_back(ColumnPathChain(std::nullopt, ColumnSpecial::None, std::nullopt, std::move(path)));
         }
         generateEngineDetails(rg, next, true, te);
         if (next.isMergeTreeFamily() && rg.nextMediumNumber() < 16)
@@ -467,7 +467,7 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
 
-    flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.CanBeInserted(); });
+    flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
     for (const auto & entry : this->entries)
     {
@@ -503,11 +503,11 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 {
                     buf += "DEFAULT";
                 }
-                else if (entry.special == ColumnSpecial::SIGN)
+                else if (entry.special == ColumnSpecial::Sign)
                 {
                     buf += rg.nextBool() ? "1" : "-1";
                 }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
+                else if (entry.special == ColumnSpecial::isDeleted)
                 {
                     buf += rg.nextBool() ? "1" : "0";
                 }
@@ -562,11 +562,11 @@ int StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             {
                 Expr * expr = first ? elist->mutable_expr() : elist->add_extra_exprs();
 
-                if (entry.special == ColumnSpecial::SIGN)
+                if (entry.special == ColumnSpecial::Sign)
                 {
                     expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : -1);
                 }
-                else if (entry.special == ColumnSpecial::IS_DELETED)
+                else if (entry.special == ColumnSpecial::isDeleted)
                 {
                     expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(rg.nextBool() ? 1 : 0);
                 }
@@ -869,7 +869,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                 AddColumn * add_col = ati->mutable_add_column();
 
                 addTableColumn(
-                    rg, t, t.col_counter++, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
+                    rg, t, t.col_counter++, true, false, rg.nextMediumNumber() < 6, ColumnSpecial::None, add_col->mutable_new_col());
                 if (next_option < 4)
                 {
                     flatTableColumnPath(flat_tuple | flat_nested, t, [](const SQLColumn &) { return true; });
@@ -945,7 +945,7 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                     true,
                     true,
                     rg.nextMediumNumber() < 6,
-                    ColumnSpecial::NONE,
+                    ColumnSpecial::None,
                     add_col->mutable_new_col());
                 if (next_option < 4)
                 {
@@ -1036,11 +1036,11 @@ int StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at
                             {
                                 buf += "DEFAULT";
                             }
-                            else if (entry.special == ColumnSpecial::SIGN)
+                            else if (entry.special == ColumnSpecial::Sign)
                             {
                                 buf += rg.nextBool() ? "1" : "-1";
                             }
-                            else if (entry.special == ColumnSpecial::IS_DELETED)
+                            else if (entry.special == ColumnSpecial::isDeleted)
                             {
                                 buf += rg.nextBool() ? "1" : "0";
                             }
