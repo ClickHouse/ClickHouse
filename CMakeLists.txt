@@ -116,14 +116,11 @@ if (ENABLE_FUZZING)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
-
-    add_compile_definitions(FUZZING_MODE=1)
 endif()
 
 if (ENABLE_BUZZHOUSE)
     set (ENABLE_SSL 1)
     set (ENABLE_PROTOBUF 1)
-    add_compile_definitions(BUZZHOUSE_ENABLED=1)
 endif()
 
 # Global libraries

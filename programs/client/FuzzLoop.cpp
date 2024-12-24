@@ -13,7 +13,7 @@
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
-#if defined BUZZHOUSE_ENABLED && BUZZHOUSE_ENABLED
+#if USE_BUZZHOUSE
 #    include "QueryOracle.h"
 #    include "SQLProtoStr.h"
 #    include "StatementGenerator.h"
@@ -330,7 +330,7 @@ bool Client::processWithFuzzing(const String & full_query)
     return true;
 }
 
-#if defined BUZZHOUSE_ENABLED && BUZZHOUSE_ENABLED
+#if USE_BUZZHOUSE
 
 void Client::processQueryAndLog(std::ofstream & outf, const std::string & full_query)
 {

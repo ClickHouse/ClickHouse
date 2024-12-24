@@ -2947,7 +2947,7 @@ void ClientBase::runNonInteractive()
 }
 
 
-#if defined(FUZZING_MODE)
+#if USE_FUZZING_MODE
 extern "C" int LLVMFuzzerRunDriver(int * argc, char *** argv, int (*callback)(const uint8_t * data, size_t size));
 ClientBase * app;
 
