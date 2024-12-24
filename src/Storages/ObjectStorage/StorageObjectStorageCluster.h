@@ -38,7 +38,6 @@ private:
     const String engine_name;
     const StorageObjectStorage::ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
-    NamesAndTypesList virtual_columns;
 };
 
 }
