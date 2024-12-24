@@ -346,6 +346,7 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
                         "arguments but {} columns were captured.",
                         function->getName(), toString(args), toString(captured));
 
+    Stopwatch watch;
     ColumnsWithTypeAndName columns = captured_columns;
     /// Arguments of lazy executed function can also be lazy executed.
     if (is_short_circuit_argument)
@@ -402,8 +403,14 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
 #if 1
     if constexpr (with_profile)
     {
+        size_t total_elapsed = watch.elapsed();
+        size_t side_elapsed = 0;
         for (const auto & arg_profile : profile->argument_profiles)
-            profile->executed_elapsed += arg_profile.second.executed_elapsed;
+        {
+            side_elapsed += arg_profile.second.short_circuit_side_elapsed;
+        }
+        profile->short_circuit_side_elapsed = side_elapsed;
+        profile->executed_elapsed = total_elapsed;
     }
 #endif
 

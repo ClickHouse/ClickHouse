@@ -283,8 +283,9 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
             auto filter_after_execution = typeid_cast<const ColumnFunction *>(filtered.get())->reduce(profile);
             auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
             mut_column->expand(mask, false);
-            auto side_elapsed = watch.elapsed();
-            profile->short_circuit_side_elapsed = side_elapsed - profile->executed_elapsed;
+            auto total_elapsed = watch.elapsed();
+            profile->short_circuit_side_elapsed = total_elapsed - profile->executed_elapsed + profile->short_circuit_side_elapsed;
+            profile->executed_elapsed = total_elapsed;
             column.column = std::move(mut_column);
         }
         else
@@ -302,7 +303,7 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     chassert(column.column->size() == original_size);
 }
 
-void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
+void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty, FunctionExecuteProfile * profile)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
@@ -311,7 +312,7 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
     size_t original_size = column.column->size();
 
     if (!empty)
-        column = column_function->reduce();
+        column = column_function->reduce(profile);
     else
         column.column = column_function->getResultType()->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
 
