@@ -23,8 +23,6 @@
 #include <Common/assert_cast.h>
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 #include "config.h"
 

@@ -400,7 +400,6 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
 
     res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false, profile);
 
-#if 1
     if constexpr (with_profile)
     {
         size_t total_elapsed = watch.elapsed();
@@ -412,7 +411,6 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
         profile->short_circuit_side_elapsed = side_elapsed;
         profile->executed_elapsed = total_elapsed;
     }
-#endif
 
     if (res.column->getDataType() != res.type->getColumnType())
         throw Exception(
@@ -426,7 +424,6 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
         res.column = recursiveRemoveLowCardinality(res.column);
         res.type = recursiveRemoveLowCardinality(res.type);
     }
-
     return res;
 }
 

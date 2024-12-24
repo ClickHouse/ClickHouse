@@ -40,7 +40,6 @@ struct FunctionExecuteProfile
 {
     size_t executed_rows = 0;
     size_t executed_elapsed = 0;
-    size_t short_circuit_select_rows = 0;
     size_t short_circuit_side_elapsed = 0;
     std::vector<std::pair<size_t, FunctionExecuteProfile>> argument_profiles;
 };
