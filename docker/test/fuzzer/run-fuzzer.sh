@@ -283,6 +283,8 @@ EOF
         exit 1
     fi
 
+    # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
+    # out triggers. After that, it'll send a SIGKILL to the fuzzer.
     timeout -s TERM --kill-after=5m --preserve-status 2m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
