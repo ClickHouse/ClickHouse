@@ -532,6 +532,8 @@ FixedLengthColumnDirectReader<DataType>::FixedLengthColumnDirectReader(
 {
     if (scan_spec_.column_desc->type_length())
         element_size = scan_spec_.column_desc->type_length();
+    else if (scan_spec_.column_desc->physical_type() == parquet::Type::INT96)
+        element_size = 12;
     else
         element_size = data_type->getSizeOfValueInMemory();
 }
@@ -621,6 +623,7 @@ void FixedLengthColumnDirectReader<DataType>::read(MutableColumnPtr & column, Op
                 data, row_set, rows_can_read, element_size, getConverter());
         }
         rows_read += rows_can_read;
+        state.offsets.consume(rows_can_read);
     }
 }
 
@@ -694,7 +697,6 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readDictPage(co
     const auto * dict_data = page.data();
     size_t dict_size = page.num_values();
     dict.reserve(dict_size);
-    auto converter = getConverter();
     for (size_t i = 0; i < dict_size; i++)
     {
         DictValueType value;
@@ -707,6 +709,7 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readDictPage(co
         // for decimals
         else
         {
+            static auto converter = getConverter();
             converter(dict_data, element_size, reinterpret_cast<uint8_t *>(&value));
         }
         dict.emplace_back(value);
@@ -912,10 +915,11 @@ void OptionalColumnReader::nextBatchNullMapIfNeeded(size_t rows_to_read)
     while (read < rows_to_read)
     {
         auto idx = start + count;
-        if (def_levels[idx] < max_def_level - 1)
+        auto dl = def_levels[idx];
+        if (dl < max_def_level - 1)
         {
             // for struct reader, when struct is null, child field would be null.
-            if (max_rep_level == parent_rl)
+            if (max_rep_level == parent_rl && has_null && dl >= parent_dl)
             {
                 cur_null_map[read] = 1;
                 cur_null_count++;
@@ -1779,6 +1783,7 @@ void PlainDecoder::decodeFixedString(ColumnFixedString::Chars & data, const Opti
         else
             page_data.checkAndConsume(n);
     }
+    offsets.consume(rows_to_read);
 }
 
 template <typename T>
@@ -1796,6 +1801,7 @@ void PlainDecoder::decodeFixedLengthData(PaddedPODArray<T> & data, const Optiona
         else
             page_data.checkAndConsume(element_size);
     }
+    offsets.consume(rows_to_read);
 }
 
 void PlainDecoder::decodeFixedStringSpace(
@@ -1823,6 +1829,7 @@ void PlainDecoder::decodeFixedStringSpace(
                 page_data.checkAndConsume(n);
         }
     }
+    offsets.consume(rows_to_read);
 }
 
 template <typename T, typename S>
@@ -1906,6 +1913,7 @@ void PlainDecoder::decodeFixedLengthDataSpace(
                 page_data.checkAndConsume(element_size);
         }
     }
+    offsets.consume(rows_to_read);
 }
 
 template <typename T, typename S>
@@ -2417,12 +2425,12 @@ void BooleanColumnReader::readSpace(
             auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
             buffer.resize(rows_can_read - null_count);
             size_t count [[maybe_unused]] = bit_reader->GetBatch(1, buffer.data(), static_cast<int>(rows_can_read - null_count));
-            chassert(count == rows_can_read);
+            chassert(count == rows_can_read - null_count);
             auto * number_column = static_cast<ColumnUInt8 *>(column.get());
             auto & data = number_column->getData();
             if (row_set)
                 row_set.value().setOffset(rows_read);
-            plain_decoder->decodeBoolean(data, buffer, row_set, rows_can_read);
+            plain_decoder->decodeBooleanSpace(data, buffer, row_set, null_map, rows_can_read);
             rows_read += rows_can_read;
         }
     }
