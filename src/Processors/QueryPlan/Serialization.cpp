@@ -105,6 +105,30 @@ enum class SetSerializationKind : UInt8
     SubqueryPlan = 3,
 };
 
+QueryPlanAndSets::QueryPlanAndSets() = default;
+QueryPlanAndSets::~QueryPlanAndSets() = default;
+QueryPlanAndSets::QueryPlanAndSets(QueryPlanAndSets &&) noexcept = default;
+
+struct QueryPlanAndSets::Set
+{
+    CityHash_v1_0_2::uint128 hash;
+    std::list<ColumnSet *> columns;
+};
+struct QueryPlanAndSets::SetFromStorage : public QueryPlanAndSets::Set
+{
+    std::string storage_name;
+};
+
+struct QueryPlanAndSets::SetFromTuple : public QueryPlanAndSets::Set
+{
+    ColumnsWithTypeAndName set_columns;
+};
+
+struct QueryPlanAndSets::SetFromSubquery : public QueryPlanAndSets::Set
+{
+    QueryPlanAndSets plan_and_sets;
+};
+
 static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags)
 {
     writeVarUInt(registry.sets.size(), out);
@@ -231,11 +255,7 @@ static QueryPlanAndSets deserializeSets(
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
                 {hash, std::move(columns)},
-                std::make_unique<QueryPlan>(std::move(plan_for_set.plan)),
-                std::move(plan_for_set.sets_from_subquery)});
-
-            res.sets_from_storage.splice(res.sets_from_storage.end(), std::move(plan_for_set.sets_from_storage));
-            res.sets_from_tuple.splice(res.sets_from_tuple.end(), std::move(plan_for_set.sets_from_tuple));
+                std::move(plan_for_set)});
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has unknown kind {}",
@@ -471,26 +491,26 @@ static void makeSetsFromTuple(std::list<QueryPlanAndSets::SetFromTuple> sets, co
     }
 }
 
-static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets::SetFromSubquery> sets_from_subqueries, const ContextPtr & context)
+static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets::SetFromSubquery> sets, const ContextPtr & context)
 {
-    if (sets_from_subqueries.empty())
+    if (sets.empty())
         return;
 
     const auto & settings = context->getSettingsRef();
 
     PreparedSets::Subqueries subqueries;
-    subqueries.reserve(sets_from_subqueries.size());
-    for (auto & set : sets_from_subqueries)
+    subqueries.reserve(sets.size());
+    for (auto & set : sets)
     {
-        //QueryPlan::resolveReadFromTable(*set.plan, context);
-        makeSetsFromSubqueries(*set.plan, std::move(set.sets), context);
+        auto subquery_plan = QueryPlan::makeSets(std::move(set.plan_and_sets), context);
 
         SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
         bool transform_null_in = settings[Setting::transform_null_in];
         size_t max_size_for_index = settings[Setting::use_index_for_in_with_subqueries_max_values];
 
         auto future_set = std::make_shared<FutureSetFromSubquery>(
-            set.hash, std::move(set.plan), nullptr, nullptr,
+            set.hash, std::make_unique<QueryPlan>(std::move(subquery_plan)),
+            nullptr, nullptr,
             transform_null_in, size_limits, max_size_for_index);
 
         for (auto * column : set.columns)
@@ -687,6 +707,12 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
     {
         auto * node = stack.top();
         stack.pop();
+
+        if (const auto * delayed_creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
+        {
+            for (const auto & set : delayed_creating_sets->getSets())
+                set->getQueryPlan()->resolveStorages(context);
+        }
 
         for (auto * child : node->children)
             stack.push(child);

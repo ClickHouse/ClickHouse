@@ -147,35 +147,23 @@ private:
 class FutureSetFromSubquery;
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
-/// This is a structure which contains a query plan and a list of StorageSet.
+/// This is a structure which contains a query plan and a list of sets.
 /// The reason is that StorageSet is specified by name,
 /// and we do not want to resolve the storage name while deserializing.
 /// Now, it allows to deserialize the plan without the context.
 /// Potentially, it may help to get the atomic snapshot for all the storages.
 ///
-/// Use resolveStorages to get an ordinary plan.
+/// Use QueryPlan::makeSets to get an ordinary plan.
 struct QueryPlanAndSets
 {
-    struct Set
-    {
-        CityHash_v1_0_2::uint128 hash;
-        std::list<ColumnSet *> columns;
-    };
-    struct SetFromStorage : public Set
-    {
-        std::string storage_name;
-    };
+    QueryPlanAndSets();
+    ~QueryPlanAndSets();
+    QueryPlanAndSets(QueryPlanAndSets &&) noexcept;
 
-    struct SetFromTuple : public Set
-    {
-        ColumnsWithTypeAndName set_columns;
-    };
-
-    struct SetFromSubquery : public Set
-    {
-        std::unique_ptr<QueryPlan> plan;
-        std::list<SetFromSubquery> sets;
-    };
+    struct Set;
+    struct SetFromStorage;
+    struct SetFromTuple;
+    struct SetFromSubquery;
 
     QueryPlan plan;
     std::list<SetFromStorage> sets_from_storage;
