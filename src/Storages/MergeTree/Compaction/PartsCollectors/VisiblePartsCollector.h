@@ -10,8 +10,7 @@ class VisiblePartsCollector : public IPartsCollector
 {
     MergeTreeDataPartsVector collectInitial() const;
     MergeTreeDataPartsVector filterByPartitions(MergeTreeDataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_hint) const;
-    PartsRanges filterByTxVisibility(
-        MergeTreeDataPartsVector && parts, const StorageMetadataPtr & metadata_snapshot, const StoragePolicyPtr & storage_policy, const time_t & current_time) const;
+    std::vector<MergeTreeDataPartsVector> filterByTxVisibility(MergeTreeDataPartsVector && parts) const;
 
 public:
     explicit VisiblePartsCollector(const MergeTreeData & data_, const MergeTreeTransactionPtr & tx_);

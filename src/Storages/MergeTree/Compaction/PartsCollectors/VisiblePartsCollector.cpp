@@ -97,6 +97,31 @@ PartProperties buildPartProperties(
     };
 }
 
+PartsRanges constructProperties(
+    std::vector<MergeTreeDataPartsVector> && ranges,
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    const time_t & current_time)
+{
+    const bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
+
+    PartsRanges properties_ranges;
+    properties_ranges.reserve(ranges.size());
+
+    for (const auto & range : ranges)
+    {
+        PartsRange properties_range;
+        properties_ranges.reserve(range.size());
+
+        for (const auto & part : range)
+            properties_range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time, has_volumes_with_disabled_merges));
+
+        properties_ranges.push_back(std::move(properties_range));
+    }
+
+    return properties_ranges;
+}
+
 }
 
 MergeTreeDataPartsVector VisiblePartsCollector::collectInitial() const
@@ -178,18 +203,14 @@ MergeTreeDataPartsVector VisiblePartsCollector::filterByPartitions(MergeTreeData
     return parts;
 }
 
-PartsRanges VisiblePartsCollector::filterByTxVisibility(
-    MergeTreeDataPartsVector && parts,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time) const
+std::vector<MergeTreeDataPartsVector> VisiblePartsCollector::filterByTxVisibility(MergeTreeDataPartsVector && parts) const
 {
-    using PartsIt = MergeTreeDataPartsVector::iterator;
-    const bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
+    if (tx == nullptr)
+        return {std::move(parts)};
 
-    auto build_next_range = [&](PartsIt & parts_it)
+    auto build_next_range = [&](auto & parts_it)
     {
-        PartsRange range;
+        MergeTreeDataPartsVector range;
 
         while (parts_it != parts.end())
         {
@@ -205,13 +226,13 @@ PartsRanges VisiblePartsCollector::filterByTxVisibility(
                 return range;
 
             /// Otherwise include part to possible ranges
-            range.push_back(buildPartProperties(part, metadata_snapshot, storage_policy, current_time, has_volumes_with_disabled_merges));
+            range.push_back(std::move(part));
         }
 
         return range;
     };
 
-    PartsRanges ranges;
+    std::vector<MergeTreeDataPartsVector> ranges;
     for (auto part_it = parts.begin(); part_it != parts.end(); ++part_it)
         if (auto next_range = build_next_range(part_it); !next_range.empty())
             ranges.push_back(std::move(next_range));
@@ -231,9 +252,9 @@ PartsRanges VisiblePartsCollector::collectPartsToUse(
     const time_t & current_time,
     const std::optional<PartitionIdsHint> & partitions_hint) const
 {
-    auto parts = collectInitial();
-    parts = filterByPartitions(std::move(parts), partitions_hint);
-    return filterByTxVisibility(std::move(parts), metadata_snapshot, storage_policy, current_time);
+    auto parts = filterByPartitions(collectInitial(), partitions_hint);
+    auto ranges = filterByTxVisibility(std::move(parts));
+    return constructProperties(std::move(ranges), metadata_snapshot, storage_policy, current_time);
 }
 
 }
