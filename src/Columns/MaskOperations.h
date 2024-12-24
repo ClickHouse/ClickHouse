@@ -71,7 +71,7 @@ void maskedExecute(
 
 /// If given column is lazy executed argument, reduce it. If empty is true,
 /// create an empty column with the execution result type.
-void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty = false);
+void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty = false, FunctionExecuteProfile * profile = nullptr);
 
 /// Check if arguments contain lazy executed argument. If contain, return index of the last one,
 /// otherwise return -1.
