@@ -1201,6 +1201,7 @@ const char * auto_contributors[] {
     "Vladimir Ch",
     "Vladimir Chebotarev",
     "Vladimir Chebotaryov",
+    "Vladimir Cherkasov",
     "Vladimir Galunshchikov",
     "Vladimir Golovchenko",
     "Vladimir Goncharov",
