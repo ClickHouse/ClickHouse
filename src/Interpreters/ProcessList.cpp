@@ -501,7 +501,7 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
 {
     {
         std::lock_guard<std::mutex> lock(cancel_mutex);
-        if (is_killed)
+        if (isStoppedByTimeout())
         {
             String additional_error_part;
             if (!elapsed_ns)
@@ -564,7 +564,7 @@ bool QueryStatus::checkTimeLimitSoft()
     if (is_killed.load())
         return false;
 
-    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
+    return needs_to_stop_by_timeout;
 }
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
