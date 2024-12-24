@@ -223,7 +223,8 @@ const QueryNode * findQueryForParallelReplicas(
 
         while (!nodes_to_check.empty())
         {
-            const auto & [next_node_to_check, inside_join] = nodes_to_check.top();
+            /// Copy to avoid container overflow (we call pop() in the next line).
+            const auto [next_node_to_check, inside_join] = nodes_to_check.top();
             nodes_to_check.pop();
             const auto & children = next_node_to_check->children;
             auto * step = next_node_to_check->step.get();
@@ -494,7 +495,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         processed_stage,
         modified_query_ast,
         context,
-        storage_limits);
+        storage_limits,
+        nullptr);
 
     auto converting = ActionsDAG::makeConvertingActions(
         header.getColumnsWithTypeAndName(),

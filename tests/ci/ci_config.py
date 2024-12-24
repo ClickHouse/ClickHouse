@@ -75,6 +75,7 @@ class CI:
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
                 BuildNames.PACKAGE_ASAN,
+                BuildNames.BINARY_TIDY,
                 JobNames.STYLE_CHECK,
                 JobNames.BUILD_CHECK,
                 JobNames.UNIT_TEST_ASAN,
