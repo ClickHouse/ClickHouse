@@ -88,6 +88,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
+    extern const MergeTreeSettingsUInt64 startup_delay_ms;
 }
 
 namespace ErrorCodes
@@ -179,6 +180,18 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
+    if (const auto configured_delay_ms = getContext()->getMergeTreeSettings()[MergeTreeSetting::startup_delay_ms]; configured_delay_ms)
+    {
+        pcg64_fast gen{randomSeed()};
+        const auto delay_ms = std::uniform_int_distribution<>(0, 1)(gen) ? configured_delay_ms : 0UL;
+        if (delay_ms)
+        {
+            LOG_DEBUG(&Poco::Logger::get("StorageMaterializedView"), "sleeping in startup of {}", getStorageID().table_name);
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+            LOG_DEBUG(&Poco::Logger::get("StorageMaterializedView"), "woken up in startup of {}", getStorageID().table_name);
+        }
+    }
+
     clearEmptyParts();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
