@@ -63,13 +63,16 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         }
     }
 
+    bool enable_adaptive_short_circuit = filter_step->enableAdaptiveShortCircuit();
+
     filter_node.step = std::make_unique<FilterStep>(
             filter_node.children.at(0)->step->getOutputHeader(),
             std::move(split.first),
             std::move(split_filter_name),
-            remove_filter);
+            remove_filter,
+            enable_adaptive_short_circuit);
 
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
+    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second), enable_adaptive_short_circuit);
 
     filter_node.step->setStepDescription("(" + description + ")[split]");
     node->step->setStepDescription(description);

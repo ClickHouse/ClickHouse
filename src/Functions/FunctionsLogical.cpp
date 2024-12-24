@@ -17,6 +17,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/Stopwatch.h>
 
 #include <cstring>
 #include <algorithm>
@@ -572,12 +573,14 @@ static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & nu
 }
 
 template <typename Impl, typename Name>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+template <bool with_profile>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    FunctionExecuteProfile * profile [[maybe_unused]]) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
-
-    executeColumnIfNeeded(arguments[0]);
 
     /// Let's denote x_i' = maskedExecute(x_i, mask).
     /// 1) AND(x_0, x_1, x_2, ..., x_n)
@@ -600,8 +603,10 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     /// to support ternary logic.
     /// The result is !mask_n.
 
+    Stopwatch watch;
     bool inverted = Name::name != NameAnd::name;
     UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
+    size_t rows = arguments[0].column->size();
     IColumn::Filter mask(arguments[0].column->size(), 1);
 
     /// If result is nullable, we need to create null bytemap of the resulting column.
@@ -610,20 +615,33 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info;
-    for (size_t i = 1; i <= arguments.size(); ++i)
+    MaskInfo mask_info{.has_ones = true, .has_zeros = false, .ones_count = arguments[0].column->size()};
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-        if (inverted)
-            mask_info = extractInvertedMask(mask, arguments[i - 1].column, nulls.get(), null_value);
-        else
-            mask_info = extractMask(mask, arguments[i - 1].column, nulls.get(), null_value);
-
         /// If mask doesn't have ones, we don't need to execute the rest arguments,
         /// because the result won't change.
-        if (!mask_info.has_ones || i == arguments.size())
+        if (!mask_info.has_ones)
             break;
+        if constexpr (with_profile)
+        {
+            profile->arguments_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+            auto & arg_profile = profile->arguments_profiles.back().second;
+            maskedExecute(arguments[i], mask, mask_info, &arg_profile);
 
-        maskedExecute(arguments[i], mask, mask_info);
+        }
+        else
+            maskedExecute(arguments[i], mask, mask_info);
+
+        if (inverted)
+            mask_info = extractInvertedMask(mask, arguments[i].column, nulls.get(), null_value);
+        else
+            mask_info = extractMask(mask, arguments[i].column, nulls.get(), null_value);
+
+        if constexpr (with_profile)
+        {
+            auto & arg_profile = profile->arguments_profiles.back().second;
+            arg_profile.short_circuit_selected_rows = mask_info.ones_count;
+        }
     }
     /// For OR function we need to inverse mask to get the resulting column.
     if (inverted)
@@ -635,6 +653,13 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     auto res = ColumnUInt8::create();
     res->getData() = std::move(mask);
 
+    if constexpr (with_profile)
+    {
+        profile->elapsed_ns = watch.elapsed();
+        profile->input_rows = rows;
+        profile->short_circuit_selected_rows = res->size();
+    }
+
     if (!nulls)
         return res;
 
@@ -642,24 +667,48 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     bytemap->getData() = std::move(*nulls);
     return ColumnNullable::create(std::move(res), std::move(bytemap));
 }
-
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    return this->executeImpl(args, result_type, input_rows_count, nullptr);
+}
+
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
+    const ColumnsWithTypeAndName & args,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    FunctionExecuteProfile * profile) const
 {
     ColumnsWithTypeAndName arguments = args;
 
     /// Special implementation for short-circuit arguments.
     if (checkShortCircuitArguments(arguments) != -1)
-        return executeShortCircuit(arguments, result_type);
+    {
+        if (profile)
+            return executeShortCircuit<true>(arguments, result_type, profile);
+        return executeShortCircuit<false>(arguments, result_type, profile);
+    }
 
+    Stopwatch watch;
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());
 
+    ColumnPtr res = nullptr;
     if (result_type->isNullable())
-        return executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+        res = executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
+    else
+        res =basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+
+    if (profile)
+    {
+        profile->elapsed_ns = watch.elapsed();
+        profile->input_rows = input_rows_count;
+        profile->short_circuit_selected_rows = res->size();
+    }
+    return res;
 }
 
 template <typename Impl, typename Name>
