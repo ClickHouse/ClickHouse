@@ -42,7 +42,7 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         ostr << (settings.hilite ? hilite_keyword : "") << "USE " << (settings.hilite ? hilite_none : "");
-        database->formatImpl(ostr, settings, state, frame);
+        database->format(ostr, settings, state, frame);
     }
 };
 
