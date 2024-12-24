@@ -14,6 +14,7 @@
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <Common/PageCache.h>
+#include <Common/quoteString.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>

@@ -252,6 +252,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_view_num_to_warn;
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
@@ -1085,11 +1086,11 @@ try
     if (server_settings[ServerSetting::page_cache_max_size] != 0)
     {
         global_context->setPageCache(
-            server_settings[ServerSetting::page_cache_block_size], server_settings[ServerSetting::page_cache_policy] server_settings[ServerSetting::page_cache_size_ratio], server_settings[ServerSetting::page_cache_min_size], server_settings[ServerSetting::page_cache_max_size], server_settings[ServerSetting::page_cache_free_memory_ratio]);
+            server_settings[ServerSetting::page_cache_block_size], server_settings[ServerSetting::page_cache_policy], server_settings[ServerSetting::page_cache_size_ratio], server_settings[ServerSetting::page_cache_min_size], server_settings[ServerSetting::page_cache_max_size], server_settings[ServerSetting::page_cache_free_memory_ratio]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());
     }
 
-    MemoryWorker memory_worker(global_context->getServerSettings()[ServerSetting::memory_worker_period_ms]);
+    MemoryWorker memory_worker(global_context->getServerSettings()[ServerSetting::memory_worker_period_ms], global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup], global_context->getPageCache());
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
