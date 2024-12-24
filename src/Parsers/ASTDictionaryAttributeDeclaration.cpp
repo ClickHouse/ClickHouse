@@ -40,19 +40,19 @@ void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const For
     if (type)
     {
         ostr << ' ';
-        type->formatImpl(ostr, settings, state, frame);
+        type->format(ostr, settings, state, frame);
     }
 
     if (default_value)
     {
         ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "DEFAULT" << (settings.hilite ? hilite_none : "") << ' ';
-        default_value->formatImpl(ostr, settings, state, frame);
+        default_value->format(ostr, settings, state, frame);
     }
 
     if (expression)
     {
         ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "EXPRESSION" << (settings.hilite ? hilite_none : "") << ' ';
-        expression->formatImpl(ostr, settings, state, frame);
+        expression->format(ostr, settings, state, frame);
     }
 
     if (hierarchical)

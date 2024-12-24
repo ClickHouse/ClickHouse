@@ -23,7 +23,7 @@ void ASTConstraintDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettin
 {
     ostr << backQuoteIfNeed(name);
     ostr << (s.hilite ? hilite_keyword : "") << (type == Type::CHECK ? " CHECK " : " ASSUME ") << (s.hilite ? hilite_none : "");
-    expr->formatImpl(ostr, s, state, frame);
+    expr->format(ostr, s, state, frame);
 }
 
 }

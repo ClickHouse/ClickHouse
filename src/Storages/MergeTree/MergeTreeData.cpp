@@ -185,6 +185,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_experimental_reverse_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
@@ -211,12 +212,10 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_projections;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
-    extern const MergeTreeSettingsUInt64 min_bytes_for_compact_part;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
     extern const MergeTreeSettingsUInt64 min_bytes_to_rebalance_partition_over_jbod;
     extern const MergeTreeSettingsUInt64 min_delay_to_insert_ms;
     extern const MergeTreeSettingsUInt64 min_delay_to_mutate_ms;
-    extern const MergeTreeSettingsUInt64 min_rows_for_compact_part;
     extern const MergeTreeSettingsUInt64 min_rows_for_wide_part;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_delay;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_throw;
@@ -466,6 +465,7 @@ MergeTreeData::MergeTreeData(
     bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
+    allow_reverse_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_experimental_reverse_key];
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
@@ -672,11 +672,27 @@ void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
     bool allow_empty_sorting_key,
+    bool allow_reverse_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
+
+    if (!allow_reverse_sorting_key)
+    {
+        size_t num_sorting_keys = new_metadata.sorting_key.column_names.size();
+        for (size_t i = 0; i < num_sorting_keys; ++i)
+        {
+            if (!new_metadata.sorting_key.reverse_flags.empty() && new_metadata.sorting_key.reverse_flags[i])
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Sorting key {} is reversed, but merge tree setting `allow_experimental_reverse_key` is disabled",
+                    new_metadata.sorting_key.column_names[i]);
+            }
+        }
+    }
 
     KeyDescription new_sorting_key = new_metadata.sorting_key;
     KeyDescription new_primary_key = new_metadata.primary_key;
@@ -806,7 +822,14 @@ void MergeTreeData::checkProperties(
 
             /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
-            checkProperties(*projection.metadata, *projection.metadata, attach, is_aggregate, true /* allow_nullable_key */, local_context);
+            checkProperties(
+                *projection.metadata,
+                *projection.metadata,
+                attach,
+                is_aggregate,
+                allow_reverse_key,
+                true /* allow_nullable_key */,
+                local_context);
             projections_names.insert(projection.name);
         }
     }
@@ -826,7 +849,14 @@ void MergeTreeData::setProperties(
     bool attach,
     ContextPtr local_context)
 {
-    checkProperties(new_metadata, old_metadata, attach, false, allow_nullable_key, local_context);
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        attach,
+        false,
+        allow_reverse_key,
+        allow_nullable_key,
+        local_context);
     setInMemoryMetadata(new_metadata);
     setVirtuals(createVirtuals(new_metadata));
 }
@@ -846,7 +876,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
@@ -3546,6 +3576,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             getPartitionIDFromQuery(command.partition, local_context);
         }
 
+        if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
+        {
+            if (old_metadata.settings_changes == nullptr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
+        }
+
         if (command.column_name == merging_params.version_column)
         {
             /// Some type changes for version column is allowed despite it's a part of sorting key
@@ -3755,7 +3791,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
+    checkProperties(new_metadata, old_metadata, false, false, allow_reverse_key, allow_nullable_key, local_context);
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
@@ -8511,8 +8547,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 {
     if (!canUseAdaptiveGranularity())
     {
-        if ((settings[MergeTreeSetting::min_rows_for_wide_part] != 0 || settings[MergeTreeSetting::min_bytes_for_wide_part] != 0
-            || settings[MergeTreeSetting::min_rows_for_compact_part] != 0 || settings[MergeTreeSetting::min_bytes_for_compact_part] != 0))
+        if (settings[MergeTreeSetting::min_rows_for_wide_part] != 0 || settings[MergeTreeSetting::min_bytes_for_wide_part] != 0)
         {
             out_reason = fmt::format(
                 "Table can't create parts with adaptive granularity, but settings"
