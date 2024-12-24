@@ -203,7 +203,6 @@ public:
     bool withGlobsIgnorePartitionWildcard() const;
     bool isPathWithGlobs() const;
     bool isNamespaceWithGlobs() const;
-    bool pathHasExactlyOneBracketsExpansion() const;
     virtual std::string getPathWithoutGlobs() const;
 
     virtual bool isArchive() const { return false; }
