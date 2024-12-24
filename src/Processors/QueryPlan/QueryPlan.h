@@ -42,6 +42,8 @@ namespace JSONBuilder
 }
 
 struct QueryPlanAndSets;
+struct SerializedSetsRegistry;
+struct DeserializedSetsRegistry;
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -61,13 +63,8 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
-    struct SerializationFlags;
-
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
-    void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
-
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
     void resolveStorages(const ContextPtr & context);
@@ -132,6 +129,14 @@ public:
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
 private:
+    struct SerializationFlags;
+
+    void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
+
+    static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
+    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context);
+
     QueryPlanResourceHolder resources;
     Nodes nodes;
     Node * root = nullptr;
@@ -143,9 +148,6 @@ private:
     size_t max_threads = 0;
     bool concurrency_control = false;
 };
-
-class FutureSetFromSubquery;
-using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// This is a structure which contains a query plan and a list of sets.
 /// The reason is that StorageSet is specified by name,
