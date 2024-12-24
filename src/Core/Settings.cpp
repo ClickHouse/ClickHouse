@@ -2,7 +2,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
-#include <Core/DistributedCacheProtocol.h>
+#include <Core/DistributedCacheDefines.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
@@ -20,6 +20,14 @@
 #include <Poco/Util/Application.h>
 
 #include <cstring>
+
+#if !CLICKHOUSE_CLOUD
+constexpr UInt64 default_max_size_to_drop = 50000000000lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
+#else
+constexpr UInt64 default_max_size_to_drop = 0lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
+#endif
 
 namespace DB
 {
@@ -526,6 +534,9 @@ Enable very explicit logging of S3 requests. Makes sense for debug only.
 )", 0) \
     DECLARE(String, s3queue_default_zookeeper_path, "/clickhouse/s3queue/", R"(
 Default zookeeper path prefix for S3Queue engine
+)", 0) \
+    DECLARE(Bool, s3queue_migrate_old_metadata_to_buckets, false, R"(
+Migrate old metadata structure of S3Queue table to a new one
 )", 0) \
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
@@ -3147,16 +3158,19 @@ Possible values:
 Allow execute multiIf function columnar
 )", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
-Formatter '%f' in function 'formatDateTime()' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
+Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
     DECLARE(Bool, formatdatetime_parsedatetime_m_is_month_name, true, R"(
-Formatter '%M' in functions 'formatDateTime()' and 'parseDateTime()' print/parse the month name instead of minutes.
+Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the month name instead of minutes.
 )", 0) \
     DECLARE(Bool, parsedatetime_parse_without_leading_zeros, true, R"(
-Formatters '%c', '%l' and '%k' in function 'parseDateTime()' parse months and hours without leading zeros.
+Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hours without leading zeros.
 )", 0) \
     DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
-Formatters '%c', '%l' and '%k' in function 'formatDateTime()' print months and hours without leading zeros.
+Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
+)", 0) \
+    DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
+If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
     \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
@@ -3181,7 +3195,7 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
-    DECLARE(UInt64, max_table_size_to_drop, 50000000000lu, R"(
+    DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
 Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
 
 Cloud default value: 1 TB.
@@ -3190,7 +3204,7 @@ Cloud default value: 1 TB.
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
 :::
 )", 0) \
-    DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
+    DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
 Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
 
 Cloud default value: 1 TB.
@@ -4993,7 +5007,6 @@ Prefer prefetched threadpool if all parts are on remote filesystem
 Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
-    DECLARE(UInt64, object_storage_remove_recursive_file_limit, DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT, "Max number of files to store in memory during remove. Zero value means unlimited. Used to reduce memory usage.", 0) \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the prefetch buffer to read from the filesystem.
 )", 0) \
@@ -5200,7 +5213,7 @@ Only in ClickHouse Cloud. Mode for writing to system.distributed_cache_log
     DECLARE(Bool, distributed_cache_fetch_metrics_only_from_current_az, true, R"(
 Only in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events
 )", 0) \
-    DECLARE(UInt64, distributed_cache_connect_max_tries, 100, R"(
+    DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
 Only in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
@@ -5215,7 +5228,7 @@ Only in ClickHouse Cloud. Wait time in milliseconds to receive connection from c
     DECLARE(Bool, distributed_cache_bypass_connection_pool, false, R"(
 Only in ClickHouse Cloud. Allow to bypass distributed cache connection pool
 )", 0) \
-    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL, R"(
+    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::WAIT, R"(
 Only in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
 )", 0) \
     DECLARE(UInt64, distributed_cache_read_alignment, 0, R"(
@@ -5229,6 +5242,9 @@ Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a 
 )", 0) \
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only in ClickHouse Cloud. Discard connection if some data is unread.
+)", 0) \
+    DECLARE(Bool, distributed_cache_min_bytes_for_seek, 0, R"(
+Only in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
@@ -5793,7 +5809,7 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option is not applied when 'enable_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
@@ -5807,6 +5823,9 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
+Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
     \
     DECLARE(Bool, allow_experimental_variant_type, false, R"(
@@ -5961,6 +5980,11 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine Iceberg
+)", EXPERIMENTAL) \
+    \
+    /** Experimental tsToGrid aggregate function. */ \
+    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
+Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \

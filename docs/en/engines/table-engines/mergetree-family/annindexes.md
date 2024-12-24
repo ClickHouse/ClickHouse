@@ -121,7 +121,6 @@ FROM table
 WHERE ...                       -- WHERE clause is optional
 ORDER BY Distance(vectors, reference_vector)
 LIMIT N
-SETTINGS enable_analyzer = 0;   -- Temporary limitation, will be lifted
 ```
 
 To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 256), also known as `ef_search` in the

@@ -988,3 +988,22 @@ TEST(ColumnDynamic, rollback)
         check_variant(assert_cast<const ColumnDynamic &>(*column_copy).getVariantColumn(), sizes);
     }
 }
+
+TEST(ColumnDynamic, InsertRangeFrom4)
+{
+    auto column_to = ColumnDynamic::create(2);
+    auto src = ColumnDynamic::create(2);
+    src->insert(Field(42));
+    src->insert(Field("Hello"));
+    src->insert(Field(42.42));
+    src->insert(Field(Array({1, 2, 3})));
+    auto column_from = src->cloneEmpty();
+    column_from->insertRangeFrom(*src, 2, 2);
+
+    column_to->insertRangeFrom(*column_from, 0, 2);
+    size_t total_variants_sizes = 0;
+    for (const auto & variant : column_to->getVariantColumn().getVariants())
+        total_variants_sizes += variant->size();
+
+    ASSERT_EQ(total_variants_sizes, column_to->getVariantColumn().getLocalDiscriminators().size());
+}
