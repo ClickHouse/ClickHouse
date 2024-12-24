@@ -30,7 +30,7 @@ public:
     static StorageFactory & instance();
 
     /// Helper function to validate if a specific storage supports a setting
-    /// Meant to validate if a table engine before query start
+    /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
 
     struct Arguments
