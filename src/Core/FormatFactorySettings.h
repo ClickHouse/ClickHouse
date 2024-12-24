@@ -330,6 +330,10 @@ Mode of schema inference. 'default' - assume that all files have the same schema
 Controls making inferred types `Nullable` in schema inference.
 If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 )", 0) \
+    DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
+Controls making inferred JSON types `Nullable` in schema inference.
+If this setting is enabled together with schema_inference_make_columns_nullable, inferred JSON type will be `Nullable`.
+)", 0) \
     DECLARE(Bool, input_format_json_read_bools_as_numbers, true, R"(
 Allow parsing bools as numbers in JSON input formats.
 
@@ -1252,34 +1256,7 @@ Set the quoting rule for identifiers in SHOW CREATE query
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(String, composed_data_type_output_format_mode, "default", R"(
-Set output format mode for composed data types like Array, Map, Tuple. Possible values: 'default', 'spark'.
-
-In 'default' mode, the output format is the same as in the previous versions of ClickHouse,
-    - Arrays are displayed without spaces between elements.
-    - Maps use curly braces `{}` and colons `:` to separate keys and values.
-    - Tuples are displayed with single quotes around string elements.
-
-Example of 'default' mode:
-
-```
-┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
-│ [1,2,3]   │ {'a':1,'b':2}       │ (123,'abc')  │
-└───────────┴─────────────────────┴──────────────┘
-```
-
-In 'spark' mode, the output format is similar to Apache Spark:
-    - Arrays are displayed with spaces between elements.
-    - Maps use curly braces `{}` and arrows `->` to separate keys and values.
-    - Tuples are displayed without single quotes around string elements.
-
-Example of 'spark' mode:
-
-```
-┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
-│ [1, 2, 3] │ {a -> 1, b -> 2}    │ (123, abc)   │
-└───────────┴─────────────────────┴──────────────┘
-```
-
+Set composed data type output format mode, default or spark.
 )", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
