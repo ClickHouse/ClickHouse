@@ -4038,20 +4038,18 @@ void MergeTreeData::setCollapsingSignConstraint(bool enable)
     {
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         auto constraints = new_metadata.constraints.getConstraints();
-        if (enable)
-        {
-            constraints.push_back(createCollapsingSignConstraint(merging_params.sign_column));
-        }
-        else
-        {
-            auto * erase_it = std::find_if(
+
+        auto * existing_constraint = std::find_if(
                 constraints.begin(),
                 constraints.end(),
                 [](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == COLLAPSING_SIGN_CONSTRAINT_NAME; });
+        auto has_constraint = existing_constraint != constraints.end();
 
-            if (erase_it != constraints.end())
-                constraints.erase(erase_it);
-        }
+        if (enable && !has_constraint)
+            constraints.push_back(createCollapsingSignConstraint(merging_params.sign_column));
+        else if (!enable && has_constraint)
+            constraints.erase(existing_constraint);
+
         new_metadata.constraints = ConstraintsDescription(constraints);
         setInMemoryMetadata(new_metadata);
     }
