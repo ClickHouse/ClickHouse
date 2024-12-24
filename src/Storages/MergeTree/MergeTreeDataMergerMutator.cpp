@@ -85,7 +85,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
         while (current_it != range.end())
         {
             PartProperties & prev_part = mergeable_range.back();
-            PartProperties & current_part = *current_it++;
+            PartProperties & current_part = *current_it;
 
             /// If we cannot merge with previous part we need to close this range.
             if (!can_merge(&prev_part, &current_part))
@@ -99,6 +99,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}", current_part.name, prev_part.name);
 
             mergeable_range.push_back(std::move(current_part));
+            ++current_it;
         }
 
         return mergeable_range;
@@ -115,15 +116,19 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
 PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPredicate & can_merge)
 {
     Stopwatch ranges_for_merge_timer;
+    size_t initial_parts_count = 0;
 
     PartsRanges mergeable_ranges;
     for (auto && range : ranges)
     {
-        auto splitted_range_by_predicate = splitByMergePredicate(std::move(range), can_merge);
-        insertAtEnd(mergeable_ranges, std::move(splitted_range_by_predicate));
+        initial_parts_count += range.size();
+        insertAtEnd(mergeable_ranges, splitByMergePredicate(std::move(range), can_merge));
     }
 
-    ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, calculatePartsCount(mergeable_ranges));
+    size_t mergeable_parts_count = calculatePartsCount(mergeable_ranges);
+    assert(initial_parts_count == mergeable_parts_count);
+
+    ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, mergeable_parts_count);
     ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, mergeable_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
 
