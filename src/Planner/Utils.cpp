@@ -413,13 +413,17 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+            const auto & storage = storage_snapshot->storage;
 
-            StoragePtr storage_dummy = std::make_shared<StorageDummy>(
-                storage_snapshot->storage.getStorageID(),
+            auto storage_dummy = std::make_shared<StorageDummy>(
+                storage.getStorageID(),
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
-                storage_snapshot);
+                storage_snapshot,
+                storage.supportsReplication());
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
+            if (table_node && table_node->hasTableExpressionModifiers())
+                dummy_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
 
             if (result_replacement_map)
                 result_replacement_map->emplace(table_expression, dummy_table_node);
