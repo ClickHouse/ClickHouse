@@ -1,13 +1,12 @@
+#include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
+
+#include <base/interpolate.h>
+#include <Common/thread_local_rng.h>
+
 #include <cmath>
 #include <cassert>
 #include <random>
-
-#include <base/interpolate.h>
-
-#include <Common/thread_local_rng.h>
-
-#include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
-#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
 {

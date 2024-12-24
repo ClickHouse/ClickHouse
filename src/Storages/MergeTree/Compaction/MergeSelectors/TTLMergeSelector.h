@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/TTLDescription.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
+#include <Storages/TTLDescription.h>
 
 namespace DB
 {

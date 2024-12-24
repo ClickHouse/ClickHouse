@@ -210,6 +210,7 @@ std::vector<MergeTreeDataPartsVector> VisiblePartsCollector::filterByTxVisibilit
         while (parts_it != parts.end())
         {
             MergeTreeDataPartPtr part = std::move(*parts_it++);
+            assert(part);
 
             /// Cannot merge parts if some of them are not visible in current snapshot
             /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
@@ -228,7 +229,7 @@ std::vector<MergeTreeDataPartsVector> VisiblePartsCollector::filterByTxVisibilit
     };
 
     std::vector<MergeTreeDataPartsVector> ranges;
-    for (auto part_it = parts.begin(); part_it != parts.end(); ++part_it)
+    for (auto part_it = parts.begin(); part_it != parts.end();)
         if (auto next_range = build_next_range(part_it); !next_range.empty())
             ranges.push_back(std::move(next_range));
 

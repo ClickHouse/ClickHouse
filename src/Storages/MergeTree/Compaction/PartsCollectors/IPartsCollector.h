@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+
 #include <memory>
 #include <optional>
-
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/Compaction/PartProperties.h>
 
 namespace DB
 {

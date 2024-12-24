@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {

@@ -1,9 +1,9 @@
-#include <algorithm>
+#include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 #include <Common/thread_local_rng.h>
 
-#include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
-#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
+#include <algorithm>
 
 namespace DB
 {

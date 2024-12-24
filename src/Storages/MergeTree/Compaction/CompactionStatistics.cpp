@@ -1,7 +1,7 @@
-#include <base/interpolate.h>
-
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+
+#include <base/interpolate.h>
 
 namespace CurrentMetrics
 {

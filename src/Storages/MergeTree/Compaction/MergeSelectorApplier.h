@@ -1,15 +1,15 @@
 #pragma once
 
-#include <optional>
-
-#include <Common/Logger.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeType.h>
 
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <Storages/MergeTree/MergeType.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/Compaction/PartProperties.h>
-#include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
+#include <Common/Logger.h>
+
+#include <optional>
 
 namespace DB
 {

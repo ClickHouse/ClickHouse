@@ -1,11 +1,11 @@
 #pragma once
 
-#include <optional>
-#include <set>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 
 #include <Core/UUID.h>
 
-#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <optional>
+#include <set>
 
 namespace DB
 {
