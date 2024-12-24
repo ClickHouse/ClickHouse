@@ -1133,6 +1133,12 @@ def test_evolved_schema_simple(
         """
     )
 
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (4.0, 12, -9.13, 'CCC', named_struct('b1', 2.23, 'b2', 5.56));
+        """
+    )
+
     check_schema_and_data(
         instance,
         table_select_expression,
@@ -1148,8 +1154,77 @@ def test_evolved_schema_simple(
             ["3", "12", "-9.13", "BBB", "(1.23,4.56)"],
             ["3", "12", "-9.13", "BBB", "(NULL,NULL)"],
             ["3.4", "\\N", "-9.13", "\\N", "(NULL,NULL)"],
+            ["4", "12", "-9.13", "CCC", "(2.23,5.56)"],
             ["5", "7", "18.1", "\\N", "(NULL,NULL)"],
             ["\\N", "4", "7.12", "\\N", "(NULL,NULL)"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN bo AFTER b;
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (6.0, named_struct('b1', 3.23, 'b2', 6.56), 12, -9.13, 'CCC');
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["b", "Nullable(Float64)"],
+            ["bo", "Tuple(\\n    b1 Nullable(Float32),\\n    b2 Nullable(Float32))"],
+            ["f", "Nullable(Int64)"],
+            ["c", "Decimal(12, 2)"],
+            ["e", "Nullable(String)"],
+        ],
+        [
+            ["3", "(1.23,4.56)", "12", "-9.13", "BBB"],
+            ["3", "(NULL,NULL)", "-30", "7.12", "AAA"],
+            ["3", "(NULL,NULL)", "12", "-9.13", "BBB"],
+            ["3.4", "(NULL,NULL)", "\\N", "-9.13", "\\N"],
+            ["4", "(2.23,5.56)", "12", "-9.13", "CCC"],
+            ["5", "(NULL,NULL)", "7", "18.1", "\\N"],
+            ["6", "(3.23,6.56)", "12", "-9.13", "CCC"],
+            ["\\N", "(NULL,NULL)", "4", "7.12", "\\N"],
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN bo;
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (7.0, 12, -9.13, 'CCC');
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["b", "Nullable(Float64)"],
+            ["f", "Nullable(Int64)"],
+            ["c", "Decimal(12, 2)"],
+            ["e", "Nullable(String)"],
+        ],
+        [
+            ["3", "-30", "7.12", "AAA"],
+            ["3", "12", "-9.13", "BBB"],
+            ["3", "12", "-9.13", "BBB"],
+            ["3.4", "\\N", "-9.13", "\\N"],
+            ["4", "12", "-9.13", "CCC"],
+            ["5", "7", "18.1", "\\N"],
+            ["6", "12", "-9.13", "CCC"],
+            ["7", "12", "-9.13", "CCC"],
+            ["\\N", "4", "7.12", "\\N"],
         ],
     )
 
