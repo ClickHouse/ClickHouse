@@ -1931,6 +1931,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+
+        if (!table_function->canBeUsedToCreateTable())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create a table with *Cluster engine");
+
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
