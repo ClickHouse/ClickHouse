@@ -78,7 +78,14 @@ SQLType * TypeDeepCopy(SQLType * tp)
     }
     else if ((jt = dynamic_cast<JSONType *>(tp)))
     {
-        return new JSONType(jt->desc, jt->subcols);
+        std::vector<JSubType> jsubcols;
+
+        jsubcols.reserve(jt->subcols.size());
+        for (const auto & entry : jt->subcols)
+        {
+            jsubcols.push_back(JSubType(entry.cname, TypeDeepCopy(entry.subtype)));
+        }
+        return new JSONType(jt->desc, std::move(jsubcols));
     }
     else if ((nl = dynamic_cast<Nullable *>(tp)))
     {
