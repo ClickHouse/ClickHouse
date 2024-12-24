@@ -932,11 +932,6 @@ void Client::processConfig()
         }
     }
 
-    if (config().has("query"))
-    {
-        static_query = config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
-    }
-
     pager = config().getString("pager", "");
 
     enable_highlight = config().getBool("highlight", true);

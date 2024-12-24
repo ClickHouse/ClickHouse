@@ -273,7 +273,6 @@ protected:
     Int32 suggestion_limit;
     bool enable_highlight = true;
     bool multiline = false;
-    String static_query;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
