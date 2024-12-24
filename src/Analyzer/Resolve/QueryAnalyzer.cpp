@@ -3652,6 +3652,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     else
     {
         result_projection_names.push_back(node_alias);
+        /// Remove alias later. This needed to produce the same query tree subtree
+        /// for expressions with aliaes to subexpression. Example:
+        /// SELECT f(a as b) as c FROM t GROUP BY c
+        scope.aliases.node_to_remove_aliases.push_back(node);
     }
 
     bool is_duplicated_alias = scope.aliases.nodes_with_duplicated_aliases.contains(node);
