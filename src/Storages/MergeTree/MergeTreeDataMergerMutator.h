@@ -1,19 +1,20 @@
 #pragma once
 
-#include <tl/expected.hpp>
+#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
 
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <Storages/MergeTree/Compaction/PartProperties.h>
-#include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
-#include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
-#include <Storages/MergeTree/Compaction/PartsCollectors/IPartsCollector.h>
+#include <tl/expected.hpp>
 
 namespace DB
 {
 
-struct SelectMergeFailure {
+struct SelectMergeFailure
+{
     enum class Reason : uint8_t
     {
         CANNOT_SELECT = 0,

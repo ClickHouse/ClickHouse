@@ -7,7 +7,6 @@
 
 #include <Interpreters/MergeTreeTransaction.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/VisiblePartsCollector.h>
 
@@ -19,7 +18,8 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace {
+namespace
+{
 
 std::string astToString(ASTPtr ast_ptr)
 {
@@ -34,8 +34,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
     if (!metadata_snapshot->hasAnyTTL())
         return std::nullopt;
 
-    return PartProperties::GeneralTTLInfo
-    {
+    return PartProperties::GeneralTTLInfo{
         .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
         .part_min_ttl = part->ttl_infos.part_min_ttl,
         .part_max_ttl = part->ttl_infos.part_max_ttl,
@@ -82,8 +81,7 @@ PartProperties buildPartProperties(
     const time_t & current_time,
     bool has_volumes_with_disabled_merges)
 {
-    return PartProperties
-    {
+    return PartProperties{
         .name = part->name,
         .part_info = part->info,
         .uuid = part->uuid,
@@ -170,10 +168,7 @@ MergeTreeDataPartsVector VisiblePartsCollector::collectInitial() const
     }
 
     /// Restore "active" parts set from selected active and outdated parts
-    auto remove_pred = [&](const MergeTreeDataPartPtr & part)
-    {
-        return active_parts_set.getContainingPart(part->info) != part->name;
-    };
+    auto remove_pred = [&](const MergeTreeDataPartPtr & part) { return active_parts_set.getContainingPart(part->info) != part->name; };
 
     std::erase_if(active_parts, remove_pred);
     std::erase_if(outdated_parts, remove_pred);

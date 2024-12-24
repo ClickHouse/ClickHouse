@@ -1148,7 +1148,8 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
         }
     };
 
-    const auto construct_merge_select_entry = [&](FutureMergedMutatedPartPtr future_part) -> tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> {
+    const auto construct_merge_select_entry = [&](FutureMergedMutatedPartPtr future_part) -> tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure>
+    {
         if ((*getSettings())[MergeTreeSetting::assign_part_uuids])
             future_part->uuid = UUIDHelpers::generateV4();
 
@@ -1162,11 +1163,10 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
         return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
     };
 
-    if (partition_id.empty()) {
+    if (partition_id.empty())
         return select_without_hint().and_then(construct_merge_select_entry);
-    } else {
+    else
         return select_in_partition().and_then(construct_merge_select_entry);
-    }
 }
 
 bool StorageMergeTree::merge(

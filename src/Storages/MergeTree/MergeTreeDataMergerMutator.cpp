@@ -1,7 +1,7 @@
-#include <base/insertAtEnd.h>
-
-#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+
+#include <base/insertAtEnd.h>
 
 namespace CurrentMetrics
 {
@@ -172,7 +172,10 @@ std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions
 }
 
 String getBestPartitionToOptimizeEntire(
-    const ContextPtr & context, const MergeTreeSettingsPtr & settings, const std::unordered_map<String, PartitionStatistics> & stats, const LoggerPtr & log)
+    const ContextPtr & context,
+    const MergeTreeSettingsPtr & settings,
+    const std::unordered_map<String, PartitionStatistics> & stats,
+    const LoggerPtr & log)
 {
     if (!(*settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
         return {};
@@ -184,8 +187,7 @@ String getBestPartitionToOptimizeEntire(
     size_t max_tasks_count = context->getMergeMutateExecutor()->getMaxTasksCount();
     if (occupied > 1 && max_tasks_count - occupied < (*settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition])
     {
-        LOG_INFO(
-            log,
+        LOG_INFO(log,
             "Not enough idle threads to execute optimizing entire partition. See settings "
             "'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' and 'background_pool_size'");
 
@@ -229,7 +231,8 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoice &
     assert(!merge_choice.range.empty());
     const String & partition_id = merge_choice.range.front().part_info.partition_id;
 
-    switch (merge_choice.merge_type) {
+    switch (merge_choice.merge_type)
+    {
         case MergeType::Regular:
             /// Do not update anything with regular merge.
             return;
@@ -293,10 +296,11 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     if (auto best = getBestPartitionToOptimizeEntire(context, settings, partitions_stats, log); !best.empty())
         partitions_hint.insert(std::move(best));
 
-    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
-              "(max_total_size_to_merge={}, merge_with_ttl_allowed={}, can_use_ttl_merges={})",
-              ranges_by_partitions.size(), partitions_hint.size(), fmt::join(partitions_hint, ", "),
-              selector.max_total_size_to_merge, selector.merge_with_ttl_allowed, can_use_ttl_merges);
+    LOG_TRACE(log,
+            "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
+            "(max_total_size_to_merge={}, merge_with_ttl_allowed={}, can_use_ttl_merges={})",
+            ranges_by_partitions.size(), partitions_hint.size(), fmt::join(partitions_hint, ", "),
+            selector.max_total_size_to_merge, selector.merge_with_ttl_allowed, can_use_ttl_merges);
 
     return partitions_hint;
 }
@@ -522,8 +526,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
         data,
         *this,
         merges_blocker,
-        need_prefix
-    );
+        need_prefix);
 }
 
 MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart(
@@ -534,11 +537,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 {
     /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
     if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
-        throw Exception(ErrorCodes::ABORTED, "Cancelling merge, because it was done without starting transaction,"
-                                             "but transactions were enabled for this table");
+        throw Exception(ErrorCodes::ABORTED,
+            "Cancelling merge, because it was done without starting transaction,"
+            "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, /*rename_in_transaction=*/ true);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, out_transaction, /*rename_in_transaction=*/true);
 
     /// Explicitly rename part while still holding the lock for tmp folder to avoid cleanup
     out_transaction.renameParts();
@@ -571,7 +575,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
-        LOG_WARNING(log, "Unexpected number of parts removed when adding {}: {} instead of {}\n"
+        LOG_WARNING(log,
+            "Unexpected number of parts removed when adding {}: {} instead of {}\n"
             "Replaced parts:\n{}\n"
             "Parts:\n{}\n",
             new_data_part->name,
@@ -584,7 +589,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     {
         for (size_t i = 0; i < parts.size(); ++i)
             if (parts[i]->name != replaced_parts[i]->name)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected part removed when adding {}: {} instead of {}",
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected part removed when adding {}: {} instead of {}",
                     new_data_part->name, replaced_parts[i]->name, parts[i]->name);
     }
 

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
+
 #include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 namespace DB
@@ -52,9 +53,7 @@ ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_,
 {
 }
 
-PartsRange ITTLMergeSelector::select(
-    const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge) const
+PartsRange ITTLMergeSelector::select(const PartsRanges & parts_ranges, size_t max_total_size_to_merge) const
 {
     Iterator center;
     ssize_t partition_to_merge_index = -1;
@@ -94,7 +93,8 @@ PartsRange ITTLMergeSelector::select(
         return {};
 
     const auto & best_partition = parts_ranges[partition_to_merge_index];
-    size_t usable_memory = [max_total_size_to_merge, center]() {
+    size_t usable_memory = [max_total_size_to_merge, center]()
+    {
         if (max_total_size_to_merge == 0)
             return std::numeric_limits<size_t>::max();
 
