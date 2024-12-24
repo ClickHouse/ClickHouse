@@ -307,11 +307,12 @@ public:
         : server_context(server.context()), peer_address(address_), log(&Poco::Logger::get("SSHSessionCallback"))
     {
         server_cb.userdata = this;
-        server_cb.auth_password_function = authPasswordAdapter<ssh_session, const char*, const char*>;
         server_cb.auth_pubkey_function = authPublickeyAdapter<ssh_session, const char *, ssh_key, char>;
-        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_PUBLICKEY);
+        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PUBLICKEY);
         server_cb.channel_open_request_session_function = channelOpenAdapter<ssh_session>;
-        ssh_callbacks_init(&server_cb) ssh_set_server_callbacks(session.getInternalPtr(), &server_cb);
+
+        ssh_callbacks_init(&server_cb)
+        ssh_set_server_callbacks(session.getInternalPtr(), &server_cb);
     }
 
     size_t auth_attempts = 0;
@@ -322,7 +323,6 @@ public:
     std::unique_ptr<ChannelCallback> channel_callback;
     Poco::Logger * log;
 
-private:
     ssh_channel channelOpen(ssh_session session) noexcept
     {
         LOG_DEBUG(log, "Opening a channel");
@@ -345,27 +345,6 @@ private:
 
     GENERATE_ADAPTER_FUNCTION(SessionCallback, channelOpen, ssh_channel)
 
-    int authPassword(ssh_session, const char * user, const char * pass) noexcept
-    {
-        try
-        {
-            LOG_TRACE(log, "Authenticating with password");
-            auto db_session_created = std::make_unique<Session>(server_context, ClientInfo::Interface::LOCAL);
-            String user_name(user), password(pass);
-            db_session_created->authenticate(user_name, password, peer_address);
-            authenticated = true;
-            db_session = std::move(db_session_created);
-            return SSH_AUTH_SUCCESS;
-        }
-        catch (...)
-        {
-            ++auth_attempts;
-            return SSH_AUTH_DENIED;
-        }
-    }
-
-    GENERATE_ADAPTER_FUNCTION(SessionCallback, authPassword, int)
-
     int authPublickey(ssh_session, const char * user, ssh_key key, char signature_state) noexcept
     {
         try
@@ -374,19 +353,16 @@ private:
             auto db_session_created = std::make_unique<Session>(server_context, ClientInfo::Interface::LOCAL);
             String user_name(user);
 
-
             if (signature_state == SSH_PUBLICKEY_STATE_NONE)
             {
-                // This is the case when user wants to check if he is able to use this type of authentication.
-                // Also here we may check if the key is associated with the user, but current session
-                // authentication mechanism doesn't support it.
-
-                const auto user_authentication_types = db_session_created->getAuthenticationTypes(user_name);
-
-                for (auto user_authentication_type : user_authentication_types)
-                    if (user_authentication_type == AuthenticationType::SSH_KEY)
-
-                return SSH_AUTH_DENIED;
+                auto user_has_ssh_auth_type = [](auto user_authentication_type) { return user_authentication_type == AuthenticationType::SSH_KEY; };
+                auto user_auth_types = db_session_created->getAuthenticationTypes(user_name);
+                if (auto result = std::ranges::find_if(user_auth_types, user_has_ssh_auth_type); result == user_auth_types.end())
+                {
+                    LOG_WARNING(log, "User {} doesn't have SSH_KEY authentication type", user_name);
+                    return SSH_AUTH_DENIED;
+                }
+                return SSH_AUTH_SUCCESS;
             }
 
             if (signature_state != SSH_PUBLICKEY_STATE_VALID)
@@ -395,13 +371,13 @@ private:
                 return SSH_AUTH_DENIED;
             }
 
-            /// FIXME: Generate random string
-            String challenge="Hello...";
-
-            // The signature is checked, so just verify that user is associated with publickey.
-            // Function will throw if authentication fails.
-            db_session_created->authenticate(SshCredentials{user_name, SSHKey(key).signString(challenge), challenge}, peer_address);
-
+            SSHKey wrapped_key(key);
+            /// Workaround not to deallocate the key that will be used further.
+            wrapped_key.setNeedsDeallocation(false);
+            /// The signature is checked, so just verify that user is associated with publickey.
+            /// For reference: the OpenSSH's server does rougly the same:
+            /// https://github.com/openssh/openssh-portable/blob/826483d51a9fee60703298bbf839d9ce37943474/auth2-pubkey.c#L226-L234
+            db_session_created->authenticate(SSHPTYCredentials{user_name, wrapped_key}, peer_address);
 
             authenticated = true;
             db_session = std::move(db_session_created);
@@ -409,6 +385,7 @@ private:
         }
         catch (...)
         {
+            tryLogCurrentException(log);
             ++auth_attempts;
             return SSH_AUTH_DENIED;
         }

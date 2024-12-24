@@ -37,6 +37,7 @@ public:
     String getBase64() const;
     String getKeyType() const;
 
+    void setNeedsDeallocation(bool needs_deallocation_);
 
     friend class SSHKeyFactory;
 // private:
@@ -44,6 +45,7 @@ public:
 
 private:
     ssh_key key = nullptr;
+    bool needs_deallocation = true;
 };
 
 
