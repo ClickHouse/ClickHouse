@@ -30,7 +30,7 @@ namespace ProfileEvents
     class Timer
     {
     public:
-        enum class Resolution : UInt32
+        enum class Resolution : UInt64
         {
             Nanoseconds = 1,
             Microseconds = 1000,
@@ -38,12 +38,8 @@ namespace ProfileEvents
         };
         Timer(Counters & counters_, Event timer_event_, Resolution resolution_);
         Timer(Counters & counters_, Event timer_event_, Event counter_event, Resolution resolution_);
-        Timer(Timer && other) noexcept
-            : counters(other.counters), timer_event(std::move(other.timer_event)), watch(std::move(other.watch)), resolution(std::move(other.resolution))
-            {}
         ~Timer() { end(); }
         void cancel() { watch.reset(); }
-        void restart() { watch.restart(); }
         void end();
         UInt64 get();
 
@@ -60,7 +56,7 @@ namespace ProfileEvents
         Counter * counters = nullptr;
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
-        std::atomic<Counters *> parent = {};
+        Counters * parent = nullptr;
         bool trace_profile_events = false;
 
     public:
@@ -73,8 +69,6 @@ namespace ProfileEvents
         /// Global level static initializer
         explicit Counters(Counter * allocated_counters) noexcept
             : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
-
-        Counters(Counters && src) noexcept;
 
         Counter & operator[] (Event event)
         {
@@ -116,13 +110,13 @@ namespace ProfileEvents
         /// Get parent (thread unsafe)
         Counters * getParent()
         {
-            return parent.load(std::memory_order_relaxed);
+            return parent;
         }
 
         /// Set parent (thread unsafe)
         void setParent(Counters * parent_)
         {
-            parent.store(parent_, std::memory_order_relaxed);
+            parent = parent_;
         }
 
         void setTraceProfileEvents(bool value)
@@ -154,15 +148,6 @@ namespace ProfileEvents
         static const Event num_counters;
     };
 
-    enum class ValueType : uint8_t
-    {
-        Number,
-        Bytes,
-        Milliseconds,
-        Microseconds,
-        Nanoseconds,
-    };
-
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
 
@@ -173,17 +158,11 @@ namespace ProfileEvents
     /// Increment a counter for log messages.
     void incrementForLogMessage(Poco::Message::Priority priority);
 
-    /// Increment time consumed by logging.
-    void incrementLoggerElapsedNanoseconds(UInt64 ns);
-
     /// Get name of event by identifier. Returns statically allocated string.
     const char * getName(Event event);
 
     /// Get description of event by identifier. Returns statically allocated string.
     const char * getDocumentation(Event event);
-
-    /// Get value type of event by identifier. Returns enum value.
-    ValueType getValueType(Event event);
 
     /// Get index just after last event identifier.
     Event end();

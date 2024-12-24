@@ -35,16 +35,16 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
 
     if (which == Field::Types::UInt64)
     {
-        pos = ast_literal->value.safeGet<UInt64>();
+        pos = ast_literal->value.get<UInt64>();
     }
     else if (which == Field::Types::Int64)
     {
-        auto value = ast_literal->value.safeGet<Int64>();
+        auto value = ast_literal->value.get<Int64>();
         if (value > 0)
             pos = value;
         else
         {
-            if (value < -static_cast<Int64>(columns.size()))
+            if (static_cast<size_t>(std::abs(value)) > columns.size())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Negative positional argument number {} is out of bounds. Expected in range [-{}, -1]",
@@ -79,11 +79,13 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
                                     "Illegal value (aggregate function) for positional argument in {}",
                                     ASTSelectQuery::expressionToString(expression));
                 }
-
-                if (function->arguments)
+                else
                 {
-                    for (const auto & arg : function->arguments->children)
-                        throw_if_aggregate_function(arg);
+                    if (function->arguments)
+                    {
+                        for (const auto & arg : function->arguments->children)
+                            throw_if_aggregate_function(arg);
+                    }
                 }
             }
         };

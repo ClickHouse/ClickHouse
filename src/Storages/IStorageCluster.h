@@ -10,8 +10,8 @@ namespace DB
 
 
 /**
- *  Base cluster for Storages used in table functions like s3Cluster and hdfsCluster.
- *  Necessary for code simplification around parallel_distributed_insert_select.
+ *  Base cluster for Storages used in table functions like s3Cluster and hdfsCluster
+ *  Needed for code simplification around parallel_distributed_insert_select
  */
 class IStorageCluster : public IStorage
 {
@@ -37,10 +37,7 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    bool isRemote() const final { return true; }
-    bool supportsSubcolumns() const override  { return true; }
-    bool supportsOptimizationToSubcolumns() const override { return false; }
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+    bool isRemote() const override { return true; }
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}

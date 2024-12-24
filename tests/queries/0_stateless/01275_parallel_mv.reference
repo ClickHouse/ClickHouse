@@ -2,20 +2,15 @@
 
 
 
-
-
-
-select 'optimize_trivial_insert_select=0', 'max_insert_threads=0', 'iteration_num=';
-optimize_trivial_insert_select=0	max_insert_threads=0	iteration_num=
-insert into testX select number from numbers(200) settings
-    send_logs_level='fatal',
-    insert_deduplication_token='UT_1',
+select 'optimize_trivial_insert_select=0', 'max_insert_threads=0';
+optimize_trivial_insert_select=0	max_insert_threads=0
+insert into testX select number from numbers(10) settings
     log_queries=1,
     parallel_view_processing=0,
     optimize_trivial_insert_select=0,
-    max_insert_threads=0;
+    max_insert_threads=0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select peak_threads_usage from system.query_log where
+select arrayUniq(thread_ids) from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -24,46 +19,46 @@ select peak_threads_usage from system.query_log where
     Settings['max_insert_threads'] = '0';
 2
 select count() from testX;
-200
+10
 select count() from testXA;
-200
+10
+select count() from testXB;
+0
 select count() from testXC;
-200
-select 'optimize_trivial_insert_select=0', 'max_insert_threads=5', 'iteration_num=';
-optimize_trivial_insert_select=0	max_insert_threads=5	iteration_num=
-insert into testX select number from numbers(200) settings
-    send_logs_level='fatal',
-    insert_deduplication_token='UT_2',
+10
+select 'optimize_trivial_insert_select=0', 'max_insert_threads=16';
+optimize_trivial_insert_select=0	max_insert_threads=16
+insert into testX select number from numbers(10) settings
     log_queries=1,
     parallel_view_processing=0,
     optimize_trivial_insert_select=0,
-    max_insert_threads=5;
+    max_insert_threads=16; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select peak_threads_usage from system.query_log where
+select arrayUniq(thread_ids) from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
     Settings['parallel_view_processing'] = '0' and
     Settings['optimize_trivial_insert_select'] = '0' and
-    Settings['max_insert_threads'] = '5';
+    Settings['max_insert_threads'] = '16';
 2
 select count() from testX;
-400
+20
 select count() from testXA;
-400
+20
+select count() from testXB;
+0
 select count() from testXC;
-400
-select 'optimize_trivial_insert_select=1', 'max_insert_threads=0', 'iteration_num=';
-optimize_trivial_insert_select=1	max_insert_threads=0	iteration_num=
-insert into testX select number from numbers(200) settings
-    send_logs_level='fatal',
-    insert_deduplication_token='UT_3',
+20
+select 'optimize_trivial_insert_select=1', 'max_insert_threads=0';
+optimize_trivial_insert_select=1	max_insert_threads=0
+insert into testX select number from numbers(10) settings
     log_queries=1,
     parallel_view_processing=0,
     optimize_trivial_insert_select=1,
-    max_insert_threads=0;
+    max_insert_threads=0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select peak_threads_usage from system.query_log where
+select arrayUniq(thread_ids) from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -72,46 +67,46 @@ select peak_threads_usage from system.query_log where
     Settings['max_insert_threads'] = '0';
 2
 select count() from testX;
-600
+30
 select count() from testXA;
-600
+30
+select count() from testXB;
+0
 select count() from testXC;
-600
-select 'optimize_trivial_insert_select=1', 'max_insert_threads=5', 'iteration_num=';
-optimize_trivial_insert_select=1	max_insert_threads=5	iteration_num=
-insert into testX select number from numbers(200) settings
-    send_logs_level='fatal',
-    insert_deduplication_token='UT_4',
+30
+select 'optimize_trivial_insert_select=1', 'max_insert_threads=16';
+optimize_trivial_insert_select=1	max_insert_threads=16
+insert into testX select number from numbers(10) settings
     log_queries=1,
     parallel_view_processing=0,
     optimize_trivial_insert_select=1,
-    max_insert_threads=5;
+    max_insert_threads=16; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select peak_threads_usage from system.query_log where
+select arrayUniq(thread_ids) from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
     Settings['parallel_view_processing'] = '0' and
     Settings['optimize_trivial_insert_select'] = '1' and
-    Settings['max_insert_threads'] = '5';
+    Settings['max_insert_threads'] = '16';
 2
 select count() from testX;
-800
+40
 select count() from testXA;
-800
+40
+select count() from testXB;
+0
 select count() from testXC;
-800
-select 'optimize_trivial_insert_select=0', 'max_insert_threads=0', 'iteration_num=';
-optimize_trivial_insert_select=0	max_insert_threads=0	iteration_num=
-insert into testX select number from numbers(200) settings
-    send_logs_level='fatal',
-    insert_deduplication_token='UT_5',
+40
+select 'optimize_trivial_insert_select=0', 'max_insert_threads=0';
+optimize_trivial_insert_select=0	max_insert_threads=0
+insert into testX select number from numbers(10) settings
     log_queries=1,
     parallel_view_processing=1,
     optimize_trivial_insert_select=0,
-    max_insert_threads=0;
+    max_insert_threads=0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select peak_threads_usage from system.query_log where
+select arrayUniq(thread_ids) from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
@@ -120,80 +115,82 @@ select peak_threads_usage from system.query_log where
     Settings['max_insert_threads'] = '0';
 5
 select count() from testX;
-1000
+50
 select count() from testXA;
-1000
+50
+select count() from testXB;
+0
 select count() from testXC;
-1000
-select 'optimize_trivial_insert_select=0', 'max_insert_threads=5', 'iteration_num=';
-optimize_trivial_insert_select=0	max_insert_threads=5	iteration_num=
-insert into testX select number from numbers(200) settings
-    send_logs_level='fatal',
-    insert_deduplication_token='UT_6',
+50
+select 'optimize_trivial_insert_select=0', 'max_insert_threads=16';
+optimize_trivial_insert_select=0	max_insert_threads=16
+insert into testX select number from numbers(10) settings
     log_queries=1,
     parallel_view_processing=1,
     optimize_trivial_insert_select=0,
-    max_insert_threads=5;
+    max_insert_threads=16; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select peak_threads_usage from system.query_log where
+select arrayUniq(thread_ids) from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
     Settings['parallel_view_processing'] = '1' and
     Settings['optimize_trivial_insert_select'] = '0' and
-    Settings['max_insert_threads'] = '5';
-12
+    Settings['max_insert_threads'] = '16';
+5
 select count() from testX;
-1200
+60
 select count() from testXA;
-1200
+60
+select count() from testXB;
+0
 select count() from testXC;
-1200
-select 'optimize_trivial_insert_select=1', 'max_insert_threads=0', 'iteration_num=';
-optimize_trivial_insert_select=1	max_insert_threads=0	iteration_num=
-insert into testX select number from numbers(200) settings
-    send_logs_level='fatal',
-    insert_deduplication_token='UT_7',
+60
+select 'optimize_trivial_insert_select=1', 'max_insert_threads=0';
+optimize_trivial_insert_select=1	max_insert_threads=0
+insert into testX select number from numbers(10) settings
     log_queries=1,
     parallel_view_processing=1,
     optimize_trivial_insert_select=1,
-    max_insert_threads=0;
+    max_insert_threads=0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select peak_threads_usage from system.query_log where
+select arrayUniq(thread_ids) from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
     Settings['parallel_view_processing'] = '1' and
     Settings['optimize_trivial_insert_select'] = '1' and
     Settings['max_insert_threads'] = '0';
-2
+5
 select count() from testX;
-1400
+70
 select count() from testXA;
-1400
+70
+select count() from testXB;
+0
 select count() from testXC;
-1400
-select 'optimize_trivial_insert_select=1', 'max_insert_threads=5', 'iteration_num=';
-optimize_trivial_insert_select=1	max_insert_threads=5	iteration_num=
-insert into testX select number from numbers(200) settings
-    send_logs_level='fatal',
-    insert_deduplication_token='UT_8',
+70
+select 'optimize_trivial_insert_select=1', 'max_insert_threads=16';
+optimize_trivial_insert_select=1	max_insert_threads=16
+insert into testX select number from numbers(10) settings
     log_queries=1,
     parallel_view_processing=1,
     optimize_trivial_insert_select=1,
-    max_insert_threads=5;
+    max_insert_threads=16; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 system flush logs;
-select peak_threads_usage from system.query_log where
+select arrayUniq(thread_ids) from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query like '%insert into testX %' and
     Settings['parallel_view_processing'] = '1' and
     Settings['optimize_trivial_insert_select'] = '1' and
-    Settings['max_insert_threads'] = '5';
-7
+    Settings['max_insert_threads'] = '16';
+5
 select count() from testX;
-1600
+80
 select count() from testXA;
-1600
+80
+select count() from testXB;
+0
 select count() from testXC;
-1600
+80

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 CREATE TABLE x ( hash_id UInt64, user_result Decimal(3, 2) ) ENGINE = Memory();
 
 CREATE TABLE y ( hash_id UInt64, user_result  DECIMAL(18, 6) ) ENGINE = Memory();

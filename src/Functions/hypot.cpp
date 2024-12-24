@@ -15,7 +15,7 @@ namespace
 
 REGISTER_FUNCTION(Hypot)
 {
-    factory.registerFunction<FunctionHypot>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionHypot>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

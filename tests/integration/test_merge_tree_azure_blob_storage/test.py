@@ -1,13 +1,14 @@
 import logging
-import os
 import time
+import os
 
 import pytest
-from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
-from helpers.utility import SafeThread, generate_values, replace_config
+from helpers.utility import generate_values, replace_config, SafeThread
+from azure.storage.blob import BlobServiceClient
 from test_storage_azure_blob_storage.test import azure_query
+
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NODE_NAME = "node"
@@ -536,7 +537,10 @@ def test_freeze_unfreeze(cluster):
 def test_apply_new_settings(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
-    config_path = os.path.join(SCRIPT_DIR, "./_gen/disk_storage_conf.xml")
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./_gen/disk_storage_conf.xml".format(cluster.instances_dir_name),
+    )
 
     azure_query(
         node, f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}"

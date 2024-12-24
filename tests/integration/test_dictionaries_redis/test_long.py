@@ -1,7 +1,6 @@
 import pytest
-import redis
-
 from helpers.cluster import ClickHouseCluster
+import redis
 
 cluster = ClickHouseCluster(__file__)
 

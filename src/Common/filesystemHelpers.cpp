@@ -42,23 +42,14 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_FILE;
 }
 
-struct statvfs getStatVFS(String path)
+struct statvfs getStatVFS(const String & path)
 {
     struct statvfs fs;
     while (statvfs(path.c_str(), &fs) != 0)
     {
         if (errno == EINTR)
             continue;
-
-        /// Sometimes we create directories lazily, so we can request free space in a directory that yet to be created.
-        auto fs_path = std::filesystem::path(path);
-        if (errno == ENOENT && fs_path.has_parent_path())
-        {
-            path = fs_path.parent_path();
-            continue;
-        }
-
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
+        DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STATVFS, path, "Could not calculate available disk space (statvfs)");
     }
     return fs;
 }
@@ -223,7 +214,7 @@ bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::p
     return absolute_path.starts_with(absolute_prefix_path);
 }
 
-static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
+bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
     /// Differs from pathStartsWith in how `path` is normalized before comparison.
     /// Make `path` absolute if it was relative and put it into normalized form: remove

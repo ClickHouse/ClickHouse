@@ -262,7 +262,7 @@ namespace detail
         UInt64 count_big[BIG_SIZE];
 
         /// Get value of quantile by index in array `count_big`.
-        static UInt16 indexInBigToValue(size_t i)
+        static inline UInt16 indexInBigToValue(size_t i)
         {
             return (i * BIG_PRECISION) + SMALL_THRESHOLD
                 + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.
@@ -736,12 +736,14 @@ public:
             tiny.prepare();
             return tiny.get(level);
         }
-        if (kind == Kind::Medium)
+        else if (kind == Kind::Medium)
         {
             return medium.get(level);
         }
-
-        return large->get(level);
+        else
+        {
+            return large->get(level);
+        }
     }
 
     /// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.

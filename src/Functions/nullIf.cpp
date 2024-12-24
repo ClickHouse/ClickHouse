@@ -49,7 +49,7 @@ public:
         /// nullIf(col1, col2) == if(col1 = col2, NULL, col1)
 
         auto equals_func = FunctionFactory::instance().get("equals", context)->build(arguments);
-        auto eq_res = equals_func->execute(arguments, equals_func->getResultType(), input_rows_count, /* dry_run = */ false);
+        auto eq_res = equals_func->execute(arguments, equals_func->getResultType(), input_rows_count);
 
         ColumnsWithTypeAndName if_columns
         {
@@ -59,7 +59,7 @@ public:
         };
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
-        auto if_res = func_if->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
+        auto if_res = func_if->execute(if_columns, result_type, input_rows_count);
 
         return makeNullable(if_res);
     }
@@ -69,7 +69,7 @@ public:
 
 REGISTER_FUNCTION(NullIf)
 {
-    factory.registerFunction<FunctionNullIf>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionNullIf>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

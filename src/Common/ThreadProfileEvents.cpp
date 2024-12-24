@@ -75,6 +75,7 @@ const char * TasksStatsCounters::metricsProviderString(MetricsProvider provider)
         case MetricsProvider::Netlink:
             return "netlink";
     }
+    UNREACHABLE();
 }
 
 bool TasksStatsCounters::checkIfAvailable()
@@ -100,7 +101,7 @@ TasksStatsCounters::MetricsProvider TasksStatsCounters::findBestAvailableProvide
             {
                 return MetricsProvider::Netlink;
             }
-            if (ProcfsMetricsProvider::isAvailable())
+            else if (ProcfsMetricsProvider::isAvailable())
             {
                 return MetricsProvider::Procfs;
             }

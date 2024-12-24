@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
 #include <Storages/NATS/NATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
