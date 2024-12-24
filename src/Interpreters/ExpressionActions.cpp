@@ -519,7 +519,7 @@ ExpressionActions::Action::Action(
     , result_position(result_position_)
     , is_no_except(is_no_except_)
     , could_lazy_executed(could_lazy_executed_)
-    , worth_short_circuit_executed(could_lazy_executed_ || is_short_circuit_function_)
+    , worth_lazy_executed(could_lazy_executed_ || is_short_circuit_function_)
     , is_short_circuit_function(is_short_circuit_function_)
 {}
 
@@ -617,7 +617,7 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
 
 static bool couldExecuteLazily(const ExpressionActions::Action & action)
 {
-    return action.could_lazy_executed  && action.worth_short_circuit_executed;
+    return action.could_lazy_executed  && action.worth_lazy_executed;
 }
 
 void ExpressionActions::executeFunctionAction(
@@ -1092,7 +1092,7 @@ void AdaptiveExpressionActions::executeFunctionAction(
             ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
         FunctionExecuteProfile profile;
-        if (action.could_lazy_executed || (action.is_short_circuit_function && !action.worth_short_circuit_executed))
+        if (action.could_lazy_executed)
         {
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -1130,7 +1130,6 @@ void AdaptiveExpressionActions::updateFunctionActionProfile(ExpressionActions::A
     {
         a.executed_rows = b.executed_rows;
         a.executed_elapsed += b.executed_elapsed;
-        a.short_circuit_select_rows += b.short_circuit_select_rows;
         a.short_circuit_side_elapsed += b.short_circuit_side_elapsed;
     };
 
@@ -1205,40 +1204,45 @@ void AdaptiveExpressionActions::findNotWorthLazyExecutedActions()
 {
     for (auto & action : actions)
     {
-        if (!action.could_lazy_executed && !action.is_short_circuit_function)
+        if (!action.could_lazy_executed)
             continue;
         const auto & round_profile = action.current_round_profile;
         if (!round_profile.executed_rows)
             continue;
+        // For safety, we don't execute the expression immediately if it could throw exceptions on invalid data.
+        if (!action.is_no_except)
+            continue;
 
-        auto round_executed_elapsed = action.current_round_profile.executed_elapsed - action.current_round_profile.short_circuit_side_elapsed;
-        auto per_row_elapsed = static_cast<double>(round_executed_elapsed) / round_profile.executed_rows;
-        if (!action.worth_short_circuit_executed)
+        auto round_executed_elapsed = round_profile.executed_elapsed - round_profile.short_circuit_side_elapsed;
+        auto round_per_row_elapsed = static_cast<double>(round_executed_elapsed) / round_profile.executed_rows;
+        if (!action.worth_lazy_executed)
         {
-            // The execute cost increases, try to execute it lazily again.
             const auto & acc_profile = action.accumulate_profile;
             auto acc_executed_elapsed = acc_profile.executed_elapsed - acc_profile.short_circuit_side_elapsed;
-            if (per_row_elapsed > static_cast<double>(acc_executed_elapsed) / acc_profile.executed_rows * 2)
+            auto acc_per_row_elapsed = static_cast<double>(acc_executed_elapsed) / acc_profile.executed_rows;
+            // The execute cost increases, try to execute it lazily again.
+            if (round_per_row_elapsed > acc_per_row_elapsed * 1.5)
             {
-                action.worth_short_circuit_executed = true;
+                LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Enable short circuit executed again: {}", action.node->result_name);
+                action.worth_lazy_executed = true;
             }
         }
         else
         {
-            auto estimate_full_execute_elapsed = per_row_elapsed * current_round_input_rows;
+            auto round_estimate_full_execute_elapsed = round_per_row_elapsed * current_round_input_rows;
             LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Check node:{}\n"
                 "round input rows:{}, executed rows:{}\n"
                 "round execute elapsed:{}, round side elapsed:{}, estimate full execute elapsed:{}",
                 action.node->result_name,
                 current_round_input_rows,
-                action.current_round_profile.executed_rows,
-                action.current_round_profile.executed_elapsed,
-                action.current_round_profile.short_circuit_side_elapsed,
-                estimate_full_execute_elapsed);
-            if (estimate_full_execute_elapsed < action.current_round_profile.executed_elapsed)
+                round_profile.executed_rows,
+                round_profile.executed_elapsed,
+                round_profile.short_circuit_side_elapsed,
+                round_estimate_full_execute_elapsed);
+            if (round_estimate_full_execute_elapsed < round_profile.executed_elapsed)
             {
-                LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Not worth lazy executed node: {}", action.node->result_name);
-                action.worth_short_circuit_executed = false;
+                LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Not worth short circuit executed node: {}", action.node->result_name);
+                action.worth_lazy_executed = false;
             }
         }
     }

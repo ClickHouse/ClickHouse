@@ -581,6 +581,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
+    Stopwatch watch;
     if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
     {
         profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecuteProfile()));
@@ -655,6 +656,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     if constexpr (with_profile)
     {
+        profile->executed_elapsed = watch.elapsed();
+        profile->executed_rows = res->size();
         size_t side_elapsed = 0;
         for (const auto & [i, arg_profile] : profile->argument_profiles)
         {
