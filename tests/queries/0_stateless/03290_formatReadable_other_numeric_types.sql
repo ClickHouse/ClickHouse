@@ -38,34 +38,22 @@ SELECT
     formatReadableTimeDelta(number)
 FROM (SELECT number AS number FROM numbers(2));
 
-SELECT
-    'Date',
-    formatReadableDecimalSize(number),
-    formatReadableSize(number),
-    formatReadableQuantity(number),
-    formatReadableTimeDelta(number)
-FROM (SELECT number::Date AS number FROM numbers(2)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableDecimalSize(number::Date) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableSize(number::Date) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableQuantity(number::Date) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableTimeDelta(number::Date) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT
-    'Date32',
-    formatReadableDecimalSize(number),
-    formatReadableSize(number),
-    formatReadableQuantity(number),
-    formatReadableTimeDelta(number)
-FROM (SELECT number::Date32 AS number FROM numbers(2)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableDecimalSize(number::Date32) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableSize(number::Date32) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableQuantity(number::Date32) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableTimeDelta(number::Date32) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT
-    'DateTime',
-    formatReadableDecimalSize(number),
-    formatReadableSize(number),
-    formatReadableQuantity(number),
-    formatReadableTimeDelta(number)
-FROM (SELECT number::DateTime AS number FROM numbers(2)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableDecimalSize(number::DateTime) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableSize(number::DateTime) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableQuantity(number::DateTime) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableTimeDelta(number::DateTime) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT
-    'DateTime64(3)',
-    formatReadableDecimalSize(number),
-    formatReadableSize(number),
-    formatReadableQuantity(number),
-    formatReadableTimeDelta(number)
-FROM (SELECT number::DateTime64(3) AS number FROM numbers(2)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableDecimalSize(number::DateTime64(3)) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableSize(number::DateTime64(3)) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableQuantity(number::DateTime64(3)) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatReadableTimeDelta(number::DateTime64(3)) FROM numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
