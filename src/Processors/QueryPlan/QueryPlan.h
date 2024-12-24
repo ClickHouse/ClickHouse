@@ -1,11 +1,9 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-#include <Parsers/IAST_fwd.h>
 
 #include <list>
 #include <memory>
@@ -34,7 +32,6 @@ class Pipe;
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
 
-class ColumnSet;
 namespace JSONBuilder
 {
     class IItem;
