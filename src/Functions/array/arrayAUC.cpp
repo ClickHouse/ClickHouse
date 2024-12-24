@@ -421,7 +421,7 @@ public:
 
         /// Handle `arr_partial_offsets argument (if passed)
         ColumnPtr col_offsets = nullptr;
-        const ColumnArray * col_array_offsets;
+        const ColumnArray * col_array_offsets = nullptr;
         if (number_of_arguments == partial_auc_offsets_arg_index + 1)
         {
             col_offsets = arguments[partial_auc_offsets_arg_index].column->convertToFullColumnIfConst();
