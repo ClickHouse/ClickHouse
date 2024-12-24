@@ -37,9 +37,11 @@ namespace
 
 PartsRanges checkRanges(PartsRanges && ranges)
 {
+#ifndef NDEBUG
     /// If some range was generated -- it should not be empty.
     for (const auto & range : ranges)
         assert(!range.empty());
+#endif
 
     return ranges;
 }
