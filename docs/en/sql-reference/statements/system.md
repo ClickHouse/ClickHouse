@@ -423,8 +423,6 @@ SYSTEM SYNC DATABASE REPLICA replicated_database_name;
 
 Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
 
-Works only on readonly [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated).
-
 **Syntax**
 
 ```sql

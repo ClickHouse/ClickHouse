@@ -335,7 +335,7 @@ def test_query_after_restore_db_replica(
     "restore_firstly_node_where_created",
     [
         pytest.param(
-            [node_1, node_2],
+            False,
             id="restore node1-node2",
         ),
         pytest.param(
@@ -350,7 +350,7 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 ):
     test_table_1 = "test_table_1"
     test_table_2 = "test_table_2"
-    
+
     node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
     node_2.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
     node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_2} SYNC")
@@ -406,3 +406,14 @@ def test_restore_db_replica_with_diffrent_table_metadata(
     if restore_firstly_node_where_created:
         assert [f"{count_test_table_2}"] == node_1.query(f"SELECT count(*) FROM repl_db.{test_table_2}").split()
         assert [f"{count_test_table_2}"] == node_2.query(f"SELECT count(*) FROM repl_db.{test_table_2}").split()
+    else:
+        assert ["1"] == node_2.query("SELECT count(*) FROM system.databases WHERE name='repl_db_broken_tables'").split()
+        assert ["1"] == node_2.query("SELECT count(*) FROM system.databases WHERE name='repl_db_broken_replicated_tables'").split()
+        assert [] == node_2.query("SELECT table FROM system.tables WHERE database='repl_db_broken_tables'").split()
+
+        detached_broken_tables = node_2.query("SELECT table FROM system.tables WHERE database='repl_db_broken_replicated_tables'").split()
+
+        assert len(detached_broken_tables) == 1
+        assert detached_broken_tables[0].startswith(f"{test_table_2}_")
+
+        assert [f"{count_test_table_2}"] == node_2.query(f"SELECT count(*) FROM repl_db_broken_replicated_tables.{detached_broken_tables[0]}").split()
