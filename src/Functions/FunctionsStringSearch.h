@@ -188,7 +188,9 @@ public:
 
         if (need_transform)
         {
-            res.reserve(enum_type->getValues().size());
+            const auto size = enum_type->getValues().size();
+            res.reserve(size);
+            enum_to_string_map.reserve(size);
             Int32 i = 0;
             for (const auto & [ename, v] : enum_type->getValues())
             {
