@@ -427,7 +427,13 @@ public:
     void PostgreSQLtypeName(RandomGenerator &, std::string & ret, const bool) const override { ret += "JSON"; }
     void SQLitetypeName(RandomGenerator &, std::string & ret, const bool) const override { ret += "TEXT"; }
 
-    ~JSONType() override = default;
+    ~JSONType() override
+    {
+        for (const auto & entry : subcols)
+        {
+            delete entry.subtype;
+        }
+    }
 };
 
 class Nullable : public SQLType

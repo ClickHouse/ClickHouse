@@ -46,6 +46,7 @@ public:
             return *this;
         }
         this->cname = c.cname;
+        delete this->tp;
         this->tp = TypeDeepCopy(c.tp);
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
@@ -59,6 +60,7 @@ public:
             return *this;
         }
         this->cname = c.cname;
+        delete this->tp;
         this->tp = c.tp;
         c.tp = nullptr;
         this->special = c.special;
