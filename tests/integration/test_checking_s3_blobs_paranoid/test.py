@@ -889,3 +889,83 @@ def test_exception_in_onFinish(cluster, broken_s3):
     )
 
     assert count_from_query_log == "1\n"
+
+
+def test_exception_in_MV(cluster, broken_s3):
+    node = cluster.instances["node_with_query_log_on_s3"]
+
+    node.query(
+        """
+        DROP VIEW IF EXISTS source_sink_mv
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS source_sink
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS source
+        """
+    )
+
+    node.query(
+        """
+        CREATE TABLE source (i Int64)
+            ENGINE = MergeTree()
+            ORDER BY ()
+        """
+    )
+
+    node.query(
+        """
+        CREATE TABLE source_sink
+            ENGINE = MergeTree()
+            ORDER BY ()
+            SETTINGS storage_policy='broken_s3'
+            EMPTY AS
+            SELECT *
+            FROM source
+        """
+    )
+
+    node.query(
+        """
+        CREATE MATERIALIZED VIEW source_sink_mv TO source_sink AS
+            SELECT *
+            FROM source
+        """
+    )
+
+    node.query(
+        """
+        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (1)
+        """
+    )
+
+    broken_s3.setup_at_object_upload(count=100, after=0)
+
+    node.query(
+        """
+        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (2)
+        """
+    )
+
+    count_from_query_log = node.query(
+        """
+        SELECT count() from source
+        """
+    )
+
+    assert count_from_query_log == "2\n"
+
+    count_from_query_log = node.query(
+        """
+        SELECT count() from source_sink
+        """
+    )
+
+    assert count_from_query_log == "1\n"
