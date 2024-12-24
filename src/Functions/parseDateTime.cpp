@@ -678,8 +678,8 @@ namespace
             }
             else
             {
-                const auto * result_type_without_nullable_cast = checkAndGetDataType<DataTypeDateTime64>(result_type_without_nullable.get());
-                MutableColumnPtr col_res = ColumnDateTime64::create(input_rows_count, result_type_without_nullable_cast->getScale());
+                const auto * result_type_without_nullable_casted = checkAndGetDataType<DataTypeDateTime64>(result_type_without_nullable.get());
+                MutableColumnPtr col_res = ColumnDateTime64::create(input_rows_count, result_type_without_nullable_casted->getScale());
                 ColumnDateTime64 * col_datetime64 = assert_cast<ColumnDateTime64 *>(col_res.get());
                 return executeImpl2<DataTypeDateTime64::FieldType>(arguments, result_type, input_rows_count, col_res, col_datetime64->getData());
             }
@@ -701,8 +701,8 @@ namespace
             UInt32 scale = 0;
             if constexpr (return_type == ReturnType::DateTime64)
             {
-                const DataTypeDateTime64 * result_type_without_nullable_cast = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
-                scale = result_type_without_nullable_cast->getScale();
+                const DataTypeDateTime64 * result_type_without_nullable_casted = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
+                scale = result_type_without_nullable_casted->getScale();
                 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
             }
 

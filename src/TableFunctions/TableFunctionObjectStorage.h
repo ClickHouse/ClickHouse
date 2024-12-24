@@ -130,7 +130,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true, nullptr);
+        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(

@@ -1,0 +1,8 @@
+position: 15
+label: 'Use an ETL Tool'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Use an ETL Tool
+  slug: /ja/integrations/data-ingestion/etl-tools

@@ -158,7 +158,6 @@ function clone_submodules
             contrib/libfiu
             contrib/incbin
             contrib/yaml-cpp
-            contrib/corrosion
         )
 
         git submodule sync

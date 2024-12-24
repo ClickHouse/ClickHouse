@@ -7,7 +7,6 @@
 #include <type_traits>
 #include <functional>
 
-#include <base/AlignedUnion.h>
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -302,6 +301,7 @@ concept not_field_or_bool_or_stringlike
   */
 static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
 
+
 /** Discriminated union of several types.
   * Made for replacement of `boost::variant`
   *  is not generalized,
@@ -479,20 +479,12 @@ public:
         return true;
     }
 
-    template <typename T> const auto & safeGet() const &
+    template <typename T> auto & safeGet() const
     {
         return const_cast<Field *>(this)->safeGet<T>();
     }
-    template <typename T> auto safeGet() const &&
-    {
-        return std::move(const_cast<Field *>(this)->safeGet<T>());
-    }
 
-    template <typename T> auto & safeGet() &;
-    template <typename T> auto safeGet() &&
-    {
-        return std::move(safeGet<T>());
-    }
+    template <typename T> auto & safeGet();
 
     bool operator< (const Field & rhs) const
     {
@@ -672,7 +664,7 @@ public:
     static Field restoreFromDump(std::string_view dump_);
 
 private:
-    AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+    std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
@@ -888,7 +880,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 }
 
 template <typename T>
-auto & Field::safeGet() &
+auto & Field::safeGet()
 {
     const Types::Which target = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
 
@@ -1011,10 +1003,6 @@ template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf);
 
 void writeFieldText(const Field & x, WriteBuffer & buf);
-
-
-void writeFieldBinary(const Field & x, WriteBuffer & buf);
-Field readFieldBinary(ReadBuffer & buf);
 
 String toString(const Field & x);
 }

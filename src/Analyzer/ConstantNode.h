@@ -82,7 +82,7 @@ public:
     /// Check if constant is a result of _CAST function constant folding.
     bool receivedFromInitiatorServer() const;
 
-    void setMaskId(size_t id = std::numeric_limits<decltype(mask_id)>::max())
+    void setMaskId(size_t id)
     {
         mask_id = id;
     }

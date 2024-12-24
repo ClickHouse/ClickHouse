@@ -6,7 +6,6 @@ from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
-from ci.workflows.defs import ToolSet
 
 
 def clone_submodules():
@@ -133,7 +132,7 @@ def main():
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Checkout Submodules",
                 command=clone_submodules,
             )
@@ -142,12 +141,10 @@ def main():
 
     if res and JobStages.CMAKE in stages:
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Cmake configuration",
-                command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
-                -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
-                -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
-                -DENABLE_LIBRARIES=0 \
+                command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 \
+                -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
                 workdir=build_dir,
@@ -159,7 +156,7 @@ def main():
     if res and JobStages.BUILD in stages:
         Shell.check("sccache --show-stats")
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Build ClickHouse",
                 command="ninja clickhouse-bundle clickhouse-stripped",
                 workdir=build_dir,
@@ -179,7 +176,7 @@ def main():
             "clickhouse-test --help",
         ]
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Check and Compress binary",
                 command=commands,
                 workdir=build_dir,
@@ -198,7 +195,7 @@ def main():
             update_path_ch_config,
         ]
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Install ClickHouse Config",
                 command=commands,
                 with_log=True,

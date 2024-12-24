@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
-    ContainerClientPtr blob_container_client_,
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
     const ReadSettings & read_settings_,
     size_t max_single_read_retries_,
@@ -228,7 +228,7 @@ void ReadBufferFromAzureBlobStorage::initialize()
         try
         {
             ProfileEvents::increment(ProfileEvents::AzureGetObject);
-            if (blob_container_client->IsClientForDisk())
+            if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
             auto download_response = blob_client->Download(download_options);
@@ -281,7 +281,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
         try
         {
             ProfileEvents::increment(ProfileEvents::AzureGetObject);
-            if (blob_container_client->IsClientForDisk())
+            if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
             Azure::Storage::Blobs::DownloadBlobOptions download_options;

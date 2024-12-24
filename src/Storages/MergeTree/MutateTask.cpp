@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <DataTypes/ObjectUtils.h>
-#include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
@@ -975,6 +974,7 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
+    new_data_part->setIndex(*source_part->getIndex());
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
@@ -983,10 +983,6 @@ void finalizeMutatedPart(
         if (auto new_index_granularity = new_data_part->index_granularity->optimize())
             new_data_part->index_granularity = std::move(new_index_granularity);
     }
-
-    /// It's important to set index after index granularity.
-    if (!new_data_part->storage.getPrimaryIndexCache())
-        new_data_part->setIndex(*source_part->getIndex());
 
     /// Load rest projections which are hardlinked
     bool noop;
@@ -1626,8 +1622,8 @@ private:
         else
         {
             index_granularity_ptr = createMergeTreeIndexGranularity(
-                ctx->source_part->rows_count,
-                ctx->source_part->getBytesUncompressedOnDisk(),
+                ctx->new_data_part->rows_count,
+                ctx->new_data_part->getBytesUncompressedOnDisk(),
                 *ctx->data->getSettings(),
                 ctx->new_data_part->index_granularity_info,
                 /*blocks_are_granules=*/ false);
@@ -1642,8 +1638,8 @@ private:
             ctx->compression_codec,
             std::move(index_granularity_ptr),
             ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
-            ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
+            /*save_marks_in_cache=*/ false,
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings());
 
@@ -1878,8 +1874,7 @@ private:
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 ctx->compression_codec,
-                ctx->source_part->index_granularity,
-                ctx->source_part->getBytesUncompressedOnDisk());
+                ctx->source_part->index_granularity);
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -2291,9 +2286,7 @@ bool MutateTask::prepare()
     /// TODO We can materialize compact part without copying data
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
-    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
-        || !isWidePart(ctx->source_part)
-        || !isFullPartStorage(ctx->source_part->getDataPartStorage())
+    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part) || !isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         /// In case of replicated merge tree with zero copy replication

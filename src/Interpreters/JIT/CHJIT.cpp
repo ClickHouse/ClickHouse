@@ -6,10 +6,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <llvm/Analysis/CGSCCPassManager.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
-#include <llvm/Analysis/LoopAnalysisManager.h>
-#include <llvm/Passes/PassBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -486,21 +483,29 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
 
 void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 {
-    llvm::LoopAnalysisManager lam;
-    llvm::FunctionAnalysisManager fam;
-    llvm::CGSCCAnalysisManager cgam;
-    llvm::ModuleAnalysisManager mam;
+    llvm::PassManagerBuilder pass_manager_builder;
+    llvm::legacy::PassManager mpm;
+    llvm::legacy::FunctionPassManager fpm(&module);
+    pass_manager_builder.OptLevel = 3;
+    pass_manager_builder.SLPVectorize = true;
+    pass_manager_builder.LoopVectorize = true;
+    pass_manager_builder.RerollLoops = true;
+    pass_manager_builder.VerifyInput = true;
+    pass_manager_builder.VerifyOutput = true;
+    machine->adjustPassManager(pass_manager_builder);
 
-    llvm::PassBuilder pb;
+    fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+    mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
 
-    pb.registerModuleAnalyses(mam);
-    pb.registerCGSCCAnalyses(cgam);
-    pb.registerFunctionAnalyses(fam);
-    pb.registerLoopAnalyses(lam);
-    pb.crossRegisterProxies(lam, fam, cgam, mam);
+    pass_manager_builder.populateFunctionPassManager(fpm);
+    pass_manager_builder.populateModulePassManager(mpm);
 
-    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
-    mpm.run(module, mam);
+    fpm.doInitialization();
+    for (auto & function : module)
+        fpm.run(function);
+    fpm.doFinalization();
+
+    mpm.run(module);
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
@@ -533,8 +538,8 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         cpu,
         features.getString(),
         options,
-        std::nullopt,
-        std::nullopt,
+        llvm::None,
+        llvm::None,
         llvm::CodeGenOpt::Aggressive,
         jit);
 

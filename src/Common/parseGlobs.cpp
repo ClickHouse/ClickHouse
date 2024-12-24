@@ -121,7 +121,6 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         else
             break;
     }
-
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
     WriteBufferFromOwnString buf_final_processing;
