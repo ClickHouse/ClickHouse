@@ -1286,7 +1286,6 @@ Setting fields:
 - `table` – Name of the table and schema if exists.
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
-- `background_reconnect` – Reconnect to replica in background if connection fails. Optional parameter.
 - `query` – The custom query. Optional parameter.
 
 :::note
@@ -1878,7 +1877,6 @@ Setting fields:
 - `table` – Name of the table.
 - `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
-- `background_reconnect` – Reconnect to replica in background if connection fails. Optional parameter.
 - `query` – The custom query. Optional parameter.
 
 :::note
