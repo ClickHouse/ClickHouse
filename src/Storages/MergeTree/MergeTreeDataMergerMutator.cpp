@@ -18,18 +18,18 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
+}
+
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsInt64 merge_with_recompression_ttl_timeout;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_optimize_entire_partition;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int ABORTED;
 }
 
 namespace
