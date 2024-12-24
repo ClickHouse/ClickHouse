@@ -45,8 +45,3 @@ ENGINE = Join(ANY, LEFT, id)
 SETTINGS persistent = 1, enable_json_type = 1;
 SHOW CREATE TABLE example_join;
 DROP TABLE IF EXISTS example_join;
-
-DROP TABLE IF EXISTS example_timeseries;
-CREATE TABLE example_timeseries ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 1, allow_experimental_time_series_table=1 FORMAT Null;
-SHOW CREATE TABLE example_timeseries;
-DROP TABLE IF EXISTS example_timeseries;
