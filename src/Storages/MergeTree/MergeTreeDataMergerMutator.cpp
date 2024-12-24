@@ -105,18 +105,18 @@ PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPre
 {
     Stopwatch ranges_for_merge_timer;
 
-    PartsRanges mergable_ranges;
+    PartsRanges mergeable_ranges;
     for (auto && range : ranges)
     {
         auto splitted_range_by_predicate = splitByMergePredicate(std::move(range), can_merge);
-        insertAtEnd(mergable_ranges, std::move(splitted_range_by_predicate));
+        insertAtEnd(mergeable_ranges, std::move(splitted_range_by_predicate));
     }
 
-    ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, calculatePartsCount(mergable_ranges));
-    ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, mergable_ranges.size());
+    ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, calculatePartsCount(mergeable_ranges));
+    ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, mergeable_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
 
-    return mergable_ranges;
+    return mergeable_ranges;
 }
 
 tl::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const AllowedMergingPredicate & can_merge)
@@ -396,7 +396,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
     {
         return tl::make_unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-            .explanation = PreformattedMessage::create("Already produced: {} mergable ranges, but only one is required.", ranges.size()),
+            .explanation = PreformattedMessage::create("Already produced: {} mergeable ranges, but only one is required.", ranges.size()),
         });
     }
 
