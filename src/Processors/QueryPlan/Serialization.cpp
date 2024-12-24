@@ -482,7 +482,7 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     subqueries.reserve(sets_from_subqueries.size());
     for (auto & set : sets_from_subqueries)
     {
-        QueryPlan::resolveReadFromTable(*set.plan, context);
+        //QueryPlan::resolveReadFromTable(*set.plan, context);
         makeSetsFromSubqueries(*set.plan, std::move(set.sets), context);
 
         SizeLimits size_limits = PreparedSets::getSizeLimitsForSet(settings);
@@ -679,10 +679,10 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     return std::move(nodes_and_resource.second);
 }
 
-void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & context)
+void QueryPlan::resolveStorages(const ContextPtr & context)
 {
     std::stack<QueryPlan::Node *> stack;
-    stack.push(plan.getRootNode());
+    stack.push(getRootNode());
     while (!stack.empty())
     {
         auto * node = stack.top();
@@ -692,15 +692,13 @@ void QueryPlan::resolveReadFromTable(QueryPlan & plan, const ContextPtr & contex
             stack.push(child);
 
         if (node->children.empty())
-            plan.addResources(replaceReadingFromTable(*node, plan.nodes, context));
+            addResources(replaceReadingFromTable(*node, nodes, context));
     }
 }
 
-QueryPlan QueryPlan::resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context)
+QueryPlan QueryPlan::makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context)
 {
     auto & plan = plan_and_sets.plan;
-
-    resolveReadFromTable(plan, context);
 
     makeSetsFromStorage(std::move(plan_and_sets.sets_from_storage), context);
     makeSetsFromTuple(std::move(plan_and_sets.sets_from_tuple), context);

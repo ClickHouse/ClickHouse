@@ -1725,8 +1725,9 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>("QueryPlan::execute()");
                     }
 
-                    auto plan = QueryPlan::resolveStorages(std::move(*query_plan), context);
+                    auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
 
+                    plan.resolveStorages(context);
                     plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
                     WriteBufferFromOwnString buf;

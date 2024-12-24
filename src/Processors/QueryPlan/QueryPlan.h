@@ -68,8 +68,9 @@ public:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
 
-    static void resolveReadFromTable(QueryPlan & plan, const ContextPtr & context);
-    static QueryPlan resolveStorages(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+    static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+
+    void resolveStorages(const ContextPtr & context);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
