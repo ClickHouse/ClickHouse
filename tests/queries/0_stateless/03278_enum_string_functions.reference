@@ -95,3 +95,16 @@ SELECT materialize(CAST('a', 'Enum16(\'a\' = 1)')) LIKE randomString(0) from num
 0
 0
 SELECT CAST('a', 'Enum16(\'a\' = 1)') LIKE randomString(0); -- {serverError ILLEGAL_COLUMN}
+SELECT CAST('a', 'Enum(\'a\' = 1)') LIKE 'a';
+1
+SELECT materialize(CAST('a', 'Enum(\'a\' = 1)')) LIKE 'a' from numbers(10);
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
