@@ -201,7 +201,12 @@ MergeTreeDataPartsVector VisiblePartsCollector::filterByPartitions(MergeTreeData
 std::vector<MergeTreeDataPartsVector> VisiblePartsCollector::filterByTxVisibility(MergeTreeDataPartsVector && parts) const
 {
     if (tx == nullptr)
+    {
+        if (parts.empty())
+            return {};
+
         return {std::move(parts)};
+    }
 
     auto build_next_range = [&](auto & parts_it)
     {
@@ -236,9 +241,9 @@ std::vector<MergeTreeDataPartsVector> VisiblePartsCollector::filterByTxVisibilit
     return ranges;
 }
 
-VisiblePartsCollector::VisiblePartsCollector(const MergeTreeData & data_, const MergeTreeTransactionPtr & tx_)
+VisiblePartsCollector::VisiblePartsCollector(const MergeTreeData & data_, MergeTreeTransactionPtr tx_)
     : data(data_)
-    , tx(tx_)
+    , tx(std::move(tx_))
 {
 }
 

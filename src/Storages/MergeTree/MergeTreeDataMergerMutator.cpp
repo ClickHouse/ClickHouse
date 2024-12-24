@@ -35,6 +35,15 @@ namespace MergeTreeSetting
 namespace
 {
 
+PartsRanges checkRanges(PartsRanges && ranges)
+{
+    /// If some range was generated -- it should not be empty.
+    for (const auto & range : ranges)
+        assert(!range.empty());
+
+    return ranges;
+}
+
 size_t calculatePartsCount(const PartsRanges & ranges)
 {
     size_t count = 0;
@@ -257,11 +266,11 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
 
-    auto ranges = parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, /*partitions_hint=*/std::nullopt);
+    auto ranges = checkRanges(parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, /*partitions_hint=*/std::nullopt));
     if (ranges.empty())
         return {};
 
-    ranges = splitByMergePredicate(std::move(ranges), can_merge);
+    ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge));
     if (ranges.empty())
         return {};
 
@@ -318,7 +327,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
 
-    auto ranges = parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, partitions_hint);
+    auto ranges = checkRanges(parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, partitions_hint));
     if (ranges.empty())
     {
         return tl::make_unexpected(SelectMergeFailure{
@@ -327,7 +336,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
         });
     }
 
-    ranges = splitByMergePredicate(std::move(ranges), can_merge);
+    ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge));
     if (ranges.empty())
     {
         return tl::make_unexpected(SelectMergeFailure{
@@ -383,7 +392,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
     const time_t current_time = std::time(nullptr);
     const auto storage_policy = data.getStoragePolicy();
 
-    PartsRanges ranges = parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, PartitionIdsHint{partition_id});
+    PartsRanges ranges = checkRanges(parts_collector->collectPartsToUse(metadata_snapshot, storage_policy, current_time, PartitionIdsHint{partition_id}));
     if (ranges.empty())
     {
         return tl::make_unexpected(SelectMergeFailure{

@@ -13,7 +13,7 @@ class VisiblePartsCollector : public IPartsCollector
     std::vector<MergeTreeDataPartsVector> filterByTxVisibility(MergeTreeDataPartsVector && parts) const;
 
 public:
-    explicit VisiblePartsCollector(const MergeTreeData & data_, const MergeTreeTransactionPtr & tx_);
+    explicit VisiblePartsCollector(const MergeTreeData & data_, MergeTreeTransactionPtr tx_);
     ~VisiblePartsCollector() override = default;
 
     PartsRanges collectPartsToUse(
@@ -24,7 +24,7 @@ public:
 
 private:
     const MergeTreeData & data;
-    const MergeTreeTransactionPtr & tx;
+    MergeTreeTransactionPtr tx;
 };
 
 }
