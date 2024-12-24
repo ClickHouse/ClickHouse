@@ -856,7 +856,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     if (!need_render_progress && !need_render_progress_table)
         return;
 
-    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle");
+    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
     progress_table_toggle_on = !progress_table_toggle_enabled;
 
     /// If need_render_progress and need_render_progress_table are enabled,
@@ -873,7 +873,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     // So it's easier to just pass a descriptor, without the terminal name.
     if (global_context->getApplicationType() == Context::ApplicationType::SERVER)
     {
-         tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(out_fd, buf_size);
+         tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd, buf_size);
          return;
     }
 
@@ -2778,7 +2778,7 @@ void ClientBase::runInteractive()
         }
     }
 
-    history_max_entries = getClientConfiguration().getUInt("history_max_entries");
+    history_max_entries = getClientConfiguration().getUInt("history_max_entries", 1000000);
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};

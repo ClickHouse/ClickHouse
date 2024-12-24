@@ -114,8 +114,14 @@ try
     error_stream << std::fixed << std::setprecision(3);
 
     is_interactive = stdin_is_a_tty;
-    static_query = first_query.empty() ? getEnvOption<String>(envVars, "query", "") : first_query;
-    delayed_interactive = is_interactive && !static_query.empty();
+
+    /// FIXME: We need a generic way on how to handle program options for the embedded client.
+    if (first_query.empty())
+        queries = std::vector<std::string>({getEnvOption<String>(envVars, "query", "")});
+    else
+        queries = std::vector<std::string>({first_query});
+
+    delayed_interactive = is_interactive && !queries.empty();
     if (!is_interactive || delayed_interactive)
     {
         echo_queries = getEnvOption<bool>(envVars, "echo", false) || getEnvOption<bool>(envVars, "verbose", false);
@@ -126,7 +132,6 @@ try
     {
         suggestion_limit = getEnvOption<Int32>(envVars, "suggestion_limit", 10000);
     }
-
 
     enable_highlight = getEnvOption<bool>(envVars, "highlight", true);
     multiline = getEnvOption<bool>(envVars, "multiline", false);

@@ -1,5 +1,6 @@
 import os
 import subprocess
+import paramiko
 
 import pytest
 
@@ -14,7 +15,6 @@ instance = cluster.add_instance(
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
@@ -25,12 +25,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_simple_query_with_openssh_client():
-    ssh_command = (
-        "ssh  -o StrictHostKeyChecking"
-        + f"=no lucy@{instance.ip_address} -p 9022"
-        + f' -i {SCRIPT_DIR}/keys/lucy_ed25519 "select 1"'
-    )
+def test_simple_query_with_openssh_client(started_cluster):
+    # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
+    ssh_command = f"ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 \"SELECT 1;\""
 
     completed_process = subprocess.run(
         ssh_command,
@@ -40,8 +37,25 @@ def test_simple_query_with_openssh_client():
         stderr=subprocess.PIPE,
     )
 
-    expected = instance.query("select 1")
-
+    expected = instance.query("SELECT 1;")
     output = completed_process.stdout
-
     assert output.replace("\n\x00", "\n") == expected
+
+
+def test_simple_query_with_paramiko(started_cluster):
+    pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
+    client = paramiko.SSHClient()
+    policy = paramiko.AutoAddPolicy()
+    client.set_missing_host_key_policy(policy)
+    client.connect(hostname=instance.ip_address, port=9022, username="lucy", pkey=pkey)
+
+    stdin, stdout, stderr = client.exec_command("SELECT 1;")
+    stdin.close()
+    result = stdout.read().decode()
+    expected = instance.query("SELECT 1;")
+    assert result.replace("\n\x00", "\n") == expected
+
+    # FIXME: If I'm trying to execute more queries with the same client I get the error:
+    # Secsh channel 1 open FAILED: : Administratively prohibited
+
+    client.close()
