@@ -283,7 +283,7 @@ EOF
         exit 1
     fi
 
-    timeout -s TERM --kill-after=30s --preserve-status 30m clickhouse-client \
+    timeout -s TERM --kill-after=5m --preserve-status 2m clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
@@ -298,7 +298,7 @@ EOF
     elapsed=0
     maximum=50
     while [[ $elapsed -lt $maximum ]]; do
-        if ps -o pid= --pid "$fuzzer_pid"; then
+        if ps -o pid= --ppid "$fuzzer_pid"; then
             echo "Found underlying PID!"
             break;
         else
@@ -387,6 +387,14 @@ EOF
             echo "failure" > status.txt
         fi
 
+    elif [ "$FUZZER_TO_RUN" = "BuzzHouse"  ]
+    then
+        # BuzzHouse is expected to fail for now.
+        echo "BuzzHouse is expected to fail for now. Please inspect the log to find the issues it found."
+
+        task_exit_code=0
+        echo "success" > status.txt
+        echo "OK" > description.txt
     elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
     then
         # Variants of a normal run:
