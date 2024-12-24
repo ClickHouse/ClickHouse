@@ -635,11 +635,11 @@ try
                 if (is_interactive && is_default_format)
                     current_format = "TabSeparated";
             }
-            if (query_with_output->format != nullptr)
+            if (query_with_output->format_ast != nullptr)
             {
                 if (has_vertical_output_suffix)
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
-                const auto & id = query_with_output->format->as<ASTIdentifier &>();
+                const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
                 current_format = id.name();
             }
             else if (query_with_output->out_file)

@@ -42,6 +42,19 @@ namespace Setting
     extern const SettingsOverflowMode sort_overflow_mode;
 }
 
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_to_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_rows_to_sort;
+    extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
+    extern const QueryPlanSerializationSettingsFloat remerge_sort_lowered_memory_bytes_ratio;
+    extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -95,29 +108,29 @@ SortingStep::Settings::Settings(size_t max_block_size_)
 
 SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 {
-    max_block_size = settings.max_block_size;
-    size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
-    max_bytes_before_remerge = settings.max_bytes_before_remerge_sort;
-    remerge_lowered_memory_bytes_ratio = settings.remerge_sort_lowered_memory_bytes_ratio;
-    max_bytes_before_external_sort = settings.max_bytes_before_external_sort;
+    max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
+    size_limits = SizeLimits(settings[QueryPlanSerializationSetting::max_rows_to_sort], settings[QueryPlanSerializationSetting::max_bytes_to_sort], settings[QueryPlanSerializationSetting::sort_overflow_mode]);
+    max_bytes_before_remerge = settings[QueryPlanSerializationSetting::max_bytes_before_remerge_sort];
+    remerge_lowered_memory_bytes_ratio = settings[QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio];
+    max_bytes_before_external_sort = settings[QueryPlanSerializationSetting::max_bytes_before_external_sort];
     tmp_data = Context::getGlobalContextInstance()->getTempDataOnDisk();
-    min_free_disk_space = settings.min_free_disk_space_for_temporary_data;
-    max_block_bytes = settings.prefer_external_sort_block_bytes;
+    min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
+    max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
 {
-    settings.max_block_size = max_block_size;
-    settings.max_rows_to_sort = size_limits.max_rows;
-    settings.max_bytes_to_sort = size_limits.max_bytes;
-    settings.sort_overflow_mode = size_limits.overflow_mode;
+    settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
+    settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
+    settings[QueryPlanSerializationSetting::max_bytes_to_sort] = size_limits.max_bytes;
+    settings[QueryPlanSerializationSetting::sort_overflow_mode] = size_limits.overflow_mode;
 
-    settings.max_bytes_before_remerge_sort = max_bytes_before_remerge;
-    settings.remerge_sort_lowered_memory_bytes_ratio = remerge_lowered_memory_bytes_ratio;
-    settings.max_bytes_before_external_sort = max_bytes_before_external_sort;
-    settings.min_free_disk_space_for_temporary_data = min_free_disk_space;
-    settings.prefer_external_sort_block_bytes = max_block_bytes;
+    settings[QueryPlanSerializationSetting::max_bytes_before_remerge_sort] = max_bytes_before_remerge;
+    settings[QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio] = remerge_lowered_memory_bytes_ratio;
+    settings[QueryPlanSerializationSetting::max_bytes_before_external_sort] = max_bytes_before_external_sort;
+    settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
+    settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
 }
 
 static ITransformingStep::Traits getTraits(size_t limit)

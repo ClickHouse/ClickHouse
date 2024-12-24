@@ -2,9 +2,10 @@
 
 #include <base/types.h>
 
+#include <optional>
 #include <string>
 #include <tuple>
-#include <optional>
+#include <vector>
 
 namespace DB
 {

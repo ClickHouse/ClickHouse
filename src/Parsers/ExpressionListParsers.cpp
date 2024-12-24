@@ -337,6 +337,12 @@ bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected &
         .parse(pos, node, expected);
 }
 
+bool ParserAliasesExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
+
 bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto command_list = std::make_shared<ASTExpressionList>();
@@ -2598,7 +2604,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         if (subquery_function_type != SubqueryFunctionType::NONE)
         {
             Operator prev_op;
-            ASTPtr function, argument;
+            ASTPtr function;
+            ASTPtr argument;
 
             if (!layers.back()->popOperator(prev_op))
                 return Action::NONE;

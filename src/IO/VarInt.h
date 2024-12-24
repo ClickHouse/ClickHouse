@@ -53,8 +53,8 @@ inline char * writeVarUInt(UInt64 x, char * ostr)
     return ostr;
 }
 
-template <typename Out>
-inline void writeVarInt(Int64 x, Out & ostr)
+template <typename OutBuf>
+inline void writeVarInt(Int64 x, OutBuf & ostr)
 {
     writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
 }
@@ -117,8 +117,8 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
     return istr;
 }
 
-template <typename In>
-inline void readVarInt(Int64 & x, In & istr)
+template <typename InBuf>
+inline void readVarInt(Int64 & x, InBuf & istr)
 {
     readVarUInt(*reinterpret_cast<UInt64*>(&x), istr);
     x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);

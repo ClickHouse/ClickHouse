@@ -1,5 +1,5 @@
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -134,7 +134,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->withPartitionWildcard())
         sample_path = getPathSample(context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));

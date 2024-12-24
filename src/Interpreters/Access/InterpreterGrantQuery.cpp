@@ -190,7 +190,7 @@ namespace
         /// REVOKE SELECT ON system.* FROM user2;
         ///
         /// the query `REVOKE SELECT ON *.* FROM user1` executed by user2 should succeed.
-        if (current_user_access.getAccessRights()->containsWithGrantOption(access_to_revoke))
+        if (current_user_access.getAccessRightsWithImplicit()->containsWithGrantOption(access_to_revoke))
             return;
 
         /// Technically, this check always fails if `containsWithGrantOption` returns `false`. But we still call it to get a nice exception message.
@@ -400,7 +400,8 @@ namespace
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
-        AccessRightsElements elements_to_grant, elements_to_revoke;
+        AccessRightsElements elements_to_grant;
+        AccessRightsElements elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
 
         std::vector<UUID> roles_to_grant;
@@ -431,7 +432,8 @@ BlockIO InterpreterGrantQuery::execute()
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
     /// Collect access rights and roles we're going to grant or revoke.
-    AccessRightsElements elements_to_grant, elements_to_revoke;
+    AccessRightsElements elements_to_grant;
+    AccessRightsElements elements_to_revoke;
     collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
 
     std::vector<UUID> roles_to_grant;
