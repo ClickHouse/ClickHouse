@@ -136,7 +136,6 @@ public:
     ~FutureSetFromSubquery() override;
 
     SetPtr get() const override;
-    SetPtr getNotFilled() const;
     DataTypes getTypes() const override;
     Hash getHash() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;

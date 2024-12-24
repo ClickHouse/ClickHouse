@@ -176,8 +176,6 @@ SetPtr FutureSetFromSubquery::get() const
     return nullptr;
 }
 
-SetPtr FutureSetFromSubquery::getNotFilled() const { return set_and_key->set; }
-
 void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
 {
     source = std::move(source_);
