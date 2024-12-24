@@ -684,39 +684,33 @@ def test_s3_glob_scheherazade(started_cluster):
     assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
 
 
-def test_s3_trivial_glob_should_not_list(started_cluster):
+def test_s3_enum_glob_should_not_list(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 1, 1)"
-    nights_per_job = 1001 // 30
     jobs = []
-    for night in range(0, 1001, nights_per_job):
 
-        def add_tales(start, end):
-            for i in range(start, end):
-                path = "night_{}/tale.csv".format(i)
-                query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
-                    started_cluster.minio_ip,
-                    MINIO_INTERNAL_PORT,
-                    bucket,
-                    path,
-                    table_format,
-                    values,
-                )
-                run_query(instance, query)
+    glob1 = [2, 3, 4, 5]
+    glob2 = [32, 48, 97, 11]
+    nights = [x * 100 + y for x in glob1 for y in glob2]
 
-        jobs.append(
-            threading.Thread(
-                target=add_tales, args=(night, min(night + nights_per_job, 1001))
-            )
+    for night in nights:
+        path = f"shard_{night // 100}/night_{night % 100}/tale.csv"
+        query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+            started_cluster.minio_ip,
+            MINIO_INTERNAL_PORT,
+            bucket,
+            path,
+            table_format,
+            values,
         )
-        jobs[-1].start()
+        run_query(instance, query)
 
     for job in jobs:
         job.join()
 
-    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/night_{{0,1,2,3,4,5,6,7,8,9,10}}/tale.csv', 'CSV', '{}')".format(
+    query = "select count(), sum(column1), sum(column2), sum(column3) from s3('http://{}:{}/{}/shard_{{2,3,4,5}}/night_{{32,48,97,11}}/tale.csv', 'CSV', '{}')".format(
         started_cluster.minio_redirect_host,
         started_cluster.minio_redirect_port,
         bucket,
@@ -724,7 +718,7 @@ def test_s3_trivial_glob_should_not_list(started_cluster):
     )
     query_id = f"validate_no_s3_list_requests{uuid.uuid4()}"
     assert run_query(instance, query, query_id=query_id).splitlines() == [
-        "11\t11\t11\t11"
+        "16\t16\t16\t16"
     ]
 
     instance.query("SYSTEM FLUSH LOGS")

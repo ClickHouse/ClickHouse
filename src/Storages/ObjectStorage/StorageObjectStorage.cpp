@@ -636,12 +636,6 @@ std::string StorageObjectStorage::Configuration::getPathInArchive() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath());
 }
 
-bool StorageObjectStorage::Configuration::pathHasExactlyOneBracketsExpansion() const
-{
-    auto path = getPath();
-    return path.find_first_of("*?") == String::npos && std::count(path.begin(), path.end(), '{') == 1 && !isRangeGlob(path);
-}
-
 void StorageObjectStorage::Configuration::assertInitialized() const
 {
     if (!initialized)
