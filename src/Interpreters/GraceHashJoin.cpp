@@ -316,6 +316,8 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
 
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
+    if (force_spill)
+        return true;
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
@@ -331,6 +333,8 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
 
 bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
 {
+    if (force_spill)
+        return true;
     size_t total_rows = 0;
     size_t total_bytes = 0;
     for (const auto & block : blocks)
@@ -344,9 +348,7 @@ bool GraceHashJoin::hasMemoryOverflow(const BlocksList & blocks) const
 bool GraceHashJoin::hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const
 {
     if (force_spill)
-    {
         return true;
-    }
     size_t total_rows = hash_join_->getTotalRowCount();
     size_t total_bytes = hash_join_->getTotalByteCount();
 
