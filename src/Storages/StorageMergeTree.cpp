@@ -1000,12 +1000,12 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
 {
     const auto can_merge = [this, &lock](const PartProperties * left, const PartProperties * right) -> tl::expected<void, PreformattedMessage>
     {
-        /// This predicate is checked for the first part of each range.
-        /// (left = nullptr, right = "first part of partition")
         if (!left)
         {
+            /// This predicate is checked for the first part of each range.
+
             if (currently_merging_mutating_parts.contains(right->part_info))
-                return tl::make_unexpected(PreformattedMessage::create("Some part currently in a merging or mutating process"));
+                return tl::make_unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", right->name));
 
             return {};
         }
@@ -1015,11 +1015,12 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
         if (left->part_info.partition_id != right->part_info.partition_id)
             return tl::make_unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left->name, right->name));
 
-        if (currently_merging_mutating_parts.contains(left->part_info) || currently_merging_mutating_parts.contains(right->part_info))
-            return tl::make_unexpected(PreformattedMessage::create("Some part currently in a merging or mutating process"));
+        for (const PartProperties * part : {left, right})
+            if (currently_merging_mutating_parts.contains(part->part_info))
+                return tl::make_unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
 
         if (getCurrentMutationVersion(left->part_info, lock) != getCurrentMutationVersion(right->part_info, lock))
-            return tl::make_unexpected(PreformattedMessage::create("Some parts have different mutation version"));
+            return tl::make_unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left->name, right->name));
 
         uint32_t max_possible_level = getMaxLevelInBetween(*left, *right);
         if (max_possible_level > std::max(left->part_info.level, right->part_info.level))
@@ -1029,7 +1030,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
 
         if (left->projection_names != right->projection_names)
             return tl::make_unexpected(PreformattedMessage::create(
-                    "Parts have different projection sets: {{}} in '{}' and {{}} in '{}'",
+                    "Parts have different projection sets: {{}} in {} and {{}} in {}",
                     fmt::join(left->projection_names, ", "), left->name, fmt::join(right->projection_names, ", "), right->name));
 
         return {};
