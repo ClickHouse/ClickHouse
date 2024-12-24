@@ -943,11 +943,11 @@ int StatementGenerator::addTableColumn(
 
     col.cname = cname;
     cd->mutable_col()->set_column("c" + std::to_string(cname));
-    if (special == ColumnSpecial::Sign || special == ColumnSpecial::isDeleted)
+    if (special == ColumnSpecial::SIGN || special == ColumnSpecial::IS_DELETED)
     {
-        tp = new IntType(8, special == ColumnSpecial::isDeleted);
+        tp = new IntType(8, special == ColumnSpecial::IS_DELETED);
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(
-            special == ColumnSpecial::isDeleted ? Integers::UInt8 : Integers::Int8);
+            special == ColumnSpecial::IS_DELETED ? Integers::UInt8 : Integers::Int8);
     }
     else if (special == ColumnSpecial::VERSION)
     {
@@ -976,7 +976,7 @@ int StatementGenerator::addTableColumn(
     }
     col.tp = tp;
     col.special = special;
-    if (!modify && col.special == ColumnSpecial::None
+    if (!modify && col.special == ColumnSpecial::NONE
         && (dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
             || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
             || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp))
@@ -989,7 +989,7 @@ int StatementGenerator::addTableColumn(
     {
         generateNextStatistics(rg, cd->mutable_stats());
     }
-    if (col.special == ColumnSpecial::None && rg.nextSmallNumber() < 2)
+    if (col.special == ColumnSpecial::NONE && rg.nextSmallNumber() < 2)
     {
         DefaultModifier * def_value = cd->mutable_defaultv();
         DModifier dmod = static_cast<DModifier>((rg.nextRandomUInt32() % static_cast<uint32_t>(DModifier_MAX)) + 1);
@@ -1398,7 +1398,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
                 const bool add_pkey = !added_pkey && rg.nextMediumNumber() < 4;
                 ColumnDef * cd = i == 0 ? colsdef->mutable_col_def() : colsdef->add_other_defs()->mutable_col_def();
 
-                addTableColumn(rg, next, next.col_counter++, false, false, add_pkey, ColumnSpecial::None, cd);
+                addTableColumn(rg, next, next.col_counter++, false, false, add_pkey, ColumnSpecial::NONE, cd);
                 added_pkey |= add_pkey;
                 added_cols++;
             }
@@ -1416,7 +1416,7 @@ int StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTabl
                     false,
                     false,
                     add_pkey,
-                    add_version_col ? ColumnSpecial::VERSION : (add_sign ? ColumnSpecial::Sign : ColumnSpecial::isDeleted),
+                    add_version_col ? ColumnSpecial::VERSION : (add_sign ? ColumnSpecial::SIGN : ColumnSpecial::IS_DELETED),
                     cd);
                 added_pkey |= add_pkey;
                 te->add_params()->mutable_cols()->mutable_col()->set_column("c" + std::to_string(cname));
