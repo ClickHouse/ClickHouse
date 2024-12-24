@@ -43,21 +43,12 @@ ExpressionStep::ExpressionStep(const Header & input_header_, ActionsDAG actions_
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-#if 0
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
-
-    pipeline.addSimpleTransform([&](const Block & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression);
-    });
-#else
 
     pipeline.addSimpleTransform([&](const Block & header)
     {
         auto expression = std::make_shared<AdaptiveExpressionActions>(actions_dag.clone(), settings.getActionsSettings());
         return std::make_shared<ExpressionTransform>(header, expression);
     });
-#endif
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
     {
@@ -65,21 +56,12 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_header->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-#if 0
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<ExpressionTransform>(header, convert_actions);
         });
-#else
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            auto convert_actions = std::make_shared<AdaptiveExpressionActions>(convert_actions_dag.clone(), settings.getActionsSettings());
-            return std::make_shared<ExpressionTransform>(header, convert_actions);
-        });
-
-#endif
     }
 }
 

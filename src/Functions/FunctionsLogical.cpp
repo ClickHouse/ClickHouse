@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFunction.h>
@@ -580,8 +581,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
-    Stopwatch watch;
-    executeColumnIfNeeded(arguments[0]);
+    if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
+    {
+        profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecuteProfile()));
+        executeColumnIfNeeded(arguments[0], false, &(profile->argument_profiles.back().second));
+    }
+    else
+        executeColumnIfNeeded(arguments[0]);
+
 
     /// Let's denote x_i' = maskedExecute(x_i, mask).
     /// 1) AND(x_0, x_1, x_2, ..., x_n)
@@ -648,8 +655,12 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     if constexpr (with_profile)
     {
-        profile->executed_rows = res->size();
-        profile->executed_elapsed = watch.elapsed();
+        size_t side_elapsed = 0;
+        for (const auto & [i, arg_profile] : profile->argument_profiles)
+        {
+            side_elapsed += arg_profile.short_circuit_side_elapsed;
+        }
+        profile->short_circuit_side_elapsed = side_elapsed;
     }
 
     if (!nulls)
