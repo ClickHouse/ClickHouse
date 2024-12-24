@@ -160,18 +160,18 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
     for (auto & and_atom : and_atoms)
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag), settings.getActionsSettings());
         pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
         {
+            auto expression = std::make_shared<AdaptiveExpressionActions>(and_atom.dag.clone(), settings.getActionsSettings());
             bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
             return std::make_shared<FilterTransform>(header, expression, and_atom.name, true, on_totals);
         });
     }
 
-    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
+        auto expression = std::make_shared<AdaptiveExpressionActions>(actions_dag.clone(), settings.getActionsSettings());
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });

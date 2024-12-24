@@ -42,6 +42,8 @@ public:
         return true;
     }
 
+    bool isNoExcept() const override { return true; }
+
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);

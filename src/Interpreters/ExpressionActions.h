@@ -55,7 +55,7 @@ public:
         bool could_lazy_executed;
         /// It's not free to lazy execute one node with short circuit. When the cost of filting out necessary rows and
         /// expanding back to a full column is larger then fully execution of the column, we don't excute it lazily. 
-        bool worth_lazy_executed;
+        bool worth_short_circuit_executed;
         bool is_short_circuit_function;
         std::vector<size_t> parents_actions_pos;
         FunctionExecuteProfile current_round_profile;
