@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
@@ -15,8 +16,6 @@
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
-
-#include <Poco/Util/LayeredConfiguration.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
