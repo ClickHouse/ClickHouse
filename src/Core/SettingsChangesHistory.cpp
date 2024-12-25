@@ -42,14 +42,6 @@ static void addSettingsChanges(
     std::string_view version,
     SettingsChangesHistory::SettingsChanges && changes)
 {
-    {"25.1",
-        {
-            {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
-            {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
-            {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."},
-        }
-    },
-    {"24.12",
     /// Forbid duplicate versions
     auto [_, inserted] = settings_changes_history.emplace(ClickHouseVersion(version), std::move(changes));
     if (!inserted)
@@ -79,6 +71,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
+            {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
+            {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -101,7 +95,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "24.11",
         {
-            {"enable_http_compression", false, true, "Improvement for read-only clients since they can't change settings"},
             {"validate_mutation_query", false, true, "New setting to validate mutation queries by default."},
             {"enable_job_stack_trace", false, true, "Enable by default collecting stack traces from job's scheduling."},
             {"allow_suspicious_types_in_group_by", true, false, "Don't allow Variant/Dynamic types in GROUP BY by default"},
