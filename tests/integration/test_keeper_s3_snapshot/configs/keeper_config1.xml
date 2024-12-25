@@ -5,6 +5,7 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3_snapshot>
+        <use_cluster>false</use_cluster>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>

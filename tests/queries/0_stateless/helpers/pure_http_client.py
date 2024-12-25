@@ -1,10 +1,11 @@
-import os
 import io
+import os
+import time
+
+import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-import time
-import pandas as pd
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT_HTTP = os.environ.get("CLICKHOUSE_PORT_HTTP", "8123")
@@ -19,9 +20,14 @@ class ClickHouseClient:
         self.host = host
 
     def query(
-        self, query, connection_timeout=500, settings=dict(), binary_result=False
+        self,
+        query,
+        connection_timeout=500,
+        settings=dict(),
+        binary_result=False,
+        with_retries=True,
     ):
-        NUMBER_OF_TRIES = 30
+        NUMBER_OF_TRIES = 30 if with_retries else 1
         DELAY = 10
 
         params = {
@@ -40,7 +46,8 @@ class ClickHouseClient:
             if r.status_code == 200:
                 return r.content if binary_result else r.text
             else:
-                print("ATTENTION: try #%d failed" % i)
+                if with_retries:
+                    print("ATTENTION: try #%d failed" % i)
                 if i != (NUMBER_OF_TRIES - 1):
                     print(query)
                     print(r.text)

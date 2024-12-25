@@ -14,18 +14,12 @@ namespace DB
 class IdentifierQuoteHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    IdentifierQuoteHandler(size_t keep_alive_timeout_, ContextPtr context_)
-        : WithContext(context_)
-        , log(getLogger("IdentifierQuoteHandler"))
-        , keep_alive_timeout(keep_alive_timeout_)
-    {
-    }
+    explicit IdentifierQuoteHandler(ContextPtr context_) : WithContext(context_), log(getLogger("IdentifierQuoteHandler")) { }
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
     LoggerPtr log;
-    size_t keep_alive_timeout;
 };
 
 }

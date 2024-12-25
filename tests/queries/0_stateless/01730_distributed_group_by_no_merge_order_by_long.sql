@@ -1,6 +1,7 @@
 -- Tags: long, distributed, no-random-settings
 
 drop table if exists data_01730;
+SET max_rows_to_read = 0, max_result_rows = 0, max_bytes_before_external_group_by = 0;
 
 -- does not use 127.1 due to prefer_localhost_replica
 

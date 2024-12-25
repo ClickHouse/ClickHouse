@@ -44,6 +44,7 @@ LIMIT 2
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
 - `*` — Represents arbitrarily many characters except `/` but including the empty string.
+- `**` — Represents all files inside a folder recursively.
 - `?` — Represents an arbitrary single character.
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
 - `{N..M}` — Represents any number `>= N` and `<= M`.
@@ -99,10 +100,23 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
+## Hive-style partitioning {#hive-style-partitioning}
+
+When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+
+**Example**
+
+Use virtual column, created with Hive-style partitioning
+
+``` sql
+SET use_hive_partitioning = 1;
+SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
+```
+
 ## Storage Settings {#storage-settings}
 
 - [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_multiple_files](/docs/en/operations/settings/settings.md#hdfs_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_create_new_file_on_insert](/docs/en/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [hdfs_skip_empty_files](/docs/en/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
 - [ignore_access_denied_multidirectory_globs](/docs/en/operations/settings/settings.md#ignore_access_denied_multidirectory_globs) - allows to ignore permission denied errors for multi-directory globs.
 

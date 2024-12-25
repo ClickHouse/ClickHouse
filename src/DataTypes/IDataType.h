@@ -76,19 +76,26 @@ public:
     {
         if (custom_name)
             return custom_name->getName();
-        else
-            return doGetName();
+        return doGetName();
     }
 
     String getPrettyName(size_t indent = 0) const
     {
         if (custom_name)
             return custom_name->getName();
-        else
-            return doGetPrettyName(indent);
+        return doGetPrettyName(indent);
     }
 
     DataTypePtr getPtr() const { return shared_from_this(); }
+
+    /// Returns the normalized form of the current type, currently handling the
+    /// conversion of named tuples to unnamed tuples.
+    ///
+    /// This is useful for converting aggregate states into a normalized form with
+    /// normalized argument types. E.g, `AggregateFunction(uniq, Tuple(a int, b int))`
+    /// should be convertible to `AggregateFunction(uniq, Tuple(int, int))`, as both
+    /// have same memory layouts for state representation and the same serialization.
+    virtual DataTypePtr getNormalizedType() const { return shared_from_this(); }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -401,9 +408,11 @@ struct WhichDataType
     constexpr bool isDecimal256() const { return idx == TypeIndex::Decimal256; }
     constexpr bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128() || isDecimal256(); }
 
+    constexpr bool isBFloat16() const { return idx == TypeIndex::BFloat16; }
     constexpr bool isFloat32() const { return idx == TypeIndex::Float32; }
     constexpr bool isFloat64() const { return idx == TypeIndex::Float64; }
-    constexpr bool isFloat() const { return isFloat32() || isFloat64(); }
+    constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
+    constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
     constexpr bool isNativeNumber() const { return isNativeInteger() || isFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
@@ -432,7 +441,7 @@ struct WhichDataType
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
-    constexpr bool isObject() const { return idx == TypeIndex::Object; }
+    constexpr bool isObjectDeprecated() const { return idx == TypeIndex::ObjectDeprecated; }
 
     constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
@@ -444,6 +453,7 @@ struct WhichDataType
 
     constexpr bool isVariant() const { return idx == TypeIndex::Variant; }
     constexpr bool isDynamic() const { return idx == TypeIndex::Dynamic; }
+    constexpr bool isObject() const { return idx == TypeIndex::Object; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -458,7 +468,9 @@ struct WhichDataType
 bool isUInt8(TYPE data_type); \
 bool isUInt16(TYPE data_type); \
 bool isUInt32(TYPE data_type); \
-bool isUInt64(TYPE data_type); \
+bool isUInt64(TYPE data_type);\
+bool isUInt128(TYPE data_type);\
+bool isUInt256(TYPE data_type); \
 bool isNativeUInt(TYPE data_type); \
 bool isUInt(TYPE data_type); \
 \
@@ -466,6 +478,8 @@ bool isInt8(TYPE data_type); \
 bool isInt16(TYPE data_type); \
 bool isInt32(TYPE data_type); \
 bool isInt64(TYPE data_type); \
+bool isInt128(TYPE data_type); \
+bool isInt256(TYPE data_type); \
 bool isNativeInt(TYPE data_type); \
 bool isInt(TYPE data_type); \
 \
@@ -502,9 +516,10 @@ bool isArray(TYPE data_type); \
 bool isTuple(TYPE data_type); \
 bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
-bool isObject(TYPE data_type); \
+bool isObjectDeprecated(TYPE data_type); \
 bool isVariant(TYPE data_type); \
 bool isDynamic(TYPE data_type); \
+bool isObject(TYPE data_type); \
 bool isNothing(TYPE data_type); \
 \
 bool isColumnedAsNumber(TYPE data_type); \
@@ -608,6 +623,7 @@ template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = tr
     M(Int64) \
     M(Int128) \
     M(Int256) \
+    M(BFloat16) \
     M(Float32) \
     M(Float64)
 }

@@ -16,6 +16,7 @@
 # - and that max_backup_bandwidth from the query will override setting from the user profile
 
 import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -121,21 +122,15 @@ def node_update_config(mode, setting, value=None):
     node.restart_clickhouse()
 
 
-def assert_took(took, should_took):
+def assert_took(took, should_take):
     # we need to decrease the lower limit because the server limits could
     # be enforced by throttling some server background IO instead of query IO
     # and we have no control over it
-    #
-    # and the same for upper limit, it can be slightly larger, due to for
-    # instance network latencies or CPU starvation
-    if should_took > 0:
-        assert took >= should_took * 0.85 and took <= should_took * 1.8
-    else:
-        assert took >= should_took * 0.85
+    assert took >= should_take * 0.85
 
 
 @pytest.mark.parametrize(
-    "policy,backup_name,mode,setting,value,should_took",
+    "policy,backup_name,mode,setting,value,should_take",
     [
         #
         # Local -> Local
@@ -149,7 +144,7 @@ def assert_took(took, should_took):
             0,
             id="no_local_throttling",
         ),
-        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
+        # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "default",
             next_backup_name("local"),
@@ -159,7 +154,7 @@ def assert_took(took, should_took):
             7,
             id="user_local_throttling",
         ),
-        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
+        # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "default",
             next_backup_name("local"),
@@ -181,7 +176,7 @@ def assert_took(took, should_took):
             0,
             id="no_remote_to_local_throttling",
         ),
-        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
+        # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "s3",
             next_backup_name("local"),
@@ -191,7 +186,7 @@ def assert_took(took, should_took):
             7,
             id="user_remote_to_local_throttling",
         ),
-        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
+        # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "s3",
             next_backup_name("local"),
@@ -252,7 +247,7 @@ def assert_took(took, should_took):
             0,
             id="no_local_to_remote_throttling",
         ),
-        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
+        # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "default",
             next_backup_name("remote"),
@@ -262,7 +257,7 @@ def assert_took(took, should_took):
             7,
             id="user_local_to_remote_throttling",
         ),
-        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
+        # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "default",
             next_backup_name("remote"),
@@ -274,7 +269,7 @@ def assert_took(took, should_took):
         ),
     ],
 )
-def test_backup_throttling(policy, backup_name, mode, setting, value, should_took):
+def test_backup_throttling(policy, backup_name, mode, setting, value, should_take):
     node_update_config(mode, setting, value)
     node.query(
         f"""
@@ -284,7 +279,7 @@ def test_backup_throttling(policy, backup_name, mode, setting, value, should_too
     """
     )
     _, took = elapsed(node.query, f"backup table data to {backup_name}")
-    assert_took(took, should_took)
+    assert_took(took, should_take)
 
 
 def test_backup_throttling_override():
@@ -305,18 +300,18 @@ def test_backup_throttling_override():
             "max_backup_bandwidth": "500K",
         },
     )
-    # reading 1e6*8 bytes with 500Ki default bandwith should take (8-0.5)/0.5=15 seconds
+    # reading 1e6*8 bytes with 500Ki default bandwidth should take (8-0.5)/0.5=15 seconds
     assert_took(took, 15)
 
 
 @pytest.mark.parametrize(
-    "policy,mode,setting,value,should_took",
+    "policy,mode,setting,value,should_take",
     [
         #
         # Local
         #
         pytest.param("default", None, None, None, 0, id="no_local_throttling"),
-        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
+        # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "default",
             "user",
@@ -325,7 +320,7 @@ def test_backup_throttling_override():
             7,
             id="user_local_throttling",
         ),
-        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
+        # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "default",
             "server",
@@ -338,7 +333,7 @@ def test_backup_throttling_override():
         # Remote
         #
         pytest.param("s3", None, None, None, 0, id="no_remote_throttling"),
-        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
+        # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "s3",
             "user",
@@ -347,7 +342,7 @@ def test_backup_throttling_override():
             7,
             id="user_remote_throttling",
         ),
-        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
+        # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "s3",
             "server",
@@ -358,7 +353,7 @@ def test_backup_throttling_override():
         ),
     ],
 )
-def test_read_throttling(policy, mode, setting, value, should_took):
+def test_read_throttling(policy, mode, setting, value, should_take):
     node_update_config(mode, setting, value)
     node.query(
         f"""
@@ -368,17 +363,17 @@ def test_read_throttling(policy, mode, setting, value, should_took):
     """
     )
     _, took = elapsed(node.query, f"select * from data")
-    assert_took(took, should_took)
+    assert_took(took, should_take)
 
 
 @pytest.mark.parametrize(
-    "policy,mode,setting,value,should_took",
+    "policy,mode,setting,value,should_take",
     [
         #
         # Local
         #
         pytest.param("default", None, None, None, 0, id="no_local_throttling"),
-        # reading 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
+        # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "default",
             "user",
@@ -387,7 +382,7 @@ def test_read_throttling(policy, mode, setting, value, should_took):
             7,
             id="local_user_throttling",
         ),
-        # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
+        # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "default",
             "server",
@@ -400,7 +395,7 @@ def test_read_throttling(policy, mode, setting, value, should_took):
         # Remote
         #
         pytest.param("s3", None, None, None, 0, id="no_remote_throttling"),
-        # writing 1e6*8 bytes with 1M default bandwith should take (8-1)/1=7 seconds
+        # writing 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "s3",
             "user",
@@ -409,7 +404,7 @@ def test_read_throttling(policy, mode, setting, value, should_took):
             7,
             id="user_remote_throttling",
         ),
-        # writing 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
+        # writing 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "s3",
             "server",
@@ -420,7 +415,7 @@ def test_read_throttling(policy, mode, setting, value, should_took):
         ),
     ],
 )
-def test_write_throttling(policy, mode, setting, value, should_took):
+def test_write_throttling(policy, mode, setting, value, should_take):
     node_update_config(mode, setting, value)
     node.query(
         f"""
@@ -429,7 +424,7 @@ def test_write_throttling(policy, mode, setting, value, should_took):
     """
     )
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
-    assert_took(took, should_took)
+    assert_took(took, should_take)
 
 
 def test_max_mutations_bandwidth_for_server():
@@ -444,7 +439,7 @@ def test_max_mutations_bandwidth_for_server():
         node.query,
         "alter table data update key = -key where 1 settings mutations_sync = 1",
     )
-    # reading 1e6*8 bytes with 1M/s bandwith should take (8-1)/1=7 seconds
+    # reading 1e6*8 bytes with 1M/s bandwidth should take (8-1)/1=7 seconds
     assert_took(took, 7)
 
 
@@ -457,5 +452,5 @@ def test_max_merges_bandwidth_for_server():
     )
     node.query("insert into data select * from numbers(1e6)")
     _, took = elapsed(node.query, "optimize table data final")
-    # reading 1e6*8 bytes with 1M/s bandwith should take (8-1)/1=7 seconds
+    # reading 1e6*8 bytes with 1M/s bandwidth should take (8-1)/1=7 seconds
     assert_took(took, 7)

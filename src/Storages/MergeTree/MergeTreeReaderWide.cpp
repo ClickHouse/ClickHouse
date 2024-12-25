@@ -172,7 +172,7 @@ size_t MergeTreeReaderWide::readRows(
                 throw;
             }
 
-            if (column->empty())
+            if (column->empty() && max_rows_to_read > 0)
                 res_columns[pos] = nullptr;
         }
 
@@ -213,6 +213,10 @@ void MergeTreeReaderWide::addStreams(
 
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
+        /// Don't create streams for ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
 
         /** If data file is missing then we will not try to open it.
@@ -258,7 +262,7 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
         /*num_columns_in_mark=*/ 1);
 
     auto stream_settings = settings;
-    stream_settings.is_low_cardinality_dictionary = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
+    stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
 
     auto create_stream = [&]<typename Stream>()
     {
@@ -326,7 +330,7 @@ void MergeTreeReaderWide::deserializePrefix(
     if (!deserialize_binary_bulk_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
-        deserialize_settings.dynamic_read_statistics = true;
+        deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
             return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
@@ -348,6 +352,10 @@ void MergeTreeReaderWide::prefetchForColumn(
     deserializePrefix(serialization, name_and_type, current_task_last_mark, cache, deserialize_states_cache);
     auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
+        /// Skip ephemeral subcolumns that don't store any real data.
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
 
         if (stream_name && !prefetched_streams.contains(*stream_name))

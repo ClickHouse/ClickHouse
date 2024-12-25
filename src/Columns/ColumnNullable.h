@@ -125,6 +125,8 @@ public:
                         size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
     void reserve(size_t n) override;
+    size_t capacity() const override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -139,7 +141,11 @@ public:
     // Special function for nullable minmax index
     void getExtremesNullLast(Field & min, Field & max) const;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
+
+    ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+    void rollback(const ColumnCheckpoint & checkpoint) override;
 
     void forEachSubcolumn(MutableColumnCallback callback) override
     {

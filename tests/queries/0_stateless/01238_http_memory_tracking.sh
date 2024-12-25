@@ -14,7 +14,7 @@ ${CLICKHOUSE_CLIENT} --format Null -q "CREATE USER $MISTER_USER"
 
 # This is needed to keep at least one running query for user for the time of test.
 # (1k http queries takes ~1 second, let's run for 5x more to avoid flaps)
-${CLICKHOUSE_CLIENT} --user ${MISTER_USER} --function_sleep_max_microseconds_per_block 5000000 --format Null -n <<<'SELECT sleepEachRow(1) FROM numbers(5)' &
+${CLICKHOUSE_CLIENT} --user ${MISTER_USER} --function_sleep_max_microseconds_per_block 5000000 --format Null <<<'SELECT sleepEachRow(1) FROM numbers(5)' &
 
 # ignore "yes: standard output: Broken pipe"
 yes 'SELECT 1' 2>/dev/null | {

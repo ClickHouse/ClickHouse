@@ -708,20 +708,27 @@ public:
 
         if (which.isDate())
             return DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(Transform{}, arguments, result_type, 0, input_rows_count);
-        else if (which.isDate32())
-            return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(Transform{}, arguments, result_type, 0, input_rows_count);
-        else if (which.isDateTime())
-            return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(Transform{}, arguments, result_type, 0, input_rows_count);
-        else if (which.isDateTime64())
+        if (which.isDate32())
+            return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(
+                Transform{}, arguments, result_type, 0, input_rows_count);
+        if (which.isDateTime())
+            return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
+                Transform{}, arguments, result_type, 0, input_rows_count);
+        if (which.isDateTime64())
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type);
             auto from_scale = datetime64_type->getScale();
-            return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(Transform{}, arguments, result_type, from_scale, input_rows_count);
+            return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
+                Transform{}, arguments, result_type, from_scale, input_rows_count);
         }
-        else if (which.isString())
-            return DateTimeAddIntervalImpl<DataTypeString, DataTypeDateTime64, Transform>::execute(Transform{}, arguments, result_type, 3, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}", arguments[0].type->getName(), getName());
+        if (which.isString())
+            return DateTimeAddIntervalImpl<DataTypeString, DataTypeDateTime64, Transform>::execute(
+                Transform{}, arguments, result_type, 3, input_rows_count);
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of first argument of function {}",
+            arguments[0].type->getName(),
+            getName());
     }
 };
 

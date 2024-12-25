@@ -330,9 +330,8 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 #if defined(__SSE4_2__)
     if (sizeof...(symbols) >= 5)
         return find_first_symbols_sse42<positive, return_mode, sizeof...(symbols), symbols...>(begin, end);
-    else
 #endif
-        return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);
+    return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);
 }
 
 template <bool positive, ReturnMode return_mode>
@@ -341,9 +340,8 @@ inline const char * find_first_symbols_dispatch(const std::string_view haystack,
 #if defined(__SSE4_2__)
     if (symbols.str.size() >= 5)
         return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols);
-    else
 #endif
-        return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
+    return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
 }
 
 }

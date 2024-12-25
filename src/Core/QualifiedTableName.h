@@ -1,20 +1,14 @@
 #pragma once
 
+#include <base/types.h>
+
+#include <optional>
 #include <string>
 #include <tuple>
-#include <optional>
-#include <Common/Exception.h>
-#include <Common/SipHash.h>
-#include <Common/quoteString.h>
-#include <fmt/format.h>
+#include <vector>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int SYNTAX_ERROR;
-}
 
 //TODO replace with StorageID
 struct QualifiedTableName
@@ -32,28 +26,20 @@ struct QualifiedTableName
         return std::forward_as_tuple(database, table) < std::forward_as_tuple(other.database, other.table);
     }
 
-    UInt64 hash() const
-    {
-        SipHash hash_state;
-        hash_state.update(database.data(), database.size());
-        hash_state.update(table.data(), table.size());
-        return hash_state.get64();
-    }
+    UInt64 hash() const;
 
     std::vector<std::string> getParts() const
     {
         if (database.empty())
             return {table};
-        else
-            return {database, table};
+        return {database, table};
     }
 
     std::string getFullName() const
     {
         if (database.empty())
             return table;
-        else
-            return database + '.' + table;
+        return database + '.' + table;
     }
 
     /// NOTE: It's different from compound identifier parsing and does not support escaping and dots in name.
@@ -88,13 +74,7 @@ struct QualifiedTableName
         return name;
     }
 
-    static QualifiedTableName parseFromString(const String & maybe_qualified_name)
-    {
-        auto name = tryParseFromString(maybe_qualified_name);
-        if (!name)
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid qualified name: {}", maybe_qualified_name);
-        return *name;
-    }
+    static QualifiedTableName parseFromString(const String & maybe_qualified_name);
 };
 
 }
@@ -113,22 +93,3 @@ template <> struct hash<DB::QualifiedTableName>
     }
 };
 }
-
-namespace fmt
-{
-    template <>
-    struct formatter<DB::QualifiedTableName>
-    {
-        static constexpr auto parse(format_parse_context & ctx)
-        {
-            return ctx.begin();
-        }
-
-        template <typename FormatContext>
-        auto format(const DB::QualifiedTableName & name, FormatContext & ctx) const
-        {
-            return fmt::format_to(ctx.out(), "{}.{}", DB::backQuoteIfNeed(name.database), DB::backQuoteIfNeed(name.table));
-        }
-    };
-}
-

@@ -468,7 +468,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 
 ### JSONType
 
-Return the type of a JSON value. If the value does not exist, `Null` will be returned.
+Return the type of a JSON value. If the value does not exist, `Null=0` will be returned (not usual [Null](../data-types/nullable.md), but `Null=0` of `Enum8('Null' = 0, 'String' = 34,...`). .
 
 **Syntax**
 
@@ -488,7 +488,7 @@ JSONType(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns the type of a JSON value as a string, otherwise if the value doesn't exists it returns `Null`. [String](../data-types/string.md).
+- Returns the type of a JSON value as a string, otherwise if the value doesn't exists it returns `Null=0`. [Enum](../data-types/enum.md).
 
 **Examples**
 
@@ -520,7 +520,7 @@ JSONExtractUInt(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns a UInt value if it exists, otherwise it returns `Null`. [UInt64](../data-types/string.md).
+- Returns a UInt value if it exists, otherwise it returns `0`. [UInt64](../data-types/int-uint.md).
 
 **Examples**
 
@@ -560,7 +560,7 @@ JSONExtractInt(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns an Int value if it exists, otherwise it returns `Null`. [Int64](../data-types/int-uint.md).
+- Returns an Int value if it exists, otherwise it returns `0`. [Int64](../data-types/int-uint.md).
 
 **Examples**
 
@@ -600,7 +600,7 @@ JSONExtractFloat(json [, indices_or_keys]...)
 
 **Returned value**
 
-- Returns an Float value if it exists, otherwise it returns `Null`. [Float64](../data-types/float.md).
+- Returns an Float value if it exists, otherwise it returns `0`. [Float64](../data-types/float.md).
 
 **Examples**
 
@@ -732,6 +732,18 @@ SELECT JSONExtract('{"passed": true}', 'passed', 'UInt8') = 1
 SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Thursday'
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
+
+Referring to a nested values by passing multiple indices_or_keys parameters:
+```
+SELECT JSONExtract('{"a":{"b":"hello","c":{"d":[1,2,3],"e":[1,3,7]}}}','a','c','Map(String, Array(UInt8))') AS val, toTypeName(val), val['d'];
+```
+Result:
+```
+┌─val───────────────────────┬─toTypeName(val)───────────┬─arrayElement(val, 'd')─┐
+│ {'d':[1,2,3],'e':[1,3,7]} │ Map(String, Array(UInt8)) │ [1,2,3]                │
+└───────────────────────────┴───────────────────────────┴────────────────────────┘
+```
+
 
 ### JSONExtractKeysAndValues
 
@@ -1154,4 +1166,208 @@ SELECT jsonMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name"
 ┌─res───────────────────┐
 │ {"a":1,"name":"zoey"} │
 └───────────────────────┘
+```
+
+### JSONAllPaths
+
+Returns the list of all paths stored in each row in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONAllPaths(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Array(String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONAllPaths(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONAllPaths(json)─┐
+│ {"a":"42"}                           │ ['a']              │
+│ {"b":"Hello"}                        │ ['b']              │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a','c']          │
+└──────────────────────────────────────┴────────────────────┘
+```
+
+### JSONAllPathsWithTypes
+
+Returns the map of all paths and their data types stored in each row in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONAllPathsWithTypes(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Map(String, String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONAllPathsWithTypes(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
+│ {"a":"42"}                           │ {'a':'Int64'}                             │
+│ {"b":"Hello"}                        │ {'b':'String'}                            │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))','c':'Date'} │
+└──────────────────────────────────────┴───────────────────────────────────────────┘
+```
+
+### JSONDynamicPaths
+
+Returns the list of dynamic paths that are stored as separate subcolumns in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONDynamicPaths(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Array(String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONDynamicPaths(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONDynamicPaths(json)─┐
+| {"a":"42"}                           │ ['a']                  │
+│ {"b":"Hello"}                        │ []                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['a']                  │
+└──────────────────────────────────────┴────────────────────────┘
+```
+
+### JSONDynamicPathsWithTypes
+
+Returns the map of dynamic paths that are stored as separate subcolumns and their types in each row in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONAllPathsWithTypes(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Map(String, String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
+│ {"a":"42"}                           │ {'a':'Int64'}                   │
+│ {"b":"Hello"}                        │ {}                              │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'a':'Array(Nullable(Int64))'}  │
+└──────────────────────────────────────┴─────────────────────────────────┘
+```
+
+### JSONSharedDataPaths
+
+Returns the list of paths that are stored in shared data structure in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONSharedDataPaths(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Array(String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONSharedDataPaths(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONSharedDataPaths(json)─┐
+│ {"a":"42"}                           │ []                        │
+│ {"b":"Hello"}                        │ ['b']                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ ['c']                     │
+└──────────────────────────────────────┴───────────────────────────┘
+```
+
+### JSONSharedDataPathsWithTypes
+
+Returns the map of paths that are stored in shared data structure and their types in each row in [JSON](../data-types/newjson.md) column.
+
+**Syntax**
+
+``` sql
+JSONSharedDataPathsWithTypes(json)
+```
+
+**Arguments**
+
+- `json` — [JSON](../data-types/newjson.md).
+
+**Returned value**
+
+- An array of paths. [Map(String, String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
+INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
+SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
+```
+
+```text
+┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
+│ {"a":"42"}                           │ {}                                 │
+│ {"b":"Hello"}                        │ {'b':'String'}                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└──────────────────────────────────────┴────────────────────────────────────┘
 ```

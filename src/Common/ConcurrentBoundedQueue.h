@@ -243,7 +243,7 @@ public:
     }
 
     /// Clear and finish queue
-    void clearAndFinish()
+    void clearAndFinish() noexcept
     {
         {
             std::lock_guard lock(queue_mutex);

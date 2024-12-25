@@ -62,7 +62,7 @@ size_t getCompoundTypeDepth(const IDataType & type)
 }
 
 template <typename Collection>
-Block createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & block_types, bool transform_null_in)
+ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & block_types, bool transform_null_in)
 {
     assert(collection.size() == value_types.size());
     size_t columns_size = block_types.size();
@@ -99,7 +99,7 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
                 "Invalid type in set. Expected tuple, got {}",
                 value.getTypeName());
 
-        const auto & tuple = value.template get<const Tuple &>();
+        const auto & tuple = value.template safeGet<const Tuple &>();
         const DataTypePtr & value_type = value_types[collection_index];
         const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
@@ -132,16 +132,19 @@ Block createBlockFromCollection(const Collection & collection, const DataTypes& 
                 columns[i]->insert(tuple_values[i]);
     }
 
-    Block res;
+    ColumnsWithTypeAndName res(columns_size);
     for (size_t i = 0; i < columns_size; ++i)
-        res.insert(ColumnWithTypeAndName{std::move(columns[i]), block_types[i], "argument_" + toString(i)});
+    {
+        res[i].type = block_types[i];
+        res[i].column = std::move(columns[i]);
+    }
 
     return res;
 }
 
 }
 
-Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in)
+ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in)
 {
     DataTypes set_element_types = {expression_type};
     const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get());
@@ -158,7 +161,7 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
     size_t lhs_type_depth = getCompoundTypeDepth(*expression_type);
     size_t rhs_type_depth = getCompoundTypeDepth(*value_type);
 
-    Block result_block;
+    ColumnsWithTypeAndName result_block;
 
     if (lhs_type_depth == rhs_type_depth)
     {
@@ -175,15 +178,15 @@ Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const 
         if (rhs_which_type.isArray())
         {
             const DataTypeArray * value_array_type = assert_cast<const DataTypeArray *>(value_type.get());
-            size_t value_array_size = value.get<const Array &>().size();
+            size_t value_array_size = value.safeGet<const Array &>().size();
             DataTypes value_types(value_array_size, value_array_type->getNestedType());
-            result_block = createBlockFromCollection(value.get<const Array &>(), value_types, set_element_types, transform_null_in);
+            result_block = createBlockFromCollection(value.safeGet<const Array &>(), value_types, set_element_types, transform_null_in);
         }
         else if (rhs_which_type.isTuple())
         {
             const DataTypeTuple * value_tuple_type = assert_cast<const DataTypeTuple *>(value_type.get());
             const DataTypes & value_types = value_tuple_type->getElements();
-            result_block = createBlockFromCollection(value.get<const Tuple &>(), value_types, set_element_types, transform_null_in);
+            result_block = createBlockFromCollection(value.safeGet<const Tuple &>(), value_types, set_element_types, transform_null_in);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

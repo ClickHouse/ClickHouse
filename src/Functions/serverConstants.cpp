@@ -9,6 +9,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/ClickHouseRevision.h>
 
 #include <Poco/Environment.h>

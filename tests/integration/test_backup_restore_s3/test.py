@@ -1,10 +1,11 @@
+import os
+import uuid
 from typing import Dict
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-import uuid
-import os
-
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
@@ -17,6 +18,7 @@ node = cluster.add_instance(
         "configs/s3_settings.xml",
         "configs/blob_log.xml",
         "configs/remote_servers.xml",
+        "configs/query_log.xml",
     ],
     user_configs=[
         "configs/zookeeper_retries.xml",
@@ -775,3 +777,28 @@ def test_backup_to_s3_different_credentials():
 
     check_backup_restore(False)
     check_backup_restore(True)
+
+
+def test_backup_restore_system_tables_with_plain_rewritable_disk():
+    instance = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_destination = (
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    backup_query_id = uuid.uuid4().hex
+    instance.query(
+        f"BACKUP TABLE system.query_log TO {backup_destination}",
+        query_id=backup_query_id,
+    )
+    restore_query_id = uuid.uuid4().hex
+    instance.query("DROP TABLE IF EXISTS data_restored SYNC")
+    instance.query(
+        f"""
+        RESTORE TABLE system.query_log AS data_restored FROM {backup_destination};
+        """,
+        query_id=restore_query_id,
+    )
+    instance.query("DROP TABLE data_restored SYNC")

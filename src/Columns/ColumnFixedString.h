@@ -175,11 +175,16 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void reserve(size_t size) override
     {
         chars.reserve_exact(n * size);
+    }
+
+    size_t capacity() const override
+    {
+        return chars.capacity() / n;
     }
 
     void shrinkToFit() override

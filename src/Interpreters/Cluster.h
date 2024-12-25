@@ -114,6 +114,8 @@ public:
         UInt16 port{0};
         String user;
         String password;
+        String proto_send_chunked = "notchunked";
+        String proto_recv_chunked = "notchunked";
         String quota_key;
 
         /// For inter-server authorization
@@ -166,7 +168,7 @@ public:
         String toFullString(bool use_compact_format) const;
 
         /// Returns address with only shard index and replica index or full address without shard index and replica index
-        static Address fromFullString(const String & address_full_string);
+        static Address fromFullString(std::string_view full_string);
 
         /// Returns resolved address if it does resolve.
         std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;

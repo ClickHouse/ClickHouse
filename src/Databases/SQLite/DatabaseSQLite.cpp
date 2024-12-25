@@ -17,6 +17,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -198,8 +203,13 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
 
     const Settings & settings = getContext()->getSettingsRef();
 
-    auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-        static_cast<uint32_t>(settings.max_parser_depth), static_cast<uint32_t>(settings.max_parser_backtracks), throw_on_error);
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage,
+        table_storage_define,
+        true,
+        static_cast<uint32_t>(settings[Setting::max_parser_depth]),
+        static_cast<uint32_t>(settings[Setting::max_parser_backtracks]),
+        throw_on_error);
 
     return create_table_query;
 }
@@ -220,7 +230,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
     };
-    factory.registerDatabase("SQLite", create_fn);
+    factory.registerDatabase("SQLite", create_fn, {.supports_arguments = true});
 }
 }
 

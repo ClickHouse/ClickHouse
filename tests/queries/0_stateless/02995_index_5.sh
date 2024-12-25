@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
+# Tags: long, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-distributed-cache
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -39,6 +39,6 @@ WHERE a >= (round(pow(sipHash64(1, try), 1 / (3 + sipHash64(2, try) % 8))) AS a1
   AND c <= (c1 + round(pow(sipHash64(11, try), 1 / (3 + sipHash64(12, try) % 8))))::String
 HAVING count() > 0;
 "
-done | ${CLICKHOUSE_CLIENT} 
+done | ${CLICKHOUSE_CLIENT}
 
 ${CLICKHOUSE_CLIENT} "DROP TABLE test"

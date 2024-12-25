@@ -28,7 +28,6 @@ public:
     void consume(Chunk & chunk) override;
     void onStart() override;
     void onFinish() override;
-    void onCancel() override;
 
 private:
     StorageMergeTree & storage;

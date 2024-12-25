@@ -18,9 +18,7 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionBitSlice : public IFunction
@@ -40,28 +38,22 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const size_t number_of_arguments = arguments.size();
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
+            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
+        };
 
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                getName(), number_of_arguments);
+        FunctionArgumentDescriptors optional_args{
+            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
+        };
 
-        if (!isString(arguments[0]) && !isStringOrFixedString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        if (arguments[0]->onlyNull())
-            return arguments[0];
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        if (!isNativeNumber(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                arguments[1]->getName(), getName());
-
-        if (number_of_arguments == 3 && !isNativeNumber(arguments[2]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                arguments[2]->getName(), getName());
+        const auto & type = arguments[0].type;
+        if (type->onlyNull())
+            return type;
 
         return std::make_shared<DataTypeString>();
     }
@@ -92,18 +84,17 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
             return executeForSource(column_start, column_length, start_const, length_const, StringSource(*col), input_rows_count);
-        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+        if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, FixedStringSource(*col_fixed), input_rows_count);
-        else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+        if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, ConstSource<StringSource>(*col_const), input_rows_count);
-        else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
+        if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 
     template <class Source>

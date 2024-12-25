@@ -1,4 +1,4 @@
-add_compile_options($<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>)
+add_compile_options("$<$<OR:$<COMPILE_LANGUAGE:C>,$<COMPILE_LANGUAGE:CXX>>:${COVERAGE_FLAGS}>")
 
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
@@ -72,25 +72,42 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
+    set_source_files_properties(
+        Functions/IFunction.cpp
+        Functions/FunctionFactory.cpp
+        Functions/FunctionHelpers.cpp
+        Functions/FunctionsLogical.cpp
+        Functions/if.cpp
+        Functions/multiIf.cpp
+        Functions/multiMatchAny.cpp
+        Functions/checkHyperscanRegexp.cpp
+        Functions/CastOverloadResolver.cpp
+        Functions/FunctionsConversion.cpp
+        Functions/extractTimeZoneFromFunctionArguments.cpp
+        Functions/GatherUtils/createArraySource.cpp
+        Functions/GatherUtils/createValueSource.cpp
+        Functions/GatherUtils/createArraySink.cpp
+        Functions/GatherUtils/resizeConstantSize.cpp
+        Functions/GatherUtils/resizeDynamicSize.cpp
+        PROPERTIES COMPILE_FLAGS -g0)
+endif()
+
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
+add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
-add_headers_and_sources(clickhouse_compression Parsers)
-add_headers_and_sources(clickhouse_compression Core)
-#Included these specific files to avoid linking grpc
-add_glob(clickhouse_compression_headers Server/ServerType.h)
-add_glob(clickhouse_compression_sources Server/ServerType.cpp)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
-
 
 add_headers_and_sources(dbms Disks/IO)
 add_headers_and_sources(dbms Disks/ObjectStorages)
@@ -110,7 +127,10 @@ add_headers_and_sources(dbms Storages/ObjectStorage)
 add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
+add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
+
 add_library(clickhouse_hudi_queries
     src/Storages/ObjectStorage/DataLakes/HudiCOWQueries.cpp
     src/Storages/ObjectStorage/DataLakes/HudiMORQueries.cpp
@@ -119,6 +139,7 @@ add_library(clickhouse_hudi_queries
 target_link_libraries(clickhouse_hudi_queries PRIVATE dbms clickhouse_common_io)
 
 add_headers_and_sources(dbms Common/NamedCollections)
+add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -147,6 +168,8 @@ endif()
 if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
+
+add_headers_and_sources(dbms Databases/Iceberg)
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
@@ -181,7 +204,7 @@ add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (clickhouse_new_delete PRIVATE ch_contrib::jemalloc)
-    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::jemalloc)
     target_link_libraries (clickhouse_storages_system PRIVATE ch_contrib::jemalloc)
 endif()
 
@@ -204,7 +227,6 @@ add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
-add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
@@ -227,11 +249,13 @@ add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
+add_object_library(clickhouse_storages_mergetree_merge_selectors Storages/MergeTree/MergeSelectors)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
+add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
 add_object_library(clickhouse_client Client)
 # Always compile this file with the highest possible level of optimizations, even in Debug builds.
 # https://github.com/ClickHouse/ClickHouse/issues/65745
@@ -340,12 +364,6 @@ set_source_files_properties(
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
-if (ENABLE_QPL)
-    set_source_files_properties(
-            Compression/CompressionCodecDeflateQpl.cpp
-            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
-endif ()
-
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
@@ -358,8 +376,8 @@ target_link_libraries(clickhouse_common_io
             Poco::Foundation
 )
 
-if (TARGET ch_contrib::fiu)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::fiu)
+if (TARGET ch_contrib::libfiu)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::libfiu)
 endif()
 
 if (TARGET ch_contrib::cpuid)
@@ -408,6 +426,7 @@ dbms_target_link_libraries (
         boost::filesystem
         boost::program_options
         clickhouse_common_config
+        clickhouse_common_zookeeper_base
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         clickhouse_parsers
@@ -415,10 +434,24 @@ dbms_target_link_libraries (
         Poco::JSON
     PUBLIC
         boost::system
+        clickhouse_compression
         clickhouse_common_io
-        Poco::MongoDB
         Poco::Redis
 )
+
+if (USE_MONGODB)
+    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
+endif()
+
+if (TARGET ch_contrib::mongocxx)
+    dbms_target_link_libraries(
+        PUBLIC
+            ch_contrib::libbson
+            ch_contrib::libmongoc
+            ch_contrib::bsoncxx
+            ch_contrib::mongocxx
+    )
+endif ()
 
 if (TARGET ch::mysqlxx)
     dbms_target_link_libraries (PUBLIC ch::mysqlxx)
@@ -476,6 +509,7 @@ dbms_target_link_libraries (PUBLIC ch_contrib::sparsehash)
 
 if (TARGET ch_contrib::protobuf)
     dbms_target_link_libraries (PRIVATE ch_contrib::protobuf)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::protobuf)
 endif ()
 
 if (TARGET clickhouse_grpc_protos)
@@ -558,14 +592,6 @@ endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
-if (TARGET ch_contrib::qpl)
-    dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
-endif ()
-
-if (TARGET ch_contrib::accel-config)
-    dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
-endif ()
-
 if (TARGET ch_contrib::qatzstd_plugin)
     dbms_target_link_libraries(PUBLIC ch_contrib::qatzstd_plugin)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
@@ -606,10 +632,6 @@ endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
-if (TARGET ch_contrib::annoy)
-    dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
-endif()
-
 if (TARGET ch_contrib::usearch)
     dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
 endif()
@@ -621,6 +643,10 @@ endif()
 if (TARGET ch_rust::skim)
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
+endif()
+
+if (TARGET ch_contrib::google_cloud_cpp)
+    dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
 endif()
 
 if (ENABLE_TESTS)
@@ -646,6 +672,7 @@ if (ENABLE_TESTS)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
+        clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper
         hilite_comparator)

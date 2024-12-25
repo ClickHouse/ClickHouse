@@ -1,9 +1,10 @@
 import logging
-import helpers.s3_url_proxy_tests_util as proxy_util
+import os
 
 import pytest
+
+import helpers.s3_url_proxy_tests_util as proxy_util
 from helpers.cluster import ClickHouseCluster
-import os
 
 
 @pytest.fixture(scope="module")

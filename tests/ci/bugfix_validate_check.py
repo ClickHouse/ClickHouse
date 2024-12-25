@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import List, Sequence, Tuple
 
 from ci_config import CI
-from ci_utils import normalize_string
 from env_helper import TEMP_PATH
 from functional_test_check import NO_CHANGES_MSG
 from report import (
@@ -140,11 +139,20 @@ def main():
         jr = JobReport.load(from_file=report_file)
         additional_files.append(report_file)
         for file in set(jr.additional_files):
-            file_ = Path(file)
-            file_name = file_.name
-            file_name = file_name.replace(".", "__" + normalize_string(job_id) + ".", 1)
-            file_ = file_.rename(file_.parent / file_name)
-            additional_files.append(file_)
+            orig_file = Path(file)
+            file_name = orig_file.name
+            file_name = file_name.replace(
+                ".", "__" + CI.Utils.normalize_string(job_id) + ".", 1
+            )
+            new_file = orig_file.rename(orig_file.parent / file_name)
+            for tr in test_results:
+                if tr.log_files is None:
+                    continue
+                tr.log_files = [
+                    new_file if (Path(log_file) == orig_file) else Path(log_file)
+                    for log_file in tr.log_files
+                ]
+            additional_files.append(new_file)
 
     JobReport(
         description=description,

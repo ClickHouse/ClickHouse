@@ -123,13 +123,16 @@ void TimerDescriptor::drain() const
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot readlink for a timer_fd {}", timer_fd);
 
                 LOG_TRACE(log, "Received EINTR while trying to drain a TimerDescriptor, fd {}: {}", timer_fd, std::string_view(link_path, link_path_length));
+
+                /// Check that it's actually a timerfd.
+                chassert(std::string_view(link_path, link_path_length).contains("timerfd"));
                 continue;
             }
 
             throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot drain timer_fd {}", timer_fd);
         }
 
-        chassert(res == sizeof(buf));
+        chassert(res == sizeof(buf));  /// NOLINT(bugprone-sizeof-expression)
     }
 }
 

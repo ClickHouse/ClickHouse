@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <compatibility>24.7</compatibility>
+        </default>
+    </profiles>
+</clickhouse>

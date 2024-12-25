@@ -24,7 +24,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
         if (literal->value.getType() == Field::Types::Int64 ||
             literal->value.getType() == Field::Types::UInt64)
         {
-            value = literal->value.get<Int64>();
+            value = literal->value.safeGet<Int64>();
             return true;
         }
         if (literal->value.getType() == Field::Types::Null)
@@ -51,7 +51,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
                 {
                     if (type_literal->value.getType() == Field::Types::String)
                     {
-                        const auto & type_str = type_literal->value.get<std::string>();
+                        const auto & type_str = type_literal->value.safeGet<std::string>();
                         if (type_str == "UInt8" || type_str == "Nullable(UInt8)")
                             return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
                     }

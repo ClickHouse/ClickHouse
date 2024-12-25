@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
-import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from os.path import join, dirname, realpath
 import time
-import helpers.keeper_utils as ku
 import typing as tp
+from os.path import dirname, join, realpath
+
+import pytest
+
+import helpers.keeper_utils as ku
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = join(dirname(realpath(__file__)), "configs")

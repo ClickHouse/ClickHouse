@@ -35,7 +35,7 @@ struct PrewhereExprStep
     bool remove_filter_column = false;
     bool need_filter = false;
 
-    /// Some PREWHERE steps should be executed without conversions.
+    /// Some PREWHERE steps should be executed without conversions (e.g. early mutation steps)
     /// A step without alter conversion cannot be executed after step with alter conversions.
     bool perform_alter_conversions = false;
 };
