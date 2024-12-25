@@ -114,7 +114,7 @@ public:
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
 
-    void flush() override
+    void flushImpl() override
     {
         need_flush = true;
     }
@@ -128,12 +128,6 @@ public:
     void onCancel() noexcept override
     {
         finishAndWait();
-    }
-
-    void onProgress(const Progress & value) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.progress.incrementPiecewiseAtomically(value);
     }
 
     void writeSuffix() override

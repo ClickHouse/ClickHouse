@@ -131,7 +131,7 @@ void MySQLOutputFormat::finalizeImpl()
     }
 }
 
-void MySQLOutputFormat::flush()
+void MySQLOutputFormat::flushImpl()
 {
     packet_endpoint->out->next();
 }

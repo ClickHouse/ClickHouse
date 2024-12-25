@@ -3,6 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 
+
 namespace DB
 {
     void ParallelFormattingOutputFormat::finalizeImpl()
