@@ -77,6 +77,21 @@ CATEGORY_TO_LABEL = {
 }
 
 
+def normalize_category(cat: str) -> str:
+    """Drop everything after open parenthesis, drop leading/trailing whitespaces, normalize case"""
+    pos = cat.find("(")
+
+    result = cat[:pos] if pos != -1 else cat
+    return result.strip().casefold()
+
+
+CATEGORIES_FOLD = [
+    normalize_category(c)
+    for lb, categories in LABEL_CATEGORIES.items()
+    for c in categories
+]
+
+
 def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
     """The function checks the body to being properly formatted according to
     .github/PULL_REQUEST_TEMPLATE.md, if the first returned string is not empty,
@@ -145,7 +160,7 @@ def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
     # Filter out the PR categories that are not for changelog.
     elif "(changelog entry is not required)" in category:
         pass  # to not check the rest of the conditions
-    elif category not in CATEGORY_TO_LABEL:
+    elif normalize_category(category) not in CATEGORIES_FOLD:
         description_error, category = f"Category '{category}' is not valid", ""
     elif not entry:
         description_error = f"Changelog entry required for category '{category}'"
