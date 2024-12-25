@@ -291,8 +291,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     auto json_str = oss.str();
     if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(json_str.data()), json_str.size()))
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization of the JSON are not valaid utf8 string. Probably non-utf8 character was used in the schema."
-                        "The serialization string: {}", json_str);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON serialization failed because the string is not valid UTF-8. There are probably non-UTF-8 characters in the schema.");
     }
     writeString(json_str, out);
 }

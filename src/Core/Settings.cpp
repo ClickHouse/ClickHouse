@@ -857,9 +857,6 @@ The threshold for `totals_mode = 'auto'`.
 See the section “WITH TOTALS modifier”.
 )", 0) \
     \
-    DECLARE(Bool, use_non_utf8_chars_in_schema, false, R"(
-Allow using non utf8 chars in data schema. For testing purposes only, enabling this option in a production environment may result in data loss.
-    )", 0) \
     DECLARE(Bool, allow_suspicious_low_cardinality_types, false, R"(
 Allows or restricts using [LowCardinality](../../sql-reference/data-types/lowcardinality.md) with data types with fixed size of 8 bytes or less: numeric data types and `FixedString(8_bytes_or_less)`.
 

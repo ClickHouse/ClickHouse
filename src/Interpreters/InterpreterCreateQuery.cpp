@@ -144,7 +144,6 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
-    extern const SettingsBool use_non_utf8_chars_in_schema;
 }
 
 namespace ServerSetting
@@ -1053,18 +1052,20 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     /// Check for duplicates and uft8 format.
     std::set<String> all_columns;
 
-    const auto & settings = getContext()->getSettingsRef();
+    /// Allow using non utf8 chars in data schema. For testing purposes only, enabling this option in a production environment may result in data loss.
+    auto use_non_utf8_chars_in_schema = getContext()->getConfigRef().getBool("use_non_utf8_chars_in_schema", false);
     for (const auto & column : properties.columns)
     {
         if (!all_columns.emplace(column.name).second)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
 
-        if (!settings[Setting::use_non_utf8_chars_in_schema] && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(column.name.data()), column.name.size()))
+        if (!use_non_utf8_chars_in_schema && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(column.name.data()), column.name.size()))
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Column name contains non-utf8 characters.");
         }
     }
 
+    const auto & settings = getContext()->getSettingsRef();
     /// If it's not attach and not materialized view to existing table,
     /// we need to validate data types (check for experimental or suspicious types).
     if (!create.attach && !create.is_materialized_view)
