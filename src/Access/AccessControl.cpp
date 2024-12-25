@@ -616,11 +616,17 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// Better exception message for usability.
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
         if (credentials.getUserName().empty() || credentials.getUserName() == "default")
-            message << "\n\n"
-                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
-                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
-                << "and deleting this file will reset the password.\n"
-                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
+            message << R"(
+
+If you use ClickHouse Cloud, the password can be reset at https://clickhouse.cloud/
+on the settings page for the corresponding service.
+
+If you have installed ClickHouse and forgot password you can reset it in the configuration file.
+The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml
+and deleting this file will reset the password.
+See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.
+
+)";
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
         /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
