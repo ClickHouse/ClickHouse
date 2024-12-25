@@ -197,6 +197,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference];
     format_settings.parquet.output_string_as_string = settings[Setting::output_format_parquet_string_as_string];
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_parquet_fixed_string_as_fixed_byte_array];
+    format_settings.parquet.output_datetime_as_uint32 = settings[Setting::output_format_parquet_datetime_as_uint32];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -251,6 +252,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.values.deduce_templates_of_expressions = settings[Setting::input_format_values_deduce_templates_of_expressions];
     format_settings.values.interpret_expressions = settings[Setting::input_format_values_interpret_expressions];
     format_settings.values.escape_quote_with_quote = settings[Setting::output_format_values_escape_quote_with_quote];
+    format_settings.composed_data_type_output_format_mode = settings[Setting::composed_data_type_output_format_mode];
     format_settings.with_names_use_header = settings[Setting::input_format_with_names_use_header];
     format_settings.with_types_use_header = settings[Setting::input_format_with_types_use_header];
     format_settings.write_statistics = settings[Setting::output_format_write_statistics];

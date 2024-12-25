@@ -30,18 +30,10 @@ TRUSTED_CONTRIBUTORS = {
         "amosbird",
         "azat",  # SEMRush
         "bharatnc",  # Many contributions.
-        "cwurm",  # ClickHouse, Inc
         "den-crane",  # Documentation contributor
-        "ildus",  # adjust, ex-pgpro
-        "nvartolomei",  # Seasoned contributor, CloudFlare
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
-        "thomoco",  # ClickHouse, Inc
         "tonickkozlov",  # Cloudflare
-        "tylerhannan",  # ClickHouse, Inc
-        "tsolodov",  # ClickHouse, Inc
-        "justindeguzman",  # ClickHouse, Inc
-        "XuJia0210",  # ClickHouse, Inc
     ]
 }
 

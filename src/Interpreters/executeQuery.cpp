@@ -163,6 +163,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
+    extern const SettingsMap http_response_headers;
 }
 
 namespace ErrorCodes
@@ -179,6 +180,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace FailPoints
@@ -1107,9 +1109,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (settings[Setting::enforce_strict_identifier_format])
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
+            IAST::FormatSettings enforce_strict_identifier_format_settings(true);
             enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-            ast->format(enforce_strict_identifier_format_settings);
+            ast->format(buf, enforce_strict_identifier_format_settings);
         }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
@@ -1602,11 +1604,11 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        String format_name = ast_query_with_output->format
-                ? getIdentifierName(ast_query_with_output->format)
+        String format_name = ast_query_with_output->format_ast
+                ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
-        if (format_name == "Null")
+        if (boost::iequals(format_name, "Null"))
             res.null_format = true;
     }
 
@@ -1750,6 +1752,33 @@ void executeQuery(
     /// But `session_timezone` setting could be modified in the query itself, so we update the value.
     result_details.timezone = DateLUT::instance().getTimeZone();
 
+    const Map & additional_http_headers = context->getSettingsRef()[Setting::http_response_headers].value;
+    if (!additional_http_headers.empty())
+    {
+        for (const auto & key_value : additional_http_headers)
+        {
+            if (key_value.getType() != Field::Types::Tuple
+                || key_value.safeGet<Tuple>().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the `additional_http_headers` setting must be a Map");
+
+            if (key_value.safeGet<Tuple>().at(0).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys of the `additional_http_headers` setting must be Strings");
+
+            if (key_value.safeGet<Tuple>().at(1).getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` setting must be Strings");
+
+            String key = key_value.safeGet<Tuple>().at(0).safeGet<String>();
+            String value = key_value.safeGet<Tuple>().at(1).safeGet<String>();
+
+            if (std::find_if(key.begin(), key.end(), isControlASCII) != key.end()
+                || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` cannot contain ASCII control characters");
+
+            if (!result_details.additional_headers.emplace(key, value).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `additional_http_headers` setting");
+        }
+    }
+
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
@@ -1786,8 +1815,8 @@ void executeQuery(
                     /* zstd_window_log = */ static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
             }
 
-            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                                    ? getIdentifierName(ast_query_with_output->format)
+            format_name = ast_query_with_output && (ast_query_with_output->format_ast != nullptr)
+                                    ? getIdentifierName(ast_query_with_output->format_ast)
                                     : context->getDefaultFormat();
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
