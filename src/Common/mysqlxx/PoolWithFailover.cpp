@@ -17,30 +17,33 @@ namespace DB::ErrorCodes
 
 using namespace mysqlxx;
 
-auto connectionReistablisher(std::weak_ptr<Pool> pool)
+auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
 {
-    return [weak_pool = pool](UInt64 interval_milliseconds)
+    return [weak_pool = pool, shareable](UInt64 interval_milliseconds)
     {
         auto shared_pool = weak_pool.lock();
         if (!shared_pool)
             return false;
+
+        if (shareable && shared_pool.use_count() == 2)
+            return true;
 
         if (!shared_pool->isOnline())
         {
             try
             {
                 shared_pool->get();
-                Poco::Util::Application::instance().logger().information("Reistablishing connection to " + shared_pool->getDescription() + " has succeeded.");
+                Poco::Util::Application::instance().logger().information("Reestablishing connection to " + shared_pool->getDescription() + " has succeeded.");
             }
             catch (const Poco::Exception & e)
             {
                 if (interval_milliseconds >= 1000)
-                    Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
+                    Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
             }
             catch (...)
             {
                 if (interval_milliseconds >= 1000)
-                    Poco::Util::Application::instance().logger().warning("Reistablishing connection to " + shared_pool->getDescription() + " has failed.");
+                    Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed.");
             }
         }
 
@@ -77,7 +80,7 @@ PoolWithFailover::PoolWithFailover(
                     std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
 
                 if (bg_reconnect)
-                    DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[priority].back())));
+                    DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[priority].back()), shareable));
             }
         }
 
@@ -96,7 +99,7 @@ PoolWithFailover::PoolWithFailover(
         replicas_by_priority[0].emplace_back(
             std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
         if (bg_reconnect)
-            DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[0].back())));
+            DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }
 
 }
@@ -141,7 +144,7 @@ PoolWithFailover::PoolWithFailover(
             default_connections_,
             max_connections_));
         if (bg_reconnect)
-            DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_by_priority[0].back())));
+            DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_by_priority[0].back()), shareable));
     }
 
 }
@@ -167,7 +170,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
             {
                 replicas.emplace_back(std::make_shared<Pool>(*pool));
                 if (bg_reconnect)
-                    DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas.back())));
+                    DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas.back()), shareable));
             }
             replicas_by_priority.emplace(priority_replicas.first, std::move(replicas));
         }
