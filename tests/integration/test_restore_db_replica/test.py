@@ -330,6 +330,9 @@ def test_query_after_restore_db_replica(
         node_1.query(f"DROP TABLE repl_db.{exists_table} SYNC")
     node_1.query(f"DROP TABLE repl_db.{changed_table} SYNC")
 
+    assert ["0"] == node_1.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+    assert ["0"] == node_2.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+
 
 @pytest.mark.parametrize(
     "restore_firstly_node_where_created",
@@ -350,11 +353,6 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 ):
     test_table_1 = "test_table_1"
     test_table_2 = "test_table_2"
-
-    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
-    node_2.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
-    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_2} SYNC")
-    node_2.query(f"DROP TABLE IF EXISTS repl_db.{test_table_2} SYNC")
 
     zk = cluster.get_kazoo_client("zoo1")
 
@@ -417,3 +415,32 @@ def test_restore_db_replica_with_diffrent_table_metadata(
         assert detached_broken_tables[0].startswith(f"{test_table_2}_")
 
         assert [f"{count_test_table_2}"] == node_2.query(f"SELECT count(*) FROM repl_db_broken_replicated_tables.{detached_broken_tables[0]}").split()
+
+        node_2.query("DROP DATABASE repl_db_broken_tables SYNC")
+        node_2.query("DROP DATABASE repl_db_broken_replicated_tables SYNC")
+
+    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
+    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_2} SYNC")
+    
+    assert ["0"] == node_1.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+    assert ["0"] == node_2.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+
+
+def test_failed_restore_db_replica_on_normal_replica(
+    start_cluster,
+):
+    test_table = "test_table_normal_replica"
+
+    count_test_table = 100
+
+    create_table(node_1, test_table)
+    fill_table(node_1, test_table, count_test_table)
+
+    assert "Replica node '/clickhouse/repl_db/replicas/shard1|replica1/digest' in ZooKeeper already exists" in node_1.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
+
+    assert "Replica node '/clickhouse/repl_db/replicas/shard1|replica2/digest' in ZooKeeper already exists" in node_2.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
+
+    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table} SYNC")
+
+    assert ["0"] == node_1.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+    assert ["0"] == node_2.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
