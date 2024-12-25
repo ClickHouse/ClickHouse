@@ -93,6 +93,9 @@ struct AccessRightsElement
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
+    /// Checks if the current access type is deprecated and replaces it with the correct one.
+    void replaceDeprecated();
+
     bool isGlobalWithParameter() const { return access_flags.isGlobalWithParameter(); }
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".

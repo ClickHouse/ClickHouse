@@ -78,7 +78,7 @@ void registerStorageS3Queue(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessType::S3,
+            .source_access_type = AccessTypeObjects::Source::S3,
         });
 }
 #endif
@@ -95,7 +95,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessType::AZURE,
+            .source_access_type = AccessTypeObjects::Source::AZURE,
         });
 }
 #endif

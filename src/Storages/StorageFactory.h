@@ -68,7 +68,7 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
-        AccessType source_access_type = AccessType::NONE;
+        std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -101,7 +101,7 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
-        .source_access_type = AccessType::NONE,
+        .source_access_type = std::nullopt,
     });
 
     const Storages & getAllStorages() const
@@ -127,7 +127,7 @@ public:
         return result;
     }
 
-    AccessType getSourceAccessType(const String & table_engine) const;
+    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 
