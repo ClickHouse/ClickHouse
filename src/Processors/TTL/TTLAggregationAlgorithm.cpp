@@ -12,6 +12,7 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_chunk_bytes_for_parallel_parsing;
@@ -44,12 +45,12 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     Aggregator::Params params(
         keys,
         aggregates,
-        false,
+        /*overflow_row_=*/ false,
         settings[Setting::max_rows_to_group_by],
         settings[Setting::group_by_overflow_mode],
         /*group_by_two_level_threshold*/ 0,
         /*group_by_two_level_threshold_bytes*/ 0,
-        settings[Setting::max_bytes_before_external_group_by],
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set],
         storage_.getContext()->getTempDataOnDisk(),
         settings[Setting::max_threads],
@@ -61,7 +62,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_chunk_bytes_for_parallel_parsing],
-        /*stats_collecting_params=*/{});
+        /*stats_collecting_params_=*/{});
 
     aggregator = std::make_unique<Aggregator>(header, params);
 

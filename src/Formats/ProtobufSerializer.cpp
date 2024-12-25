@@ -227,33 +227,33 @@ namespace
         template <typename NumberType>
         void writeInt(NumberType value)
         {
-            auto casted = castNumber<Int64>(value);
-            if (casted != 0 || !skip_zero_or_empty)
-                writer->writeInt(field_tag, casted);
+            auto cast = castNumber<Int64>(value);
+            if (cast != 0 || !skip_zero_or_empty)
+                writer->writeInt(field_tag, cast);
         }
 
         template <typename NumberType>
         void writeSInt(NumberType value)
         {
-            auto casted = castNumber<Int64>(value);
-            if (casted != 0 || !skip_zero_or_empty)
-                writer->writeSInt(field_tag, casted);
+            auto cast = castNumber<Int64>(value);
+            if (cast != 0 || !skip_zero_or_empty)
+                writer->writeSInt(field_tag, cast);
         }
 
         template <typename NumberType>
         void writeUInt(NumberType value)
         {
-            auto casted = castNumber<UInt64>(value);
-            if (casted != 0 || !skip_zero_or_empty)
-                writer->writeUInt(field_tag, casted);
+            auto cast = castNumber<UInt64>(value);
+            if (cast != 0 || !skip_zero_or_empty)
+                writer->writeUInt(field_tag, cast);
         }
 
         template <typename FieldType, typename NumberType>
         void writeFixed(NumberType value)
         {
-            auto casted = castNumber<FieldType>(value);
-            if (casted != 0 || !skip_zero_or_empty)
-                writer->writeFixed(field_tag, casted);
+            auto cast = castNumber<FieldType>(value);
+            if (cast != 0 || !skip_zero_or_empty)
+                writer->writeFixed(field_tag, cast);
         }
 
         Int64 readInt() { return reader->readInt(); }

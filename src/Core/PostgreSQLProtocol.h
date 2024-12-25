@@ -7,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
 #include <Common/logger_useful.h>
-#include <Poco/Format.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include "Types.h"
