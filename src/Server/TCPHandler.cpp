@@ -82,7 +82,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool allow_suspicious_codecs;
@@ -2139,8 +2139,8 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
     /// We have to disable it for ourselves to make sure we don't have different settings on
     /// different servers.
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
-        && !passed_settings[Setting::allow_experimental_analyzer].changed)
-        passed_settings.set("allow_experimental_analyzer", false);
+        && !passed_settings[Setting::enable_analyzer].changed)
+        passed_settings.set("enable_analyzer", false);
 
     auto settings_changes = passed_settings.changes();
     query_kind = state->query_context->getClientInfo().query_kind;

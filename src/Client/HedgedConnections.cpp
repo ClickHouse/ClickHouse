@@ -17,7 +17,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsDialect dialect;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
@@ -216,7 +216,7 @@ void HedgedConnections::sendQuery(
         /// Make the analyzer being set, so it will be effectively applied on the remote server.
         /// In other words, the initiator always controls whether the analyzer enabled or not for
         /// all servers involved in the distributed query processing.
-        modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+        modified_settings.set("enable_analyzer", static_cast<bool>(modified_settings[Setting::enable_analyzer]));
 
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});

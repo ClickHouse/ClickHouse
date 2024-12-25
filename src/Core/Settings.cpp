@@ -5735,9 +5735,9 @@ Build local plan for local replica
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
     \
-    DECLARE(Bool, allow_experimental_analyzer, true, R"(
+    DECLARE(Bool, enable_analyzer, true, R"(
 Allow new query analyzer.
-)", IMPORTANT) ALIAS(enable_analyzer) \
+)", IMPORTANT) ALIAS(allow_experimental_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
 )", 0) \
