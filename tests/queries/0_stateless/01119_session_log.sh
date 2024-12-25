@@ -16,12 +16,12 @@ and event_time >= now() - interval 5 minute"
 
 $CLICKHOUSE_CLIENT -m -q "
 select * from remote('127.0.0.2', system, one, 'default', '');
-select * from remote('127.0.0.2', system, one, 'default', 'wrong password'); -- { serverError AUTHENTICATION_FAILED }
-select * from remote('127.0.0.2', system, one, 'nonexistsnt_user_1119', ''); -- { serverError AUTHENTICATION_FAILED }
+select * from remote('127.0.0.2', system, one, 'default', 'wrong password'); -- { serverError REQUIRED_PASSWORD }
+select * from remote('127.0.0.2', system, one, 'nonexistsnt_user_1119', ''); -- { serverError REQUIRED_PASSWORD }
 set receive_timeout=1;
 select * from remote('127.0.0.2', system, one, ' INTERSERVER SECRET ', ''); -- { serverError NO_REMOTE_SHARD_AVAILABLE }
 set receive_timeout=300;
-select * from remote('127.0.0.2', system, one, '   ', ''); -- { serverError AUTHENTICATION_FAILED }
+select * from remote('127.0.0.2', system, one, '   ', ''); -- { serverError REQUIRED_PASSWORD }
 
 select * from url('http://127.0.0.1:8123/?query=select+1&user=default', LineAsString, 's String');
 select * from url('http://127.0.0.1:8123/?query=select+1&user=default&password=wrong', LineAsString, 's String'); -- { serverError RECEIVED_ERROR_FROM_REMOTE_IO_SERVER }
