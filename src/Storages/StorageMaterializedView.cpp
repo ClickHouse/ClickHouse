@@ -44,7 +44,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
@@ -559,7 +559,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     insert_query->table_id = target_table;
 
     Block header;
-    if (refresh_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (refresh_context->getSettingsRef()[Setting::enable_analyzer])
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
     else
         header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();

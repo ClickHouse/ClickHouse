@@ -18,7 +18,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace ErrorCodes
@@ -145,7 +145,7 @@ Block getHeaderForProcessingStage(
 
             Block result;
 
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (context->getSettingsRef()[Setting::enable_analyzer])
             {
                 auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
                                                                                         storage_snapshot->getAllColumnsDescription(),

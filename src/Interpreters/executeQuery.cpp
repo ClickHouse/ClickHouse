@@ -103,7 +103,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
@@ -778,10 +778,10 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 
         if (auto * set_query = node->as<ASTSetQuery>())
         {
-            if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
+            if (auto * value = set_query->changes.tryGet("enable_analyzer"))
             {
                 if (top_level != value->safeGet<bool>())
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
+                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
             }
 
             if (auto * value = set_query->changes.tryGet("enable_analyzer"))
@@ -1036,7 +1036,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
         InterpreterSetQuery::applySettingsFromQuery(ast, context);
-        validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
+        validateAnalyzerSettings(ast, settings[Setting::enable_analyzer]);
 
         if (settings[Setting::enforce_strict_identifier_format])
         {

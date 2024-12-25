@@ -34,7 +34,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool optimize_read_in_window_order;
@@ -1311,7 +1311,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
     auto context = read_from_merge_tree->getContext();
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::optimize_read_in_window_order] || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
-        || context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        || context->getSettingsRef()[Setting::enable_analyzer])
     {
         return 0;
     }

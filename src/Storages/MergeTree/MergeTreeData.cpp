@@ -161,7 +161,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_experimental_full_text_index;
     extern const SettingsBool allow_experimental_inverted_index;
     extern const SettingsBool allow_experimental_vector_similarity_index;
@@ -7473,7 +7473,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     SelectQueryInfo &) const
 {
     /// with new analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
-    if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (!query_context->getSettingsRef()[Setting::enable_analyzer])
     {
         const auto & settings = query_context->getSettingsRef();
         if (query_context->canUseParallelReplicasCustomKey())

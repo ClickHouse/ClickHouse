@@ -55,7 +55,7 @@ COMMENT 'this is a Executable table';
 
 SET allow_experimental_window_view = 1;
 -- New analyzer doesn't support WindowView tables
-SET allow_experimental_analyzer = 0;
+SET enable_analyzer = 0;
 
 CREATE WINDOW VIEW t7
 (
@@ -67,7 +67,7 @@ AS SELECT 1
 GROUP BY tumble(now(), toIntervalDay('1'))
 COMMENT 'this is a WindowView table';
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT
     name,

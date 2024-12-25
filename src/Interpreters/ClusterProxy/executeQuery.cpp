@@ -36,7 +36,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
@@ -340,7 +340,7 @@ void executeQuery(
 
     const size_t shards = cluster->getShardCount();
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
     {
         for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
         {
@@ -590,7 +590,7 @@ void executeQueryWithParallelReplicas(
         pools_to_use.emplace_back(std::move(pool.pool));
 
     /// do not build local plan for distributed queries for now (address it later)
-    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan] && !shard_num)
+    if (settings[Setting::enable_analyzer] && settings[Setting::parallel_replicas_local_plan] && !shard_num)
     {
         /// find local replica index in pool
         std::optional<size_t> local_replica_index;
@@ -745,7 +745,7 @@ void executeQueryWithParallelReplicasCustomKey(
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef()[Setting::enable_analyzer])
             return;
 
         Pipe pipe(std::make_shared<NullSource>(header));

@@ -26,7 +26,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace ErrorCodes
@@ -37,7 +37,7 @@ namespace ErrorCodes
 namespace
 {
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, bool allow_experimental_analyzer, bool legacy = false)
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, bool enable_analyzer, bool legacy = false)
 {
     switch (node.type)
     {
@@ -49,18 +49,18 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             /// If it was created from ASTLiteral, then result_name can be an alias.
             /// We need to convert value back to string here.
             const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
-            if (column_const && !allow_experimental_analyzer)
+            if (column_const && !enable_analyzer)
                 writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
             else
                 writeString(node.result_name, out);
             break;
         }
         case ActionsDAG::ActionType::ALIAS:
-            appendColumnNameWithoutAlias(*node.children.front(), out, allow_experimental_analyzer, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, enable_analyzer, legacy);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
             writeCString("arrayJoin(", out);
-            appendColumnNameWithoutAlias(*node.children.front(), out, allow_experimental_analyzer, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, enable_analyzer, legacy);
             writeChar(')', out);
             break;
         case ActionsDAG::ActionType::FUNCTION:
@@ -79,17 +79,17 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     writeCString(", ", out);
                 first = false;
 
-                appendColumnNameWithoutAlias(*arg, out, allow_experimental_analyzer, legacy);
+                appendColumnNameWithoutAlias(*arg, out, enable_analyzer, legacy);
             }
             writeChar(')', out);
         }
     }
 }
 
-String getColumnNameWithoutAlias(const ActionsDAG::Node & node, bool allow_experimental_analyzer, bool legacy = false)
+String getColumnNameWithoutAlias(const ActionsDAG::Node & node, bool enable_analyzer, bool legacy = false)
 {
     WriteBufferFromOwnString out;
-    appendColumnNameWithoutAlias(node, out, allow_experimental_analyzer, legacy);
+    appendColumnNameWithoutAlias(node, out, enable_analyzer, legacy);
 
     return std::move(out.str());
 }
@@ -135,7 +135,7 @@ std::string RPNBuilderTreeNode::getColumnName() const
     if (ast_node)
         return ast_node->getColumnNameWithoutAlias();
 
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings()[Setting::allow_experimental_analyzer]);
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings()[Setting::enable_analyzer]);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
@@ -147,7 +147,7 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
         return adjusted_ast->getColumnNameWithoutAlias();
     }
 
-    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings()[Setting::allow_experimental_analyzer], true /*legacy*/);
+    return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings()[Setting::enable_analyzer], true /*legacy*/);
 }
 
 bool RPNBuilderTreeNode::isFunction() const

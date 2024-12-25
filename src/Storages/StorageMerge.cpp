@@ -70,7 +70,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
 }
@@ -382,7 +382,7 @@ void StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage == QueryProcessingStage::Complete)
+    if (local_context->getSettingsRef()[Setting::enable_analyzer] && processed_stage == QueryProcessingStage::Complete)
     {
         /// Remove constants.
         /// For StorageDistributed some functions like `hostName` that are constants only for local queries.
@@ -602,7 +602,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         auto modified_query_info
             = getModifiedQueryInfo(modified_context, table, nested_storage_snaphsot, real_column_names, column_names_as_aliases, aliases);
 
-        if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (!context->getSettingsRef()[Setting::enable_analyzer])
         {
             auto storage_columns = storage_metadata_snapshot->getColumns();
             auto syntax_result = TreeRewriter(context).analyzeSelect(
@@ -1064,7 +1064,7 @@ void ReadFromMerge::addVirtualColumns(
 
     Block plan_header = child.plan.getCurrentHeader();
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (context->getSettingsRef()[Setting::enable_analyzer])
     {
         String table_alias = modified_query_info.query_tree->as<QueryNode>()->getJoinTree()->as<TableNode>()->getAlias();
 
@@ -1145,7 +1145,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         return builder;
 
     if (processed_stage > child.stage
-        || (context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage != QueryProcessingStage::FetchColumns))
+        || (context->getSettingsRef()[Setting::enable_analyzer] && processed_stage != QueryProcessingStage::FetchColumns))
     {
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -1179,7 +1179,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_select.setFinal();
     }
 
-    bool use_analyzer = modified_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    bool use_analyzer = modified_context->getSettingsRef()[Setting::enable_analyzer];
 
     auto storage_stage = storage->getQueryProcessingStage(modified_context,
         processed_stage,
@@ -1489,7 +1489,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto storage_sample_block = snapshot->metadata->getSampleBlock();
     auto pipe_columns = before_block_header.getNamesAndTypesList();
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (local_context->getSettingsRef()[Setting::enable_analyzer])
     {
         for (const auto & alias : aliases)
         {
@@ -1532,7 +1532,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+    if (local_context->getSettingsRef()[Setting::enable_analyzer]
         && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 

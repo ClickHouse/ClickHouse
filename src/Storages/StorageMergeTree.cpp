@@ -45,7 +45,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -246,7 +246,7 @@ void StorageMergeTree::read(
     const auto & settings = local_context->getSettingsRef();
     /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
     if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
-        && !settings[Setting::allow_experimental_analyzer])
+        && !settings[Setting::enable_analyzer])
     {
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
@@ -254,7 +254,7 @@ void StorageMergeTree::read(
     }
 
     if (local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
-        && !settings[Setting::allow_experimental_analyzer] && local_context->getClientInfo().distributed_depth == 0)
+        && !settings[Setting::enable_analyzer] && local_context->getClientInfo().distributed_depth == 0)
     {
         auto cluster = local_context->getClusterForParallelReplicas();
         if (local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))

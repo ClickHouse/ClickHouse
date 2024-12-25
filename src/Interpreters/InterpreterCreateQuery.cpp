@@ -108,7 +108,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_mysql;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
@@ -981,7 +981,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         Block as_select_sample;
 
-        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (getContext()->getSettingsRef()[Setting::enable_analyzer])
         {
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
         }
@@ -1122,7 +1122,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
     {
         try
         {
-            if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (getContext()->getSettingsRef()[Setting::enable_analyzer])
             {
                 input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
             }
