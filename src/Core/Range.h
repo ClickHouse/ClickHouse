@@ -38,11 +38,10 @@ struct FieldRef : public Field
     size_t column_idx = 0;
 };
 
-/** Range with open or closed ends; possibly unbounded.
- */
+/// Range with open or closed ends; possibly unbounded.
 struct Range;
-/** A serious of range who can overlap or non-overlap.
- */
+
+/// A series of ranges which may overlap.
 using Ranges = std::vector<Range>;
 
 /** Range with open or closed ends; possibly unbounded.
