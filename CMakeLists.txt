@@ -272,6 +272,10 @@ else ()
     set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
 endif ()
 
+if (COMPILER_CACHE STREQUAL "chcache")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+endif()
+
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
 if (ENABLE_BUILD_PATH_MAPPING)
@@ -467,6 +471,9 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
+# Ensure that we always use the dummy launchers for our own code.
+set_dummy_launchers_if_needed()
+
 if (NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
 endif ()
@@ -596,8 +603,6 @@ endif()
 include (cmake/sanitize_targets.cmake)
 
 if (COMPILER_CACHE STREQUAL "chcache")
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
-
     get_all_targets(all_targets)
     set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
     foreach(target ${all_targets})
