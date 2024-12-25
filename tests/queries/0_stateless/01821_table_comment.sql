@@ -63,4 +63,3 @@ WHERE name IN ('t1', 't2', 't3', 't4', 't5', 't6')
 SHOW CREATE TABLE t1;
 
 DROP TABLE t1, t2, t3, t4, t5, t6;
-DROP VIEW t7;
