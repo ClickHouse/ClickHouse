@@ -50,6 +50,8 @@
 
 #include <Poco/Util/Application.h>
 
+#include "config.h"
+
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -527,7 +529,7 @@ void Client::connect()
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
-#ifndef CLICKHOUSE_CLOUD
+#if not CLICKHOUSE_CLOUD
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
 

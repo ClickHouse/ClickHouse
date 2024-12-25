@@ -63,7 +63,7 @@
 * Remove the `allow_experimental_join_condition` setting, allowing non-equi conditions by default. [#69910](https://github.com/ClickHouse/ClickHouse/pull/69910) ([Vladimir Cherkasov](https://github.com/vdimir)).
 * Settings from server config (users.xml) now apply on the client too. Useful for format settings, e.g. `date_time_output_format`. [#71178](https://github.com/ClickHouse/ClickHouse/pull/71178) ([Michael Kolupaev](https://github.com/al13n321)).
 * Automatic `GROUP BY`/`ORDER BY` to disk based on the server/user memory usage. Controlled with `max_bytes_ratio_before_external_group_by`/`max_bytes_ratio_before_external_sort` query settings. [#71406](https://github.com/ClickHouse/ClickHouse/pull/71406) ([Azat Khuzhin](https://github.com/azat)).
-* Adding a new cancellation logic using a singleton object `CancellationChecker` which checks the timeouts for queries. [#69880](https://github.com/ClickHouse/ClickHouse/pull/69880) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Adding a new cancellation logic: `CancellationChecker` checks timeouts for every started query and stops them once the timeout has reached. [#69880](https://github.com/ClickHouse/ClickHouse/pull/69880) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * Support ALTER from `Object` to `JSON`, which means you can easily migrate from the deprecated Object type. [#71784](https://github.com/ClickHouse/ClickHouse/pull/71784) ([Pavel Kruglov](https://github.com/Avogar)).
 * Allow unknown values in set that are not present in Enum. Fix [#72662](https://github.com/ClickHouse/ClickHouse/issues/72662). [#72686](https://github.com/ClickHouse/ClickHouse/pull/72686) ([zhanglistar](https://github.com/zhanglistar)).
 * Support string search operator (eg., LIKE) for `Enum` data type, implements [#72661](https://github.com/ClickHouse/ClickHouse/issues/72661). [#72732](https://github.com/ClickHouse/ClickHouse/pull/72732) ([zhanglistar](https://github.com/zhanglistar)).
@@ -87,6 +87,7 @@ memory usage issue. [#72490](https://github.com/ClickHouse/ClickHouse/pull/72490
 * Add S3 request settings `http_max_fields`, `http_max_field_name_size`, `http_max_field_value_size` and use them while parsing S3 API responses during making a backup or restoring. [#72778](https://github.com/ClickHouse/ClickHouse/pull/72778) ([Vitaly Baranov](https://github.com/vitlibar)).
 * Delete table metadata in keeper in Storage S3(Azure)Queue only after last table using this metadata was dropped. [#72810](https://github.com/ClickHouse/ClickHouse/pull/72810) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Added `JoinBuildTableRowCount`/`JoinProbeTableRowCount/JoinResultRowCount` profile events. [#72842](https://github.com/ClickHouse/ClickHouse/pull/72842) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Support subcolumns in MergeTree sorting key and skip indexes. [#72644](https://github.com/ClickHouse/ClickHouse/pull/72644) ([Pavel Kruglov](https://github.com/Avogar)).
 
 #### Bug Fix (user-visible misbehavior in an official stable release)
 * Fix possible intersecting parts for MergeTree (after an operation of moving part to the detached directory has been failed, possibly due to operation on object storage). [#70476](https://github.com/ClickHouse/ClickHouse/pull/70476) ([Azat Khuzhin](https://github.com/azat)).

@@ -134,7 +134,7 @@ def main():
     check_glibc = True
     # currently hardcoded to x86, don't enable for AARCH64
     check_distributions = (
-        "aarch64" not in check_name.lower() and "arm64" not in check_name.lower()
+        "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
 
     stopwatch = Stopwatch()
