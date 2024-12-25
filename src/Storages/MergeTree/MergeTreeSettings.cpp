@@ -230,6 +230,7 @@ namespace ErrorCodes
     DECLARE(Bool, cache_populated_by_fetch, false, "Only available in ClickHouse Cloud", EXPERIMENTAL) \
     DECLARE(Bool, force_read_through_cache_for_merges, false, "Force read-through filesystem cache for merges", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
@@ -244,6 +245,7 @@ namespace ErrorCodes
     DECLARE(Bool, prewarm_primary_key_cache, false, "If true primary index cache will be prewarmed by saving marks to mark cache on inserts, merges, fetches and on startup of server", 0) \
     DECLARE(Bool, prewarm_mark_cache, false, "If true mark cache will be prewarmed by saving marks to mark cache on inserts, merges, fetches and on startup of server", 0) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", "List of columns to prewarm mark cache for (if enabled). Empty means all columns", 0) \
+    DECLARE(UInt64, min_bytes_to_prewarm_caches, 0, "Minimal size (uncompressed bytes) to prewarm mark cache and primary index cache for new parts", 0) \
     /** Projection settings. */ \
     DECLARE(UInt64, max_projections, 25, "The maximum number of merge tree projections.", 0) \
     DECLARE(LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW, "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop projections of this table's relevant parts, or rebuild the projections.", 0) \
@@ -674,7 +676,8 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         res_columns[2]->insert(setting.isValueChanged());
         res_columns[3]->insert(setting.getDescription());
 
-        Field min, max;
+        Field min;
+        Field max;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
         constraints.get(*this, setting_name, min, max, writability);
 

@@ -32,6 +32,7 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
+#include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
@@ -545,16 +546,27 @@ void HTTPHandler::processQuery(
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
                 used_output.exception_writer = [&, format_name, header, context_, format_settings](WriteBuffer & buf, int code, const String & message)
                 {
+                    if (used_output.out_holder->isCanceled())
+                    {
+                        chassert(buf.isCanceled());
+                        return;
+                    }
+
                     drainRequestIfNeeded(request, response);
                     used_output.out_holder->setExceptionCode(code);
+
                     auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
                     output_format->setException(message);
                     output_format->finalize();
                     used_output.finalize();
+                    used_output.exception_is_written = true;
                 };
             }
             else
             {
+                if (used_output.out_holder->isCanceled())
+                    return;
+
                 bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
 
@@ -611,7 +623,7 @@ try
         auto write_buffers = used_output.out_delayed_and_compressed_holder->getResultBuffers();
         /// cancel the rest unused buffers
         for (auto & wb : write_buffers)
-            if (wb.unique())
+            if (isSharedPtrUnique(wb))
                 wb->cancel();
 
         used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
@@ -878,9 +890,9 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        std::string_view matches[num_captures];
+        std::vector<std::string_view> matches(num_captures);
         std::string_view input(begin, end - begin);
-        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
+        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches.data(), num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())
             {
