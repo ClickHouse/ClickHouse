@@ -145,6 +145,9 @@ public:
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
 
+    void writeChangedBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+
     // A debugging aid.
     std::string toString() const;
 
@@ -339,7 +342,13 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    {
         accessor.resetValueToDefault(*this, index);
+        return;
+    }
+
+    if constexpr (Traits::allow_custom_settings)
+        custom_settings_map.erase(name);
 }
 
 template <typename TTraits>
@@ -477,6 +486,46 @@ void BaseSettings<TTraits>::write(WriteBuffer & out, SettingsWriteFormat format)
 
     /// Empty string is a marker of the end of settings.
     BaseSettingsHelpers::writeString(std::string_view{}, out);
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::writeChangedBinary(WriteBuffer & out) const
+{
+    const auto & accessor = Traits::Accessor::instance();
+
+    size_t num_settings = 0;
+    for (auto it = this->begin(); it != this->end(); ++it)
+        ++num_settings;
+
+    writeVarUInt(num_settings, out);
+
+    for (const auto & field : *this)
+    {
+        BaseSettingsHelpers::writeString(field.getName(), out);
+        using Flags = BaseSettingsHelpers::Flags;
+        Flags flags{0};
+        BaseSettingsHelpers::writeFlags(flags, out);
+        accessor.writeBinary(*this, field.index, out);
+    }
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
+{
+    const auto & accessor = Traits::Accessor::instance();
+
+    size_t num_settings = 0;
+    readVarUInt(num_settings, in);
+
+    for (size_t i = 0; i < num_settings; ++i)
+    {
+        String read_name = BaseSettingsHelpers::readString(in);
+        std::string_view name = TTraits::resolveName(read_name);
+        size_t index = accessor.find(name);
+
+        std::ignore = BaseSettingsHelpers::readFlags(in);
+        accessor.readBinary(*this, index, in);
+    }
 }
 
 template <typename TTraits>

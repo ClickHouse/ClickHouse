@@ -75,6 +75,7 @@ class CI:
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
                 BuildNames.PACKAGE_ASAN,
+                BuildNames.BINARY_TIDY,
                 JobNames.STYLE_CHECK,
                 JobNames.BUILD_CHECK,
                 JobNames.UNIT_TEST_ASAN,
@@ -274,6 +275,7 @@ class CI:
             build_config=BuildConfig(
                 name=BuildNames.FUZZERS,
                 compiler="clang-19",
+                sanitizer="address",
                 package_type="fuzzers",
             ),
             run_by_labels=[Tags.libFuzzer],
@@ -545,7 +547,7 @@ class CI:
         JobNames.LIBFUZZER_TEST: JobConfig(
             required_builds=[BuildNames.FUZZERS],
             run_by_labels=[Tags.libFuzzer],
-            timeout=5400,
+            timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
             runner_type=Runners.FUNC_TESTER,
         ),

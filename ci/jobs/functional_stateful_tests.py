@@ -57,16 +57,11 @@ def main():
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
 
-    # os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
-    #     f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-    #     verbose=True,
-    #     strict=True
-    # )
-
     ch_path = args.ch_path
-    assert Path(
-        ch_path + "/clickhouse"
-    ).is_file(), f"clickhouse binary not found under [{ch_path}]"
+    assert (
+        Path(ch_path + "/clickhouse").is_file()
+        or Path(ch_path + "/clickhouse").is_symlink()
+    ), f"clickhouse binary not found under [{ch_path}]"
 
     stop_watch = Utils.Stopwatch()
 
@@ -95,9 +90,9 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-local",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-obfuscator",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
-            # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
             f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage --no-azure",
             # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
             f"cp {Settings.TEMP_DIR}/etc/clickhouse-client/* /etc/clickhouse-client/",
@@ -110,7 +105,7 @@ def main():
             f"clickhouse-server --version",
         ]
         results.append(
-            Result.create_from_command_execution(
+            Result.from_commands_run(
                 name="Install ClickHouse", command=commands, with_log=True
             )
         )
@@ -131,6 +126,10 @@ def main():
         )
         res = res and CH.start()
         res = res and CH.wait_ready()
+        # TODO: Use --database-replicated optionally
+        res = res and Shell.check(
+            f"./ci/jobs/scripts/functional_tests/setup_ch_cluster.sh"
+        )
         if res:
             print("ch started")
         logs_to_attach += [
@@ -150,6 +149,10 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
+
+        # TODO: fix tests dependent on this and remove:
+        os.environ["CLICKHOUSE_TMP"] = "tests/queries/1_stateful"
+
         # assert Shell.check("clickhouse-client -q \"insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')\"", verbose=True)
         run_test(
             no_parallel=no_parallel,

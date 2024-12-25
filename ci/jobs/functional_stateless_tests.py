@@ -63,16 +63,20 @@ def main():
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
 
-    # os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
-    #     f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-    #     verbose=True,
-    #     strict=True
-    # )
+    # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
+    os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+        f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+        verbose=True,
+    )
+    no_azure = False
+    if not os.environ["AZURE_CONNECTION_STRING"]:
+        no_azure = True
 
     ch_path = args.ch_path
-    assert Path(
-        ch_path + "/clickhouse"
-    ).is_file(), f"clickhouse binary not found under [{ch_path}]"
+    assert (
+        Path(ch_path + "/clickhouse").is_file()
+        or Path(ch_path + "/clickhouse").is_symlink()
+    ), f"clickhouse binary not found under [{ch_path}]"
 
     stop_watch = Utils.Stopwatch()
 
@@ -101,10 +105,12 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-local",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-disks",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-obfuscator",
+            f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
             f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
             f"cp programs/server/config.xml programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
-            # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage --no-azure",
+            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --s3-storage {'--no-azure' if no_azure else ''}",
             # clickhouse benchmark segfaults with --config-path, so provide client config by its default location
             f"cp {Settings.TEMP_DIR}/etc/clickhouse-client/* /etc/clickhouse-client/",
             # update_path_ch_config,
@@ -114,9 +120,10 @@ def main():
             f"for file in /tmp/praktika/etc/clickhouse-server/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|>/var/log|>{Settings.TEMP_DIR}/var/log|g; s|>/etc/|>{Settings.TEMP_DIR}/etc/|g' $(readlink -f $file); done",
             f"for file in /tmp/praktika/etc/clickhouse-server/config.d/*.xml; do [ -f $file ] && echo Change config $file && sed -i 's|<path>local_disk|<path>{Settings.TEMP_DIR}/local_disk|g' $(readlink -f $file); done",
             f"clickhouse-server --version",
+            f"chmod +x /tmp/praktika/input/clickhouse-odbc-bridge",
         ]
         results.append(
-            Result.create_from_command_execution(
+            Result.from_commands_run(
                 name="Install ClickHouse", command=commands, with_log=True
             )
         )
@@ -127,17 +134,15 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
         print(step_name)
-        hdfs_log = "/tmp/praktika/output/hdfs_mini.log"
         minio_log = "/tmp/praktika/output/minio.log"
-        res = res and CH.start_hdfs(log_file_path=hdfs_log)
-        res = res and CH.start_minio(test_type="stateful", log_file_path=minio_log)
-        logs_to_attach += [minio_log, hdfs_log]
+        res = res and CH.start_minio(test_type="stateless", log_file_path=minio_log)
+        logs_to_attach += [minio_log]
         time.sleep(10)
         Shell.check("ps -ef | grep minio", verbose=True)
-        Shell.check("ps -ef | grep hdfs", verbose=True)
         res = res and Shell.check(
             "aws s3 ls s3://test --endpoint-url http://localhost:11111/", verbose=True
         )
+        res = res and CH.log_cluster_config()
         res = res and CH.start()
         res = res and CH.wait_ready()
         if res:
@@ -170,6 +175,7 @@ def main():
             batch_total=total_batches,
             test=args.test,
         )
+        CH.log_cluster_stop_replication()
         results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
         results[-1].set_timing(stopwatch=stop_watch_)
         res = results[-1].is_ok()
