@@ -19,6 +19,7 @@ public:
         const Header & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
+        size_t min_block_size_bytes_,
         size_t max_streams_,
         NameSet required_output_,
         bool keep_left_read_in_order_,
@@ -37,7 +38,8 @@ public:
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     bool allowPushDownToRight() const;
 
-    JoinInnerTableSelectionMode inner_table_selection_mode = JoinInnerTableSelectionMode::Right;
+    /// Swap automatically if not set, otherwise always or never, depending on the value
+    std::optional<bool> swap_join_tables = false;
 
 private:
     void updateOutputHeader() override;
@@ -47,6 +49,7 @@ private:
 
     JoinPtr join;
     size_t max_block_size;
+    size_t min_block_size_bytes;
     size_t max_streams;
 
     const NameSet required_output;

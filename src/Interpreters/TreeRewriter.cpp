@@ -1024,6 +1024,10 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
     }
+    else
+    {
+        source_columns_ordinary = source_columns;
+    }
 
     source_columns_set = removeDuplicateColumns(source_columns);
 }
@@ -1132,8 +1136,8 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto partition_columns = partition_desc.expression->getRequiredColumns();
             NameSet partition_columns_set(partition_columns.begin(), partition_columns.end());
 
-            const auto & parititon_virtuals = MergeTreeData::virtuals_useful_for_filter;
-            partition_columns_set.insert(parititon_virtuals.begin(), parititon_virtuals.end());
+            const auto & partition_virtuals = MergeTreeData::virtuals_useful_for_filter;
+            partition_columns_set.insert(partition_virtuals.begin(), partition_virtuals.end());
 
             optimize_trivial_count = true;
             for (const auto & required_column : required)
@@ -1574,7 +1578,7 @@ void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query);
+        UserDefinedSQLFunctionVisitor::visit(query, context_);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings[Setting::count_distinct_implementation]};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);

@@ -129,8 +129,6 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
-DECLARE_SETTING_ENUM(JoinInnerTableSelectionMode)
-
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -360,5 +358,12 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
+
+enum class DatabaseIcebergCatalogType : uint8_t
+{
+    REST,
+};
+
+DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
 
 }

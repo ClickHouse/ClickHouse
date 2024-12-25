@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/ZooKeeper/Common.h>
 
+#include <boost/noncopyable.hpp>
 
 namespace zkutil
 {

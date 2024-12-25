@@ -131,16 +131,6 @@ Type: UInt64
 
 Default: 8
 
-## background_pool_size
-
-Sets the number of threads performing background merges and mutations for tables with MergeTree engines. You can only increase the number of threads at runtime. To lower the number of threads you have to restart the server. By adjusting this setting, you manage CPU and disk load. Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-
-Before changing it, please also take a look at related MergeTree settings, such as `number_of_free_entries_in_pool_to_lower_max_size_of_merge` and `number_of_free_entries_in_pool_to_execute_mutation`.
-
-Type: UInt64
-
-Default: 16
-
 ## background_schedule_pool_size
 
 The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.
@@ -607,6 +597,30 @@ If number of tables is greater than this value, server will throw an exception. 
 <max_table_num_to_throw>400</max_table_num_to_throw>
 ```
 
+## max\_replicated\_table\_num\_to\_throw {#max-replicated-table-num-to-throw}
+If number of replicated tables is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_replicated_table_num_to_throw>400</max_replicated_table_num_to_throw>
+```
+
+## max\_dictionary\_num\_to\_throw {#max-dictionary-num-to-throw}
+If number of dictionaries is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_dictionary_num_to_throw>400</max_dictionary_num_to_throw>
+```
+
+## max\_view\_num\_to\_throw {#max-view-num-to-throw}
+If number of views is greater than this value, server will throw an exception. 0 means no limitation. Only count table in Atomic/Ordinary/Replicated/Lazy database engine.
+
+**Example**
+```xml
+<max_view_num_to_throw>400</max_view_num_to_throw>
+```
+
 ## max\_database\_num\_to\_throw {#max-table-num-to-throw}
 If number of _database is greater than this value, server will throw an exception. 0 means no limitation.
 Default value: 0
@@ -680,6 +694,15 @@ If set true ClickHouse will wait for running queries finish before shutdown.
 Type: Bool
 
 Default: 0
+
+## table_engines_require_grant
+
+If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
+By default, for backward compatibility creating table with a specific table engine ignores grant, however you can change this behaviour by setting this to true.
+
+Type: Bool
+
+Default: false
 
 ## temporary_data_in_cache
 
@@ -1629,6 +1652,7 @@ You can specify the log format that will be outputted in the console log. Curren
 
 ```json
 {
+  "date_time_utc": "2024-11-06T09:06:09Z",
   "date_time": "1650918987.180175",
   "thread_name": "#1",
   "thread_id": "254545",
@@ -3252,6 +3276,14 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 - [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
 
+## use_legacy_mongodb_integration
+
+Use the legacy MongoDB integration implementation. Deprecated.
+
+Type: Bool
+
+Default value: `true`.
+
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 The maximum number of authentication methods a user can be created with or altered to.
@@ -3264,10 +3296,15 @@ Default value: 100
 
 Zero means unlimited
 
-## use_legacy_mongodb_integration
+## allow_feature_tier
 
-Use the legacy MongoDB integration implementation. Deprecated.
+Controls if the user can change settings related to the different feature tiers.
+0 - Changes to any setting are allowed (experimental, beta, production).
+1 - Only changes to beta and production feature settings are allowed. Changes to experimental settings are rejected.
+2 - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
 
-Type: Bool
+This is equivalent to setting a readonly constraint on all EXPERIMENTAL / BETA features.
 
-Default value: `true`.
+Type: UInt32
+
+Default value: `0` (all settings can be changed).

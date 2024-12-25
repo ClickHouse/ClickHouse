@@ -168,6 +168,12 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             res |= show_databases;
         }
 
+        static const AccessFlags alter_delete = AccessType::ALTER_DELETE;
+        static const AccessFlags select = AccessType::SELECT;
+        static const AccessFlags move_partition = AccessType::ALTER_MOVE_PARTITION;
+        if ((res & alter_delete) && (res & select) && level <= 2)
+            res |= move_partition;
+
         max_flags |= res;
 
         return res;
@@ -354,7 +360,8 @@ void ContextAccess::setUser(const UserPtr & user_) const
     user_name = user->getName();
     trace_log = getLogger("ContextAccess (" + user_name + ")");
 
-    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    std::vector<UUID> current_roles;
+    std::vector<UUID> current_roles_with_admin_option;
     if (params.use_default_roles)
     {
         current_roles = user->granted_roles.findGranted(user->default_roles);
@@ -364,6 +371,13 @@ void ContextAccess::setUser(const UserPtr & user_) const
     {
         current_roles = user->granted_roles.findGranted(*params.current_roles);
         current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(*params.current_roles);
+    }
+
+    if (params.external_roles && !params.external_roles->empty())
+    {
+        current_roles.insert(current_roles.end(), params.external_roles->begin(), params.external_roles->end());
+        auto new_granted_with_admin_option = user->granted_roles.findGrantedWithAdminOption(*params.external_roles);
+        current_roles_with_admin_option.insert(current_roles_with_admin_option.end(), new_granted_with_admin_option.begin(), new_granted_with_admin_option.end());
     }
 
     subscription_for_roles_changes.reset();
@@ -515,7 +529,6 @@ std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
 {
     return getQuota()->getUsage();
 }
-
 
 SettingsChanges ContextAccess::getDefaultSettings() const
 {

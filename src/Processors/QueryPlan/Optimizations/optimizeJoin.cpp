@@ -21,16 +21,46 @@
 namespace DB::QueryPlanOptimizations
 {
 
-static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node)
+static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node, bool has_filter = false)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
-        if (auto analyzed_result = reading->getAnalyzedResult())
-            return analyzed_result->selected_rows;
-        if (auto analyzed_result = reading->selectRangesToRead())
-            return analyzed_result->selected_rows;
-        return {};
+        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
+        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
+        analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
+        if (!analyzed_result)
+            return {};
+
+        bool is_filtered_by_index = false;
+        UInt64 total_parts = 0;
+        UInt64 total_granules = 0;
+        for (const auto & idx_stat : analyzed_result->index_stats)
+        {
+            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
+            /// Further index_stats are used to estimate amount of filtered data after applying the index.
+            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+            {
+                total_parts = idx_stat.num_parts_after;
+                total_granules = idx_stat.num_granules_after;
+                continue;
+            }
+
+            is_filtered_by_index = is_filtered_by_index
+                || (total_parts && idx_stat.num_parts_after < total_parts)
+                || (total_granules && idx_stat.num_granules_after < total_granules);
+
+            if (is_filtered_by_index)
+                break;
+        }
+        has_filter = has_filter || reading->getPrewhereInfo();
+
+        /// If any conditions are pushed down to storage but not used in the index,
+        /// we cannot precisely estimate the row count
+        if (has_filter && !is_filtered_by_index)
+            return {};
+
+        return analyzed_result->selected_rows;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -39,8 +69,10 @@ static std::optional<UInt64> estimateReadRowsCount(QueryPlan::Node & node)
     if (node.children.size() != 1)
         return {};
 
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step))
-        return estimateReadRowsCount(*node.children.front());
+    if (typeid_cast<ExpressionStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), has_filter);
+    if (typeid_cast<FilterStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), true);
 
     return {};
 }
@@ -57,8 +89,9 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
 
     const auto & table_join = join->getTableJoin();
 
-    /// Algorithms other than HashJoin may not support OUTER JOINs
-    if (table_join.kind() != JoinKind::Inner && !typeid_cast<const HashJoin *>(join.get()))
+    /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
+    bool allow_outer_join = typeid_cast<const HashJoin *>(join.get());
+    if (table_join.kind() != JoinKind::Inner && !allow_outer_join)
         return;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
@@ -67,7 +100,7 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     bool need_swap = false;
-    if (join_step->inner_table_selection_mode == JoinInnerTableSelectionMode::Auto)
+    if (!join_step->swap_join_tables.has_value())
     {
         auto lhs_extimation = estimateReadRowsCount(*node.children[0]);
         auto rhs_extimation = estimateReadRowsCount(*node.children[1]);
@@ -78,7 +111,7 @@ void optimizeJoin(QueryPlan::Node & node, QueryPlan::Nodes &)
         if (lhs_extimation && rhs_extimation && *lhs_extimation < *rhs_extimation)
             need_swap = true;
     }
-    else if (join_step->inner_table_selection_mode == JoinInnerTableSelectionMode::Left)
+    else if (join_step->swap_join_tables.value())
     {
         need_swap = true;
     }

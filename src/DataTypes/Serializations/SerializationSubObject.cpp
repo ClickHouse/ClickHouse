@@ -17,7 +17,7 @@ SerializationSubObject::SerializationSubObject(
     : path_prefix(path_prefix_)
     , typed_paths_serializations(typed_paths_serializations_)
     , dynamic_serialization(std::make_shared<SerializationDynamic>())
-    , shared_data_serialization(SerializationObject::getTypeOfSharedData()->getDefaultSerialization())
+    , shared_data_serialization(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
 }
 
@@ -64,8 +64,8 @@ void SerializationSubObject::enumerateStreams(
     /// We will need to read shared data to find all paths with requested prefix.
     settings.path.push_back(Substream::ObjectSharedData);
     auto shared_data_substream_data = SubstreamData(shared_data_serialization)
-                                          .withType(data.type ? SerializationObject::getTypeOfSharedData() : nullptr)
-                                          .withColumn(data.column ? SerializationObject::getTypeOfSharedData()->createColumn() : nullptr)
+                                          .withType(data.type ? DataTypeObject::getTypeOfSharedData() : nullptr)
+                                          .withColumn(data.column ? DataTypeObject::getTypeOfSharedData()->createColumn() : nullptr)
                                           .withSerializationInfo(data.serialization_info)
                                           .withDeserializeState(deserialize_state ? deserialize_state->shared_data_state : nullptr);
     settings.path.back().data = shared_data_substream_data;
@@ -208,7 +208,7 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::ObjectSharedData);
     /// If it's a new object column, reinitialize column for shared data.
     if (result_column->empty())
-        sub_object_state->shared_data = SerializationObject::getTypeOfSharedData()->createColumn();
+        sub_object_state->shared_data = DataTypeObject::getTypeOfSharedData()->createColumn();
     size_t prev_size = column_object.size();
     shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(sub_object_state->shared_data, limit, settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();

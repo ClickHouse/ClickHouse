@@ -33,6 +33,7 @@
 -- { echoOn }
 
 SET enable_analyzer = 1;
+SET join_algorithm = 'hash';
 
 --
 -- test cycle detection
@@ -56,7 +57,7 @@ WITH RECURSIVE search_graph AS (
 	WHERE g.f = sg.t AND NOT is_cycle
 )
 SELECT * FROM search_graph
-SETTINGS query_plan_join_inner_table_selection = 'right'
+SETTINGS query_plan_join_swap_table = 'false'
 ;
 
 -- ordering by the path column has same effect as SEARCH DEPTH FIRST

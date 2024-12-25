@@ -98,34 +98,23 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
-    extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
-    extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool extremes;
     extern const SettingsBool force_aggregation_in_order;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsUInt64 max_rows_in_distinct;
-    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
-    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
-    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsBool optimize_distinct_in_order;
-    extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
@@ -134,6 +123,16 @@ namespace Setting
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
+    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsUInt64 max_bytes_before_external_group_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
+    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsBool compile_aggregate_expressions;
+    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
+    extern const SettingsBool enable_software_prefetch_in_aggregation;
+    extern const SettingsBool optimize_group_by_constant_keys;
 }
 
 namespace ServerSetting
@@ -274,7 +273,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     return res;
 }
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return {};
@@ -444,7 +443,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::group_by_overflow_mode],
         settings[Setting::group_by_two_level_threshold],
         settings[Setting::group_by_two_level_threshold_bytes],
-        settings[Setting::max_bytes_before_external_group_by],
+        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && aggregation_analysis_result.aggregation_keys.empty()
                 && aggregation_analysis_result.group_by_with_constant_keys),

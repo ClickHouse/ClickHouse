@@ -14,6 +14,7 @@
 #include <Common/formatReadable.h>
 
 #include <format>
+#include <mutex>
 #include <numeric>
 #include <unordered_map>
 
@@ -187,7 +188,8 @@ void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
 
 }
 
-void ProgressTable::writeTable(WriteBufferFromFileDescriptor & message, bool show_table, bool toggle_enabled)
+void ProgressTable::writeTable(
+    WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &, bool show_table, bool toggle_enabled)
 {
     std::lock_guard lock{mutex};
     if (!show_table && toggle_enabled)
@@ -371,7 +373,7 @@ void ProgressTable::updateTable(const Block & block)
     column_event_name_width = max_event_name_width + 1;
 }
 
-void ProgressTable::clearTableOutput(WriteBufferFromFileDescriptor & message)
+void ProgressTable::clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
     message << "\r" << CLEAR_TO_END_OF_SCREEN << SHOW_CURSOR;
     message.next();

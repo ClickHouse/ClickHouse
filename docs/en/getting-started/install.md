@@ -16,7 +16,7 @@ You have four options for getting up and running with ClickHouse:
 - **[ClickHouse Cloud](https://clickhouse.com/cloud/):** The official ClickHouse as a service, - built by, maintained and supported by the creators of ClickHouse
 - **[Quick Install](#quick-install):** an easy-to-download binary for testing and developing with ClickHouse
 - **[Production Deployments](#available-installation-options):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, modern ARM (ARMv8.2-A up), or PowerPC64LE CPU architecture
-- **[Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/):** use the official Docker image in Docker Hub
+- **[Docker Image](https://hub.docker.com/_/clickhouse):** use the official Docker image in Docker Hub
 
 ## ClickHouse Cloud
 
@@ -93,8 +93,8 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
 curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
 
-echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
+ARCH=$(dpkg --print-architecture)
+echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] https://packages.clickhouse.com/deb stable main" | sudo tee /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
 ```
 

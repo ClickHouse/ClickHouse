@@ -132,6 +132,12 @@ class PRInfo:
         ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
+        # Default values
+        self.base_ref = ""  # type: str
+        self.base_name = ""  # type: str
+        self.head_ref = ""  # type: str
+        self.head_name = ""  # type: str
+        self.number = 0  # type: int
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
@@ -146,7 +152,7 @@ class PRInfo:
 
         if "pull_request" in github_event:  # pull request and other similar events
             self.event_type = EventType.PULL_REQUEST
-            self.number = github_event["pull_request"]["number"]  # type: int
+            self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
                 try:
                     response = get_gh_api(
@@ -172,17 +178,13 @@ class PRInfo:
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
-            self.base_ref = github_event["pull_request"]["base"]["ref"]  # type: str
+            self.base_ref = github_event["pull_request"]["base"]["ref"]
             # ClickHouse/ClickHouse
-            self.base_name = github_event["pull_request"]["base"]["repo"][
-                "full_name"
-            ]  # type: str
+            self.base_name = github_event["pull_request"]["base"]["repo"]["full_name"]
             # any_branch-name - the name of working branch name
-            self.head_ref = github_event["pull_request"]["head"]["ref"]  # type: str
+            self.head_ref = github_event["pull_request"]["head"]["ref"]
             # UserName/ClickHouse or ClickHouse/ClickHouse
-            self.head_name = github_event["pull_request"]["head"]["repo"][
-                "full_name"
-            ]  # type: str
+            self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]

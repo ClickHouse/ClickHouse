@@ -19,7 +19,7 @@ Positions: 4 0 1 2
           __table2.value_1 String
   Type: INNER
   Strictness: ALL
-  Algorithm: HashJoin
+  Algorithm: ConcurrentHashJoin
   Clauses: [(__table1.id) = (__table2.id)]
     Expression ((JOIN actions + Change column names to column identifiers))
     Header: __table1.id UInt64
