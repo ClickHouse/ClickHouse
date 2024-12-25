@@ -85,6 +85,8 @@ CATEGORY_TO_LABEL = {
     c: lb for lb, categories in LABEL_CATEGORIES.items() for c in categories
 }
 
+CATEGORIES_FOLD = [c.casefold() for lb, categories in LABEL_CATEGORIES.items() for c in categories]
+
 
 def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
     """The function checks the body to being properly formatted according to
@@ -154,7 +156,7 @@ def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
     # Filter out the PR categories that are not for changelog.
     elif "(changelog entry is not required)" in category:
         pass  # to not check the rest of the conditions
-    elif category not in CATEGORY_TO_LABEL:
+    elif category.casefold() not in CATEGORIES_FOLD:
         description_error, category = f"Category '{category}' is not valid", ""
     elif not entry:
         description_error = f"Changelog entry required for category '{category}'"
