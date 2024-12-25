@@ -589,9 +589,9 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// This is required for correct behavior in this situation:
         /// User has 1 login failures quota.
         /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
-        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
+        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
         /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
-        ///   and don't let the user authenticate.
+        ///   and don't let the user authenticate.
         ///
         /// The authentication failures counter will be reset after successful authentication.
         authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
