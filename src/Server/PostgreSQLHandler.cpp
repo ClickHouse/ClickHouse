@@ -43,7 +43,9 @@ namespace ErrorCodes
 
 PostgreSQLHandler::PostgreSQLHandler(
     const Poco::Net::StreamSocket & socket_,
+#if USE_SSL
     const std::string & prefix_,
+#endif
     IServer & server_,
     TCPServer & tcp_server_,
     bool ssl_enabled_,
@@ -52,8 +54,10 @@ PostgreSQLHandler::PostgreSQLHandler(
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
+#if USE_SSL
     , config(server_.config())
     , prefix(prefix_)
+#endif
     , server(server_)
     , tcp_server(tcp_server_)
     , ssl_enabled(ssl_enabled_)

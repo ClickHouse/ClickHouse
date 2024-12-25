@@ -30,7 +30,9 @@ class PostgreSQLHandler : public Poco::Net::TCPServerConnection
 public:
     PostgreSQLHandler(
         const Poco::Net::StreamSocket & socket_,
+#if USE_SSL
         const std::string & prefix_,
+#endif
         IServer & server_,
         TCPServer & tcp_server_,
         bool ssl_enabled_,
