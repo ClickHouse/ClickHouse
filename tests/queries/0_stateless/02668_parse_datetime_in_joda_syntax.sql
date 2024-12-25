@@ -245,8 +245,9 @@ select parseDateTimeInJodaSyntax('12 AM', 'h a', 'UTC', 'a fourth argument'); --
 -- The format string argument is optional
 set session_timezone = 'UTC'; -- don't randomize the session timezone
 select parseDateTimeInJodaSyntax('2021-01-04 23:12:34') = toDateTime('2021-01-04 23:12:34');
--- Test timezone and timezone offset for parseDateTimeInJodaSyntax
 select parseDateTimeInJodaSyntax('2024-10-09 10:30:10-0812'); -- { serverError CANNOT_PARSE_DATETIME }
+
+-- timezone and timezone offset
 select parseDateTimeInJodaSyntax('2024-10-09 10:30:10-0812', 'yyyy-MM-dd HH:mm:ssZ') = toDateTime64('2024-10-09 18:42:10', 6);
 select parseDateTimeInJodaSyntax('2024-10-09 10:30:10-08123', 'yyyy-MM-dd HH:mm:ssZZZ'); -- {serverError CANNOT_PARSE_DATETIME}
 select parseDateTimeInJodaSyntax('2024-10-09 10:30:10EST', 'yyyy-MM-dd HH:mm:ssz') = toDateTime64('2024-10-09 15:30:10', 6);
@@ -255,7 +256,9 @@ select parseDateTimeInJodaSyntax('2024-10-09 10:30:10EST', 'yyyy-MM-dd HH:mm:ssz
 select parseDateTimeInJodaSyntax('2024-10-09 10:30:10-8000', 'yyyy-MM-dd HH:mm:ssZ'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTimeInJodaSyntax('2024-10-09 10:30:10ABCD', 'yyyy-MM-dd HH:mm:ssz'); -- { serverError BAD_ARGUMENTS }
 
--- The following is test of parseDateTime64InJodaSyntax[OrNull/OrZero]
+-- -------------------------------------------------------------------------------------------------------------------------
+-- Tests for parseDateTime64InJodaSyntax, these are not systematic
+
 select parseDateTime64InJodaSyntax('', '') = toDateTime64('1970-01-01 00:00:00', 0);
 select parseDateTime64InJodaSyntax('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('+0000', 'Z') = toDateTime64('1970-01-01 00:00:00', 0);
@@ -270,7 +273,8 @@ select parseDateTime64InJodaSyntax('2021/01/04 23:12:34.331', 'yyyy/MM/dd HH:mm:
 select parseDateTime64InJodaSyntax('2021-01-04 23:12:34.331'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('2021-01-04 23:12:34.331', 'yyyy-MM-dd HH:mm:ss.SSSS') = toDateTime64('2021-01-04 23:12:34.0331', 4);
 select parseDateTime64InJodaSyntax('2021-01-04 23:12:34.331', 'yyyy-MM-dd HH:mm:ss.SS'); -- { serverError CANNOT_PARSE_DATETIME }
--- Test timezone and timezone offset for paseDatetTime64InJodaSyntax
+
+-- Timezone and timezone offset
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10-0812'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-0812', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ') = toDateTime64('2024-10-09 18:42:10.123456', 6);
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-08123', 'yyyy-MM-dd HH:mm:ss.SSSSSSZZZ'); -- {serverError CANNOT_PARSE_DATETIME}
@@ -282,18 +286,21 @@ select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456Australia/Adelaide
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123', 'yyyy-dd-MM HH:mm:ss.SSS') = toDateTime64('2024-09-10 10:30:10.123', 3);
 select parseDateTime64InJodaSyntax('999999 10-09-202410:30:10', 'SSSSSSSSS dd-MM-yyyyHH:mm:ss'); -- {serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-0845', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ') = toDateTime64('2024-10-09 19:15:10.123456', 6);
+
 -- incorrect timezone offset and timezone
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456-8000', 'yyyy-MM-dd HH:mm:ss.SSSSSSZ'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.123456ABCD', 'yyyy-MM-dd HH:mm:ss.SSSSSSz'); -- { serverError BAD_ARGUMENTS }
 select parseDateTime64InJodaSyntax('2023-02-29 11:22:33Not/Timezone', 'yyyy-MM-dd HH:mm:ssz'); -- { serverError BAD_ARGUMENTS }
---leap years and non-leap years
+
+-- leap vs non-leap years
 select parseDateTime64InJodaSyntax('2024-02-29 11:23:34America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz') = toDateTime64('2024-02-29 19:23:34', 0);
 select parseDateTime64InJodaSyntax('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('2024-02-28 23:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz') = toDateTime64('2024-02-29 07:22:33', 0);
 select parseDateTime64InJodaSyntax('2023-02-28 23:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz') = toDateTime64('2023-03-01 07:22:33', 0);
 select parseDateTime64InJodaSyntax('2024-03-01 00:22:33-8000', 'yyyy-MM-dd HH:mm:ssZ'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime64InJodaSyntax('2023-03-01 00:22:33-8000', 'yyyy-MM-dd HH:mm:ssZ'); -- { serverError CANNOT_PARSE_DATETIME }
--- Test for parseDateTime64InJodaSyntaxOrNull
+
+-- parseDateTime64InJodaSyntaxOrNull
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2024-10-09 10:30:10.123', 3);
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456', 'yyyy-MM-dd HH:mm:ss.SSSSSS') = toDateTime64('2024-10-09 10:30:10.123456', 6);
 select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123456789', 'yyyy-MM-dd HH:mm:ss.SSSSSSSSS'); -- { serverError CANNOT_PARSE_DATETIME }
@@ -303,7 +310,8 @@ select parseDateTime64InJodaSyntaxOrNull('2024-10-09 10:30:10.123', 'yyyy-dd-MM 
 select parseDateTime64InJodaSyntaxOrNull('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz') is NULL;
 select parseDateTime64InJodaSyntaxOrNull('', '') = toDateTime64('1970-01-01 00:00:00', 0);
 select parseDateTime64InJodaSyntaxOrNull('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') is NULL;
--- Test for parseDateTime64InJodaSyntaxOrZero
+
+-- parseDateTime64InJodaSyntaxOrZero
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('2024-10-09 10:30:10.123', 3);
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456', 'yyyy-MM-dd HH:mm:ss.SSSSSS') = toDateTime64('2024-10-09 10:30:10.123456', 6);
 select parseDateTime64InJodaSyntaxOrZero('2024-10-09 10:30:10.123456789', 'yyyy-MM-dd HH:mm:ss.SSSSSSSSS'); -- { serverError CANNOT_PARSE_DATETIME }
@@ -314,5 +322,6 @@ select parseDateTime64InJodaSyntaxOrZero('wrong value', 'yyyy-dd-MM HH:mm:ss.SSS
 select parseDateTime64InJodaSyntaxOrZero('2023-02-29 11:22:33America/Los_Angeles', 'yyyy-MM-dd HH:mm:ssz') = toDateTime64('1970-01-01 00:00:00', 0);
 select parseDateTime64InJodaSyntaxOrZero('', '') = toDateTime64('1970-01-01 00:00:00', 0);
 select parseDateTime64InJodaSyntaxOrZero('2177-10-09 10:30:10.123', 'yyyy-MM-dd HH:mm:ss.SSS') = toDateTime64('1970-01-01 00:00:00.000', 3);
+-- -------------------------------------------------------------------------------------------------------------------------
 
 -- { echoOff }

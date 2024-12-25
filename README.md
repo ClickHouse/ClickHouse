@@ -27,6 +27,7 @@ curl https://clickhouse.com/ | sh
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
 * [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
+* [Bluesky](https://bsky.app/profile/clickhouse.com) and [X](https://x.com/ClickHouseDB) for short news.
 * [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlighting, powered by github.dev.
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
@@ -34,24 +35,27 @@ curl https://clickhouse.com/ | sh
 
 Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release. If you are interested in sharing what you've built on ClickHouse, let us know.
 
-* [v24.10 Community Call](https://clickhouse.com/company/events/v24-10-community-release-call) - October 31
+* [v24.12 Community Call](https://clickhouse.com/company/events/v24-12-community-release-call) - December 19
 
 ## Upcoming Events
 
 Keep an eye out for upcoming meetups and events around the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-
-* [Ghent Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/303049405/) - November 19
-* [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - November 21
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/303096434) - November 26
-* [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/303638814) - December 3
-* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/304382411) - December 9
-* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/304268174) - December 9
-* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/304286951/) - December 12
+* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/305126993/) - Jan 23
+* [FOSDEM 2025](https://www.fosdem.org/2025/schedule/event/fosdem-2025-6351-how-we-built-a-new-powerful-json-data-type-for-clickhouse/) - Feb 1, 2
+* [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/305146729/) - Feb 5
+* [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - Feb 10
 
 Recently completed meetups
 
+* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/304286951/) - December 12
+* [Kuala Lampur Meetup](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/304576472/) - December 11
+* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/304382411) - December 9
+* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/304268174) - December 9
+* [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/303638814) - December 3
+* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/303096434) - November 26
+* [Ghent Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/303049405/) - November 19
 * [Barcelona Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096876/) - November 12
 * [Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096564/) - October 22
 * [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/303212064/) - October 3

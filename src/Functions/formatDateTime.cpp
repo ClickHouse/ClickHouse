@@ -538,6 +538,10 @@ private:
                 *dest = '-';
                 offset = -offset;
             }
+            else
+            {
+                *dest = '+';
+            }
 
             writeNumber2(dest + 1, offset / 3600);
             writeNumber2(dest + 3, offset % 3600 / 60);

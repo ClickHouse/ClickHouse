@@ -2,8 +2,6 @@
 
 #include <array>
 
-#include <Common/SipHash.h>
-#include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <base/StringRef.h>
@@ -246,18 +244,6 @@ static inline T ALWAYS_INLINE packFixed(
     }
 
     return key;
-}
-
-
-/// Hash a set of keys into a UInt128 value.
-static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
-{
-    SipHash hash;
-    for (size_t j = 0; j < keys_size; ++j)
-        key_columns[j]->updateHashWithValue(i, hash);
-
-    return hash.get128();
 }
 
 /** Serialize keys into a continuous chunk of memory.

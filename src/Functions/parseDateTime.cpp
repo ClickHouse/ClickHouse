@@ -457,16 +457,16 @@ namespace
             return {};
         }
 
-        [[nodiscard]]
-        VoidOrError setScale(UInt8 scale_, ParseSyntax parse_syntax_)
+        void setScale(UInt32 scale_, ParseSyntax parse_syntax_)
         {
+            /// Because the scale argument for parseDateTime*() is constant, always throw an exception (don't allow continuing to the
+            /// next row like in other set* functions)
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
-                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for scale must be 6 for MySQL parse syntax", std::to_string(scale_))
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
-                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for scale must be in the range [0, 6] for Joda syntax", std::to_string(scale_))
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale);
 
             scale = scale_;
-            return {};
         }
 
         /// For debug
@@ -611,7 +611,6 @@ namespace
 
         bool useDefaultImplementationForConstants() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
@@ -637,13 +636,13 @@ namespace
                     data_type = std::make_shared<DataTypeDateTime64>(6, time_zone_name);
                 else
                 {
+                    /// The precision of the return type is the number of 'S' placeholders.
                     String format = getFormat(arguments);
                     std::vector<Instruction> instructions = parseFormat(format);
-                    /// How many 'S' characters does the format string contain?
-                    UInt32 s_count = 0;
+                    size_t s_count = 0;
                     for (const auto & instruction : instructions)
                     {
-                        const String fragment = instruction.getFragment();
+                        const String & fragment = instruction.getFragment();
                         for (char c : fragment)
                         {
                             if (c == 'S')
@@ -654,7 +653,6 @@ namespace
                         if (s_count > 0)
                             break;
                     }
-                    /// Use s_count as DateTime64's scale.
                     data_type = std::make_shared<DataTypeDateTime64>(s_count, time_zone_name);
                 }
             }
@@ -680,8 +678,8 @@ namespace
             }
             else
             {
-                const auto * result_type_without_nullable_casted = checkAndGetDataType<DataTypeDateTime64>(result_type_without_nullable.get());
-                MutableColumnPtr col_res = ColumnDateTime64::create(input_rows_count, result_type_without_nullable_casted->getScale());
+                const auto * result_type_without_nullable_cast = checkAndGetDataType<DataTypeDateTime64>(result_type_without_nullable.get());
+                MutableColumnPtr col_res = ColumnDateTime64::create(input_rows_count, result_type_without_nullable_cast->getScale());
                 ColumnDateTime64 * col_datetime64 = assert_cast<ColumnDateTime64 *>(col_res.get());
                 return executeImpl2<DataTypeDateTime64::FieldType>(arguments, result_type, input_rows_count, col_res, col_datetime64->getData());
             }
@@ -703,8 +701,8 @@ namespace
             UInt32 scale = 0;
             if constexpr (return_type == ReturnType::DateTime64)
             {
-                const DataTypeDateTime64 * result_type_without_nullable_casted = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
-                scale = result_type_without_nullable_casted->getScale();
+                const DataTypeDateTime64 * result_type_without_nullable_cast = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
+                scale = result_type_without_nullable_cast->getScale();
                 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
             }
 
@@ -715,24 +713,17 @@ namespace
             const String format = getFormat(arguments);
             const std::vector<Instruction> instructions = parseFormat(format);
             const auto & time_zone = getTimeZone(arguments);
-            /// Make datetime fit in a cache line.
-            alignas(64) DateTime<error_handling> datetime;
+            alignas(64) DateTime<error_handling> datetime; /// Make datetime fit in a cache line.
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
+                if constexpr (return_type == ReturnType::DateTime64)
+                    datetime.setScale(scale, parse_syntax);
+
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
                 bool error = false;
-
-                if constexpr (return_type == ReturnType::DateTime64)
-                {
-                    if (auto result = datetime.setScale(static_cast<UInt8>(scale), parse_syntax); !result.has_value())
-                    {
-                        const ErrorCodeAndMessage & err = result.error();
-                        throw Exception(err.error_code, "Invalid scale value: {}, {}", std::to_string(scale), err.error_message);
-                    }
-                }
 
                 for (const auto & instruction : instructions)
                 {

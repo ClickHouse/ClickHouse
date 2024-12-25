@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionTokens.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/Regexps.h>
 #include <Common/StringUtils.h>
 #include <base/map.h>
