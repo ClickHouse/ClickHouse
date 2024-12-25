@@ -173,18 +173,7 @@ Result:
 └───┴────┴─────┘
 ```
 
-## [experimental] Join with inequality conditions for columns from different tables
-
-:::note
-This feature is experimental. To use it, set `allow_experimental_join_condition` to 1 in your configuration files or by using the `SET` command:
-
-```sql
-SET allow_experimental_join_condition=1
-```
-
-Otherwise, you'll get `INVALID_JOIN_ON_EXPRESSION`.
-
-:::
+## Join with inequality conditions for columns from different tables
 
 Clickhouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`.
 

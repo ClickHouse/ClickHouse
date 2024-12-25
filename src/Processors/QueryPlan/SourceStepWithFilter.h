@@ -53,6 +53,9 @@ public:
 
     void setLimit(size_t limit_value)
     {
+        if (limit)
+            limit_value = std::min(limit_value, *limit);
+
         limit = limit_value;
     }
 

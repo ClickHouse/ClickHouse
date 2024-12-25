@@ -348,11 +348,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         output_stream << std::endl;
         WriteBufferFromOStream res_buf(output_stream, 4096);
-        IAST::FormatSettings format_settings(res_buf, /* one_line */ false);
+        IAST::FormatSettings format_settings(/* one_line */ false);
         format_settings.hilite = true;
         format_settings.show_secrets = true;
         format_settings.print_pretty_type_names = true;
-        res->format(format_settings);
+        res->format(res_buf, format_settings);
         res_buf.finalize();
         output_stream << std::endl << std::endl;
     }
@@ -635,11 +635,11 @@ try
                 if (is_interactive && is_default_format)
                     current_format = "TabSeparated";
             }
-            if (query_with_output->format != nullptr)
+            if (query_with_output->format_ast != nullptr)
             {
                 if (has_vertical_output_suffix)
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
-                const auto & id = query_with_output->format->as<ASTIdentifier &>();
+                const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
                 current_format = id.name();
             }
             else if (query_with_output->out_file)
@@ -2614,7 +2614,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
         || !ast_create.storage
         || !ast_create.storage->isExtendedStorageDefinition()
         || !ast_create.storage->engine
-        || ast_create.storage->engine->name.find("MergeTree") == std::string::npos)
+        || !ast_create.storage->engine->name.contains("MergeTree"))
         return false;
 
     auto all_changed = cmd_merge_tree_settings.changes();

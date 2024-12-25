@@ -24,7 +24,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Common/Arena.h>
-#include <Common/ColumnsHashing.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -126,7 +125,7 @@ public:
 
     bool isCloneSupported() const override
     {
-        return true;
+        return !getTotals() && getTotalRowCount() == 0;
     }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
@@ -408,6 +407,10 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
+    bool rightTableCanBeReranged() const override;
+    void tryRerangeRightTableData() override;
+    size_t getAndSetRightTableKeys() const;
+
 private:
     friend class NotJoinedHash;
 
@@ -484,10 +487,12 @@ private:
 
     bool empty() const;
 
+    bool isUsedByAnotherAlgorithm() const;
+    bool canRemoveColumnsFromLeftBlock() const;
+
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
-    void tryRerangeRightTableData() override;
     template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
     void tryRerangeRightTableDataImpl(Map & map);
     void doDebugAsserts() const;

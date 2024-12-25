@@ -319,10 +319,11 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
     minio = cluster.minio_client
     for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
-    assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == 0
+
+    remaining_files = list(
+        minio.list_objects(cluster.minio_bucket, "data/", recursive=True)
     )
+    assert len(remaining_files) == 0, remaining_files
 
     node.query(
         f"""

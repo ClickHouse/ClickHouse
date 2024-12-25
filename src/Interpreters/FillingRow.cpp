@@ -125,15 +125,15 @@ bool FillingRow::isConstraintsSatisfied(size_t pos) const
 static const Field & findBorder(const Field & constraint, const Field & next_original, int direction)
 {
     if (constraint.isNull())
-        return next_original;
+        return next_original; /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     if (next_original.isNull())
-        return constraint;
+        return constraint; /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     if (less(constraint, next_original, direction))
-        return constraint;
+        return constraint; /// NOLINT(bugprone-return-const-ref-from-parameter)
 
-    return next_original;
+    return next_original; /// NOLINT(bugprone-return-const-ref-from-parameter)
 }
 
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
