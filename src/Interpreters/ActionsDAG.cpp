@@ -1864,7 +1864,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
         while (!stack.empty())
         {
-            auto & cur_node = stack.top().node;
+            const auto * cur_node = stack.top().node;
             stack.pop();
 
             for (const auto * child : cur_node->children)
@@ -1887,7 +1887,8 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
         while (!stack.empty())
         {
-            auto & cur = stack.top();
+            /// Copying top frame is important, because we might access it after executing pop().
+            auto cur = stack.top();
             auto & cur_data = data[cur.node];
 
             /// At first, visit all children.
