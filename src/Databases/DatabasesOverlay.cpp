@@ -384,7 +384,7 @@ void DatabasesOverlay::loadTableFromMetadata(
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "There are no databases capable of loading table `{}` from path `{}` in database `{}` (engine {})",
-        name,
+        name.table,
         file_path,
         getDatabaseName(),
         getEngineName());
@@ -416,7 +416,7 @@ LoadTaskPtr DatabasesOverlay::loadTableFromMetadataAsync(
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "There are no databases capable of loading table `{}` from path `{}` in database `{}` (engine {})",
-        name,
+        name.table,
         file_path,
         getDatabaseName(),
         getEngineName());
@@ -445,7 +445,7 @@ LoadTaskPtr DatabasesOverlay::startupTableAsync(
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "There are no databases capable of starting up table `{}` in database `{}` (engine {})",
-        name,
+        name.table,
         getDatabaseName(),
         getEngineName());
 }

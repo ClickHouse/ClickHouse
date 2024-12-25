@@ -222,7 +222,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         if (db_disk->isSymlinkSupported() && db_disk->isSymlink(sub_path))
         {
             String db_name = sub_path.filename().string();
-            orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
+            orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), sub_path);
             continue;
         }
 
