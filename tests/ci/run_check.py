@@ -90,12 +90,8 @@ def normalize_category(cat: str) -> str:
     """Drop everything after open parenthesis, drop leading/trailing whitespaces, normalize case"""
     pos = cat.find('(')
 
-    if pos != -1:
-        result = cat[:pos].strip()
-    else:
-        result = cat.strip()
-
-    return result.casefold()
+    result = cat[:pos] if pos != -1 else cat
+    return result.strip().casefold()
 
 
 CATEGORIES_FOLD = [normalize_category(c) for lb, categories in LABEL_CATEGORIES.items() for c in categories]
