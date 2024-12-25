@@ -910,7 +910,6 @@ NativeORCBlockInputFormat::NativeORCBlockInputFormat(ReadBuffer & in_, Block hea
     , format_settings(format_settings_)
     , skip_stripes(format_settings.orc.skip_stripes)
 {
-    std::cout << "here" << std::endl;
 }
 
 void NativeORCBlockInputFormat::prepareFileReader()
