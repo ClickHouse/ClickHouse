@@ -179,7 +179,7 @@ private:
 
     public:
         // Constructor to create from C++ data
-        GeoPolygonContainer(const std::vector<LatLng>& mainLoop,
+        explicit GeoPolygonContainer(const std::vector<LatLng>& mainLoop,
                             const std::vector<std::vector<LatLng>>& holes = {})
             : mainLoopVerts(mainLoop), holeVerts(holes) {}
 
