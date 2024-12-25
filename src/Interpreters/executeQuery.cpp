@@ -455,7 +455,7 @@ QueryLogElement logQueryStart(
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (!settings.log_query_settings && settings.log_query_settings.changed)
+            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query settings will not be added to query_log since setting `log_query_settings` has been set to false."
@@ -463,26 +463,26 @@ QueryLogElement logQueryStart(
 
             query_log->add(elem);
         }
-        else if (elem.type < settings.log_queries_min_type)
+        else if (elem.type < settings[Setting::log_queries_min_type])
         {
-            if (settings.log_queries_min_type.changed)
+            if (settings[Setting::log_queries_min_type].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query start record will not be added to query_log because the query type is smaller than `log_queries_min_type` setting"
                     " The setting has been changed for the query");
         }
-        else if (settings.log_queries_min_query_duration_ms.totalMilliseconds())
+        else if (settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (settings.log_queries_min_query_duration_ms.changed)
+            if (settings[Setting::log_queries_min_query_duration_ms].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query start record will not be added to query_log due to `log_queries_min_query_duration_ms` > 0."
                     " The setting has been changed for the query");
         }
     }
-    else if (!internal && !settings.log_queries)
+    else if (!internal && !settings[Setting::log_queries])
     {
-        if (settings.log_queries.changed)
+        if (settings[Setting::log_queries].changed)
             LOG_TRACE(
                 getLogger("executeQuery"),
                 "Query will not be added to query_log since setting `log_queries` has been set to false."
@@ -780,25 +780,25 @@ void logExceptionBeforeStart(
 
             query_log->add(elem);
         }
-        else if (!settings.log_queries)
+        else if (!settings[Setting::log_queries])
         {
-            if (settings.log_queries.changed)
+            if (settings[Setting::log_queries].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query will not be added to query_log since setting `log_queries` has been set to false."
                     " The setting has been changed for the query");
         }
-        else if (elem.type < settings.log_queries_min_type)
+        else if (elem.type < settings[Setting::log_queries_min_type])
         {
-            if (settings.log_queries_min_type.changed)
+            if (settings[Setting::log_queries_min_type].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query will not be added to query_log due to query type is smaller than `log_queries_min_type` setting."
                     " The setting has been changed for the query");
         }
-        else if (settings.log_queries_min_query_duration_ms.totalMilliseconds())
+        else if (settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (settings.log_queries_min_query_duration_ms.changed)
+            if (settings[Setting::log_queries_min_query_duration_ms].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Query will not be added to query_log due to `log_queries_min_query_duration_ms` > 0 and the query failed "
