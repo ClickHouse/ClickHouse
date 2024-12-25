@@ -71,7 +71,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
-            {"allow_generate_min_max_data_insert_file", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -599,6 +598,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
+            {"allow_generate_min_max_data_insert_file", false, false, "New setting."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {
