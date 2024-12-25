@@ -88,13 +88,17 @@ CATEGORY_TO_LABEL = {
 
 def normalize_category(cat: str) -> str:
     """Drop everything after open parenthesis, drop leading/trailing whitespaces, normalize case"""
-    pos = cat.find('(')
+    pos = cat.find("(")
 
     result = cat[:pos] if pos != -1 else cat
     return result.strip().casefold()
 
 
-CATEGORIES_FOLD = [normalize_category(c) for lb, categories in LABEL_CATEGORIES.items() for c in categories]
+CATEGORIES_FOLD = [
+    normalize_category(c)
+    for lb, categories in LABEL_CATEGORIES.items()
+    for c in categories
+]
 
 
 def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
