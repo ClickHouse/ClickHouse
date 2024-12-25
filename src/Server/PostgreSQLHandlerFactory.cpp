@@ -6,11 +6,11 @@ namespace DB
 {
 
 PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(
-    IServer & server_, 
+    IServer & server_,
 #if USE_SSL
-    const std::string & conf_name_, 
+    const std::string & conf_name_,
 #endif
-    const ProfileEvents::Event & read_event_, 
+    const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : server(server_)
     , log(getLogger("PostgreSQLHandlerFactory"))

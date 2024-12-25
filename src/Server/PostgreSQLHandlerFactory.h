@@ -33,9 +33,9 @@ public:
     explicit PostgreSQLHandlerFactory(
         IServer & server_,
 #if USE_SSL
-        const std::string & conf_name_, 
+        const std::string & conf_name_,
 #endif
-        const ProfileEvents::Event & read_event_ = ProfileEvents::end(), 
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & server) override;
