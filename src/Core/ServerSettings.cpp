@@ -214,7 +214,8 @@ namespace DB
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, "Size of background pool for iceberg catalog", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 1000000, "Number of tasks which is possible to push into iceberg catalog pool", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, "0 - All feature tiers allowed (experimental, beta, production). 1 - Only beta and production feature tiers allowed. 2 - Only production feature tier allowed", 0) \
-    DECLARE(UInt64, max_cached_fiber_stacks_per_cpu, 64, "Maximum number of cached fiber stacks per CPU", 0) \
+    DECLARE(UInt32, num_fiber_stack_cache, 32, "Number of fiber stack caches. Multiple caches are used to avoid lock contention.", 0) \
+    DECLARE(UInt64, max_fiber_stack_cache_size_bytes, 32lu * 64 * 1024 * 1024, "Maximum size of fiber stack cache in bytes, should be multiple of `num_fiber_stack_cache`", 0) \
     DECLARE(Bool, dictionaries_lazy_load, 1, "1 - Load dictionaries lazily, i.e. a dictionary will be loaded when it's used for the first time. 0 - ClickHouse will start loading dictionaries immediately at startup.", 0) \
     DECLARE(Bool, wait_dictionaries_load_at_startup, 1, "Wait at startup until all the dictionaries finish their loading (successfully or not) before receiving any connections. Affects dictionaries only if `dictionaries_lazy_load` is false. Setting this to false can make ClickHouse start faster, however some queries can be executed slower.", 0) \
 

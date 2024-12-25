@@ -1,13 +1,14 @@
 #include "FiberStack.h"
 #include <atomic>
-#include <Core/ServerSettings.h>
-#include <Interpreters/Context.h>
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
+#include <base/defines.h>
 #include <base/scope_guard.h>
 #include <boost/core/noncopyable.hpp>
+#include <Core/ServerSettings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Interpreters/Context.h>
 
 namespace DB::ErrorCodes
 {
@@ -26,7 +27,8 @@ namespace ProfileEvents
 
 namespace DB::ServerSetting
 {
-    extern const ServerSettingsUInt64 max_cached_fiber_stacks_per_cpu;
+    extern const ServerSettingsUInt32 num_fiber_stack_cache;
+    extern const ServerSettingsUInt64 max_fiber_stack_cache_size_bytes;
 }
 
 namespace CurrentMetrics
@@ -94,16 +96,18 @@ class FixedSizeFiberStackCache
 {
 private:
     std::mutex mutex;
-    size_t max_cached_stacks; /// Maximum number of cached stacks.
-    FiberStack * allocator; /// Base allocator for new stacks.
-    std::list<boost::context::stack_context> free_stacks; /// List of free stacks.
-    absl::flat_hash_map<void *, boost::context::stack_context> allocated_stacks; /// Map of allocated pointer -> allocated_stack.
+    size_t max_cached_bytes; /// Maximum number of cached bytes.
+    FiberStack * allocator TSA_GUARDED_BY(mutex); /// Base allocator for new stacks.
+    std::list<boost::context::stack_context> free_stacks TSA_GUARDED_BY(mutex); /// List of free stacks.
+    absl::flat_hash_set<void *> allocated_stacks TSA_GUARDED_BY(mutex); /// Map of allocated pointer -> allocated_stack.
+    size_t cached_bytes TSA_GUARDED_BY(mutex);
 #ifndef NDEBUG
     size_t page_size;
 #endif
 
 public:
-    explicit FixedSizeFiberStackCache(FiberStack * base_allocator_, size_t max_cached_stacks_) : max_cached_stacks(max_cached_stacks_), allocator(base_allocator_)
+    explicit FixedSizeFiberStackCache(FiberStack * base_allocator_, size_t max_cached_bytes_)
+        : max_cached_bytes(max_cached_bytes_), allocator(base_allocator_), cached_bytes(0)
     {
 #ifndef NDEBUG
         page_size = getPageSize();
@@ -117,14 +121,14 @@ public:
         std::lock_guard lock(mutex);
         if (free_stacks.empty())
         {
-            if (allocated_stacks.size() >= max_cached_stacks)
+            if (cached_bytes + FiberStack::default_stack_size >= max_cached_bytes)
                 return std::nullopt;
             free_stacks.push_front(allocator->allocate());
             CurrentMetrics::add(CurrentMetrics::FiberStackCacheBytes, free_stacks.front().size);
         }
         auto stack = free_stacks.front();
         free_stacks.pop_front();
-        allocated_stacks.insert({stack.sp, stack});
+        allocated_stacks.insert(stack.sp);
 
     /// TODO: do we need to zero out the stack in all cases since all fiber is in same process?
     /// Folly::GuardPageAllocator, boost::context::pooled_fixedsize_stack, boost::coroutines::standard_stack_allocator
@@ -139,12 +143,12 @@ public:
 
     /// Return a stack to the pool.
     /// If the stack is not allocated by this pool, do nothing.
-    bool returnStack(void * ptr)
+    bool returnStack(boost::context::stack_context & sctx)
     {
         std::lock_guard lock(mutex);
-        if (auto it = allocated_stacks.find(ptr); it != allocated_stacks.end())
+        if (auto it = allocated_stacks.find(sctx.sp); it != allocated_stacks.end())
         {
-            free_stacks.push_front(it->second);
+            free_stacks.push_front(sctx);
             allocated_stacks.erase(it);
             CurrentMetrics::sub(CurrentMetrics::FiberStackCacheActive);
             return true;
@@ -181,11 +185,12 @@ private:
 
     FiberStackCacheManager()
     {
-        auto max_cached_fiber_stacks_per_cpu = DB::Context::getGlobalContextInstance()->getServerSettings()[DB::ServerSetting::max_cached_fiber_stacks_per_cpu];
-        /// We create multiple caches to reduce the lock contentions. There's no special reason to use number of cores.
-        caches.resize(getNumberOfCPUCoresToUse());
+        auto num_caches = DB::Context::getGlobalContextInstance()->getServerSettings()[DB::ServerSetting::num_fiber_stack_cache];
+        auto max_cached_bytes = DB::Context::getGlobalContextInstance()->getServerSettings()[DB::ServerSetting::max_fiber_stack_cache_size_bytes];
+        /// We create multiple caches to reduce the lock contentions
+        caches.resize(num_caches);
         for (auto & cache : caches)
-            cache = std::make_unique<FixedSizeFiberStackCache>(&base_allocator, max_cached_fiber_stacks_per_cpu);
+            cache = std::make_unique<FixedSizeFiberStackCache>(&base_allocator, std::max(max_cached_bytes / num_caches, 32 * FiberStack::default_stack_size));
     }
 
     FiberStack base_allocator;
@@ -230,7 +235,7 @@ void FixedSizeFiberStackWithCache::deallocate(boost::context::stack_context & sc
 {
     assert(cache);
     assert(fallback_allocator);
-    if (!cache->returnStack(sctx.sp))
+    if (!cache->returnStack(sctx))
         fallback_allocator->deallocate(sctx);
 }
 
