@@ -34,11 +34,13 @@ namespace CityHash_v1_0_2 { struct uint128; }
 namespace wide
 {
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wbit-int-extension"
+#if defined(__x86_64__) && defined(__clang__) && (__clang_major__ > 14 || (__clang_major__ == 14 && __clang_minor__ >= 0))
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wbit-int-extension"
 using BitInt256 = signed _BitInt(256);
 using BitUInt256 = unsigned _BitInt(256);
-#pragma clang diagnostic pop
+#    pragma clang diagnostic pop
+#endif
 
 constexpr bool supportsBitInt256()
 {
