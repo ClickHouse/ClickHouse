@@ -34,7 +34,6 @@
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
-#    include <boost/algorithm/string/case_conv.hpp>
 #    include <orc/MemoryPool.hh>
 #    include <orc/Vector.hh>
 #    include <Common/Allocator.h>
@@ -43,6 +42,8 @@
 #    include <Common/logger_useful.h>
 #    include <Common/quoteString.h>
 #    include "ArrowBufferedStreams.h"
+
+#    include <boost/algorithm/string.hpp>
 
 
 namespace
@@ -984,7 +985,7 @@ void NativeORCBlockInputFormat::prepareFileReader()
     if (format_settings.orc.filter_push_down && key_condition && !sargs)
         sargs = buildORCSearchArgument(*key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
 
-    selected_stripes = calculateSelectedStripes();
+    selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
     read_iterator = 0;
     prefetch_iterator = 0;
 
@@ -1019,12 +1020,10 @@ void NativeORCBlockInputFormat::prefetchStripes()
         time.elapsedMilliseconds());
 }
 
-std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes() const
+std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes)
 {
-    int num_stripes = static_cast<int>(file_reader->getNumberOfStripes());
-
     std::vector<int> result;
-    result.reserve(num_stripes - skip_stripes.size());
+    result.reserve(std::max<ssize_t>(num_stripes - skip_stripes.size(), 0));
     for (int stripe = 0; stripe < num_stripes; ++stripe)
     {
         if (skip_stripes.contains(stripe))

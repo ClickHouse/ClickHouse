@@ -76,9 +76,10 @@ protected:
     void onCancel() noexcept override { is_stopped = 1; }
 
 private:
+    static std::vector<int> calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes);
+
     void prepareFileReader();
     bool prepareStripeReader();
-    std::vector<int> calculateSelectedStripes() const;
 
     void prefetchStripes();
 
@@ -98,8 +99,8 @@ private:
 
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_stripes;
-    bool use_prefetch;
-    size_t min_bytes_for_seek;
+    const bool use_prefetch;
+    const size_t min_bytes_for_seek;
 
     std::vector<int> selected_stripes;
     size_t read_iterator;
