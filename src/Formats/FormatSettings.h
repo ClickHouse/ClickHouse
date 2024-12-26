@@ -282,6 +282,7 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool output_datetime_as_uint32 = false;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
@@ -423,6 +424,7 @@ struct FormatSettings
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
         bool dictionary_as_low_cardinality = true;
+        String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 
