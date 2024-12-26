@@ -373,11 +373,11 @@ public:
                     getName());
 
             const auto & nested_type = array_type->getNestedType();
-            /// Last argument (arr_partial_offsets) must be an array of numbers
-            if (!isNativeNumber(nested_type))
+            /// Last argument (arr_partial_offsets) must be an array of integers
+            if (!isInteger(nested_type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "{} argument (arr_partial_offsets) for function {} cannot process values of type {}, should be Number",
+                    "{} argument (arr_partial_offsets) for function {} cannot process values of type {}, should be Integer",
                     is_pr ? "Third" : "Fourth",
                     getName(),
                     nested_type->getName());
