@@ -7,7 +7,7 @@
 
 
 static constexpr const char * GRAY_COLOR = "\033[90m";
-static constexpr const char * GRAY_BACKGROUND = "\033[100m";
+static constexpr const char * RED_COLOR = "\033[31m";
 static constexpr const char * UNDERSCORE = "\033[4m";
 static constexpr const char * RESET_COLOR = "\033[0m";
 
@@ -117,7 +117,7 @@ String highlightTrailingSpaces(String source)
         if (highlight_start_pos >= source.size())
             return source;
     }
-    return source.substr(0, highlight_start_pos) + GRAY_BACKGROUND + UNDERSCORE + source.substr(highlight_start_pos) + RESET_COLOR;
+    return source.substr(0, highlight_start_pos) + RED_COLOR + UNDERSCORE + source.substr(highlight_start_pos, std::string::npos) + RESET_COLOR;
 }
 
 }

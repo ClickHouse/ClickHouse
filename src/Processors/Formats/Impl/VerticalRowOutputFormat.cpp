@@ -68,6 +68,7 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 
 void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
 {
+    /// If we need highlighting.
     if (color
         && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
             || format_settings.pretty.highlight_trailing_spaces))
