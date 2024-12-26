@@ -17,6 +17,7 @@
 #include <deque>
 #include <atomic>
 
+
 namespace CurrentMetrics
 {
     extern const Metric ParallelFormattingOutputFormatThreads;
