@@ -74,6 +74,11 @@ static double castInt128ToDouble(BitInt128 from)
     return static_cast<double>(from);
 }
 
+static BitInt128 castFloatToInt128(float from)
+{
+    return static_cast<BitInt128>(from);
+}
+
 /** Simple module to object file compiler.
   * Result object cannot be used as machine code directly, it should be passed to linker.
   */
@@ -409,6 +414,7 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&moduloInt128));
     symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&castDoubleToInt128));
     symbol_resolver->registerSymbol("__floattidf", reinterpret_cast<void *>(&castInt128ToDouble));
+    symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&castFloatToInt128));
 }
 
 CHJIT::~CHJIT() = default;
