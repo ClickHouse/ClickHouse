@@ -89,7 +89,9 @@ void PrettyBlockOutputFormat::calculateWidths(
         /// Also, calculate the widths for the names of columns.
         {
             auto [name, width] = truncateName(elem.name,
-                std::max<UInt64>(max_padded_widths[i], format_settings.pretty.max_column_name_width_cut_to),
+                format_settings.pretty.max_column_name_width_cut_to
+                    ? std::max<UInt64>(max_padded_widths[i], format_settings.pretty.max_column_name_width_cut_to)
+                    : 0,
                 format_settings.pretty.max_column_name_width_min_chars_to_cut,
                 format_settings.pretty.charset != FormatSettings::Pretty::Charset::UTF8);
 
