@@ -51,7 +51,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     name_widths.resize(num_columns);
     names.resize(num_columns);
 
-    /// Calculate widths of all values.
+    /// Calculate the widths of all values.
     String serialized_value;
     size_t prefix = 2; // Tab character adjustment
     for (size_t i = 0; i < num_columns; ++i)
@@ -86,10 +86,10 @@ void PrettyBlockOutputFormat::calculateWidths(
                 std::min<UInt64>({format_settings.pretty.max_column_pad_width, format_settings.pretty.max_value_width, widths[i][j]}));
         }
 
-        /// And also calculate widths for names of columns.
+        /// Also, calculate the widths for the names of columns.
         {
             auto [name, width] = truncateName(elem.name,
-                format_settings.pretty.max_column_name_width_cut_to,
+                std::max<UInt64>(max_padded_widths[i], format_settings.pretty.max_column_name_width_cut_to),
                 format_settings.pretty.max_column_name_width_min_chars_to_cut,
                 format_settings.pretty.charset != FormatSettings::Pretty::Charset::UTF8);
 
