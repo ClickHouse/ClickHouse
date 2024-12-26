@@ -5859,9 +5859,6 @@ Enable experimental hash functions
     DECLARE(Bool, allow_experimental_object_type, false, R"(
 Allow the obsolete Object data type
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_bfloat16_type, false, R"(
-Allow BFloat16 data type (under development).
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
 
@@ -6009,6 +6006,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
