@@ -1,3 +1,4 @@
+SET output_format_pretty_squash_consecutive_ms = 0;
 DROP TABLE IF EXISTS unicode;
 
 CREATE TABLE unicode(c1 String, c2 String) ENGINE = Memory;
