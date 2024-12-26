@@ -51,8 +51,7 @@ public:
     {
         return countBytesInFilter(reinterpret_cast<const UInt8 *>(mask.data()), 0, mask.size());
     }
-//    PaddedPODArray<bool> & maskReference() { return mask; }
-//    const PaddedPODArray<bool> & maskReference() const { return mask; }
+
     const bool * activeAddress() const { return mask.data() + offset; }
     bool * activeAddress() { return mask.data() + offset; }
 

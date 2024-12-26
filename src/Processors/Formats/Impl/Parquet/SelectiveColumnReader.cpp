@@ -623,7 +623,6 @@ void FixedLengthColumnDirectReader<DataType>::read(MutableColumnPtr & column, Op
                 data, row_set, rows_can_read, element_size, getConverter());
         }
         rows_read += rows_can_read;
-        state.offsets.consume(rows_can_read);
     }
 }
 

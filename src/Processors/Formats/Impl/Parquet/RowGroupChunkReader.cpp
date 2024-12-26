@@ -162,7 +162,16 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         for (size_t i = 0; i < types.size(); i++)
         {
             ColumnWithTypeAndName src_col = ColumnWithTypeAndName{std::move(columns[i]), reader_data_types.at(i), types.at(i).name};
-            casted_columns.emplace_back(castColumn(src_col, types.at(i).type));
+            // intermediate column is already casted
+            if (src_col.column->getDataType() == types.at(i).type->getColumnType())
+            {
+                casted_columns.emplace_back(std::move(src_col.column));
+            }
+            else
+            {
+                auto casted = castColumn(src_col, types.at(i).type);
+                casted_columns.emplace_back(casted);
+            }
         }
         return Chunk(std::move(casted_columns), rows_read);
     }
@@ -379,6 +388,7 @@ SelectResult SelectConditions::selectRows(size_t rows)
             {
                 auto reader = readers.at(name);
                 auto column = reader->createColumn();
+                column->reserve(rows);
                 if (count == rows)
                 {
                     OptionalRowSet set;
@@ -390,7 +400,8 @@ SelectResult SelectConditions::selectRows(size_t rows)
                     // clean row set offset
                     total_set->setOffset(0);
                 }
-                intermediate_columns.emplace(name, std::move(column));
+                auto casted = castColumn(ColumnWithTypeAndName{std::move(column), reader->getResultType(), name}, header.getByName(name).type);
+                intermediate_columns.emplace(name, std::move(casted));
             }
             input.emplace_back(intermediate_columns.at(name), header.getByName(name).type, name);
         }
