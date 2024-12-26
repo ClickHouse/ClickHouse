@@ -1102,6 +1102,9 @@ If enabled and if output is a terminal, highlight every digit corresponding to t
     DECLARE(UInt64, output_format_pretty_single_large_number_tip_threshold, 1'000'000, R"(
 Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)
 )", 0) \
+    DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
+If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
+)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
 
@@ -1301,4 +1304,3 @@ Example of 'spark' mode:
 #define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
     FORMAT_FACTORY_SETTINGS(M, ALIAS) \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
-

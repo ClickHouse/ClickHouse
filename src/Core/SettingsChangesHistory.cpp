@@ -72,6 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
+            {"output_format_pretty_highlight_trailing_spaces", false, true, "A new setting."},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {

@@ -68,7 +68,9 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 
 void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
 {
-    if (color && format_settings.pretty.highlight_digit_groups && is_number[field_number])
+    if (color
+        && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
+            || format_settings.pretty.highlight_trailing_spaces))
     {
         String serialized_value;
         {
@@ -77,7 +79,13 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
         }
 
         /// Highlight groups of thousands.
-        serialized_value = highlightDigitGroups(serialized_value);
+        if (format_settings.pretty.highlight_digit_groups && is_number[field_number])
+            serialized_value = highlightDigitGroups(serialized_value);
+
+        /// Highlight trailing spaces.
+        if (format_settings.pretty.highlight_trailing_spaces)
+            serialized_value = highlightTrailingSpaces(serialized_value);
+
         out.write(serialized_value.data(), serialized_value.size());
     }
     else

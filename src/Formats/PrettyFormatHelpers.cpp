@@ -3,9 +3,11 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
 #include <Common/formatReadable.h>
+#include <base/find_symbols.h>
 
 
 static constexpr const char * GRAY_COLOR = "\033[90m";
+static constexpr const char * GRAY_BACKGROUND = "\033[100m";
 static constexpr const char * UNDERSCORE = "\033[4m";
 static constexpr const char * RESET_COLOR = "\033[0m";
 
@@ -102,6 +104,20 @@ String highlightDigitGroups(String source)
     }
 
     return result;
+}
+
+
+String highlightTrailingSpaces(String source)
+{
+    const char * last_significant = find_last_not_symbols_or_null<' ', '\t', '\n', '\r', '\f', '\v'>(source.data(), source.data() + source.size());
+    size_t highlight_start_pos = 0;
+    if (last_significant)
+    {
+        highlight_start_pos = last_significant + 1 - source.data();
+        if (highlight_start_pos >= source.size())
+            return source;
+    }
+    return source.substr(0, highlight_start_pos) + GRAY_BACKGROUND + UNDERSCORE + source.substr(highlight_start_pos) + RESET_COLOR;
 }
 
 }
