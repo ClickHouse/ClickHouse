@@ -3,7 +3,12 @@
 namespace DB
 {
 
-ColumnFilterCreators ColumnFilterHelper::creators = {BigIntRangeFilter::create, NegatedBigIntRangeFilter::create, createFloatRangeFilter, ByteValuesFilter::create, NegatedByteValuesFilter::create};
+ColumnFilterCreators ColumnFilterHelper::creators
+    = {BigIntRangeFilter::create,
+       NegatedBigIntRangeFilter::create,
+       createFloatRangeFilter,
+       ByteValuesFilter::create,
+       NegatedByteValuesFilter::create};
 FilterSplitResult ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & filter_expression)
 {
     if (filter_expression.getOutputs().empty())

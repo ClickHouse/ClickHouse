@@ -308,12 +308,12 @@ void BigIntRangeFilter::testInt16Values(RowSet & row_set, size_t len, const Int1
     testIntValues(row_set, len, data);
 }
 
-bool isFunctionNode(const ActionsDAG::Node & node)
+static bool isFunctionNode(const ActionsDAG::Node & node)
 {
     return node.function_base != nullptr;
 }
 
-bool isInputNode(const ActionsDAG::Node & node)
+static bool isInputNode(const ActionsDAG::Node & node)
 {
     return node.type == ActionsDAG::ActionType::INPUT;
 }
@@ -407,7 +407,7 @@ OptionalFilter BigIntRangeFilter::create(const ActionsDAG::Node & node)
 }
 
 
-ColumnFilterPtr nullOrFalse(bool null_allowed) {
+static ColumnFilterPtr nullOrFalse(bool null_allowed) {
     if (null_allowed) {
         return std::make_shared<IsNullFilter>();
     }
@@ -520,6 +520,9 @@ OptionalFilter ByteValuesFilter::create(const ActionsDAG::Node & node)
     }
     return std::nullopt;
 }
+ByteValuesFilter::~ByteValuesFilter()
+{
+}
 
 template <is_floating_point T>
 ColumnFilterPtr FloatRangeFilter<T>::merge(const ColumnFilter * other) const
@@ -621,6 +624,7 @@ ColumnFilterPtr NegatedBigIntRangeFilter::merge(const ColumnFilter * ) const
 {
     throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported merge operation");
 }
+NegatedBigIntRangeFilter::~NegatedBigIntRangeFilter() = default;
 
 DB::OptionalFilter DB::NegatedByteValuesFilter::create(const ActionsDAG::Node & node)
 {
@@ -651,6 +655,9 @@ DB::OptionalFilter DB::NegatedByteValuesFilter::create(const ActionsDAG::Node & 
 ColumnFilterPtr NegatedByteValuesFilter::clone(std::optional<bool> ) const
 {
     return nullptr;
+}
+NegatedByteValuesFilter::~NegatedByteValuesFilter()
+{
 }
 
 OptionalFilter createFloatRangeFilter(const ActionsDAG::Node & node)
@@ -749,7 +756,8 @@ NameSet ExpressionFilter::getInputs()
 }
 ExpressionFilter::ExpressionFilter(ActionsDAG && dag_)
 {
-    actions = std::make_shared<ExpressionActions>(std::move(dag_));
+    ExpressionActionsSettings settings {.can_compile_expressions = true, .min_count_to_compile_expression = 0};
+    actions = std::make_shared<ExpressionActions>(std::move(dag_), settings, true);
     filter_name = actions->getActionsDAG().getOutputs().front()->result_name;
     if (!isUInt8(removeNullable(actions->getActionsDAG().getOutputs().front()->result_type)))
     {

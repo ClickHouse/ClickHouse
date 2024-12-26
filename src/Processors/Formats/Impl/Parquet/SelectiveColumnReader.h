@@ -467,11 +467,14 @@ public:
 
     /// ignore n rows, for nested type. for example, an empty list will take up one row.
     virtual void advance(size_t rows, bool) { state.offsets.consume(rows); }
-    /// skip n rows
-    void skip(size_t rows);
+    /// skip n rows, only nested type need override.
+    virtual void skip(size_t rows);
 
     /// skip values in current page, return the number of rows need to lazy skip
-    virtual size_t skipValuesInCurrentPage(size_t rows_to_skip) = 0;
+    virtual size_t skipValuesInCurrentPage(size_t /*rows_to_skip*/)
+    {
+        throw Exception (ErrorCodes::LOGICAL_ERROR, "Skip values in current page is not implemented");
+    }
 
     virtual int16_t maxDefinitionLevel() const { return scan_spec.column_desc->max_definition_level(); }
 
@@ -820,7 +823,7 @@ public:
     void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) override;
     DataTypePtr getResultType() override;
     MutableColumnPtr createColumn() override;
-    size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+    void skip(size_t rows) override;
     size_t availableRows() const override;
     size_t levelsOffset() const override;
     void advance(size_t rows, bool force) override {
@@ -869,7 +872,7 @@ public:
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
     MutableColumnPtr createColumn() override;
     DataTypePtr getResultType() override;
-    size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
+    void skip(size_t rows) override;
     size_t availableRows() const override;
     size_t levelsOffset() const override;
     void advance(size_t rows, bool force) override;

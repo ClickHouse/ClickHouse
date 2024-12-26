@@ -118,10 +118,9 @@ private:
 class ColumnFilter
 {
 protected:
-    ColumnFilter(ColumnFilterKind kind, bool null_allowed_) : kind_(kind), null_allowed(null_allowed_) { }
-
+    ColumnFilter(ColumnFilterKind kind, bool null_allowed_) : kind_(kind), null_allowed(null_allowed_) {}
 public:
-    virtual ~ColumnFilter() = default;
+    virtual ~ColumnFilter() {}
     virtual ColumnFilterKind kind() const { return kind_; }
     virtual ColumnPtr testByExpression(ColumnPtr) { throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "testByExpression not implemented"); }
     virtual bool testNull() const { return null_allowed; }
@@ -207,6 +206,7 @@ class IsNullFilter : public ColumnFilter
 {
 public:
     IsNullFilter() : ColumnFilter(IsNull, true) { }
+    ~IsNullFilter() override { }
     bool testNotNull() const override { return false; }
     ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<IsNullFilter>(); }
 };
@@ -215,6 +215,7 @@ class IsNotNullFilter : public ColumnFilter
 {
 public:
     IsNotNullFilter() : ColumnFilter(IsNotNull, false) { }
+    ~IsNotNullFilter() override { }
     ColumnFilterPtr clone(std::optional<bool>) const override { return std::make_shared<IsNotNullFilter>(); }
 };
 
@@ -222,6 +223,7 @@ class AlwaysTrueFilter : public ColumnFilter
 {
 public:
     AlwaysTrueFilter() : ColumnFilter(AlwaysTrue, true) { }
+    ~AlwaysTrueFilter() override { }
     bool testNull() const override { return true; }
     bool testNotNull() const override { return true; }
     bool testInt64(Int64) const override { return true; }
@@ -241,6 +243,7 @@ class AlwaysFalseFilter : public ColumnFilter
 {
 public:
     AlwaysFalseFilter() : ColumnFilter(AlwaysFalse, false) { }
+    ~AlwaysFalseFilter() override { }
     bool testNull() const override { return false; }
     bool testNotNull() const override { return false; }
     bool testInt64(Int64) const override { return false; }
@@ -316,6 +319,7 @@ public:
         non_negated(std::make_unique<BigIntRangeFilter>(lower, upper, !null_allowed_)) {
     }
 
+    ~NegatedBigIntRangeFilter() override;
     bool testInt64(Int64 int64) const override { return !non_negated->testInt64(int64); }
     bool testInt32(Int32 int32) const override { return !non_negated->testInt32(int32); }
     bool testInt16(Int16 int16) const override { return !non_negated->testInt16(int16); }
@@ -364,7 +368,7 @@ public:
         , lengths(other.lengths)
     {
     }
-
+    ~ByteValuesFilter() override;
     bool testString(const String & value) const override { return lengths.contains(value.size()) && values.contains(value); }
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;
     ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override
@@ -394,6 +398,7 @@ public:
         , non_negated(std::make_unique<ByteValuesFilter>(*other.non_negated, other.non_negated->null_allowed))
     {
     }
+    ~NegatedByteValuesFilter() override;
     bool testString(const String & string) const override { return !non_negated->testString(string); }
     ColumnFilterPtr merge (const ColumnFilter * filter) const override;
     ColumnFilterPtr clone(std::optional<bool> null_allowed_) const override;
@@ -512,6 +517,7 @@ public:
         chassert(upper_unbounded || !std::isnan(max));
     }
 
+    ~FloatRangeFilter() override { }
     bool testFloat32(Float32 value) const override { return testFloatingPoint(value); }
     bool testFloat64(Float64 value) const override { return testFloatingPoint(static_cast<T>(value)); }
     ColumnFilterPtr merge(const ColumnFilter * filter) const override;

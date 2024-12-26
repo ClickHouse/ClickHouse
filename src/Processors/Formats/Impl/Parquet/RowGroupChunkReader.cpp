@@ -403,7 +403,7 @@ SelectResult SelectConditions::selectRows(size_t rows)
                 auto casted = castColumn(ColumnWithTypeAndName{std::move(column), reader->getResultType(), name}, header.getByName(name).type);
                 intermediate_columns.emplace(name, std::move(casted));
             }
-            input.emplace_back(intermediate_columns.at(name), header.getByName(name).type, name);
+            input.emplace_back(intermediate_columns.at(name)->cloneFinalized(), header.getByName(name).type, name);
         }
 
         auto filter = expr_filter->execute(input);
@@ -420,14 +420,15 @@ SelectResult SelectConditions::selectRows(size_t rows)
         return SelectResult{std::nullopt, std::move(intermediate_columns), {}, 0, true};
     else
     {
-        auto total_count = total_set.value().count();
         if (!intermediate_filters.empty())
         {
             auto filter = mergeFilters(intermediate_filters);
             combineRowSetAndFilter(total_set.value(), filter);
-            return SelectResult{std::move(total_set), std::move(intermediate_columns), std::move(filter), total_count, false};
+            auto valid_count = total_set.value().count();
+            return SelectResult{std::move(total_set), std::move(intermediate_columns), std::move(filter), valid_count, false};
         }
-        return SelectResult{std::move(total_set), {}, {}, total_count, false};
+        auto valid_count = total_set.value().count();
+        return SelectResult{std::move(total_set), {}, {}, valid_count, false};
     }
 }
 SelectConditions::SelectConditions(

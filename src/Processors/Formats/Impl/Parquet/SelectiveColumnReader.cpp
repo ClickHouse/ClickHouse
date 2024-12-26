@@ -447,7 +447,6 @@ template <typename DataType, typename SerializedType>
 void NumberDictionaryReader<DataType, SerializedType>::readSpace(
     MutableColumnPtr & column, OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
 {
-    // TODO 处理nullmap的offset
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
@@ -1205,7 +1204,7 @@ void StringDictionaryReader::readSpace(
         {
             auto nonnull_count = rows_can_read - null_count;
             nextIdxBatchIfEmpty(nonnull_count);
-            dict_decoder->decodeStringSpace(dict, string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_can_read);
+            dict_decoder->decodeStringSpace(dict, string_column->getChars(), string_column->getOffsets(), row_set, null_map, rows_to_read);
         }
         rows_read += rows_can_read;
     }
@@ -1423,7 +1422,7 @@ void DictDecoder::decodeStringSpace(
                 }
                 else
                 {
-                    const String & value = dict[idx_buffer[count]];
+                    const String & value = dict[idx_buffer[count++]];
                     appendString(chars, string_offsets, value);
                 }
             }
@@ -1443,9 +1442,8 @@ void DictDecoder::decodeStringSpace(
             }
             else
             {
-                const String & value = dict[idx_buffer[count]];
+                const String & value = dict[idx_buffer[count++]];
                 appendString(chars, string_offsets, value);
-                count++;
             }
             rows_read++;
         }
@@ -1832,7 +1830,7 @@ void PlainDecoder::decodeFixedStringSpace(
 }
 
 template <typename T, typename S>
-size_t decodeFixedValueSpaceInternal(
+static size_t decodeFixedValueSpaceInternal(
     PaddedPODArray<T> & data, const S * start, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
 {
     size_t rows_read = 0;
@@ -1847,8 +1845,7 @@ size_t decodeFixedValueSpaceInternal(
             }
             else
             {
-                data.push_back(static_cast<T>(start[count]));
-                count++;
+                data.push_back(static_cast<T>(start[count++]));
             }
         }
     }
@@ -1860,14 +1857,14 @@ size_t decodeFixedValueSpaceInternal(
             if (sets.get(rows_read))
             {
                 if (null_map[rows_read])
-                {
                     data.push_back(0);
-                }
                 else
-                {
-                    data.push_back(static_cast<T>(start[count]));
+                    data.push_back(static_cast<T>(start[count++]));
+            }
+            else
+            {
+                if (!null_map[rows_read])
                     count++;
-                }
             }
             rows_read++;
         }
@@ -2122,9 +2119,15 @@ MutableColumnPtr ListColumnReader::createColumn()
 {
     return ColumnArray::create(children.front()->createColumn(), ColumnArray::ColumnOffsets::create());
 }
-size_t ListColumnReader::skipValuesInCurrentPage(size_t )
+void ListColumnReader::skip(size_t rows)
 {
-    throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unimplemented operation");
+    for (const auto & child : children)
+    {
+        // may be can skip generate columns.
+        auto tmp = child->createColumn();
+        OptionalRowSet set;
+        read(tmp, set, rows);
+    }
 }
 
 size_t ListColumnReader::availableRows() const
@@ -2270,21 +2273,17 @@ const PaddedPODArray<Int16> & StructColumnReader::getRepetitionLevels()
     return children.begin()->second->getRepetitionLevels();
 }
 
-size_t StructColumnReader::skipValuesInCurrentPage(size_t count)
+void StructColumnReader::skip(size_t rows)
 {
-    size_t remain_rows = 0;
     for (auto & child : children)
     {
-        auto rows = child.second->skipValuesInCurrentPage(count);
-        if (remain_rows && remain_rows != rows)
-        {
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "skip values in struct column reader failed");
-        }
-        else
-            remain_rows = rows;
+        child.second->skip(rows);
     }
-    return remain_rows;
 }
+//size_t StructColumnReader::skipValuesInCurrentPage(size_t count)
+//{
+//
+//}
 
 size_t StructColumnReader::availableRows() const
 {
