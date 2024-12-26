@@ -166,9 +166,9 @@ def drop_tables():
 
 
 def test_git_import():
-    repo = "https://github.com/ClickHouse/clickhouse-odbc.git"
-    commit = "5d84ec591c53cbb272593f024230a052690fdf69"
-    dir = "/tmp/clickhouse-odbc"
+    repo = "https://github.com/githubtraining/hellogitworld.git"
+    commit = "ef7bebf8bdb1919d947afe46ab4b2fb4278039b3"
+    dir = "/tmp/hellogitworld"
 
     clone_git_repository(repo, dir, commit=commit)
 
@@ -177,11 +177,11 @@ def test_git_import():
     create_tables()
     insert_into_tables(dir)
 
-    assert output.count("\n") == 913
-    assert node.query("SELECT count() FROM commits") == "888\n"
-    assert node.query("SELECT count() FROM file_changes") == "2931\n"
+    assert output.count("\n") == 26
+    assert node.query("SELECT count() FROM commits") == "24\n"
+    assert node.query("SELECT count() FROM file_changes") == "35\n"
     assert node.query("SELECT count(), round(avg(indent), 1) FROM line_changes") == TSV(
-        [[160553, 4.6]]
+        [[218, 1.1]]
     )
 
     drop_tables()
