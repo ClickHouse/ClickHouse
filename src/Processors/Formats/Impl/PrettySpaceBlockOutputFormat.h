@@ -18,7 +18,7 @@ public:
 
 private:
     void writeChunk(const Chunk & chunk, PortKind port_kind) override;
-    void writeSuffix() override;
+    void writeSuffixImpl() override;
 };
 
 }

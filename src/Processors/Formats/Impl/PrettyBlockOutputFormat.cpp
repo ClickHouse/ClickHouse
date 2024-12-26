@@ -533,7 +533,11 @@ void PrettyBlockOutputFormat::writeSuffix()
 {
     stopThread();
     writeMonoChunkIfNeeded();
+    writeSuffixImpl();
+}
 
+void PrettyBlockOutputFormat::writeSuffixImpl()
+{
     if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("  Showed first ", out);
