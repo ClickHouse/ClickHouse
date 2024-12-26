@@ -48,6 +48,8 @@ not a null	2
 	4
 line\'6	6
 	7
+\'	8
+\\	9
 test table function
 line1	1
 line2	2

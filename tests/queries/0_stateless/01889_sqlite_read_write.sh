@@ -96,6 +96,8 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE sqlite_table3 (col1 String, col2 Int3
 ${CLICKHOUSE_CLIENT} --query='SHOW CREATE TABLE sqlite_table3;' | sed -r 's/(.*SQLite)(.*)/\1/'
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('line\'6', 6);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES (NULL, 7);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('\'', 8);"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO sqlite_table3 VALUES ('\\\\', 9);" # Escaped backslash = \\, but we're in bash - so \\\\
 
 ${CLICKHOUSE_CLIENT} --query='SELECT * FROM sqlite_table3 ORDER BY col2'
 
