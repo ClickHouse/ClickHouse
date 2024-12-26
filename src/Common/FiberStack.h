@@ -25,7 +25,7 @@ class FiberStack
 {
 private:
     size_t stack_size;
-    size_t page_size = 0;
+    static inline size_t page_size = getPageSize();
 
     /// The real number of pages and bytes allocated for the stack.
     size_t num_pages = 0;
@@ -40,7 +40,6 @@ public:
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
-        page_size = getPageSize();
         num_pages = 1 + (stack_size - 1) / page_size;
         num_bytes = (num_pages + 1) * page_size; /// Add one page at bottom that will be used as guard-page
     }
