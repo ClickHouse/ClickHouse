@@ -3,6 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
 #include <Common/formatReadable.h>
+#include <Common/UTF8Helpers.h>
 
 
 static constexpr const char * GRAY_COLOR = "\033[90m";
@@ -102,6 +103,29 @@ String highlightDigitGroups(String source)
     }
 
     return result;
+}
+
+
+std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hysteresis, bool ascii)
+{
+    size_t length = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
+
+    if (!cut_to || length <= cut_to + hysteresis)
+        return {name, length};
+
+    /// We cut characters in the middle and insert filler there.
+    const char * filler = ascii ? "~" : "⋯";
+
+    size_t prefix_chars = cut_to / 2;
+    size_t suffix_chars = (cut_to - 1) / 2;
+    size_t suffix_chars_begin = length - suffix_chars;
+
+    size_t prefix_bytes = UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size(), 0, prefix_chars);
+    size_t suffix_bytes_begin = UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size(), 0, suffix_chars_begin);
+
+    name = name.substr(0, prefix_bytes) + filler + name.substr(suffix_bytes_begin, std::string::npos);
+
+    return {name, cut_to};
 }
 
 }

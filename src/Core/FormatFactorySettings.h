@@ -892,8 +892,17 @@ Rows limit for Pretty formats.
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(
 Maximum width to pad all values in a column in Pretty formats.
 )", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_cut_to, 16, R"(
+If the column name is too long, cut it to this length.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_min_chars_to_cut, 4, R"(
+Minimum characters to cut if the column name is too long.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width, 10000, R"(
 Maximum width of value to display in Pretty formats. If greater - it will be cut.
+The value 0 means - never cut.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width_apply_for_single_value, false, R"(
 Only cut values (see the `output_format_pretty_max_value_width` setting) when it is not a single value in a block. Otherwise output it entirely, which is useful for the `SHOW CREATE TABLE` query.
@@ -1301,4 +1310,3 @@ Example of 'spark' mode:
 #define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
     FORMAT_FACTORY_SETTINGS(M, ALIAS) \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
-

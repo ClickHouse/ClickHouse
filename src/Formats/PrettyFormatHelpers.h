@@ -18,4 +18,8 @@ void writeReadableNumberTipIfSingleValue(WriteBuffer & out, const Chunk & chunk,
 /// Underscores digit groups related to thousands using terminal ANSI escape sequences.
 String highlightDigitGroups(String source);
 
+/// If the visible width of the name is longer than `cut_to` + `hysteresis`, truncate it to `cut_to`
+/// by cutting it in the middle and replacing with a single filler character (ascii or unicode).
+std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hysteresis, bool ascii);
+
 }

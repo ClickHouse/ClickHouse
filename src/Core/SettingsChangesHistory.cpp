@@ -73,6 +73,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
             {"allow_experimental_bfloat16_type", false, true, "Add new BFloat16 type"},
+            {"output_format_pretty_max_column_name_width_cut_to", 0, 16, "A new setting"},
+            {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {

@@ -36,7 +36,7 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
 /// Note that number of code points is just a rough approximation of visible string width.
 void PrettyBlockOutputFormat::calculateWidths(
     const Block & header, const Chunk & chunk,
-    WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths)
+    WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names)
 {
     size_t num_rows = std::min(chunk.getNumRows(), format_settings.pretty.max_rows);
 
@@ -49,6 +49,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     widths.resize(num_columns);
     max_padded_widths.resize_fill(num_columns);
     name_widths.resize(num_columns);
+    names.resize(num_columns);
 
     /// Calculate widths of all values.
     String serialized_value;
@@ -87,9 +88,13 @@ void PrettyBlockOutputFormat::calculateWidths(
 
         /// And also calculate widths for names of columns.
         {
-            // name string doesn't contain Tab, no need to pass `prefix`
-            name_widths[i] = std::min<UInt64>(format_settings.pretty.max_column_pad_width,
-                UTF8::computeWidth(reinterpret_cast<const UInt8 *>(elem.name.data()), elem.name.size()));
+            auto [name, width] = truncateName(elem.name,
+                format_settings.pretty.max_column_name_width_cut_to,
+                format_settings.pretty.max_column_name_width_min_chars_to_cut,
+                format_settings.pretty.charset != FormatSettings::Pretty::Charset::UTF8);
+
+            names[i] = std::move(name);
+            name_widths[i] = std::min<UInt64>(format_settings.pretty.max_column_pad_width, width);
             max_padded_widths[i] = std::max<UInt64>(max_padded_widths[i], name_widths[i]);
         }
         prefix += max_padded_widths[i] + 3;
@@ -189,7 +194,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    Strings names;
+    calculateWidths(header, chunk, widths, max_widths, name_widths, names);
 
     const GridSymbols & grid_symbols
         = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? utf8_grid_symbols : ascii_grid_symbols;
@@ -282,11 +288,11 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
                     writeChar(' ', out);
 
-                writeString(col.name, out);
+                writeString(names[i], out);
             }
             else
             {
-                writeString(col.name, out);
+                writeString(names[i], out);
 
                 for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
                     writeChar(' ', out);
