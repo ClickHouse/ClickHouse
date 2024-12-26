@@ -62,12 +62,6 @@ WITH score_with_group AS (
           [1, 0, 1, 0, 0, 0, 1, 0, 0, 1] AS labels)
   ARRAY JOIN idx
 ),
-total_count AS (
-  SELECT
-    countIf(label > 0) as total_positives,
-    countIf(label = 0) as total_negatives
-  FROM score_with_group
-),
 grouped_scores AS (
   SELECT
     group,
@@ -88,7 +82,7 @@ partial_aucs AS (
       [
         COALESCE(prev_group_tp, 0), 
         COALESCE(prev_group_fp, 0), 
-        COALESCE((SELECT total_positives FROM total_count), 0)
+        COALESCE(SUM(group_tp) OVER(), 0)
       ]
     ) as partial_pr_auc,
     arrayROCAUC(
@@ -97,9 +91,9 @@ partial_aucs AS (
       true,
       [
         COALESCE(prev_group_tp, 0), 
-        COALESCE(prev_group_fp, 0), 
-        COALESCE((SELECT total_positives FROM total_count), 0),
-        COALESCE((SELECT total_negatives FROM total_count), 0)
+        COALESCE(prev_group_fp, 0),  
+        COALESCE(SUM(group_tp) OVER (), 0),
+        COALESCE(SUM(group_fp) OVER (), 0)
       ]
     ) as partial_roc_auc
   FROM grouped_scores
