@@ -253,6 +253,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_view_num_to_warn;
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
@@ -289,6 +290,12 @@ namespace ServerSetting
     extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
+    extern const ServerSettingsUInt64 page_cache_block_size;
+    extern const ServerSettingsString page_cache_policy;
+    extern const ServerSettingsDouble page_cache_size_ratio;
+    extern const ServerSettingsUInt64 page_cache_min_size;
+    extern const ServerSettingsUInt64 page_cache_max_size;
+    extern const ServerSettingsDouble page_cache_free_memory_ratio;
 }
 
 }
@@ -1077,7 +1084,14 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(global_context->getServerSettings()[ServerSetting::memory_worker_period_ms]);
+    if (server_settings[ServerSetting::page_cache_max_size] != 0)
+    {
+        global_context->setPageCache(
+            server_settings[ServerSetting::page_cache_block_size], server_settings[ServerSetting::page_cache_policy], server_settings[ServerSetting::page_cache_size_ratio], server_settings[ServerSetting::page_cache_min_size], server_settings[ServerSetting::page_cache_max_size], server_settings[ServerSetting::page_cache_free_memory_ratio]);
+        total_memory_tracker.setPageCache(global_context->getPageCache().get());
+    }
+
+    MemoryWorker memory_worker(global_context->getServerSettings()[ServerSetting::memory_worker_period_ms], global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup], global_context->getPageCache());
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
@@ -1611,13 +1625,6 @@ try
         LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
-
-    size_t page_cache_size = server_settings[ServerSetting::page_cache_size];
-    if (page_cache_size != 0)
-        global_context->setPageCache(
-            server_settings[ServerSetting::page_cache_chunk_size], server_settings[ServerSetting::page_cache_mmap_size],
-            page_cache_size, server_settings[ServerSetting::page_cache_use_madv_free],
-            server_settings[ServerSetting::page_cache_use_transparent_huge_pages]);
 
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
