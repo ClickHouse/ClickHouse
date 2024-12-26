@@ -97,11 +97,15 @@ def fill_table(node, table_name: str, amount: int):
 
 
 def check_contains_table(node, table_name: str, amount: int):
-    assert [f"{amount}"] == node.query(f"SELECT count(*) FROM repl_db.{table_name}").split()
+    assert [f"{amount}"] == node.query(
+        f"SELECT count(*) FROM repl_db.{table_name}"
+    ).split()
 
 
 def get_tables_from_replicated(node):
-    return node.query("SELECT table FROM system.tables WHERE database='repl_db' ORDER BY table").split()
+    return node.query(
+        "SELECT table FROM system.tables WHERE database='repl_db' ORDER BY table"
+    ).split()
 
 
 # kazoo.delete may throw NotEmptyError on concurrent modifications of the path
@@ -141,7 +145,7 @@ def start_cluster():
             True,
             id="with restart",
         ),
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     "exists_table, handler_create_table",
@@ -156,7 +160,7 @@ def start_cluster():
             create_table,
             id="with exists table",
         ),
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     "need_fill_tables",
@@ -169,7 +173,7 @@ def start_cluster():
             True,
             id="fill tables",
         ),
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     "process_table, failed_action_with_table, action_with_table",
@@ -180,7 +184,7 @@ def start_cluster():
             create_table,
             id="create table",
         ),
-    ]
+    ],
 )
 @pytest.mark.parametrize(
     "changed_table, failed_change_table, change_table",
@@ -197,12 +201,12 @@ def start_cluster():
             lambda node, t1, _: alter_table(node, t1),
             id="alter table",
         ),
-    ]
+    ],
 )
 def test_query_after_restore_db_replica(
-    start_cluster, 
-    need_restart, 
-    exists_table, 
+    start_cluster,
+    need_restart,
+    exists_table,
     handler_create_table,
     need_fill_tables,
     process_table,
@@ -210,8 +214,8 @@ def test_query_after_restore_db_replica(
     action_with_table,
     changed_table,
     failed_change_table,
-    change_table
-    ):
+    change_table,
+):
     
     inserted_data = 1000
 
@@ -233,7 +237,7 @@ def test_query_after_restore_db_replica(
 
     assert expected_tables == get_tables_from_replicated(node_1)
     assert expected_tables == get_tables_from_replicated(node_2)
-        
+
     failed_action_with_table(node_1, process_table)
 
     assert expected_tables == get_tables_from_replicated(node_1)
@@ -330,7 +334,9 @@ def test_query_after_restore_db_replica(
         node_1.query(f"DROP TABLE repl_db.{exists_table} SYNC")
     node_1.query(f"DROP TABLE repl_db.{changed_table} SYNC")
 
-    assert ["0"] == node_1.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+    assert ["0"] == node_1.query(
+        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+    ).split()
     assert ["0"] == node_2.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
 
 
@@ -345,11 +351,10 @@ def test_query_after_restore_db_replica(
             True,
             id="restore node2-node1",
         ),
-    ]
+    ],
 )
 def test_restore_db_replica_with_diffrent_table_metadata(
-    start_cluster,
-    restore_firstly_node_where_created
+    start_cluster, restore_firstly_node_where_created
 ):
     test_table_1 = "test_table_1"
     test_table_2 = "test_table_2"
@@ -381,8 +386,12 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     node_1.start_clickhouse()
 
-    assert ["0"] == node_1.query(f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'").split()
-    assert ["1"] == node_2.query(f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'").split()
+    assert ["0"] == node_1.query(
+        f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'"
+    ).split()
+    assert ["1"] == node_2.query(
+        f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'"
+    ).split()
 
     nodes = [node_1, node_2]
     if restore_firstly_node_where_created:
@@ -391,39 +400,74 @@ def test_restore_db_replica_with_diffrent_table_metadata(
     for node in nodes:
         node.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
 
-    assert [f"{count_test_table_1}"] == node_1.query(f"SELECT count(*) FROM repl_db.{test_table_1}").split()
-    assert [f"{count_test_table_1}"] == node_2.query(f"SELECT count(*) FROM repl_db.{test_table_1}").split()
+    assert [f"{count_test_table_1}"] == node_1.query(
+        f"SELECT count(*) FROM repl_db.{test_table_1}"
+    ).split()
+    assert [f"{count_test_table_1}"] == node_2.query(
+        f"SELECT count(*) FROM repl_db.{test_table_1}"
+    ).split()
 
     expected_count = ["0"]
     if restore_firstly_node_where_created:
         expected_count = ["1"]
 
-    assert expected_count == node_1.query(f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'").split()
-    assert expected_count == node_2.query(f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'").split()
+    assert (
+        expected_count
+        == node_1.query(
+            f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'"
+        ).split()
+    )
+    assert (
+        expected_count
+        == node_2.query(
+            f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'"
+        ).split()
+    )
 
     if restore_firstly_node_where_created:
-        assert [f"{count_test_table_2}"] == node_1.query(f"SELECT count(*) FROM repl_db.{test_table_2}").split()
-        assert [f"{count_test_table_2}"] == node_2.query(f"SELECT count(*) FROM repl_db.{test_table_2}").split()
+        assert [f"{count_test_table_2}"] == node_1.query(
+            f"SELECT count(*) FROM repl_db.{test_table_2}"
+        ).split()
+        assert [f"{count_test_table_2}"] == node_2.query(
+            f"SELECT count(*) FROM repl_db.{test_table_2}"
+        ).split()
     else:
-        assert ["1"] == node_2.query("SELECT count(*) FROM system.databases WHERE name='repl_db_broken_tables'").split()
-        assert ["1"] == node_2.query("SELECT count(*) FROM system.databases WHERE name='repl_db_broken_replicated_tables'").split()
-        assert [] == node_2.query("SELECT table FROM system.tables WHERE database='repl_db_broken_tables'").split()
+        assert ["1"] == node_2.query(
+            "SELECT count(*) FROM system.databases WHERE name='repl_db_broken_tables'"
+        ).split()
+        assert ["1"] == node_2.query(
+            "SELECT count(*) FROM system.databases WHERE name='repl_db_broken_replicated_tables'"
+        ).split()
+        assert (
+            []
+            == node_2.query(
+                "SELECT table FROM system.tables WHERE database='repl_db_broken_tables'"
+            ).split()
+        )
 
-        detached_broken_tables = node_2.query("SELECT table FROM system.tables WHERE database='repl_db_broken_replicated_tables'").split()
+        detached_broken_tables = node_2.query(
+            "SELECT table FROM system.tables WHERE database='repl_db_broken_replicated_tables'"
+        ).split()
 
         assert len(detached_broken_tables) == 1
         assert detached_broken_tables[0].startswith(f"{test_table_2}_")
 
-        assert [f"{count_test_table_2}"] == node_2.query(f"SELECT count(*) FROM repl_db_broken_replicated_tables.{detached_broken_tables[0]}").split()
+        assert [f"{count_test_table_2}"] == node_2.query(
+            f"SELECT count(*) FROM repl_db_broken_replicated_tables.{detached_broken_tables[0]}"
+        ).split()
 
         node_2.query("DROP DATABASE repl_db_broken_tables SYNC")
         node_2.query("DROP DATABASE repl_db_broken_replicated_tables SYNC")
 
     node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
     node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_2} SYNC")
-    
-    assert ["0"] == node_1.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
-    assert ["0"] == node_2.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+
+    assert ["0"] == node_1.query(
+        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+    ).split()
+    assert ["0"] == node_2.query(
+        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+    ).split()
 
 
 def test_failed_restore_db_replica_on_normal_replica(
@@ -436,11 +480,21 @@ def test_failed_restore_db_replica_on_normal_replica(
     create_table(node_1, test_table)
     fill_table(node_1, test_table, count_test_table)
 
-    assert "Replica node '/clickhouse/repl_db/replicas/shard1|replica1/digest' in ZooKeeper already exists" in node_1.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
+    assert (
+        "Replica node '/clickhouse/repl_db/replicas/shard1|replica1/digest' in ZooKeeper already exists" 
+        in node_1.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
+    )
 
-    assert "Replica node '/clickhouse/repl_db/replicas/shard1|replica2/digest' in ZooKeeper already exists" in node_2.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
+    assert (
+        "Replica node '/clickhouse/repl_db/replicas/shard1|replica2/digest' in ZooKeeper already exists"
+        in node_2.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
+    )
 
     node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table} SYNC")
 
-    assert ["0"] == node_1.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
-    assert ["0"] == node_2.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+    assert ["0"] == node_1.query(
+        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+    ).split()
+    assert ["0"] == node_2.query(
+        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+    ).split()
