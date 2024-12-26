@@ -15,11 +15,6 @@ constexpr size_t MAX_ERROR_MESSAGES = 10;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
