@@ -292,7 +292,7 @@ ClientBase::ClientBase(
     : std_in(in_fd_)
     , std_out(out_fd_)
     , progress_indication(output_stream_, in_fd_, err_fd_)
-    , progress_table(output_stream_, in_fd_, err_fd_)
+    , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
     , output_stream(output_stream_)
     , error_stream(error_stream_)
@@ -485,7 +485,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
         std::unique_lock lock(tty_mutex);
-        progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled);
+        progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled, false);
     }
 }
 
@@ -1426,7 +1426,7 @@ void ClientBase::onProfileEvents(Block & block)
         {
             bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
             std::unique_lock lock(tty_mutex);
-            progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled);
+            progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled, false);
         }
 
         if (profile_events.print)
@@ -2158,7 +2158,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
         bool show_progress_table = !toggle_enabled || progress_table_toggle_on;
         if (need_render_progress_table && show_progress_table)
-            progress_table.writeFinalTable();
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.writeFinalTable(*tty_buf, lock);
+        }
         output_stream << std::endl << std::endl;
     }
     else
