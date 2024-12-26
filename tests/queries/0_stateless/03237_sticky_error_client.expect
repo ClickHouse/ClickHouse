@@ -25,6 +25,8 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \
 
 expect ":) "
 send -- "SELECT generateUUIDv4() FORMAT Arrow;\r"
+expect "Do you want to output it anyway\?"
+send -- "y\r"
 expect ":) "
 send -- "SELECT 1;\r"
 expect "1 row in set."
