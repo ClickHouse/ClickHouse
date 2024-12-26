@@ -23,7 +23,7 @@ Columns:
 ```
 
 * Definitions:
-     - `partition_id` - identifies the partition key and possibily the interval
+     - `partition_id` - identifies the partition key
      - `minimum_block_number` - identifies the minimum block number in the part. ClickHouse always merges continuous blocks
      - `maximum_block_number` - identifies the maximum block number in the part
      - `level` - incremented by one with each additional merge on the part. A level of 0 indicates this is a new part that has not been merged. It is important to remember that all parts in ClickHouse are always immutable
