@@ -609,28 +609,18 @@ Type: Double
 
 Default: 0.9
 
-## max_table_size_to_drop
+## cgroup_memory_watcher_hard_limit_ratio
 
-Restriction on deleting tables.
+Specifies the "hard" threshold of the memory consumption of the server process according to cgroups after which arenas in
+jemalloc are purged.
 
-If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_table_size_to_drop`](#max_table_size_to_drop) (in bytes), you can’t delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
+See settings:
+- [`cgroups_memory_usage_observer_wait_time`](#cgroups_memory_usage_observer_wait_time)
+- [`cgroup_memory_watcher_soft_limit_ratio`](#cgroup_memory_watcher_soft_limit_ratio)
 
-This setting does not require a restart of the ClickHouse server to apply. 
-Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
+Type: Double
 
-:::note
-The value `0` means that you can delete all tables without any restrictions.
-:::
-
-**Example**
-
-``` xml
-<max_table_size_to_drop>0</max_table_size_to_drop>
-```
-
-Type: 
-
-Default: 50 GB.
+Default: 0.9
 
 ## max_database_num_to_warn
 
@@ -3423,12 +3413,6 @@ elements for that protocol are ignored. That means load balancing
 
   </TabItem>
 </Tabs>
-
-
-
-
-
-
 
 **Precedence**
 
