@@ -31,17 +31,10 @@ static DataTypePtr convertSQLiteDataType(String type)
     DataTypePtr res;
     type = Poco::toLower(type);
 
-    if (type == "tinyint")
-        res = std::make_shared<DataTypeInt8>();
-    else if (type == "smallint")
-        res = std::make_shared<DataTypeInt16>();
-    else if ((type.starts_with("int") && type != "int8") || type == "mediumint")
-        res = std::make_shared<DataTypeInt32>();
-    else if (type == "bigint" || type == "int8")
+    // See https://www.sqlite.org/datatype3.html (despite all the tinyint and others - it's an int64...)
+    if (type.find("int") != std::string::npos)
         res = std::make_shared<DataTypeInt64>();
-    else if (type == "float")
-        res = std::make_shared<DataTypeFloat32>();
-    else if (type.starts_with("double") || type == "real")
+    else if (type == "float" || type.starts_with("double") || type == "real")
         res = std::make_shared<DataTypeFloat64>();
     else
         res = std::make_shared<DataTypeString>(); // No decimal when fetching data through API

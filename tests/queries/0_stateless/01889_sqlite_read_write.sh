@@ -63,6 +63,27 @@ ${CLICKHOUSE_CLIENT} --query="select 'test types'";
 ${CLICKHOUSE_CLIENT} --query="SHOW CREATE TABLE ${CURR_DATABASE}.table4;" | sed -r 's/(.*SQLite)(.*)/\1/'
 ${CLICKHOUSE_CLIENT} --query="SHOW CREATE TABLE ${CURR_DATABASE}.table5;" | sed -r 's/(.*SQLite)(.*)/\1/'
 
+${CLICKHOUSE_CLIENT} --query="select 'populating table4 with integers'";
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT -9223372036854775808 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT -2147483648 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT -32768 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT -128 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT 0 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT 127 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT 128 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT 32767 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT 32768 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT 2147483647 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT 2147483648 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table4') SELECT 9223372036854775807 AS x, x, x, x, x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM ${CURR_DATABASE}.table4 ORDER BY a"
+
+${CLICKHOUSE_CLIENT} --query="select 'populating table5 with floats'";
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table5') SELECT 'a', 'a', 0 AS x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 'table5') SELECT 'b', 'b', 3.141592653589793 AS x, x, x, x;"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM ${CURR_DATABASE}.table5 ORDER BY a"
+
+
 ${CLICKHOUSE_CLIENT} --query="DROP DATABASE IF EXISTS ${CURR_DATABASE}"
 
 
