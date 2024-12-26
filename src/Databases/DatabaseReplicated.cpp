@@ -473,7 +473,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
 
         String replica_host_id;
         bool replica_exists_in_zk = current_zookeeper->tryGet(replica_path, replica_host_id);
-        
+
         LOG_TEST(log, "replica exists in zk {}", replica_exists_in_zk);
 
         if (replica_exists_in_zk)
@@ -1674,7 +1674,7 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
 
         if (ddl_worker)
         {
-            LOG_TRACE(log, "Ddl_worker will be reseted.");
+            LOG_TRACE(log, "Ddl_worker will be reset.");
             ddl_worker->shutdown();
             {
                 ddl_worker_initialized = false;

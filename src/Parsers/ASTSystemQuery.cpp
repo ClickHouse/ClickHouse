@@ -125,7 +125,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         database->format(ostr, settings, state, frame);
         ostr << '.';
-        
         return ostr;
     };
 
