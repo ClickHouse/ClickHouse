@@ -109,6 +109,9 @@ String highlightDigitGroups(String source)
 
 String highlightTrailingSpaces(String source)
 {
+    if (source.empty())
+        return source;
+
     const char * last_significant = find_last_not_symbols_or_null<' ', '\t', '\n', '\r', '\f', '\v'>(source.data(), source.data() + source.size());
     size_t highlight_start_pos = 0;
     if (last_significant)
@@ -117,6 +120,7 @@ String highlightTrailingSpaces(String source)
         if (highlight_start_pos >= source.size())
             return source;
     }
+
     return source.substr(0, highlight_start_pos) + RED_COLOR + UNDERSCORE + source.substr(highlight_start_pos, std::string::npos) + RESET_COLOR;
 }
 
