@@ -200,7 +200,13 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             last_is_positive = false;
         }
         else
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: Sign = {} (must be 1 or -1).", toString(sign));
+        {
+            /// Insert row with invalid sign as is
+            insertRow(current_row);
+            if (count_incorrect_data < MAX_ERROR_MESSAGES)
+                LOG_WARNING(log, "Incorrect data: Sign = {} (must be 1 or -1).", toString(sign));
+            ++count_incorrect_data;
+        }
 
         ++current_pos;
 
