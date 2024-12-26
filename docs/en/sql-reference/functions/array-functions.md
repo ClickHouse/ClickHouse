@@ -2163,7 +2163,7 @@ Alias: `arrayAUC`, `arrayAUCROC`.
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negative sample.
 - `scale` - Optional. Whether to return the normalized area. If false, returns the area under the (True Positives) TP x (False Positives) FP curve instead. Default value: true. [Bool]
-- `arr_partial_offsets` - Optional. Array of four integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC or for calculating (partial AUC constrained by FPR)[https://en.wikipedia.org/wiki/Partial_Area_Under_the_ROC_Curve#Partial_AUC_obtained_by_constraining_FPR]. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`].
+- `arr_partial_offsets` - Optional. Array of four integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`].
     - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.

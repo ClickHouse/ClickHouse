@@ -23,6 +23,15 @@ select floor(arrayPRAUC([0, 3, 5, 6, 7.5, 8], [1, 0, 1, 0, 0, 0]), 10);
 select floor(arrayPRAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
 select floor(arrayPRAUC([0, 1, 1, 2, 2, 2, 3, 3, 3, 3], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
 
+-- output shouldn't change when passing [0, 0, 0] to the offsets arg
+select floor(arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, 0, 0]), 10);
+select floor(arrayPRAUC([0.1, 0.4, 0.4, 0.35, 0.8], [0, 0, 1, 1, 1], [0, 0, 0]), 10);
+select floor(arrayPRAUC([0.1, 0.35, 0.4, 0.8], [1, 0, 1, 0], [0, 0, 0]), 10);
+select floor(arrayPRAUC([0.1, 0.35, 0.4, 0.4, 0.8], [1, 0, 1, 0, 0], [0, 0, 0]), 10);
+select floor(arrayPRAUC([0, 3, 5, 6, 7.5, 8], [1, 0, 1, 0, 0, 0], [0, 0, 0]), 10);
+select floor(arrayPRAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1], [0, 0, 0]), 10);
+select floor(arrayPRAUC([0, 1, 1, 2, 2, 2, 3, 3, 3, 3], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1], [0, 0, 0]), 10);
+
 -- edge cases
 SELECT floor(arrayPRAUC([1], [1]), 10);
 SELECT floor(arrayPRAUC([1], [0]), 10);
@@ -37,7 +46,7 @@ SELECT floor(arrayPRAUC([0, 0, 1], [0, 1, 1]), 10);
 SELECT floor(arrayPRAUC([0, 1, 1], [0, 1, 1]), 10);
 SELECT floor(arrayPRAUC([0, 1, 1], [0, 0, 1]), 10);
 
---alias
+-- alias
 SELECT floor(arrayAUCPR([1], [1]), 10);
 
 -- general negative tests

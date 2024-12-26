@@ -3,8 +3,9 @@
 -- scores = [0.1, 0.4, 0.35, 0.8]
 -- labels = [0, 0, 1, 1]
 
-select floor(arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10);
-select floor(arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10);
+select 
+  floor(arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10), 
+  floor(arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10);
 
 with partial_aucs as (
   select 
@@ -44,8 +45,9 @@ from partial_aucs;
 -- scores = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 -- labels = [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]
 
-select floor(arrayPRAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
-select floor(arrayROCAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
+select 
+  floor(arrayPRAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10),
+  floor(arrayROCAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
 
 -- Example of a more robust query that can be used to calculate AUC for a large dataset
 WITH score_with_group AS (
