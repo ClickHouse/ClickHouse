@@ -286,17 +286,19 @@ bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, c
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeTextImpl(column, row_num, settings, ostr,
-        [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
+    FormatSettings cloned_settings = settings;
+    cloned_settings.composed_data_type_output_format_mode = "default";
+    serializeTextImpl(column, row_num, cloned_settings, ostr,
+        [&cloned_settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
             /// We need to double-quote all keys (including integers) to produce valid JSON.
             WriteBufferFromOwnString str_buf;
-            subcolumn_serialization->serializeText(subcolumn, pos, str_buf, settings);
-            writeJSONString(str_buf.str(), buf, settings);
+            subcolumn_serialization->serializeText(subcolumn, pos, str_buf, cloned_settings);
+            writeJSONString(str_buf.str(), buf, cloned_settings);
         },
-        [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
+        [&cloned_settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
-            subcolumn_serialization->serializeTextJSON(subcolumn, pos, buf, settings);
+            subcolumn_serialization->serializeTextJSON(subcolumn, pos, buf, cloned_settings);
         });
 }
 
