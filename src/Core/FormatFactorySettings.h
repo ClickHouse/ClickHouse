@@ -892,7 +892,7 @@ Rows limit for Pretty formats.
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(
 Maximum width to pad all values in a column in Pretty formats.
 )", 0) \
-    DECLARE(UInt64, output_format_pretty_max_column_name_width_cut_to, 16, R"(
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_cut_to, 24, R"(
 If the column name is too long, cut it to this length.
 The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
 )", 0) \
