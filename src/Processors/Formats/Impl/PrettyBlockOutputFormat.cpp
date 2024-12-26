@@ -157,14 +157,32 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         total_rows += chunk.getNumRows();
         return;
     }
-    if (mono_block)
+    if (mono_block || format_settings.pretty.squash_consecutive_ms)
     {
         if (port_kind == PortKind::Main)
         {
+            if (format_settings.pretty.squash_consecutive_ms && !mono_block && !thread)
+            {
+                thread.emplace([this, thread_group = CurrentThread::getGroup()]
+                {
+                    SCOPE_EXIT_SAFE(
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    );
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+
+                    setThreadName("PrettyWriter");
+                    writingThread();
+                });
+            }
+
+            std::lock_guard lock(mono_chunk_mutex);
             if (mono_chunk)
                 mono_chunk.append(chunk);
             else
                 mono_chunk = std::move(chunk);
+            mono_chunk_condvar.notify_one();
             return;
         }
 
@@ -173,6 +191,21 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
     }
 
     writeChunk(chunk, port_kind);
+}
+
+void PrettyBlockOutputFormat::writingThread()
+{
+    std::unique_lock lock(mono_chunk_mutex);
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    while (!finish)
+    {
+        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, std::chrono::milliseconds(format_settings.pretty.squash_consecutive_ms))
+            || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+        {
+            writeMonoChunkIfNeeded();
+            watch.restart();
+        }
+    }
 }
 
 void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
@@ -244,7 +277,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     std::string footer_top_separator_s = footer_top_separator.str();
     std::string footer_bottom_separator_s = footer_bottom_separator.str();
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
+    if (format_settings.pretty.row_numbers)
     {
         /// Write left blank
         writeString(String(row_number_width, ' '), out);
@@ -252,7 +285,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     /// Output the block
     writeString(top_separator_s, out);
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
+    if (format_settings.pretty.row_numbers)
     {
         /// Write left blank
         writeString(String(row_number_width, ' '), out);
@@ -301,7 +334,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     };
     write_names();
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
+    if (format_settings.pretty.row_numbers)
     {
         /// Write left blank
         writeString(String(row_number_width, ' '), out);
@@ -312,7 +345,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     {
         if (i != 0)
         {
-            if (format_settings.pretty.output_format_pretty_row_numbers)
+            if (format_settings.pretty.row_numbers)
             {
                 /// Write left blank
                 writeString(String(row_number_width, ' '), out);
@@ -320,7 +353,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             writeString(middle_values_separator_s, out);
         }
 
-        if (format_settings.pretty.output_format_pretty_row_numbers)
+        if (format_settings.pretty.row_numbers)
         {
             // Write row number;
             auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
@@ -358,18 +391,18 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         writeCString("\n", out);
     }
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
+    if (format_settings.pretty.row_numbers)
     {
         /// Write left blank
         writeString(String(row_number_width, ' '), out);
     }
 
     /// output column names in the footer
-    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.display_footer_column_names_min_rows) && format_settings.pretty.display_footer_column_names)
     {
         writeString(footer_top_separator_s, out);
 
-        if (format_settings.pretty.output_format_pretty_row_numbers)
+        if (format_settings.pretty.row_numbers)
         {
             /// Write left blank
             writeString(String(row_number_width, ' '), out);
@@ -378,7 +411,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         /// output header names
         write_names();
 
-        if (format_settings.pretty.output_format_pretty_row_numbers)
+        if (format_settings.pretty.row_numbers)
         {
             /// Write left blank
             writeString(String(row_number_width, ' '), out);
@@ -477,8 +510,28 @@ void PrettyBlockOutputFormat::writeMonoChunkIfNeeded()
     }
 }
 
+void PrettyBlockOutputFormat::stopThread()
+{
+    if (thread)
+    {
+        {
+            std::lock_guard lock(mono_chunk_mutex);
+            finish = true;
+            mono_chunk_condvar.notify_one();
+        }
+        thread->join();
+        thread.reset();
+    }
+}
+
+PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
+{
+    stopThread();
+}
+
 void PrettyBlockOutputFormat::writeSuffix()
 {
+    stopThread();
     writeMonoChunkIfNeeded();
 
     if (total_rows >= format_settings.pretty.max_rows)

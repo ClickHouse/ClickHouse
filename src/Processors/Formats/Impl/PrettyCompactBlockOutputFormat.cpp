@@ -61,7 +61,7 @@ void PrettyCompactBlockOutputFormat::writeHeader(
     const Widths & name_widths,
     const bool write_footer)
 {
-    if (format_settings.pretty.output_format_pretty_row_numbers)
+    if (format_settings.pretty.row_numbers)
     {
         /// Write left blank
         writeString(String(row_number_width, ' '), out);
@@ -124,7 +124,7 @@ void PrettyCompactBlockOutputFormat::writeHeader(
 
 void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 {
-    if (format_settings.pretty.output_format_pretty_row_numbers)
+    if (format_settings.pretty.row_numbers)
     {
         /// Write left blank
         writeString(String(row_number_width, ' '), out);
@@ -153,7 +153,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
     const WidthsPerColumn & widths,
     const Widths & max_widths)
 {
-    if (format_settings.pretty.output_format_pretty_row_numbers)
+    if (format_settings.pretty.row_numbers)
     {
         // Write row number;
         auto row_num_string = std::to_string(row_num + 1 + total_rows) + ". ";
@@ -212,7 +212,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
         writeRow(i, header, chunk, widths, max_widths);
 
-    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.display_footer_column_names_min_rows) && format_settings.pretty.display_footer_column_names)
     {
         writeHeader(header, max_widths, name_widths, true);
     }

@@ -19,6 +19,7 @@ class PrettyBlockOutputFormat : public IOutputFormat
 public:
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
     PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_);
+    ~PrettyBlockOutputFormat() override;
     String getName() const override { return "PrettyBlockOutputFormat"; }
 protected:
     void consume(Chunk) override;
@@ -61,9 +62,16 @@ private:
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;
+    /// Implements squashing of chunks by time
+    std::mutex mono_chunk_mutex;
+    std::condition_variable mono_chunk_condvar;
+    std::optional<ThreadFromGlobalPool> thread;
+    bool finish = false;
+    void writingThread();
+    void stopThread();
 };
 
-template <class OutputFormat>
+template <typename OutputFormat>
 void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, const String & base_name)
 {
     auto creator = [&](FormatFactory & fact, const String & name, bool no_escapes, bool mono_block)
@@ -77,8 +85,6 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
                     && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
         });
-        if (!mono_block)
-            factory.markOutputFormatSupportsParallelFormatting(name);
     };
     creator(factory, base_name, false, false);
     creator(factory, base_name + "NoEscapes", true, false);

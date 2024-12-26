@@ -34,7 +34,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     Widths name_widths;
     calculateWidths(header, chunk, widths, max_widths, name_widths);
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
+    if (format_settings.pretty.row_numbers)
         writeString(String(row_number_width, ' '), out);
     /// Names
     auto write_names = [&](const bool is_footer) -> void
@@ -80,7 +80,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
 
     for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
     {
-        if (format_settings.pretty.output_format_pretty_row_numbers)
+        if (format_settings.pretty.row_numbers)
         {
             // Write row number;
             auto row_num_string = std::to_string(row + 1 + total_rows) + ". ";
@@ -109,13 +109,13 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     }
 
     /// Write blank line between last row and footer
-    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.display_footer_column_names_min_rows) && format_settings.pretty.display_footer_column_names)
         writeCString("\n", out);
     /// Write left blank
-    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_row_numbers && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.display_footer_column_names_min_rows) && format_settings.pretty.row_numbers && format_settings.pretty.display_footer_column_names)
         writeString(String(row_number_width, ' '), out);
     /// Write footer
-    if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
+    if ((num_rows >= format_settings.pretty.display_footer_column_names_min_rows) && format_settings.pretty.display_footer_column_names)
         write_names(true);
     total_rows += num_rows;
 }

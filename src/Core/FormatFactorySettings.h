@@ -898,6 +898,13 @@ Maximum width of value to display in Pretty formats. If greater - it will be cut
     DECLARE(UInt64, output_format_pretty_max_value_width_apply_for_single_value, false, R"(
 Only cut values (see the `output_format_pretty_max_value_width` setting) when it is not a single value in a block. Otherwise output it entirely, which is useful for the `SHOW CREATE TABLE` query.
 )", 0) \
+DECLARE(UInt64, output_format_pretty_squash_consecutive_ms, 50, R"(
+Wait for the next block for up to specified number of milliseconds and squash it to the previous before writing.
+This avoids frequent output of too small blocks, but still allows to display data in a streaming fashion.
+)", 0) \
+DECLARE(UInt64, output_format_pretty_squash_max_wait_ms, 1000, R"(
+Output the pending block in pretty formats if more than the specified number of milliseconds has passed since the previous output.
+)", 0) \
     DECLARE(UInt64Auto, output_format_pretty_color, "auto", R"(
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 )", 0) \
@@ -1301,4 +1308,3 @@ Example of 'spark' mode:
 #define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
     FORMAT_FACTORY_SETTINGS(M, ALIAS) \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
-
