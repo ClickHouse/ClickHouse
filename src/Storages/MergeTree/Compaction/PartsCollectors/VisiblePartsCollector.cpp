@@ -1,14 +1,6 @@
-#include <optional>
-
-#include <Common/ProfileEvents.h>
-
-#include <Parsers/IAST_fwd.h>
-#include <Parsers/queryToString.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/VisiblePartsCollector.h>
 
 #include <Interpreters/MergeTreeTransaction.h>
-
-#include <Storages/MergeTree/Compaction/PartProperties.h>
-#include <Storages/MergeTree/Compaction/PartsCollectors/VisiblePartsCollector.h>
 
 namespace ProfileEvents
 {
@@ -20,80 +12,6 @@ namespace DB
 
 namespace
 {
-
-std::string astToString(ASTPtr ast_ptr)
-{
-    if (!ast_ptr)
-        return "";
-
-    return queryToString(ast_ptr);
-}
-
-std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part)
-{
-    if (!metadata_snapshot->hasAnyTTL())
-        return std::nullopt;
-
-    return PartProperties::GeneralTTLInfo{
-        .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
-        .part_min_ttl = part->ttl_infos.part_min_ttl,
-        .part_max_ttl = part->ttl_infos.part_max_ttl,
-    };
-}
-
-std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part, time_t current_time)
-{
-    if (!metadata_snapshot->hasAnyRecompressionTTL())
-        return std::nullopt;
-
-    const auto & recompression_ttls = metadata_snapshot->getRecompressionTTLs();
-    const auto ttl_description = selectTTLDescriptionForTTLInfos(recompression_ttls, part->ttl_infos.recompression_ttl, current_time, true);
-
-    if (ttl_description)
-    {
-        const std::string next_codec = astToString(ttl_description->recompression_codec);
-        const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
-
-        return PartProperties::RecompressTTLInfo{
-            .will_change_codec = (next_codec != current_codec),
-            .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
-        };
-    }
-
-    return std::nullopt;
-}
-
-std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & part)
-{
-    std::set<std::string> projection_names;
-
-    for (auto && [name, projection_part] : part->getProjectionParts())
-        if (!projection_part->is_broken)
-            projection_names.insert(name);
-
-    return projection_names;
-}
-
-PartProperties buildPartProperties(
-    const MergeTreeDataPartPtr & part,
-    const StorageMetadataPtr & metadata_snapshot,
-    const StoragePolicyPtr & storage_policy,
-    const time_t & current_time,
-    bool has_volumes_with_disabled_merges)
-{
-    return PartProperties{
-        .name = part->name,
-        .part_info = part->info,
-        .uuid = part->uuid,
-        .projection_names = getCalculatedProjectionNames(part),
-        .shall_participate_in_merges = has_volumes_with_disabled_merges ? part->shallParticipateInMerges(storage_policy) : true,
-        .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
-        .size = part->getExistingBytesOnDisk(),
-        .age = current_time - part->modification_time,
-        .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
-        .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
-    };
-}
 
 PartsRanges constructProperties(
     std::vector<MergeTreeDataPartsVector> && ranges,
@@ -120,9 +38,7 @@ PartsRanges constructProperties(
     return properties_ranges;
 }
 
-}
-
-MergeTreeDataPartsVector VisiblePartsCollector::collectInitial() const
+MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeTreeTransactionPtr & tx)
 {
     if (!tx)
     {
@@ -185,22 +101,36 @@ MergeTreeDataPartsVector VisiblePartsCollector::collectInitial() const
     return data_parts;
 }
 
-MergeTreeDataPartsVector VisiblePartsCollector::filterByPartitions(MergeTreeDataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_hint) const
+MergeTreeDataPartsVector filterByPartitions(MergeTreeDataPartsVector && parts, const std::optional<PartitionIdsHint> & partitions_to_keep)
 {
-    if (!partitions_hint)
+    if (!partitions_to_keep)
         return parts;
 
     Stopwatch partitions_filter_timer;
 
-    std::erase_if(parts, [partitions_hint](const auto & part) { return !partitions_hint->contains(part->info.partition_id); });
+    std::erase_if(parts, [&partitions_to_keep](const auto & part) { return !partitions_to_keep->contains(part->info.partition_id); });
 
     ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, partitions_filter_timer.elapsedMicroseconds());
     return parts;
 }
 
-std::vector<MergeTreeDataPartsVector> VisiblePartsCollector::filterByTxVisibility(MergeTreeDataPartsVector && parts) const
+bool canUsePart(const MergeTreeDataPartPtr & part, const MergeTreeTransactionPtr & tx)
 {
-    if (tx == nullptr)
+    /// Cannot merge parts if some of them are not visible in current snapshot
+    /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
+    if (!part->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
+        return false;
+
+    /// Do not try to merge parts that are locked for removal (merge will probably fail)
+    if (part->version.isRemovalTIDLocked())
+        return false;
+
+    return true;
+}
+
+std::vector<MergeTreeDataPartsVector> splitByInvisibleParts(MergeTreeDataPartsVector && parts, const MergeTreeTransactionPtr & tx)
+{
+    if (!tx)
     {
         if (parts.empty())
             return {};
@@ -215,15 +145,8 @@ std::vector<MergeTreeDataPartsVector> VisiblePartsCollector::filterByTxVisibilit
         while (parts_it != parts.end())
         {
             MergeTreeDataPartPtr part = std::move(*parts_it++);
-            assert(part);
 
-            /// Cannot merge parts if some of them are not visible in current snapshot
-            /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
-            if (part->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
-                return range;
-
-            /// Do not try to merge parts that are locked for removal (merge will probably fail)
-            if (part->version.isRemovalTIDLocked())
+            if (!canUsePart(part, tx))
                 return range;
 
             /// Otherwise include part to possible ranges
@@ -241,21 +164,53 @@ std::vector<MergeTreeDataPartsVector> VisiblePartsCollector::filterByTxVisibilit
     return ranges;
 }
 
+tl::expected<MergeTreeDataPartsVector, PreformattedMessage> checkAllPartsVisible(MergeTreeDataPartsVector && parts, const MergeTreeTransactionPtr & tx)
+{
+    if (tx)
+    {
+        for (const auto & part : parts)
+            if (!canUsePart(part, tx))
+                return tl::make_unexpected(PreformattedMessage::create("Part {} is not visible in transaction {}", part->name, tx->dumpDescription()));
+    }
+
+    return parts;
+}
+
+}
+
 VisiblePartsCollector::VisiblePartsCollector(const MergeTreeData & data_, MergeTreeTransactionPtr tx_)
     : data(data_)
     , tx(std::move(tx_))
 {
 }
 
-PartsRanges VisiblePartsCollector::collectPartsToUse(
+PartsRanges VisiblePartsCollector::grabAllPossibleRanges(
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
     const std::optional<PartitionIdsHint> & partitions_hint) const
 {
-    auto parts = filterByPartitions(collectInitial(), partitions_hint);
-    auto ranges = filterByTxVisibility(std::move(parts));
+    auto parts = filterByPartitions(collectInitial(data, tx), partitions_hint);
+    auto ranges = splitByInvisibleParts(std::move(parts), tx);
     return constructProperties(std::move(ranges), metadata_snapshot, storage_policy, current_time);
+}
+
+tl::expected<PartsRange, PreformattedMessage> VisiblePartsCollector::grabAllPartsInsidePartition(
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    const time_t & current_time,
+    const std::string & partition_id) const
+{
+    auto parts = filterByPartitions(collectInitial(data, tx), PartitionIdsHint{partition_id});
+    auto result = checkAllPartsVisible(std::move(parts), tx);
+
+    if (!result)
+        return tl::make_unexpected(std::move(result.error()));
+
+    auto ranges = constructProperties({std::move(result.value())}, metadata_snapshot, storage_policy, current_time);
+    assert(ranges.size() == 1);
+
+    return std::move(ranges.front());
 }
 
 }

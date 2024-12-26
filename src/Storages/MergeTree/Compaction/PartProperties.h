@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 #include <Core/UUID.h>
 
@@ -46,5 +46,12 @@ struct PartProperties
 
 using PartsRange = std::vector<PartProperties>;
 using PartsRanges = std::vector<PartsRange>;
+
+PartProperties buildPartProperties(
+    const MergeTreeDataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
+    time_t current_time,
+    bool has_volumes_with_disabled_merges);
 
 }
