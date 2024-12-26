@@ -190,7 +190,7 @@ private:
         /// We create multiple caches to reduce the lock contentions
         caches.resize(num_caches);
         for (auto & cache : caches)
-            cache = std::make_unique<FixedSizeFiberStackCache>(&base_allocator, std::max(max_cached_bytes / num_caches, 32 * FiberStack::default_stack_size));
+            cache = std::make_unique<FixedSizeFiberStackCache>(&base_allocator, std::max(static_cast<size_t>(max_cached_bytes / num_caches), 32 * FiberStack::default_stack_size));
     }
 
     FiberStack base_allocator;
