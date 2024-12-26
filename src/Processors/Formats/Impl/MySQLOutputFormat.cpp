@@ -83,7 +83,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
         }
     }
 
-    flush();
+    flushImpl();
 }
 
 void MySQLOutputFormat::finalizeImpl()
