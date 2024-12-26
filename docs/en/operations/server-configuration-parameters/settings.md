@@ -609,19 +609,6 @@ Type: Double
 
 Default: `0.9`
 
-## cgroup_memory_watcher_hard_limit_ratio
-
-Specifies the "hard" threshold of the memory consumption of the server process according to cgroups after which arenas in
-jemalloc are purged.
-
-See settings:
-- [`cgroups_memory_usage_observer_wait_time`](#cgroups_memory_usage_observer_wait_time)
-- [`cgroup_memory_watcher_soft_limit_ratio`](#cgroup_memory_watcher_soft_limit_ratio)
-
-Type: Double
-
-Default: `0.9`
-
 ## max_database_num_to_warn
 
 If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
