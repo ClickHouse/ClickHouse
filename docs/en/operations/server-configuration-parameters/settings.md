@@ -22,7 +22,7 @@ Allows to use jemalloc memory.
 
 Type: Bool
 
-Default: 1
+Default: `1`
 
 ## asynchronous_heavy_metrics_update_period_s
 
@@ -30,7 +30,7 @@ Period in seconds for updating asynchronous metrics.
 
 Type: UInt32
 
-Default: 120
+Default: `120`
 
 ## asynchronous_metrics_update_period_s
 
@@ -38,7 +38,7 @@ Period in seconds for updating asynchronous metrics.
 
 Type: UInt32
 
-Default: 1
+Default: `1`
 
 ## auth_use_forwarded_address
 
@@ -50,7 +50,7 @@ This setting should be used with extra caution since forwarded addresses can be 
 
 Type: Bool
 
-Default: 0
+Default: `0`
 
 ## background_buffer_flush_schedule_pool_size
 
@@ -58,7 +58,7 @@ The maximum number of threads that will be used for performing flush operations 
 
 Type: UInt64
 
-Default: 16
+Default: `16`
 
 ## background_common_pool_size
 
@@ -66,7 +66,7 @@ The maximum number of threads that will be used for performing a variety of oper
 
 Type: UInt64
 
-Default: 8
+Default: `8`
 
 ## background_distributed_schedule_pool_size
 
@@ -74,7 +74,7 @@ The maximum number of threads that will be used for executing distributed sends.
 
 Type: UInt64
 
-Default: 16
+Default: `16`
 
 ## background_fetches_pool_size
 
@@ -82,7 +82,7 @@ The maximum number of threads that will be used for fetching data parts from ano
 
 Type: UInt64
 
-Default: 16
+Default: `16`
 
 ## background_merges_mutations_concurrency_ratio
 
@@ -98,7 +98,7 @@ As with the [`background_pool_size`](#background_pool_size) setting [`background
 
 Type: Float
 
-Default: 2
+Default: `2`
 
 ## background_merges_mutations_scheduling_policy
 
@@ -114,7 +114,7 @@ Possible values:
 
 Type: String
 
-Default: round_robin
+Default: `round_robin`
 
 ## background_message_broker_schedule_pool_size
 
@@ -122,7 +122,7 @@ The maximum number of threads that will be used for executing background operati
 
 Type: UInt64
 
-Default: 16
+Default: `16`
 
 ## background_move_pool_size
 
@@ -130,7 +130,7 @@ The maximum number of threads that will be used for moving data parts to another
 
 Type: UInt64
 
-Default: 8
+Default: `8`
 
 ## background_schedule_pool_size
 
@@ -138,7 +138,7 @@ The maximum number of threads that will be used for constantly executing some li
 
 Type: UInt64
 
-Default: 512
+Default: `512`
 
 ## backup_threads
 
@@ -146,7 +146,7 @@ The maximum number of threads to execute `BACKUP` requests.
 
 Type: UInt64
 
-Default: 16
+Default: `16`
 
 ## backups_io_thread_pool_queue_size
 
@@ -158,7 +158,7 @@ A value of `0` (default) means unlimited.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## cache_size_to_ram_max_ratio
 
@@ -166,7 +166,7 @@ Set cache size to RAM max ratio. Allows lowering the cache size on low-memory sy
 
 Type: Double
 
-Default: 0.5
+Default: `0.5`
 
 ## concurrent_threads_soft_limit_num
 
@@ -178,7 +178,7 @@ A value of `0` (default) means unlimited.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## concurrent_threads_soft_limit_ratio_to_cores
 
@@ -186,7 +186,7 @@ Same as [`concurrent_threads_soft_limit_num`](#concurrent_threads_soft_limit_num
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## default_database
 
@@ -194,7 +194,7 @@ The default database name.
 
 Type: String
 
-Default: default
+Default: `default`
 
 ## disable_internal_dns_cache
 
@@ -203,7 +203,7 @@ with frequently changing infrastructure such as Kubernetes.
 
 Type: Bool
 
-Default: 0
+Default: `0`
 
 ## dns_cache_max_entries
 
@@ -211,7 +211,7 @@ Internal DNS cache max entries.
 
 Type: UInt64
 
-Default: 10000
+Default: `10000`
 
 
 ## dns_cache_update_period
@@ -220,7 +220,7 @@ Internal DNS cache update period in seconds.
 
 Type: Int32
 
-Default: 15
+Default: `15`
 
 
 ## dns_max_consecutive_failures
@@ -229,7 +229,7 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 10
+Default: `10`
 
 
 ## index_mark_cache_policy
@@ -238,7 +238,7 @@ Index mark cache policy name.
 
 Type: String
 
-Default: SLRU
+Default: `SLRU`
 
 ## index_mark_cache_size
 
@@ -253,7 +253,7 @@ This setting can be modified at runtime and will take effect immediately.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## index_mark_cache_size_ratio
 
@@ -261,7 +261,7 @@ The size of the protected queue in the index mark cache relative to the cache's 
 
 Type: Double
 
-Default: 0.5
+Default: `0.5`
 
 ## index_uncompressed_cache_policy
 
@@ -269,7 +269,7 @@ Index uncompressed cache policy name.
 
 Type: String
 
-Default: SLRU
+Default: `SLRU`
 
 ## index_uncompressed_cache_size
 
@@ -283,7 +283,7 @@ This setting can be modified at runtime and will take effect immediately.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## index_uncompressed_cache_size_ratio
 
@@ -291,7 +291,7 @@ The size of the protected queue in the index uncompressed cache relative to the 
 
 Type: Double
 
-Default: 0.5
+Default: `0.5`
 
 ## io_thread_pool_queue_size
 
@@ -303,7 +303,7 @@ A value of `0` means unlimited.
 
 Type: UInt64
 
-Default: 10000
+Default: `10000`
 
 ## mark_cache_policy
 
@@ -311,7 +311,7 @@ Mark cache policy name.
 
 Type: String
 
-Default: SLRU
+Default: `SLRU`
 
 ## mark_cache_size
 
@@ -323,7 +323,7 @@ This setting can be modified at runtime and will take effect immediately.
 
 Type: UInt64
 
-Default: 5368709120
+Default: `5368709120`
 
 ## mark_cache_size_ratio
 
@@ -331,7 +331,7 @@ The size of the protected queue in the mark cache relative to the cache's total 
 
 Type: Double
 
-Default: 0.5
+Default: `0.5`
 
 ## max_backup_bandwidth_for_server
 
@@ -339,7 +339,7 @@ The maximum read speed in bytes per second for all backups on server. Zero means
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_backups_io_thread_pool_free_size
 
@@ -347,7 +347,7 @@ If the number of **idle** threads in the Backups IO Thread pool exceeds `max_bac
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_backups_io_thread_pool_size
 
@@ -355,7 +355,7 @@ ClickHouse uses threads from the Backups IO Thread pool to do S3 backup IO opera
 
 Type: UInt64
 
-Default: 1000
+Default: `1000`
 
 ## max_concurrent_queries
 
@@ -375,7 +375,7 @@ This setting can be modified at runtime and will take effect immediately. Querie
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_concurrent_insert_queries
 
@@ -390,7 +390,7 @@ This setting can be modified at runtime and will take effect immediately. Querie
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_concurrent_select_queries
 
@@ -405,7 +405,7 @@ This setting can be modified at runtime and will take effect immediately. Querie
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_waiting_queries
 
@@ -433,7 +433,7 @@ This setting can be modified at runtime and will take effect immediately. Querie
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_connections
 
@@ -441,7 +441,7 @@ Max server connections.
 
 Type: Int32
 
-Default: 1024
+Default: `1024`
 
 ## max_io_thread_pool_free_size
 
@@ -449,7 +449,7 @@ If the number of **idle** threads in the IO Thread pool exceeds `max_io_thread_p
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_io_thread_pool_size
 
@@ -457,7 +457,7 @@ ClickHouse uses threads from the IO Thread pool to do some IO operations (e.g. t
 
 Type: UInt64
 
-Default: 100
+Default: `100`
 
 ## max_local_read_bandwidth_for_server
 
@@ -469,7 +469,7 @@ A value of `0` means unlimited.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_local_write_bandwidth_for_server
 
@@ -481,7 +481,7 @@ A value of `0` means unlimited.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_partition_size_to_drop
 
@@ -502,9 +502,9 @@ This limitation does not restrict drop table and truncate table, see [max_table_
 <max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
-Type: 
+Type: UInt64
 
-Default: 50 GB.
+Default: `50`
 
 ## max_remote_read_network_bandwidth_for_server
 
@@ -516,7 +516,7 @@ A value of `0` (default) means unlimited.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_remote_write_network_bandwidth_for_server
 
@@ -528,7 +528,7 @@ A value of `0` (default) means unlimited.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_server_memory_usage
 
@@ -541,7 +541,7 @@ A value of `0` (default) means unlimited.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_server_memory_usage_to_ram_ratio
 
@@ -555,7 +555,7 @@ A value of `0` means unlimited.
 
 Type: Double
 
-Default: 0.9
+Default: `0.9`
 
 ## max_build_vector_similarity_index_thread_pool_size {#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size}
 
@@ -567,7 +567,7 @@ A value of `0` means all cores.
 
 Type: UInt64
 
-Default: 16
+Default: `16`
 
 ## cgroups_memory_usage_observer_wait_time
 
@@ -581,7 +581,7 @@ see settings:
 
 Type: UInt64
 
-Default: 15
+Default: `15`
 
 ## cgroup_memory_watcher_hard_limit_ratio
 
@@ -594,7 +594,7 @@ See settings:
 
 Type: Double
 
-Default: 0.95
+Default: `0.95`
 
 ## cgroup_memory_watcher_soft_limit_ratio
 
@@ -607,7 +607,7 @@ See settings:
 
 Type: Double
 
-Default: 0.9
+Default: `0.9`
 
 ## cgroup_memory_watcher_hard_limit_ratio
 
@@ -620,7 +620,7 @@ See settings:
 
 Type: Double
 
-Default: 0.9
+Default: `0.9`
 
 ## max_database_num_to_warn
 
@@ -634,7 +634,7 @@ If the number of attached databases exceeds the specified value, clickhouse serv
 
 Type:
 
-Default: 1000
+Default: `1000`
 
 ## max_table_num_to_warn
 
@@ -648,7 +648,7 @@ If the number of attached tables exceeds the specified value, clickhouse server 
 
 Type:
 
-Default: 5000
+Default: `5000`
 
 ## max_view_num_to_warn
 
@@ -660,9 +660,9 @@ If the number of attached views exceeds the specified value, clickhouse server w
 <max_view_num_to_warn>400</max_view_num_to_warn>
 ```
 
-Type:
+Type: UInt64
 
-Default: 10000
+Default: `10000`
 
 ## max_dictionary_num_to_warn
 
@@ -674,9 +674,9 @@ If the number of attached dictionaries exceeds the specified value, clickhouse s
 <max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
 ```
 
-Type:
+Type: UInt64
 
-Default: 1000
+Default: `1000`
 
 ## max_part_num_to_warn
 
@@ -688,9 +688,9 @@ If the number of active parts exceeds the specified value, clickhouse server wil
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
-Type:
+Type: UInt64
 
-Default: 100000
+Default: `100000`
 
 ## max_table_num_to_throw
 
@@ -717,9 +717,9 @@ A value of `0` means no limitation.
 <max_table_num_to_throw>400</max_table_num_to_throw>
 ```
 
-Type:
+Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## max_replicated_table_num_to_throw
 
@@ -740,9 +740,9 @@ A value of `0` means no limitation.
 <max_replicated_table_num_to_throw>400</max_replicated_table_num_to_throw>
 ```
 
-Type:
+Type: UInt64
 
-Default:
+Default: `0`
 
 ## max_dictionary_num_to_throw
 
@@ -763,9 +763,9 @@ A value of `0` means no limitation.
 <max_dictionary_num_to_throw>400</max_dictionary_num_to_throw>
 ```
 
-Type:
+Type: UInt64
 
-Default:
+Default: `0`
 
 ## max_view_num_to_throw
 
@@ -786,9 +786,9 @@ A value of `0` means no limitation.
 <max_view_num_to_throw>400</max_view_num_to_throw>
 ```
 
-Type:
+Type: UInt64
 
-Default:
+Default: `0`
 
 ## max\_database\_num\_to\_throw {#max-table-num-to-throw}
 
@@ -804,9 +804,9 @@ A value of `0` (default) means no limitation.
 <max_database_num_to_throw>400</max_database_num_to_throw>
 ```
 
-Type:
+Type: UInt64
 
-Default:
+Default: `0`
 
 ## max_temporary_data_on_disk_size
 
@@ -835,9 +835,9 @@ If the number of **idle** threads in the Global Thread pool is greater than [`ma
 <max_thread_pool_free_size>1200</max_thread_pool_free_size>
 ```
 
-Type:
+Type: UInt64
 
-Default:
+Default: `0`
 
 ## max_thread_pool_size
 
@@ -851,7 +851,7 @@ ClickHouse uses threads from the Global Thread pool to process queries. If there
 
 Type: UInt64
 
-Default: 10000
+Default: `10000`
 
 ## mmap_cache_size
 
@@ -873,7 +873,7 @@ This setting can be modified at runtime and will take effect immediately.
 
 Type: UInt64
 
-Default: 1000
+Default: `1000`
 
 ## restore_threads
 
@@ -881,7 +881,7 @@ The maximum number of threads to execute RESTORE requests.
 
 Type: UInt64
 
-Default: 16
+Default: `16`
 
 ## show_addresses_in_stack_traces
 
@@ -889,7 +889,7 @@ If it is set true will show addresses in stack traces
 
 Type: Bool
 
-Default: 1
+Default: `1`
 
 ## shutdown_wait_unfinished_queries
 
@@ -909,7 +909,7 @@ By default, for backward compatibility creating table with a specific table engi
 
 Type: Bool
 
-Default: false
+Default: `false`
 
 ## temporary_data_in_cache
 
@@ -955,7 +955,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 
 Type: String
 
-Default:
+Default: ""
 
 ## thread_pool_queue_size
 
@@ -973,7 +973,7 @@ A value of `0` means unlimited.
 
 Type: UInt64
 
-Default: 10000
+Default: `10000`
 
 ## tmp_policy
 
@@ -1022,7 +1022,7 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
 ```
 Type: String
 
-Default:
+Default: ""
 
 ## uncompressed_cache_policy
 
@@ -1030,7 +1030,7 @@ Uncompressed cache policy name.
 
 Type: String
 
-Default: SLRU
+Default: `SLRU`
 
 
 ## uncompressed_cache_size
@@ -1049,7 +1049,7 @@ This setting can be modified at runtime and will take effect immediately.
 
 Type: UInt64
 
-Default: 0
+Default: `0`
 
 ## uncompressed_cache_size_ratio
 
@@ -1057,7 +1057,7 @@ The size of the protected queue in the uncompressed cache relative to the cache'
 
 Type: Double
 
-Default: 0.5
+Default: `0.5`
 
 ## builtin_dictionaries_reload_interval
 
@@ -1071,9 +1071,9 @@ ClickHouse reloads built-in dictionaries every x seconds. This makes it possible
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-Type: 
+Type: UInt64
 
-Default: 3600.
+Default: `3600`
 
 ## compression
 
@@ -1292,7 +1292,7 @@ Hard limit is configured via system tools
 
 Type:
 
-Default: `1073741824` (1 GB).
+Default: `1073741824`
 
 ## database_atomic_delay_before_drop_table_sec
 
@@ -1317,7 +1317,7 @@ A value of `0` means "immediately".
 
 Type:
 
-Default: `3600` (1 hour).
+Default: `3600` (1 hour)
 
 ## database_catalog_unused_dir_rm_timeout_sec
 
@@ -2082,7 +2082,7 @@ Keys:
 | Key                   | Description                                                                                                                                                                                            |
 |-----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `enabled`             | Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.                                                                                                  |
-| `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (default: `false`).                                                        |
+| `send_logical_errors` | `LOGICAL_ERROR` is like an `assert`, it is a bug in ClickHouse. This boolean flag enables sending this exceptions to sentry (Default: `false`).                                                        |
 | `endpoint`            | You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.                  |
 | `anonymize`           | Avoid attaching the server hostname to the crash report.                                                                                                                                               |
 | `http_proxy`          | Configure HTTP proxy for sending crash reports.                                                                                                                                                        |
@@ -2127,9 +2127,9 @@ Empty by default.
 <replica_group_name>backups</replica_group_name>
 ```
 
-Type: 
+Type: String
 
-Default:
+Default: ""
 
 ## max_open_files
 
@@ -2266,7 +2266,7 @@ A value of `0` means all available CPUs will be used.
 
 Type:
 
-Default: 0.
+Default: `0`
 
 
 ## tables_loader_background_pool_size
@@ -2277,7 +2277,9 @@ Sets the number of threads performing asynchronous load jobs in background pool.
 A value of `0` means all available CPUs will be used.
 :::
 
-Default: 0.
+Type:
+
+Default: `0`
 
 
 ## merge_tree
@@ -2327,6 +2329,10 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 </clickhouse>
 ```
 
+Type:
+
+Default:
+
 ## replicated_merge_tree
 
 Fine-tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md). This setting has a higher priority.
@@ -2340,6 +2346,10 @@ For more information, see the MergeTreeSettings.h header file.
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </replicated_merge_tree>
 ```
+
+Type:
+
+Default:
 
 ## openSSL
 
@@ -2402,6 +2412,10 @@ Keys for server/client settings:
 </openSSL>
 ```
 
+Type:
+
+Default:
+
 ## part_log
 
 Logging events that are associated with [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
@@ -2440,6 +2454,10 @@ Use the following parameters to configure logging:
 </part_log>
 ```
 
+Type:
+
+Default:
+
 ## path
 
 The path to the directory containing data.
@@ -2453,6 +2471,10 @@ The trailing slash is mandatory.
 ``` xml
 <path>/var/lib/clickhouse/</path>
 ```
+
+Type:
+
+Default:
 
 ## query_log {#query-log}
 
@@ -2494,6 +2516,10 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_log>
 ```
 
+Type:
+
+Default:
+
 # query_metric_log
 
 It is disabled by default.
@@ -2527,6 +2553,10 @@ To disable `query_metric_log` setting, you should create the following file `/et
 </clickhouse>
 ```
 
+Type:
+
+Default:
+
 ## query_cache
 
 [Query cache](../query-cache.md) configuration.
@@ -2555,6 +2585,10 @@ The following settings are available:
     <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
 </query_cache>
 ```
+
+Type:
+
+Default:
 
 ## query_thread_log
 
@@ -2596,6 +2630,10 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_thread_log>
 ```
 
+Type:
+
+Default:
+
 ## query_views_log
 
 Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#log-query-views) setting.
@@ -2634,6 +2672,10 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <flush_on_crash>false</flush_on_crash>
 </query_views_log>
 ```
+
+Type:
+
+Default:
 
 ## text_log
 
@@ -2675,6 +2717,10 @@ Parameters:
 </clickhouse>
 ```
 
+Type:
+
+Default:
+
 ## trace_log
 
 Settings for the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
@@ -2709,6 +2755,10 @@ The default server configuration file `config.xml` contains the following settin
     <flush_on_crash>false</flush_on_crash>
 </trace_log>
 ```
+
+Type:
+
+Default:
 
 ## asynchronous_insert_log
 
@@ -2747,6 +2797,10 @@ Parameters:
 </clickhouse>
 ```
 
+Type:
+
+Default:
+
 ## crash_log
 
 Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
@@ -2782,6 +2836,10 @@ The default server configuration file `config.xml` contains the following settin
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
 ```
+
+Type:
+
+Default:
 
 ## backup_log
 
@@ -2823,6 +2881,10 @@ Parameters:
 </clickhouse>
 ```
 
+Type:
+
+Default:
+
 ## query_masking_rules
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
@@ -2860,6 +2922,10 @@ The [`system.events`](/docs/en/operations/system-tables/events) table has counte
 For distributed queries each server has to be configured separately, otherwise, subqueries passed to other
 nodes will be stored without masking.
 
+Type:
+
+Default:
+
 ## remote_servers
 
 Configuration of clusters used by the [Distributed](../../engines/table-engines/special/distributed.md) table engine and by the `cluster` table function.
@@ -2877,6 +2943,10 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 - [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
 - [Cluster Discovery](../../operations/cluster-discovery.md)
 - [Replicated database engine](../../engines/database-engines/replicated.md)
+
+Type:
+
+Default:
 
 ## timezone
 
@@ -2896,6 +2966,10 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 - [session_timezone](../settings/settings.md#session_timezone)
 
+Type:
+
+Default:
+
 ## tcp_port
 
 Port for communicating with clients over the TCP protocol.
@@ -2906,6 +2980,10 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
+Type:
+
+Default:
+
 ## tcp_port_secure
 
 TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) settings.
@@ -2915,6 +2993,10 @@ TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) 
 ``` xml
 <tcp_port_secure>9440</tcp_port_secure>
 ```
+
+Type:
+
+Default:
 
 ## mysql_port
 
@@ -2931,6 +3013,10 @@ Port for communicating with clients over MySQL protocol.
 <mysql_port>9004</mysql_port>
 ```
 
+Type:
+
+Default:
+
 ## postgresql_port
 
 Port for communicating with clients over PostgreSQL protocol.
@@ -2938,13 +3024,17 @@ Port for communicating with clients over PostgreSQL protocol.
 :::note
 - Positive integers specify the port number to listen to
 - Empty values are used to disable communication with clients over MySQL protocol.
-  :::
+:::
 
-Example
+**Example**
 
 ``` xml
 <postgresql_port>9005</postgresql_port>
 ```
+
+Type:
+
+Default:
 
 ## tmp_path
 
@@ -2961,6 +3051,9 @@ Path on the local filesystem to store temporary data for processing large querie
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
+Type:
+
+Default:
 
 ## user_files_path
 
@@ -2972,6 +3065,10 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
+Type:
+
+Default:
+
 ## user_scripts_path
 
 The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
@@ -2982,6 +3079,10 @@ The directory with user scripts files. Used for Executable user defined function
 <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
+Type:
+
+Default:
+
 ## user_defined_path
 
 The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
@@ -2991,6 +3092,10 @@ The directory with user defined files. Used for SQL user defined functions [SQL 
 ``` xml
 <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
+
+Type:
+
+Default:
 
 ## users_config
 
@@ -3088,6 +3193,10 @@ There is also the `zookeeper_load_balancing` parameter (optional) which lets you
 - [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 - [Optional secured communication between ClickHouse and Zookeeper](../ssl-zookeeper.md#secured-communication-with-zookeeper)
 
+Type:
+
+Default:
+
 ## use_minimalistic_part_header_in_zookeeper
 
 Storage method for data part headers in ZooKeeper. This setting only applies to the [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family. It can be specified:
@@ -3113,7 +3222,7 @@ After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t down
 Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 :::
 
-Type: 
+Type: UInt8
 
 Default: 0
 
@@ -3161,6 +3270,10 @@ The configurable settings within `<distributed_ddl>` include:
 </distributed_ddl>
 ```
 
+Type:
+
+Default:
+
 ## access_control_path
 
 Path to a folder where a ClickHouse server stores user and role configurations created by SQL commands.
@@ -3169,7 +3282,7 @@ Path to a folder where a ClickHouse server stores user and role configurations c
 
 - [Access Control and Account Management](../../guides/sre/user-management/index.md#access-control)
 
-Type: 
+Type: String
 
 Default: `/var/lib/clickhouse/access/`.
 
@@ -3456,6 +3569,10 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 </proxy>
 ```
 
+Type:
+
+Default:
+
 ## max_materialized_views_count_for_table
 
 A limit on the number of materialized views attached to a table.
@@ -3474,7 +3591,7 @@ If set to `true`, then alter operations will be surrounded by parentheses in for
 
 Type: Bool
 
-Default: 0
+Default: `0`
 
 ## ignore_empty_sql_security_in_create_view_query
 
@@ -3486,13 +3603,13 @@ This setting is only necessary for the migration period and will become obsolete
 
 Type: Bool
 
-Default: 1
+Default: `1`
 
 ## merge_workload
 
 Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
 
-Type: 
+Type: String
 
 Default: `default`
 
@@ -3505,6 +3622,8 @@ Used to regulate how resources are utilized and shared between mutations and oth
 
 **See Also**
 - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+Type: String
 
 Default: `default`
 
@@ -3521,6 +3640,10 @@ The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` 
 **See Also**
 - [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
 - [workload_zookeeper_path](#workload_zookeeper_path)
+
+Type:
+
+Default:
 
 ## workload_zookeeper_path
 
@@ -3556,7 +3679,7 @@ A value of `0` means unlimited.
 
 Type: UInt64
 
-Default: 100
+Default: `100`
 
 ## allow_feature_tier
 
