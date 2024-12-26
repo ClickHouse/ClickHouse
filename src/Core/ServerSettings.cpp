@@ -675,6 +675,7 @@ namespace DB
     A value of `0` (default) means unlimited.
     :::
     )", 0) \
+    DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as concurrent_threads_soft_limit_num, but with ratio to cores.", 0) \
     DECLARE(UInt64, background_pool_size, 16, R"(
     Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
 
