@@ -4,7 +4,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster, ClickHouseKiller
 
-
 cluster = ClickHouseCluster(__file__)
 configs = ["configs/remote_servers.xml"]
 
@@ -216,7 +215,7 @@ def test_query_after_restore_db_replica(
     failed_change_table,
     change_table,
 ):
-    
+
     inserted_data = 1000
 
     if exists_table:
@@ -337,7 +336,9 @@ def test_query_after_restore_db_replica(
     assert ["0"] == node_1.query(
         "SELECT count(*) FROM system.tables WHERE database='repl_db'"
     ).split()
-    assert ["0"] == node_2.query("SELECT count(*) FROM system.tables WHERE database='repl_db'").split()
+    assert ["0"] == node_2.query(
+        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+    ).split()
 
 
 @pytest.mark.parametrize(
@@ -481,7 +482,7 @@ def test_failed_restore_db_replica_on_normal_replica(
     fill_table(node_1, test_table, count_test_table)
 
     assert (
-        "Replica node '/clickhouse/repl_db/replicas/shard1|replica1/digest' in ZooKeeper already exists" 
+        "Replica node '/clickhouse/repl_db/replicas/shard1|replica1/digest' in ZooKeeper already exists"
         in node_1.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
     )
 
