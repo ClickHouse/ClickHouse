@@ -53,7 +53,7 @@ namespace DB
     ```
     )", 0) \
     DECLARE(UInt64, thread_pool_queue_size, 10000, R"(
-    TThe maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [`max_thread_pool_size`](#max_thread_pool_size).
+    The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [`max_thread_pool_size`](#max_thread_pool_size).
 
     :::note
     A value of `0` means unlimited.
