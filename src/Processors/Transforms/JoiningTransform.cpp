@@ -266,7 +266,9 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
 
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
     : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
-{}
+{
+    spillable = typeid_cast<GraceHashJoin *>(join.get());
+}
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
 {
@@ -358,12 +360,6 @@ void FillingRightJoinSideTransform::work()
         join->tryRerangeRightTableData();
 
     set_totals = for_totals;
-}
-
-bool FillingRightJoinSideTransform::spillable() const
-{
-    //return false;
-    return typeid_cast<GraceHashJoin *>(join.get()) != nullptr;
 }
 
 ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()

@@ -105,7 +105,6 @@ public:
     Status prepare() override;
     void work() override;
 
-    bool spillable() const override;
     ProcessorMemoryStats getMemoryStats() override;
     bool spillOnSize(size_t bytes) override;
 
