@@ -199,6 +199,8 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
     if (threads > 1000000ull)
         throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Too many threads ({}) requested", threads);
 
+    std::lock_guard lock(mutex);
+
     threads_tasks.resize(threads);
     if (parts_ranges.empty())
         return;
