@@ -64,6 +64,7 @@ public:
     static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(DelayedCreatingSetsStep && step);
 
     ContextPtr getContext() const { return context; }
+    const PreparedSets::Subqueries & getSets() const { return subqueries; }
     PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
 
     void serialize(Serialization &) const override {}

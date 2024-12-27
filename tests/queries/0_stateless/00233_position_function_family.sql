@@ -486,3 +486,5 @@ select 1 = position('abc', materialize('')) from system.numbers limit 1000;
 select 1 = position('abab', materialize('ab'));
 select 1 = position('abababababababababababab', materialize('abab'));
 select 1 = position('abababababababababababab', materialize('abababababababababa'));
+
+select positionUTF8('你', '', 3) = positionUTF8(materialize('你'), materialize(''), materialize(3));

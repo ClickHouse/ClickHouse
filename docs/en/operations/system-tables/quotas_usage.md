@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/quotas_usage
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # quotas_usage
+
+<SystemTableCloud/>
 
 Quota usage by all users.
 

@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from praktika.result import Result
+from praktika.result import Result, ResultTranslator
 from praktika.settings import Settings
 from praktika.utils import MetaClasses, Shell, Utils
 
@@ -52,9 +52,8 @@ def main():
     args = parse_args()
 
     # # for sccache
-    # os.environ["SCCACHE_BUCKET"] = S3_BUILDS_BUCKET
-    # os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-    # TODO: check with  SCCACHE_LOG=debug SCCACHE_NO_DAEMON=1
+    os.environ["SCCACHE_BUCKET"] = S3_BUILDS_BUCKET
+    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
 
     stop_watch = Utils.Stopwatch()
 
@@ -221,6 +220,9 @@ def main():
                 with_log=False,
             )
         )
+        if not results[-1].is_ok():
+            results[-1].set_files(CIFiles.UNIT_TESTS_BIN)
+
         res = results[-1].is_ok()
 
     Result.create_from(results=results, stopwatch=stop_watch).complete_job()

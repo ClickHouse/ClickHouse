@@ -1221,9 +1221,14 @@ def test_system_users_required_privileges():
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
 
-    expected_error = (
-        "necessary to have the grant CREATE USER, CREATE ROLE, ROLE ADMIN ON *.*"
+    expected_error = "necessary to have the grant ROLE ADMIN ON *.*"
+    assert expected_error in instance.query_and_get_error(
+        f"RESTORE ALL FROM {backup_name}", user="u2"
     )
+
+    instance.query("GRANT ROLE ADMIN ON *.* TO u2")
+
+    expected_error = "necessary to have the grant CREATE ROLE ON r1"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u2"
     )

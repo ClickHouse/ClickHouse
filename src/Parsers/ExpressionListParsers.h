@@ -268,6 +268,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserAliasesExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "list of aliases expressions"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserGroupingSetsExpressionList : public IParserBase
 {
 protected:

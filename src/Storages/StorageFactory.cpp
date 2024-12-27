@@ -55,8 +55,11 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 
 void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
 {
+    if (features.supports_settings && !features.has_builtin_setting_fn)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
     if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }
 
 

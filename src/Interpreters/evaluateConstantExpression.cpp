@@ -686,8 +686,11 @@ namespace
                 if (lists.empty())
                     return {};
 
+                /// clang-tidy says the comparator might be called on moved-from object of type 'std::list'
+                /// NOLINTBEGIN(clang-analyzer-cplusplus.Move)
                 std::sort(lists.begin(), lists.end(),
                     [](const auto & lhs, const auto & rhs) { return lhs.size() < rhs.size(); });
+                /// NOLINTEND(clang-analyzer-cplusplus.Move)
 
                 DisjunctionList res;
                 bool first = true;

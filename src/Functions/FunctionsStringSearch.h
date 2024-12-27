@@ -68,6 +68,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 enum class ExecutionErrorPolicy : uint8_t
@@ -182,11 +183,27 @@ public:
 
         auto res = ColumnString::create();
         res->reserve(col->size());
-
         if constexpr (std::is_same_v<DataTypeEnum8, EnumType>)
         {
+            const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(col);
+            /// convert const enum column to const string column
+            if (col_haystack_const)
+            {
+                const auto * enum_col = typeid_cast<const ColumnInt8 *>(&(col_haystack_const->getDataColumn()));
+                const auto * enum_type = typeid_cast<const DataTypeEnum8 *>(type);
+                if (!enum_type || !enum_col)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a const DataTypeEnum8, but the provided column type does not match.");
+
+                StringRef value = enum_type->getNameForValue(enum_col->getData()[0]);
+                res->insertData(value.data, value.size);
+
+                return ColumnConst::create(std::move(res), col_haystack_const->size());
+            }
             const auto * enum_col = typeid_cast<const ColumnInt8 *>(col);
             const auto * enum_type = typeid_cast<const DataTypeEnum8 *>(type);
+            if (!enum_col || !enum_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a DataTypeEnum8, but the provided column type does not match.");
+
             const auto size = enum_col->size();
             for (size_t i = 0; i < size; ++i)
             {
@@ -196,9 +213,26 @@ public:
         }
         else if constexpr (std::is_same_v<DataTypeEnum16, EnumType>)
         {
+            const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(col);
+            /// convert const enum column to const string column
+            if (col_haystack_const)
+            {
+                const auto * enum_col = typeid_cast<const ColumnInt16 *>(&(col_haystack_const->getDataColumn()));
+                const auto * enum_type = typeid_cast<const DataTypeEnum16 *>(type);
+                if (!enum_type || !enum_col)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a const DataTypeEnum16, but the provided column type does not match.");
+
+                StringRef value = enum_type->getNameForValue(enum_col->getData()[0]);
+                res->insertData(value.data, value.size);
+
+                return ColumnConst::create(std::move(res), col_haystack_const->size());
+            }
             const auto * enum_col = typeid_cast<const ColumnInt16 *>(col);
-            const auto size = enum_col->size();
             const auto * enum_type = typeid_cast<const DataTypeEnum16 *>(type);
+            if (!enum_col || !enum_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a DataTypeEnum16, but the provided column type does not match.");
+
+            const auto size = enum_col->size();
             for (size_t i = 0; i < size; ++i)
             {
                 StringRef value = enum_type->getNameForValue(enum_col->getData()[i]);

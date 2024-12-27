@@ -100,6 +100,10 @@ void MaterializedPostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
+bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
+{
+    return MaterializedPostgreSQLSettingsImpl::hasBuiltin(name);
+}
 }
 
 #endif

@@ -38,7 +38,6 @@ struct FormatSettings
     bool try_infer_variant = false;
 
     bool seekable_read = true;
-    String composed_data_type_output_format_mode = "default";
     UInt64 max_rows_to_read_for_schema_inference = 25000;
     UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
 
@@ -282,6 +281,7 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        bool output_datetime_as_uint32 = false;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
@@ -304,6 +304,7 @@ struct FormatSettings
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
+        bool highlight_trailing_spaces = true;
         /// Set to 2 for auto
         UInt64 color = 2;
 
@@ -423,6 +424,7 @@ struct FormatSettings
         UInt64 output_row_index_stride = 10'000;
         String reader_time_zone_name = "GMT";
         bool dictionary_as_low_cardinality = true;
+        String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 

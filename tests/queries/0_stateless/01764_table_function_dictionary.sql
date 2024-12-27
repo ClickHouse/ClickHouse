@@ -19,7 +19,7 @@ PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' DATABASE currentDatabase() TABLE 'table_function_dictionary_source_table'))
 LAYOUT(DIRECT());
 
-SELECT * FROM dictionary('table_function_dictionary_test_dictionary');
+SELECT * FROM dictionary('table_function_dictionary_test_dictionary') ORDER BY ALL;
 
 DROP DICTIONARY table_function_dictionary_test_dictionary;
 DROP TABLE table_function_dictionary_source_table;

@@ -12,7 +12,7 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            hostname: "https://build-cache.clickhouse-staging.com".to_string(),
+            hostname: "https://build-cache.eu-west-1.aws.clickhouse-staging.com".to_string(),
             user: "reader".to_string(),
             password: "reader".to_string(),
         }

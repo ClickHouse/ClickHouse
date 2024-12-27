@@ -305,6 +305,7 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
         return std::make_shared<MsgPackRowOutputFormat>(buf, sample, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("MsgPack");
+    factory.markOutputFormatNotTTYFriendly("MsgPack");
 }
 
 }

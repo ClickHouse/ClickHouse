@@ -2,6 +2,8 @@
 
 #include <Coordination/KeeperConstants.h>
 
+#include <memory>
+
 namespace Poco
 {
 class Logger;

@@ -200,6 +200,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
+        else if (metadata.settings_changes)
+        {
+            auto & settings_changes = metadata.settings_changes->as<ASTSetQuery &>().changes;
+            if (!settings_changes.empty())
+                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+        }
     }
 
     if (metadata.comment.empty())

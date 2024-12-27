@@ -79,6 +79,7 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
+            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif
@@ -96,6 +97,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::AZURE,
+            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif

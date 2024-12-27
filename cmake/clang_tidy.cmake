@@ -1,6 +1,8 @@
 # https://clang.llvm.org/extra/clang-tidy/
 option (ENABLE_CLANG_TIDY "Use clang-tidy static analyzer" OFF)
 
+include(cmake/utils.cmake)
+
 if (ENABLE_CLANG_TIDY)
 
     find_program (CLANG_TIDY_CACHE_PATH NAMES "clang-tidy-cache")
@@ -26,6 +28,18 @@ if (ENABLE_CLANG_TIDY)
         # clang-tidy requires assertions to guide the analysis
         # Note that NDEBUG is set implicitly by CMake for non-debug builds
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -UNDEBUG")
+
+        option(ENABLE_DUMMY_LAUNCHERS "Enable dummy launchers to speed up tidy build" ON)
+
+        if(ENABLE_DUMMY_LAUNCHERS)
+            message(STATUS "Using dummy launchers to speed up tidy build avoiding real compilation and linking.")
+            # Use a dummy compiler and linker to avoid doing any extra work. Using the compiler with ccache/sccache
+            # is not that bad if the cache is hot, but linking takes ~20min.
+            set_dummy_launchers_if_needed()
+        else()
+            message(WARNING "Using real compilers along with clang-tidy. This will slow down the build because "
+                            "it's compiling and linking for real apart of running the static analysis.")
+        endif()
 
         # The variable CMAKE_CXX_CLANG_TIDY will be set inside the following directories with non third-party code.
         # - base

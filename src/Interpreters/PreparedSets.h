@@ -9,6 +9,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
+#include <Interpreters/StorageID.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
@@ -64,15 +65,17 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    explicit FutureSetFromStorage(Hash hash_, SetPtr set_);
+    explicit FutureSetFromStorage(Hash hash_, SetPtr set_, std::optional<StorageID> storage_id);
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
     Hash getHash() const override;
 
+    const std::optional<StorageID> & getStorageID() const { return storage_id; }
 private:
     Hash hash;
+    std::optional<StorageID> storage_id;
     SetPtr set;
 };
 
@@ -90,7 +93,7 @@ public:
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
-
+    Columns getKeyColumns();
 private:
     Hash hash;
     SetPtr set;
@@ -143,6 +146,9 @@ public:
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
+    const QueryPlan * getQueryPlan() const { return source.get(); }
+    QueryPlan * getQueryPlan() { return source.get(); }
+
 private:
     Hash hash;
     SetAndKeyPtr set_and_key;
@@ -170,7 +176,7 @@ public:
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
-    FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_);
+    FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_, StorageID storage_id);
     FutureSetFromTuplePtr addFromTuple(const Hash & key, ColumnsWithTypeAndName block, const Settings & settings);
 
     FutureSetFromSubqueryPtr addFromSubquery(

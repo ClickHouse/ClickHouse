@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/jemalloc_bins
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # jemalloc_bins
+
+<SystemTableCloud/>
 
 Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas.
 These statistics might not be absolutely accurate because of thread local caching in jemalloc.

@@ -264,6 +264,7 @@ void registerOutputFormatNpy(FormatFactory & factory)
         return std::make_shared<NpyOutputFormat>(buf, sample);
     });
     factory.markFormatHasNoAppendSupport("Npy");
+    factory.markOutputFormatNotTTYFriendly("Npy");
 }
 
 }

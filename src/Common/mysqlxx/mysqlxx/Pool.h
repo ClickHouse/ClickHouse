@@ -188,10 +188,16 @@ public:
     /// Get description of database.
     std::string getDescription() const
     {
-        return description;
+        std::lock_guard lock(mutex);
+        return getDescriptionImpl();
     }
 
     void removeConnection(Connection * connection);
+
+    bool isOnline()
+    {
+        return online;
+    }
 
 protected:
     LoggerPtr log = getLogger("mysqlxx::Pool");
@@ -209,7 +215,7 @@ private:
     /// List of connections.
     Connections connections;
     /// Lock for connections list access
-    std::mutex mutex;
+    mutable std::mutex mutex;
     /// Description of connection.
     std::string description;
 
@@ -234,8 +240,16 @@ private:
     /// Initialises class if it wasn't.
     void initialize();
 
+    /// Pool is online.
+    std::atomic<bool> online{true};
+
     /** Create new connection. */
     Connection * allocConnection(bool dont_throw_if_failed_first_time = false);
+
+    std::string getDescriptionImpl() const
+    {
+        return description;
+    }
 };
 
 }

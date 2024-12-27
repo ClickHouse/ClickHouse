@@ -154,4 +154,9 @@ SettingsChanges KafkaSettings::getFormatSettings() const
 
     return values;
 }
+
+bool KafkaSettings::hasBuiltin(std::string_view name)
+{
+    return KafkaSettingsImpl::hasBuiltin(name);
+}
 }

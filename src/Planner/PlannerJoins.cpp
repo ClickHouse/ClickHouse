@@ -16,13 +16,14 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
-#include <Analyzer/Utils.h>
-#include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -40,8 +41,9 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 
-#include <Core/Settings.h>
+#include <Core/Joins.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -53,6 +55,8 @@ namespace Setting
     extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool allow_general_join_planning;
+    extern const SettingsJoinAlgorithm join_algorithm;
 }
 
 namespace ServerSetting
@@ -124,6 +128,46 @@ String JoinClause::dump() const
     dump(buffer);
 
     return buffer.str();
+}
+
+JoinClause JoinClause::concatClauses(const JoinClause & lhs, const JoinClause & rhs)
+{
+    const auto concat_ptrs_into = [](const ActionsDAG::NodeRawConstPtrs & lhs_ptrs,
+                                     const ActionsDAG::NodeRawConstPtrs & rhs_ptrs,
+                                     ActionsDAG::NodeRawConstPtrs & result)
+    {
+        result.reserve(lhs_ptrs.size() + rhs_ptrs.size());
+        result.insert(result.end(), lhs_ptrs.begin(), lhs_ptrs.end());
+        result.insert(result.end(), rhs_ptrs.begin(), rhs_ptrs.end());
+    };
+
+    JoinClause result;
+    const auto lhs_key_size = lhs.left_key_nodes.size();
+
+    concat_ptrs_into(lhs.left_key_nodes, rhs.left_key_nodes, result.left_key_nodes);
+    concat_ptrs_into(lhs.right_key_nodes, rhs.right_key_nodes, result.right_key_nodes);
+    concat_ptrs_into(lhs.left_filter_condition_nodes, rhs.left_filter_condition_nodes, result.left_filter_condition_nodes);
+    concat_ptrs_into(lhs.right_filter_condition_nodes, rhs.right_filter_condition_nodes, result.right_filter_condition_nodes);
+    concat_ptrs_into(lhs.residual_filter_condition_nodes, rhs.residual_filter_condition_nodes, result.residual_filter_condition_nodes);
+
+    result.asof_conditions.reserve(lhs.asof_conditions.size() + rhs.asof_conditions.size());
+    // We can keep the indices from left hand side, because their position remain the same
+    result.asof_conditions = lhs.asof_conditions;
+    // And offset the indices from rhs according to lhs size
+    std::transform(
+        rhs.asof_conditions.begin(),
+        rhs.asof_conditions.end(),
+        std::back_inserter(result.asof_conditions),
+        [&lhs_key_size](const ASOFCondition & asof_condition)
+        { return ASOFCondition{asof_condition.key_index + lhs_key_size, asof_condition.asof_inequality}; });
+
+    // The same with null-safe comparisons
+    result.nullsafe_compare_key_indexes = lhs.nullsafe_compare_key_indexes;
+    // And offset the indices from rhs according to lhs size
+    for (const auto key_index : rhs.nullsafe_compare_key_indexes)
+        result.nullsafe_compare_key_indexes.insert(key_index + lhs_key_size);
+
+    return result;
 }
 
 namespace
@@ -206,7 +250,7 @@ const ActionsDAG::Node * appendExpression(
     return join_expression_dag_node_raw_pointers[0];
 }
 
-void buildJoinClause(
+void buildJoinClauseImpl(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -215,32 +259,13 @@ void buildJoinClause(
     const TableExpressionSet & left_table_expressions,
     const TableExpressionSet & right_table_expressions,
     const JoinNode & join_node,
+    const bool is_simple,
     JoinClause & join_clause)
 {
     std::string function_name;
     auto * function_node = join_expression->as<FunctionNode>();
     if (function_node)
         function_name = function_node->getFunction()->getName();
-
-    /// For 'and' function go into children
-    if (function_name == "and")
-    {
-        for (const auto & child : function_node->getArguments())
-        {
-            buildJoinClause(
-                left_dag,
-                right_dag,
-                joined_dag,
-                planner_context,
-                child,
-                left_table_expressions,
-                right_table_expressions,
-                join_node,
-                join_clause);
-        }
-
-        return;
-    }
 
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
@@ -250,19 +275,16 @@ void buildJoinClause(
         const auto left_child = function_node->getArguments().getNodes().at(0);
         const auto right_child = function_node->getArguments().getNodes().at(1);
 
-        auto left_expression_sides = extractJoinTableSidesFromExpression(left_child.get(),
-            left_table_expressions,
-            right_table_expressions,
-            join_node);
+        auto left_expression_sides
+            = extractJoinTableSidesFromExpression(left_child.get(), left_table_expressions, right_table_expressions, join_node);
 
-        auto right_expression_sides = extractJoinTableSidesFromExpression(right_child.get(),
-            left_table_expressions,
-            right_table_expressions,
-            join_node);
+        auto right_expression_sides
+            = extractJoinTableSidesFromExpression(right_child.get(), left_table_expressions, right_table_expressions, join_node);
 
         if (left_expression_sides.empty() && right_expression_sides.empty())
         {
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            throw Exception(
+                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                 "JOIN {} ON expression expected non-empty left and right table expressions",
                 join_node.formatASTForErrorMessage());
         }
@@ -287,6 +309,11 @@ void buildJoinClause(
 
             if (left_expression_side != right_expression_side)
             {
+                if (is_simple && (function_name == "or" || function_name == "and"))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Cannot build simple join clause for '{}' expression containing expressions from both tables",
+                        function_name);
                 auto left_key = left_child;
                 auto right_key = right_child;
 
@@ -327,7 +354,8 @@ void buildJoinClause(
         }
         else
         {
-            auto support_mixed_join_condition = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
+            auto support_mixed_join_condition
+                = planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_join_condition];
             auto join_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::join_use_nulls];
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not right.
             if (support_mixed_join_condition && !join_use_nulls)
@@ -341,18 +369,16 @@ void buildJoinClause(
             {
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                    "JOIN {} join expression contains column from left and right table, you may try experimental support of this feature "
-                    "by `SET allow_experimental_join_condition = 1`",
-                    join_node.formatASTForErrorMessage());
+                    "{} JOIN ON expression {} contains column from left and right table, which is not supported with `join_use_nulls`",
+                    toString(join_node.getKind()),
+                    join_expression->formatASTForErrorMessage());
             }
         }
     }
     else
     {
-        auto expression_sides = extractJoinTableSidesFromExpression(join_expression.get(),
-            left_table_expressions,
-            right_table_expressions,
-            join_node);
+        auto expression_sides
+            = extractJoinTableSidesFromExpression(join_expression.get(), left_table_expressions, right_table_expressions, join_node);
         // expression_sides.empty() = true, the expression is constant
         if (expression_sides.empty() || expression_sides.size() == 1)
         {
@@ -367,8 +393,8 @@ void buildJoinClause(
             /// If join_use_nulls = true, the columns' nullability will be changed later which make this expression not applicable.
             auto strictness = join_node.getStrictness();
             auto kind = join_node.getKind();
-            bool can_be_moved_out = strictness == JoinStrictness::All
-                && (kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma);
+            bool can_be_moved_out
+                = strictness == JoinStrictness::All && (kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma);
             if (can_be_moved_out || !join_use_nulls)
             {
                 const auto * node = appendExpression(joined_dag, join_expression, planner_context, join_node);
@@ -379,10 +405,311 @@ void buildJoinClause(
                 throw Exception(
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                     "{} JOIN ON expression {} contains column from left and right table, which is not supported with `join_use_nulls`",
-                    toString(join_node.getKind()), join_expression->formatASTForErrorMessage());
+                    toString(join_node.getKind()),
+                    join_expression->formatASTForErrorMessage());
             }
         }
     }
+}
+
+JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
+{
+    JoinClauses result;
+    for (const auto & rhs_clause : rhs)
+    {
+        for (const auto & lhs_clause : lhs)
+        {
+            result.emplace_back(JoinClause::concatClauses(lhs_clause, rhs_clause));
+        }
+    }
+
+    return result;
+}
+
+void buildSimpleJoinClause(
+    ActionsDAG & left_dag,
+    ActionsDAG & right_dag,
+    ActionsDAG & joined_dag,
+    const PlannerContextPtr & planner_context,
+    const QueryTreeNodePtr & join_expression,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node,
+    JoinClause & join_clause)
+{
+    buildJoinClauseImpl(
+        left_dag,
+        right_dag,
+        joined_dag,
+        planner_context,
+        join_expression,
+        left_table_expressions,
+        right_table_expressions,
+        join_node,
+        true,
+        join_clause);
+}
+
+void buildJoinClause(
+    ActionsDAG & left_dag,
+    ActionsDAG & right_dag,
+    ActionsDAG & joined_dag,
+    const PlannerContextPtr & planner_context,
+    const QueryTreeNodePtr & join_expression,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node,
+    JoinClause & join_clause)
+{
+    std::string function_name;
+    auto * function_node = join_expression->as<FunctionNode>();
+    if (function_node)
+        function_name = function_node->getFunction()->getName();
+
+    /// For 'and' function go into children
+    if (function_name == "and")
+    {
+        for (const auto & child : function_node->getArguments())
+        {
+            buildJoinClause(
+                left_dag,
+                right_dag,
+                joined_dag,
+                planner_context,
+                child,
+                left_table_expressions,
+                right_table_expressions,
+                join_node,
+                join_clause);
+        }
+
+        return;
+    }
+
+    buildJoinClauseImpl(
+        left_dag,
+        right_dag,
+        joined_dag,
+        planner_context,
+        join_expression,
+        left_table_expressions,
+        right_table_expressions,
+        join_node,
+        false,
+        join_clause);
+}
+
+JoinClauses buildJoinClauses(
+    ActionsDAG & left_dag,
+    ActionsDAG & right_dag,
+    ActionsDAG & joined_dag,
+    const PlannerContextPtr & planner_context,
+    const QueryTreeNodePtr & join_expression,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node)
+{
+    if (join_expression->getNodeType() != QueryTreeNodeType::FUNCTION)
+    {
+        JoinClauses result;
+        result.emplace_back();
+        buildSimpleJoinClause(
+            left_dag,
+            right_dag,
+            joined_dag,
+            planner_context,
+            join_expression,
+            left_table_expressions,
+            right_table_expressions,
+            join_node,
+            result.front());
+        return result;
+    }
+
+    std::unordered_map<const IQueryTreeNode *, JoinClauses> built_clauses;
+    std::stack<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push(join_expression);
+
+    auto get_and_check_built_clause = [&built_clauses](const IQueryTreeNode* node) -> JoinClauses &
+    {
+        auto it = built_clauses.find(node);
+        if (it == built_clauses.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join clauses are not built for node: {}", node->formatASTForErrorMessage());
+
+        if (it->second.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join clauses are already used for node: {}", node->formatASTForErrorMessage());
+
+        return it->second;
+    };
+
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.top();
+        auto * function_node = node->as<FunctionNode>();
+        const auto function_name = function_node ? function_node->getFunctionName() : String();
+        const auto expression_sides
+            = extractJoinTableSidesFromExpression(node.get(), left_table_expressions, right_table_expressions, join_node);
+        // If the expression is a logical expression and it contains expressions from both sides, let's combine the clauses, otherwise let's just build one join clause
+        if ((function_name == "and" || function_name == "or") && expression_sides.size() == 2)
+        {
+            auto & arguments = function_node->getArguments().getNodes();
+            auto * first_argument = arguments.front().get();
+            if (const auto it = built_clauses.find(first_argument); it == built_clauses.end())
+            {
+                for (auto & argument : arguments)
+                    nodes_to_process.push(argument);
+
+                continue;
+            }
+
+            nodes_to_process.pop();
+            JoinClauses result;
+            if (function_name == "or")
+            {
+                for (auto & argument : arguments)
+                {
+                    auto & child_res = get_and_check_built_clause(argument.get());
+                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    child_res.clear();
+                }
+
+                // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
+                // TODO(antaljanosbenjamin): Analyze the expressions first, so join clauses are not built unnecessarily.
+                const auto with_key_expression = static_cast<size_t>(std::count_if(
+                    result.begin(), result.end(), [](const JoinClause & clause) { return !clause.getLeftKeyNodes().empty(); }));
+
+                if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
+                {
+                    result.clear();
+                    result.emplace_back();
+                    buildSimpleJoinClause(
+                        left_dag,
+                        right_dag,
+                        joined_dag,
+                        planner_context,
+                        node,
+                        left_table_expressions,
+                        right_table_expressions,
+                        join_node,
+                        result.front());
+                }
+            }
+            else
+            {
+                auto it = arguments.begin();
+                {
+                    auto & child_res = get_and_check_built_clause(it->get());
+
+                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    child_res.clear();
+                }
+                it++;
+
+                for (; it != arguments.end(); it++)
+                {
+                    auto & child_res = get_and_check_built_clause(it->get());
+                    result = makeCrossProduct(result, child_res);
+                    child_res.clear();
+                }
+            }
+
+            built_clauses.emplace(node.get(), std::move(result));
+        }
+        else
+        {
+            nodes_to_process.pop();
+            JoinClauses clauses;
+            clauses.emplace_back();
+            buildSimpleJoinClause(
+                left_dag,
+                right_dag,
+                joined_dag,
+                planner_context,
+                node,
+                left_table_expressions,
+                right_table_expressions,
+                join_node,
+                clauses.front());
+
+            built_clauses.emplace(node.get(), std::move(clauses));
+        }
+    }
+    return std::move(built_clauses.at(join_expression.get()));
+}
+
+std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
+    ActionsDAG & left_join_actions,
+    ActionsDAG & right_join_actions,
+    ActionsDAG & post_join_actions,
+    const PlannerContextPtr & planner_context,
+    const QueryTreeNodePtr & join_expression,
+    const TableExpressionSet & join_left_table_expressions,
+    const TableExpressionSet & join_right_table_expressions,
+    const JoinNode & join_node,
+    const FunctionNode & function_node)
+{
+    const auto & join_algorithms = planner_context->getQueryContext()->getSettingsRef()[Setting::join_algorithm];
+    const auto is_hash_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
+    if (is_hash_join_enabled && planner_context->getQueryContext()->getSettingsRef()[Setting::allow_general_join_planning])
+    {
+        auto join_clauses = buildJoinClauses(
+            left_join_actions,
+            right_join_actions,
+            post_join_actions,
+            planner_context,
+            join_expression,
+            join_left_table_expressions,
+            join_right_table_expressions,
+            join_node);
+
+        const auto has_residual_filters = std::any_of(
+            join_clauses.begin(),
+            join_clauses.end(),
+            [](const JoinClause & clause) { return !clause.getResidualFilterConditionNodes().empty(); });
+
+        return std::make_pair(std::move(join_clauses), has_residual_filters);
+    }
+
+    bool has_residual_filters = false;
+    JoinClauses join_clauses;
+    const auto & function_name = function_node.getFunction()->getName();
+    if (function_name == "or")
+    {
+        for (const auto & child : function_node.getArguments())
+        {
+            join_clauses.emplace_back();
+
+            buildJoinClause(
+                left_join_actions,
+                right_join_actions,
+                post_join_actions,
+                planner_context,
+                child,
+                join_left_table_expressions,
+                join_right_table_expressions,
+                join_node,
+                join_clauses.back());
+            has_residual_filters |= !join_clauses.back().getResidualFilterConditionNodes().empty();
+        }
+    }
+    else
+    {
+        join_clauses.emplace_back();
+
+        buildJoinClause(
+            left_join_actions,
+            right_join_actions,
+            post_join_actions,
+            planner_context,
+            join_expression,
+            join_left_table_expressions,
+            join_right_table_expressions,
+            join_node,
+            join_clauses.back());
+        has_residual_filters |= !join_clauses.back().getResidualFilterConditionNodes().empty();
+    }
+    return std::make_pair(std::move(join_clauses), has_residual_filters);
 }
 
 JoinClausesAndActions buildJoinClausesAndActions(
@@ -455,44 +782,18 @@ JoinClausesAndActions buildJoinClausesAndActions(
     auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
 
     JoinClausesAndActions result;
+    bool has_residual_filters;
 
-    bool has_residual_filters = false;
-    const auto & function_name = function_node->getFunction()->getName();
-    if (function_name == "or")
-    {
-        for (const auto & child : function_node->getArguments())
-        {
-            result.join_clauses.emplace_back();
-
-            buildJoinClause(
-                left_join_actions,
-                right_join_actions,
-                post_join_actions,
-                planner_context,
-                child,
-                join_left_table_expressions,
-                join_right_table_expressions,
-                join_node,
-                result.join_clauses.back());
-            has_residual_filters |= !result.join_clauses.back().getResidualFilterConditionNodes().empty();
-        }
-    }
-    else
-    {
-        result.join_clauses.emplace_back();
-
-        buildJoinClause(
-                left_join_actions,
-                right_join_actions,
-                post_join_actions,
-                planner_context,
-                join_expression,
-                join_left_table_expressions,
-                join_right_table_expressions,
-                join_node,
-                result.join_clauses.back());
-        has_residual_filters |= !result.join_clauses.back().getResidualFilterConditionNodes().empty();
-    }
+    std::tie(result.join_clauses, has_residual_filters) = buildAllJoinClauses(
+        left_join_actions,
+        right_join_actions,
+        post_join_actions,
+        planner_context,
+        join_expression,
+        join_left_table_expressions,
+        join_right_table_expressions,
+        join_node,
+        *function_node);
 
     auto and_function = FunctionFactory::instance().get("and", planner_context->getQueryContext());
 

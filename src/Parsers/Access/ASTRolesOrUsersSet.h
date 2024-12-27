@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/Common/AccessRightsElement.h>
 #include <Parsers/IAST.h>
 
 
@@ -27,6 +28,7 @@ public:
 
     bool empty() const { return names.empty() && !current_user && !all; }
     void replaceCurrentUserTag(const String & current_user_name);
+    AccessRightsElements collectRequiredGrants(AccessType access_type);
 
     String getID(char) const override { return "RolesOrUsersSet"; }
     ASTPtr clone() const override { return std::make_shared<ASTRolesOrUsersSet>(*this); }

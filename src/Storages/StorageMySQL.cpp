@@ -384,6 +384,7 @@ void registerStorageMySQL(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::MYSQL,
+        .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     });
 }
 

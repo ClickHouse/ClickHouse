@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
+#include <base/ask.h>
 
 #include <sys/stat.h>
 #include <pwd.h>
@@ -116,23 +117,6 @@ static auto executeScript(const std::string & command, bool throw_on_error = fal
     }
 
     return sh->tryWait();
-}
-
-static bool ask(std::string question)
-{
-    while (true)
-    {
-        std::string answer;
-        std::cout << question;
-        std::getline(std::cin, answer);
-        if (!std::cin.good())
-            return false;
-
-        if (answer.empty() || answer == "n" || answer == "N")
-            return false;
-        if (answer == "y" || answer == "Y")
-            return true;
-    }
 }
 
 static bool filesEqual(std::string path1, std::string path2)
@@ -837,7 +821,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             char buf[1000] = {};
             std::string password;
-            if (auto * result = readpassphrase("Enter password for the default user: ", buf, sizeof(buf), 0))
+            if (auto * result = readpassphrase("Set up the password for the default user: ", buf, sizeof(buf), 0))
                 password = result;
 
             if (!password.empty())

@@ -29,6 +29,10 @@ public:
 
     static StorageFactory & instance();
 
+    /// Helper function to validate if a specific storage supports a setting
+    /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
+    using HasBuiltinSettingFn = bool(std::string_view);
+
     struct Arguments
     {
         const String & engine_name;
@@ -69,6 +73,8 @@ public:
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
         AccessType source_access_type = AccessType::NONE;
+
+        HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -102,6 +108,7 @@ public:
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
         .source_access_type = AccessType::NONE,
+        .has_builtin_setting_fn = nullptr,
     });
 
     const Storages & getAllStorages() const

@@ -9,8 +9,8 @@ function tx()
     query=$2
 
     session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
-    query_id="${session}_${RANDOM}"
-    url_without_session="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/?"
+    query_id="${session}_${RANDOM}${RANDOM}${RANDOM}${RANDOM}"
+    url_without_session="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?"
     url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE&apply_mutations_on_fly=0"
 
     ${CLICKHOUSE_CURL} -m 90 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/"
@@ -55,7 +55,7 @@ function tx_async()
 
     session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
     query_id="${session}_${RANDOM}"
-    url_without_session="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/?"
+    url_without_session="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?"
     url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE&apply_mutations_on_fly=0"
 
     # We cannot be sure that query will actually start execution and appear in system.processes before the next call to tx_wait
