@@ -603,8 +603,6 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     entry.latest_fail_reason.clear();
                     if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                         mutation_backoff_policy.removePartFromFailed(failed_part->name);
-
-                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
                 }
             }
             else
@@ -1564,17 +1562,22 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         if (std::optional<Int64> min_version = getMinPartDataVersion())
             end_it = current_mutations_by_version.upper_bound(*min_version);
 
-        size_t done_count = std::distance(begin_it, end_it);
-
-        if (done_count <= finished_mutations_to_keep)
-            return 0;
-
+        size_t done_count = 0;
         for (auto it = begin_it; it != end_it; ++it)
         {
-            if (!it->second.tid.isPrehistoric())
+            ++done_count;
+            auto & entry = it->second;
+
+            if (!entry.tid.isPrehistoric())
             {
-                done_count = std::distance(begin_it, it);
+                end_it = it;
                 break;
+            }
+
+            if (!entry.is_done)
+            {
+                entry.is_done = true;
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
             }
         }
 
@@ -1590,6 +1593,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!tid.isPrehistoric() && !TransactionLog::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
+
             mutations_to_delete.push_back(std::move(it->second));
             it = current_mutations_by_version.erase(it);
         }

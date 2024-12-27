@@ -22,6 +22,7 @@ struct MergeTreeMutationEntry
     String path_prefix;
     String file_name;
     bool is_temp = false;
+    bool is_done = false;
 
     UInt64 block_number = 0;
 
