@@ -16,7 +16,10 @@ struct ArrayMapImpl
     /// true if the array must be exactly one.
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element);
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
+    {
+        return std::make_shared<DataTypeArray>(expression_return);
+    }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
