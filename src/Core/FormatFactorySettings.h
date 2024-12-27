@@ -849,6 +849,11 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_pretty_print, true, R"(
+When enabled, values in JSON output format will be printed in pretty format.
+
+Enabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md/#jsonobjecteachrow) format.
