@@ -129,9 +129,6 @@ CLICKHOUSE_VERSION_STRING+=$VERSION_POSTFIX
 echo -e "\nCurrent version is $CLICKHOUSE_VERSION_STRING"
 
 for config in clickhouse*.yaml; do
-    if [[ $BUILD_TYPE != 'release' ]] && [[ "$config" == "clickhouse-keeper-dbg.yaml" ]]; then
-        continue
-    fi
     if [ -n "$MAKE_DEB" ] || [ -n "$MAKE_TGZ" ]; then
         echo "Building deb package for $config"
         PKG_PATH=$(nfpm package --target "$OUTPUT_DIR" --config "$config" --packager deb | tee /dev/stderr | grep "created package:" | sed 's/.*created package: //')
