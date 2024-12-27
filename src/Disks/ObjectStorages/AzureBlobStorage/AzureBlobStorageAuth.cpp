@@ -129,6 +129,9 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
 
+    if (config.has(config_prefix + ".storage_prefix"))
+        prefix = config.getString(config_prefix + ".storage_prefix");
+
     if (!container_name.empty())
         validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
