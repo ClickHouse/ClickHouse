@@ -535,7 +535,7 @@ void PrettyBlockOutputFormat::writeSuffix()
     if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("  Showed ", out);
-        writeIntText(displayed_rows, out);
+        writeIntText(format_settings.pretty.max_rows, out);
         writeCString(" rows.\n", out);
     }
 }
