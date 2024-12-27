@@ -26,6 +26,11 @@ cluster_nodes = [node_1, node_2]
 
 
 @pytest.fixture(scope="function")
+def test_name(request):
+    return request.node.name
+
+
+@pytest.fixture(scope="function")
 def exclusive_database_name(test_name):
     normalized = (
         test_name.replace("[", "_")
