@@ -2,7 +2,7 @@ SET readonly = 2;
 
 CREATE TEMPORARY TABLE readonly00542 (
     ID Int
-) Engine = Memory;
+) Engine = MergeTree ORDER BY tuple();
 
 INSERT INTO readonly00542 (ID)
     VALUES (1), (2), (3), (4), (5);

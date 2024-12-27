@@ -4,11 +4,11 @@ DROP TABLE IF EXISTS t2_nullable;
 DROP TABLE IF EXISTS t2_lc;
 DROP TABLE IF EXISTS t22;
 
-CREATE TABLE t1 (`id` Int32, key String, key2 String) ENGINE = TinyLog;
-CREATE TABLE t2 (`id` Int32, key String, key2 String) ENGINE = TinyLog;
-CREATE TABLE t2_nullable (`id` Int32, key String, key2 Nullable(String)) ENGINE = TinyLog;
-CREATE TABLE t2_lc (`id` Int32, key String, key2 LowCardinality(String)) ENGINE = TinyLog;
-CREATE TABLE t22 (`id` Int32, `idd` Int32, `key` String, `key2` String) ENGINE = TinyLog;
+CREATE TABLE t1 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t2 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t2_nullable (`id` Int32, key String, key2 Nullable(String)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t2_lc (`id` Int32, key String, key2 LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t22 (`id` Int32, `idd` Int32, `key` String, `key2` String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t1 VALUES (1, '111', '111'),(2, '222', '2'),(2, '222', '222'),(3, '333', '333');
 INSERT INTO t2 VALUES (2, 'AAA', 'AAA'),(2, 'AAA', 'a'),(3, 'BBB', 'BBB'),(4, 'CCC', 'CCC');
 INSERT INTO t2_nullable VALUES (2, 'AAA', 'AAA'),(2, 'AAA', 'a'),(3, 'BBB', NULL),(4, 'CCC', 'CCC');
