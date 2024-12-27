@@ -397,7 +397,7 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, IdentifierResolveScope & scope)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -419,7 +419,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
     }
 
     StorageID storage_id(database_name, table_name);
-    const auto & context = scope.context;
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
@@ -460,7 +459,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
 
-    return { .resolved_identifier = result, .scope = &scope, .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+    return { .resolved_identifier = result, .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 }
 
 /// Resolve identifier from compound expression
@@ -570,11 +569,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
     {
         if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope))
-            return { .resolved_identifier = resolved_identifier, .scope = &scope, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
+            return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
         return {};
     }
 
-    return { .resolved_identifier = it->second, .scope = &scope, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
+    return { .resolved_identifier = it->second, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
 }
 
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
@@ -907,7 +906,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     auto qualified_identifier_full_name = qualified_identifier.getFullName();
     node_to_projection_name.emplace(result_expression, std::move(qualified_identifier_full_name));
 
-    return { .resolved_identifier = result_expression, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+    return { .resolved_identifier = result_expression, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
@@ -943,9 +942,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const auto & database_name = table_expression_data.database_name;
 
         if (parts_size == 1 && path_start == table_name)
-            return { .resolved_identifier = table_expression_node, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+            return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
-            return { .resolved_identifier = table_expression_node, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+            return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else
             return {};
     }
@@ -1138,7 +1137,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
         return {
                 .resolved_identifier = left_resolved_identifier ? left_resolved_identifier : right_resolved_identifier,
-                .scope = &scope,
                 .resolve_place = IdentifierResolvePlace::JOIN_TREE
             };
     }
@@ -1223,7 +1221,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     /// If columns from left or right table were missed Object(Nullable('json')) subcolumns, they will be replaced
     /// to ConstantNode(NULL), which can't be cast to ColumnNode, so we resolve it here.
     if (auto missed_subcolumn_identifier = checkIsMissedObjectJSONSubcolumn(left_resolved_identifier, right_resolved_identifier))
-        return { .resolved_identifier = missed_subcolumn_identifier, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        return { .resolved_identifier = missed_subcolumn_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
     if (left_resolved_identifier && right_resolved_identifier)
     {
@@ -1347,7 +1345,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         return {};
 
     if (join_node_in_resolve_process)
-        return { .resolved_identifier = resolved_identifier, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
     if (scope.join_use_nulls)
     {
@@ -1364,7 +1362,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
     }
 
-    return { .resolved_identifier = resolved_identifier, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+    return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 }
 
 QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
@@ -1544,14 +1542,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
         auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
             array_join_column_expression_typed.getColumnSource());
         if (identifier_view.empty())
-            return { .resolved_identifier = array_join_column, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+            return { .resolved_identifier = array_join_column, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
         if (resolve_result.resolved_identifier)
         {
             auto resolved_nested_subcolumn = tryResolveExpressionFromArrayJoinNestedExpression(
                     resolve_result.resolved_identifier, scope, array_join_column_expression_typed, array_join_column_expression_typed.getExpressionOrThrow());
             if (resolved_nested_subcolumn)
-                return { .resolved_identifier = resolved_nested_subcolumn, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+                return { .resolved_identifier = resolved_nested_subcolumn, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         }
 
         /// Resolve subcolumns. Example : SELECT x.y.z FROM tab ARRAY JOIN arr AS x
@@ -1564,7 +1562,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
             true /* can_be_not_found */);
 
         if (compound_expr)
-            return { .resolved_identifier = compound_expr, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+            return { .resolved_identifier = compound_expr, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
     }
 
     if (!resolve_result.resolved_identifier)
@@ -1572,7 +1570,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 
     auto array_join_resolved_expression = tryResolveExpressionFromArrayJoinExpressions(resolve_result.resolved_identifier, table_expression_node, scope);
     if (array_join_resolved_expression)
-        resolve_result = { .resolved_identifier = std::move(array_join_resolved_expression), .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        resolve_result = { .resolved_identifier = std::move(array_join_resolved_expression), .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
     return resolve_result;
 }
@@ -1638,7 +1636,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTree(con
 
     /// Try to resolve identifier from table columns
     if (auto resolved_identifier = tryResolveIdentifierFromTableColumns(identifier_lookup, scope))
-        return { .resolved_identifier = resolved_identifier, .scope = &scope, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
     if (scope.expression_join_tree_node)
         return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, scope.expression_join_tree_node, scope);

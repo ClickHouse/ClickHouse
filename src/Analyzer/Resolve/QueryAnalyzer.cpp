@@ -1259,7 +1259,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 scope,
                 identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */))
             {
-                return { .resolved_identifier = resolved_identifier, .scope = &scope, .resolve_place = IdentifierResolvePlace::ALIASES };
+                return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
             }
             return {};
         }
@@ -1274,7 +1274,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         }
     }
 
-    return { .resolved_identifier = alias_node, .scope = &scope, .resolve_place = IdentifierResolvePlace::ALIASES };
+    return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
 
 /** Try resolve identifier in current scope parent scopes.
@@ -1520,7 +1520,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         if (cte_query_node_it != scope.cte_name_to_query_node.end()
             && !ctes_in_resolve_process.contains(full_name))
         {
-            resolve_result = { .resolved_identifier = cte_query_node_it->second, .scope = &scope, .resolve_place = IdentifierResolvePlace::CTE };
+            resolve_result = { .resolved_identifier = cte_query_node_it->second, .resolve_place = IdentifierResolvePlace::CTE };
         }
     }
 
@@ -1533,7 +1533,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
     }
 
     it->second.count--;
@@ -2808,7 +2808,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope).resolved_identifier;
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",

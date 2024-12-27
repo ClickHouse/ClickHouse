@@ -87,7 +87,7 @@ public:
 
     /// Resolve identifier functions
 
-    static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, IdentifierResolveScope & scope);
+    static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
         size_t identifier_bind_size,

@@ -116,7 +116,6 @@ struct IdentifierResolveScope;
 struct IdentifierResolveResult
 {
     QueryTreeNodePtr resolved_identifier;
-    IdentifierResolveScope * scope = nullptr;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
 
     explicit operator bool() const
