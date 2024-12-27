@@ -1,0 +1,21 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <output_format_json_quote_64bit_integers>0</output_format_json_quote_64bit_integers>
+        </default>
+        <second_profile>
+            <output_format_json_quote_64bit_integers>1</output_format_json_quote_64bit_integers>
+            <output_format_json_array_of_rows>1</output_format_json_array_of_rows>
+        </second_profile>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+        </default>
+        <second_user>
+            <password></password>
+            <profile>second_profile</profile>
+        </second_user>
+    </users>
+</clickhouse>

@@ -42,17 +42,6 @@ class ClickHouseProc:
 
         self.minio_proc = None
 
-    def start_hdfs(self, log_file_path):
-        command = ["./ci/jobs/scripts/functional_tests/setup_hdfs_minicluster.sh"]
-        with open(log_file_path, "w") as log_file:
-            process = subprocess.Popen(
-                command, stdout=log_file, stderr=subprocess.STDOUT
-            )
-        print(
-            f"Started setup_hdfs_minicluster.sh asynchronously with PID {process.pid}"
-        )
-        return True
-
     def start_minio(self, test_type, log_file_path):
         command = [
             "./ci/jobs/scripts/functional_tests/setup_minio.sh",
@@ -65,6 +54,24 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {process.pid}")
         return True
+
+    def log_cluster_config(self):
+        return Shell.check(
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster /tmp/praktika/etc/clickhouse-server/config.d/system_logs_export.yaml",
+            verbose=True,
+        )
+
+    def log_cluster_setup_replication(self):
+        return Shell.check(
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication",
+            verbose=True,
+        )
+
+    def log_cluster_stop_replication(self):
+        return Shell.check(
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
+            verbose=True,
+        )
 
     def start(self):
         print("Starting ClickHouse server")

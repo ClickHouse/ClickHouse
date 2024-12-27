@@ -5,7 +5,6 @@
 -- Tests vector search with setting 'hnsw_candidate_list_size_for_search'
 
 SET allow_experimental_vector_similarity_index = 1;
-SET enable_analyzer = 0;
 
 DROP TABLE IF EXISTS tab;
 

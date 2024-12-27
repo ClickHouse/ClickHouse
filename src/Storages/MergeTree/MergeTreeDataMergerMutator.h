@@ -65,6 +65,7 @@ public:
     struct PartitionInfo
     {
         time_t min_age{std::numeric_limits<time_t>::max()};
+        size_t num_parts = 0;
     };
     using PartitionsInfo = std::unordered_map<std::string, PartitionInfo>;
 
