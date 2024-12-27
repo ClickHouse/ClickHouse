@@ -1,4 +1,5 @@
 #include <map>
+#include <unordered_map>
 #include <set>
 #include <optional>
 #include <memory>
@@ -161,6 +162,7 @@ namespace CurrentMetrics
     extern const Metric AttachedTable;
     extern const Metric AttachedDatabase;
     extern const Metric PartsActive;
+    extern const Metric ReplicatedQueuesTotalSize;
 }
 
 
@@ -367,6 +369,10 @@ struct ContextSharedPart : boost::noncopyable
     std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
+
+    mutable std::mutex replicated_storage_queues_size_mutex; /// Guards the map below from concurrent access
+    std::unordered_map<UUID, UInt64> replicated_storage_queue_sizes{}; /// Local per-storage replicated queue size
+    std::atomic_size_t replicated_storage_queues_total_size = 0; /// Sum total of the map values above
 
     /// Background executors for *MergeTree tables
     /// Has background executors for MergeTree tables been initialized?
@@ -3802,6 +3808,29 @@ size_t Context::getClustersVersion() const
 {
     std::lock_guard lock(shared->clusters_mutex);
     return shared->clusters_version;
+}
+
+void Context::setStorageReplicatedQueuesSize(const UUID & storage_uuid, const size_t & replicated_queue_size)
+{
+    std::lock_guard lock(shared->replicated_storage_queues_size_mutex);
+    auto [elem_iter, inserted] = shared->replicated_storage_queue_sizes.insert({storage_uuid, replicated_queue_size});
+    if (inserted) {
+        shared->replicated_storage_queues_total_size += replicated_queue_size;
+    } else {
+        shared->replicated_storage_queues_total_size += replicated_queue_size - elem_iter->second;
+        elem_iter->second = replicated_queue_size;
+    }
+    CurrentMetrics::set(CurrentMetrics::ReplicatedQueuesTotalSize, shared->replicated_storage_queues_total_size);
+}
+
+void Context::clearStorageReplicatedQueueSize(const UUID & storage_uuid)
+{
+    Context::setStorageReplicatedQueuesSize(storage_uuid, 0);
+}
+
+UInt64 Context::getReplicatedQueuesTotalSize() const
+{
+    return shared->replicated_storage_queues_total_size;
 }
 
 

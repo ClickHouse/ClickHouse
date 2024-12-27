@@ -593,6 +593,10 @@ Number of data parts checking for consistency
 
 Number of data parts being fetched from replica
 
+### ReplicatedQueuesTotalSize
+
+Total number of items contained in all nodes' replicated queues.
+
 ### ReplicatedSend
 
 Number of data parts being sent to replicas

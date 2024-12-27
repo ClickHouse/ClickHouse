@@ -1109,6 +1109,10 @@ public:
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const;
 
+    void setStorageReplicatedQueuesSize(const UUID & storage_uuid, const size_t & replicated_queue_size);
+    void clearStorageReplicatedQueueSize(const UUID & storage_uuid);
+    UInt64 getReplicatedQueuesTotalSize() const;
+
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 

@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQueueSizeThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
@@ -255,6 +256,9 @@ public:
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
+    // Update max_replicas_queue_size from ZooKeeper
+    void updateMaxReplicasQueueSize();
+
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
@@ -449,6 +453,7 @@ private:
     ReplicatedMergeTreeQueue queue;
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
+    std::atomic<size_t> max_replicas_queue_size{0};
 
     mutable std::mutex last_queue_update_exception_lock;
     String last_queue_update_exception;
@@ -501,6 +506,9 @@ private:
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
     AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
+
+    /// A thread that updates the maximum queue size of all replicas.
+    ReplicatedMergeTreeQueueSizeThread queue_size_thread;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;

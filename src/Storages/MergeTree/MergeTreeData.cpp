@@ -4392,7 +4392,12 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(
+    Poco::Event * until,
+    const ContextPtr & query_context,
+    bool allow_throw,
+    std::optional<size_t> max_replicas_queue_size,
+    std::optional<size_t> max_replicas_queues_total_size) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
@@ -4455,12 +4460,57 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             active_parts_over_threshold = parts_count_in_partition - active_parts_to_delay_insert + 1;
     }
 
+    size_t queue_size = max_replicas_queue_size.value_or(0);
+    auto queue_size_to_delay_insert = query_settings.queue_size_to_delay_insert.changed ? query_settings.queue_size_to_delay_insert : settings->queue_size_to_delay_insert;
+    auto queue_size_to_throw_insert = query_settings.queue_size_to_throw_insert.changed ? query_settings.queue_size_to_throw_insert : settings->queue_size_to_throw_insert;
+
+    size_t queues_total_size = max_replicas_queues_total_size.value_or(0);
+    auto queues_total_size_to_delay_insert = query_settings.queues_total_size_to_delay_insert.changed
+        ? query_settings.queues_total_size_to_delay_insert
+        : settings->queues_total_size_to_delay_insert;
+    auto queues_total_size_to_throw_insert = query_settings.queues_total_size_to_throw_insert.changed
+        ? query_settings.queues_total_size_to_throw_insert
+        : settings->queues_total_size_to_throw_insert;
+
+    if (queue_size >= queue_size_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "Too large replication queue ({}). One of the replicas is too slow for inserts",
+            queue_size);
+    }
+    if (queues_total_size >= queues_total_size_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "Too many item in replication queues ({}). One or multiple replicas are too slow for inserts",
+            queues_total_size);
+    }
+
+    size_t queue_size_over_threshold = 0;
+    if (queue_size >= queue_size_to_delay_insert)
+    {
+        // if queue_size == queue_size_to_delay_insert -> we're 1 part over threshold
+        queue_size_over_threshold = queue_size - queue_size_to_delay_insert + 1;
+    }
+
+    size_t queues_total_size_over_threshold = 0;
+    if (queues_total_size >= queues_total_size_to_delay_insert)
+    {
+        queues_total_size_over_threshold = queues_total_size - queues_total_size_to_delay_insert + 1;
+    }
+
+
     /// no need for delay
-    if (!active_parts_over_threshold && !outdated_parts_over_threshold)
+    if (!active_parts_over_threshold && !outdated_parts_over_threshold && !queue_size_over_threshold && !queues_total_size_over_threshold)
         return;
 
-    UInt64 delay_milliseconds = 0;
-    {
+    UInt64 delay_milliseconds_parts = 0;
+    const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
+    const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
+    if (active_parts_over_threshold || outdated_parts_over_threshold) {
         size_t parts_over_threshold = 0;
         size_t allowed_parts_over_threshold = 1;
         const bool use_active_parts_threshold = (active_parts_over_threshold >= outdated_parts_over_threshold);
@@ -4477,26 +4527,50 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
                 allowed_parts_over_threshold = settings->inactive_parts_to_throw_insert - settings->inactive_parts_to_delay_insert;
         }
 
-        const UInt64 max_delay_milliseconds = (settings->max_delay_to_insert > 0 ? settings->max_delay_to_insert * 1000 : 1000);
         if (allowed_parts_over_threshold == 0 || parts_over_threshold > allowed_parts_over_threshold)
         {
-            delay_milliseconds = max_delay_milliseconds;
+            delay_milliseconds_parts = max_delay_milliseconds;
         }
         else
         {
             double delay_factor = static_cast<double>(parts_over_threshold) / allowed_parts_over_threshold;
-            const UInt64 min_delay_milliseconds = settings->min_delay_to_insert_ms;
-            delay_milliseconds = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+            delay_milliseconds_parts = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
         }
     }
+
+    UInt64 delay_milliseconds_queue = 0;
+    if (queue_size_over_threshold)
+    {
+        UInt64 allowed_queue_size_over_threshold = std::max(1ul, queue_size_to_throw_insert - queue_size_to_delay_insert);
+        double delay_factor = static_cast<double>(queue_size_over_threshold) / allowed_queue_size_over_threshold;
+        delay_milliseconds_queue = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * delay_factor));
+    }
+
+    UInt64 delay_milliseconds_queues_total = 0;
+    if (queues_total_size_over_threshold)
+    {
+        UInt64 allowed_queues_total_size_over_threshold
+            = std::max(1ul, queues_total_size_to_throw_insert - queues_total_size_to_delay_insert);
+        double queues_total_delay_factor = static_cast<double>(queues_total_size_over_threshold) / allowed_queues_total_size_over_threshold;
+        delay_milliseconds_queues_total
+            = std::max(min_delay_milliseconds, static_cast<UInt64>(max_delay_milliseconds * queues_total_delay_factor));
+    }
+
+    const UInt64 delay_milliseconds = std::max({delay_milliseconds_parts, delay_milliseconds_queue, delay_milliseconds_queues_total});
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
     ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay_milliseconds);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
-    LOG_INFO(log, "Delaying inserting block by {} ms. because there are {} parts and their average size is {}",
-        delay_milliseconds, parts_count_in_partition, ReadableSize(average_part_size));
+    if (delay_milliseconds_parts > delay_milliseconds_queue && delay_milliseconds_parts > delay_milliseconds_queues_total)
+        LOG_INFO(log, "Delaying inserting block by {} ms. because there are {} parts and their average size is {}",
+            delay_milliseconds, parts_count_in_partition, ReadableSize(average_part_size));
+    else if (delay_milliseconds_queue > delay_milliseconds_queues_total)
+        LOG_INFO(log, "Delaying inserting block by {} ms. because replication queue size is {}", delay_milliseconds, queue_size);
+    else
+        LOG_INFO(
+            log, "Delaying inserting block by {} ms. because replication queues total size is {}", delay_milliseconds, queues_total_size);
 
     if (until)
         until->tryWait(delay_milliseconds);

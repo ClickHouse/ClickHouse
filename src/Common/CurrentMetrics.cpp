@@ -11,7 +11,8 @@
     M(PartMutation, "Number of mutations (ALTER DELETE/UPDATE)") \
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
-    M(ReplicatedChecks, "Number of data parts checking for consistency") \
+    M(ReplicatedChecks, "Number of data parts checking for consistency")  \
+    M(ReplicatedQueuesTotalSize, "Total number of items contained in all nodes' replicated queues")  \
     M(BackgroundMergesAndMutationsPoolTask, "Number of active merges and mutations in an associated background pool") \
     M(BackgroundMergesAndMutationsPoolSize, "Limit on number of active merges and mutations in an associated background pool") \
     M(BackgroundFetchesPoolTask, "Number of active fetches in an associated background pool") \

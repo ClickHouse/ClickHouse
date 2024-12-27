@@ -1144,7 +1144,10 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::onStart()
 {
     /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true);
+    auto max_replica_queue_size = storage.max_replicas_queue_size.load(std::memory_order_relaxed);
+    auto replicated_queues_total_size = context->getReplicatedQueuesTotalSize();
+    storage.delayInsertOrThrowIfNeeded(
+        &storage.partial_shutdown_event, context, true, max_replica_queue_size, replicated_queues_total_size);
 }
 
 template<bool async_insert>

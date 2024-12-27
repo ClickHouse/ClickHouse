@@ -333,6 +333,11 @@ class IColumn;
     \
     M(UInt64, parts_to_delay_insert, 0, "If the destination table contains at least that many active parts in a single partition, artificially slow down insert into table.", 0) \
     M(UInt64, parts_to_throw_insert, 0, "If more than this number active parts in a single partition of the destination table, throw 'Too many parts ...' exception.", 0) \
+    M(UInt64, queue_size_to_delay_insert, 50000, "If the destination table replication queue is at least that large on any replica, artificially slow down insert into table.", 0) \
+    M(UInt64, queue_size_to_throw_insert, 100000, "If the destination table replication queue is at least that large on any replica, throw 'Too large replication queue ...' exception.", 0) \
+    M(UInt64, queues_total_size_to_delay_insert, 100000, "If the sum, for all tables, of the largest replication queue's size over all replicas is larger than this value, artificially slow down insert into table.", 0) \
+    M(UInt64, queues_total_size_to_throw_insert, 200000, "If the sum, for all tables, of the largest replication queue's size over all replicas is larger than this value, throw 'Too large replication queue ...' exception.", 0) \
+    M(Bool, queue_size_monitor, true, "If setting is enabled, monitor the replication queue on other replicas.", 0) \
     M(UInt64, number_of_mutations_to_delay, 0, "If the mutated table contains at least that many unfinished mutations, artificially slow down mutations of table. 0 - disabled", 0) \
     M(UInt64, number_of_mutations_to_throw, 0, "If the mutated table contains at least that many unfinished mutations, throw 'Too many mutations ...' exception. 0 - disabled", 0) \
     M(Int64, distributed_ddl_task_timeout, 180, "Timeout for DDL query responses from all hosts in cluster. If a ddl request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite. Zero means async mode.", 0) \
