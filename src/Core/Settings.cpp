@@ -4125,7 +4125,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md) behaviour.
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) behaviour.
 )", 0) \
     DECLARE(Bool, optimize_use_projections, true, R"(
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
@@ -4537,10 +4537,10 @@ Compatibility version of distributed DDL (ON CLUSTER) queries
 )", 0) \
     \
     DECLARE(UInt64, external_storage_max_read_rows, 0, R"(
-Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled
+Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine and dictionary. If equal to 0, this setting is disabled
 )", 0) \
     DECLARE(UInt64, external_storage_max_read_bytes, 0, R"(
-Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled
+Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine and dictionary. If equal to 0, this setting is disabled
 )", 0)  \
     DECLARE(UInt64, external_storage_connect_timeout_sec, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, R"(
 Connect timeout in seconds. Now supported only for MySQL
