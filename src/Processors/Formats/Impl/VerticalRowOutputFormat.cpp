@@ -40,8 +40,12 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     for (size_t i = 0; i < columns; ++i)
     {
         WriteBufferFromString buf(names_and_paddings[i]);
+        if (color)
+            writeCString("\033[1m", buf);
         writeString(sample.getByPosition(i).name, buf);
         writeCString(": ", buf);
+        if (color)
+            writeCString("\033[0m", buf);
     }
 
     for (size_t i = 0; i < columns; ++i)
