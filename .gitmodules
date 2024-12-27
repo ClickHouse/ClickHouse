@@ -232,7 +232,7 @@
 	url = https://github.com/ClickHouse/hive-metastore
 [submodule "contrib/azure"]
 	path = contrib/azure
-	url = https://github.com/ClickHouse/azure-sdk-for-cpp
+	url = https://github.com/aiven/azure-sdk-for-cpp
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
