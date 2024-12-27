@@ -678,6 +678,15 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
         {
             bool replicated_table = create->storage && create->storage->engine &&
                 (startsWith(create->storage->engine->name, "Replicated") || startsWith(create->storage->engine->name, "Shared"));
+            bool merge_tree_table = create->storage && create->storage->engine && endsWith(create->storage->engine->name, "MergeTree");
+            if (merge_tree_table)
+            {
+                if (create->storage != nullptr && create->storage->settings != nullptr)
+                {
+                    query_context->checkMergeTreeSettingsConstraints(
+                        query_context->getReplicatedMergeTreeSettings(), create->storage->settings->changes);
+                }
+            }
             if (!replicated_table || !create->storage->engine->arguments)
                 return;
 
@@ -760,6 +769,13 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
         {
             if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand&>().type))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
+            const auto & alter_command = command->as<ASTAlterCommand&>();
+            if (alter_command.settings_changes != nullptr)
+            {
+                query_context->checkMergeTreeSettingsConstraints(
+                    query_context->getReplicatedMergeTreeSettings(),
+                    alter_command.settings_changes->as<const ASTSetQuery &>().changes);
+            }
         }
     }
 
