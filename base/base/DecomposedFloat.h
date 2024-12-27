@@ -11,6 +11,15 @@
 template <typename T> struct FloatTraits;
 
 template <>
+struct FloatTraits<_Float16>
+{
+    using UInt = uint16_t;
+    static constexpr size_t bits = 16;
+    static constexpr size_t exponent_bits = 5;
+    static constexpr size_t mantissa_bits = bits - exponent_bits - 1;
+};
+
+template <>
 struct FloatTraits<BFloat16>
 {
     using UInt = uint16_t;
@@ -48,6 +57,10 @@ struct DecomposedFloat
     explicit DecomposedFloat(T x)
     {
         memcpy(&x_uint, &x, sizeof(x));
+    }
+
+    explicit DecomposedFloat(typename Traits::UInt x) : x_uint(x)
+    {
     }
 
     typename Traits::UInt x_uint;
@@ -230,4 +243,3 @@ struct DecomposedFloat
 
 using DecomposedFloat64 = DecomposedFloat<double>;
 using DecomposedFloat32 = DecomposedFloat<float>;
-using DecomposedFloat16 = DecomposedFloat<BFloat16>;
