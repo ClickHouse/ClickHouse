@@ -303,8 +303,10 @@ function run_tests()
     fi
 
     if [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
-      # increase test coverage
-      ADDITIONAL_OPTIONS+=('--replace-log-with-mt')
+        ADDITIONAL_OPTIONS+=('--replace-log-with-mt')
+        ADDITIONAL_OPTIONS+=('--no-zookeeper')
+    else
+        ADDITIONAL_OPTIONS+=('--zookeeper')
     fi
 
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
@@ -316,7 +318,6 @@ function run_tests()
     TEST_ARGS=(
         --testname
         --shard
-        --zookeeper
         --check-zookeeper-session
         --hung-check
         --print-time
