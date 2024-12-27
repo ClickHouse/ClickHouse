@@ -153,7 +153,7 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
 
     static DataTypePtr extractNestedType(const DataTypeMap & type_map)
     {
-        return type_map.getNestedTypeWithUnnamedTuple();
+        return type_map.getNestedType();
     }
 
     static ColumnPtr extractNestedColumn(const ColumnMap & column_map)
