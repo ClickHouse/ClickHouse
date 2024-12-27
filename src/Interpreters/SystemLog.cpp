@@ -236,8 +236,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
     auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
     /// Add comment to AST. So it will be saved when the table will be renamed.
+    const char * comment_addendum = "\n\nIt is safe to truncate or drop this table at any time.";
     if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
+        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment + comment_addendum));
 
     log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                                                TSystemLog::getDefaultFlushIntervalMilliseconds());
