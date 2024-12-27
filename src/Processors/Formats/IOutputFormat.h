@@ -207,7 +207,7 @@ protected:
     RowsBeforeStepCounterPtr rows_before_aggregation_counter;
 
     Statistics statistics;
-    bool has_progress_update_to_write = false;
+    std::atomic_bool has_progress_update_to_write = false;
 
 private:
     size_t rows_read_before = 0;
