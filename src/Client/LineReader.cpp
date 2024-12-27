@@ -182,7 +182,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
 
             if (!is_first_line || !is_empty)
             {
-                /// To prevent the clickhouse-client from exiting.
+                /// To prevent the client from exiting.
                 line = EMPTY_LINE;
             }
 
