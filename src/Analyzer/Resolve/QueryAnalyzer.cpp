@@ -3617,7 +3617,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
   * 4. If node has alias, update its value in scope alias map. Deregister alias from expression_aliases_in_resolve_process.
   */
 ProjectionNames QueryAnalyzer::resolveExpressionNode(
-    QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool ignore_alias)
+    QueryTreeNodePtr & node,
+    IdentifierResolveScope & scope,
+    bool allow_lambda_expression,
+    bool allow_table_expression,
+    bool ignore_alias)
 {
     checkStackSize();
 
@@ -3655,7 +3659,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         /// Remove alias later. This needed to produce the same query tree subtree
         /// for expressions with aliaes to subexpression. Example:
         /// SELECT f(a as b) as c FROM t GROUP BY c
-        scope.aliases.node_to_remove_aliases.push_back(node);
+        if (!ignore_alias)
+            scope.aliases.node_to_remove_aliases.push_back(node);
     }
 
     bool is_duplicated_alias = scope.aliases.nodes_with_duplicated_aliases.contains(node);
@@ -3929,8 +3934,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     if (is_duplicated_alias)
         scope.non_cached_identifier_lookups_during_expression_resolve.erase({Identifier{node_alias}, IdentifierLookupContext::EXPRESSION});
 
-    if (!ignore_alias)
-        resolved_expressions.emplace(node, result_projection_names);
+    resolved_expressions.emplace(node, result_projection_names);
 
     scope.popExpressionNode();
     bool expression_was_root = scope.expressions_in_resolve_process_stack.empty();
@@ -4999,7 +5003,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         if (auto * identifier_node = array_join_expression->as<IdentifierNode>())
             identifier_full_name = identifier_node->getIdentifier().getFullName();
 
-        resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*ignore_alias*/);
+        resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
         {
@@ -5304,7 +5308,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             [[fallthrough]];
         case QueryTreeNodeType::UNION:
         {
-            resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+            resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
             break;
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
