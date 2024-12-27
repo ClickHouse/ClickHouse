@@ -11,7 +11,7 @@ struct ProcessorMemoryStats
     // The total spillable memory in the processor
     Int64 spillable_memory_bytes = 0;
     // To avoid this processor cause OOM, at least `reserved_memory_bytes` should be reserved.
-    // including auxiliary memory to fihish spill.
+    // including auxiliary memory to finish the spilling process.
     Int64 need_reserved_memory_bytes = 0;
 };
 
@@ -33,6 +33,9 @@ private:
     IProcessor * top_processor = nullptr;
     Int64 max_reserved_memory_bytes = 0;
     std::atomic<Int64> hard_limit = -1;
+
+    // When there is no need to spill, return nullptr. otherwise return top_processor;
+    IProcessor * selectSpilledProcessor(IProcessor * current_processor, const ProcessorMemoryStats & mem_stats);
 
     void updateTopProcessor();
 
