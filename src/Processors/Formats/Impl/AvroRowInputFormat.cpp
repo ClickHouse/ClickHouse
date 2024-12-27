@@ -993,6 +993,21 @@ private:
                     .withReceiveTimeout(1);
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+                const auto & user_info = base_url.getUserInfo();
+                if (!user_info.empty())
+                {
+                    std::size_t n = user_info.find(':');
+                    if (n != std::string::npos)
+                    {
+                        Poco::Net::HTTPBasicCredentials credentials;
+                        credentials.setUsername(user_info.substr(0, n));
+                        credentials.setPassword(user_info.substr(n + 1));
+                        if (!credentials.getUsername().empty())
+                        {
+                            credentials.authenticate(request);
+                        }
+                    }
+                }
                 request.setHost(url.getHost());
 
                 if (!url.getUserInfo().empty())

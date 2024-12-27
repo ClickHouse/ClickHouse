@@ -21,6 +21,7 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     M(String, kafka_group_name, "", "Client group id string. All Kafka consumers sharing the same group.id belong to the same group.", 0) \
     /* those are mapped to format factory settings */ \
     M(String, kafka_format, "", "The message format for Kafka engine.", 0) \
+    M(String, kafka_format_avro_schema_registry_url, "", "For AvroConfluent format: Kafka Schema Registry URL.", 0) \
     M(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
     M(UInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.", 0) \
     /* default is = max_insert_block_size / kafka_num_consumers  */ \

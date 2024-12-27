@@ -99,6 +99,7 @@ private:
     const String group;
     const String client_id;
     const String format_name;
+    const String format_avro_schema_registry_url;
     const size_t max_rows_per_message;
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
