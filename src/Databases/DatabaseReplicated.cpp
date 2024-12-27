@@ -964,6 +964,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setSetting("enable_zstd_qat_codec", 1);
         query_context->setSetting("allow_create_index_without_type", 1);
         query_context->setSetting("allow_experimental_s3queue", 1);
+        query_context->setSetting("enable_deflate_qpl_codec", 1);
+        query_context->setSetting("flatten_nested", false);
 
         auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
         query_context->initZooKeeperMetadataTransaction(txn);
