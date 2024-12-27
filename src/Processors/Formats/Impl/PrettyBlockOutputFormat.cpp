@@ -177,7 +177,6 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
                 });
             }
 
-            std::lock_guard lock(mono_chunk_mutex);
             if (mono_chunk)
                 mono_chunk.append(chunk);
             else
@@ -195,7 +194,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 
 void PrettyBlockOutputFormat::writingThread()
 {
-    std::unique_lock lock(mono_chunk_mutex);
+    std::unique_lock lock(writing_mutex);
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     while (!finish)
     {
@@ -524,18 +523,17 @@ void PrettyBlockOutputFormat::stopThread()
     if (thread)
     {
         {
-            std::lock_guard lock(mono_chunk_mutex);
             finish = true;
             mono_chunk_condvar.notify_one();
         }
-        thread->join();
-        thread.reset();
     }
 }
 
 PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
 {
     stopThread();
+    thread->join();
+    thread.reset();
 }
 
 void PrettyBlockOutputFormat::writeSuffix()

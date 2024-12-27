@@ -64,7 +64,6 @@ private:
     /// For mono_block == true only
     Chunk mono_chunk;
     /// Implements squashing of chunks by time
-    std::mutex mono_chunk_mutex;
     std::condition_variable mono_chunk_condvar;
     std::optional<ThreadFromGlobalPool> thread;
     bool finish = false;
