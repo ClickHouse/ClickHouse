@@ -912,6 +912,7 @@ class FailureReason(enum.Enum):
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
+    NOT_SUPPORTED = "not supported"
     NOT_SUPPORTED_IN_CLOUD = "not supported in cloud environment"
     NOT_SUPPORTED_IN_PRIVATE = "not supported in private build"
     DISABLED = "disabled"
@@ -1432,6 +1433,9 @@ class TestCase:
         args = self.args
         if tags and ("disabled" in tags) and not args.disabled:
             return FailureReason.DISABLED
+
+        if self.name in suite.skip_list:
+            return FailureReason.NOT_SUPPORTED
 
         if args.private and self.name in suite.private_skip_list:
             return FailureReason.NOT_SUPPORTED_IN_PRIVATE
@@ -2313,6 +2317,7 @@ class TestSuite:
         self.suite_path: str = suite_path
         self.suite_tmp_path: str = suite_tmp_path
         self.suite: str = suite
+        self.skip_list: List[str] = []
         self.cloud_skip_list: List[str] = []
         self.private_skip_list: List[str] = []
 
@@ -3137,7 +3142,7 @@ def reportLogStats(args):
     print("\n")
 
 
-def try_get_skip_list(base_dir, name):
+def try_get_skip_list(base_dir, name, remove_comment=True):
     test_names_to_skip = []
     skip_list_path = os.path.join(base_dir, name)
     if not os.path.exists(skip_list_path):
@@ -3147,9 +3152,11 @@ def try_get_skip_list(base_dir, name):
         for line in fd.read().split("\n"):
             if line == "" or line[0] == " ":
                 continue
-            test_name = line.split()[0].strip()
-            if test_name != "":
-                test_names_to_skip.append(test_name)
+            if remove_comment:
+                line = line.split()[0].strip()
+                if line == "":
+                    continue
+            test_names_to_skip.append(line.strip())
 
     return test_names_to_skip
 
@@ -3261,6 +3268,13 @@ def main(args):
     total_tests_run = 0
     cloud_skip_list = try_get_skip_list(base_dir, "../queries-no-cloud-tests.txt")
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
+    skip_list = []
+
+    if args.parallel_replicas is True:
+        skip_list_parallel_replicas = try_get_skip_list(
+            base_dir, "../parallel_replicas_skip.txt"
+        )
+        skip_list.extend(skip_list_parallel_replicas)
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():
@@ -3270,6 +3284,7 @@ def main(args):
         if test_suite is None:
             continue
 
+        test_suite.skip_list = skip_list
         test_suite.cloud_skip_list = cloud_skip_list
         test_suite.private_skip_list = private_skip_list
         total_tests_run += do_run_tests(
@@ -3764,7 +3779,7 @@ def parse_args():
         help="Replace Log, TinyLog and Memory engine with MergeTree",
     )
     parser.add_argument(
-        "--test-parallel-replicas",
+        "--parallel-replicas",
         action="store_true",
         default=False,
         help="Skip certain tests specific to the parallel replicas configuration",

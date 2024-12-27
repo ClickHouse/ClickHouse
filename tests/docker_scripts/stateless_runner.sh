@@ -303,6 +303,7 @@ function run_tests()
     fi
 
     if [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--parallel-replicas')
         ADDITIONAL_OPTIONS+=('--replace-log-with-mt')
         ADDITIONAL_OPTIONS+=('--no-zookeeper')
     else
