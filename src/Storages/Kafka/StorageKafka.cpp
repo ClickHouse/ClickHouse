@@ -753,9 +753,10 @@ void StorageKafka::cleanConsumers()
 
 size_t StorageKafka::getMaxBlockSize() const
 {
+    size_t nonzero_num_consumers = num_consumers > 0 ? num_consumers : 1; // prevent division by zero
     return kafka_settings->kafka_max_block_size.changed
         ? kafka_settings->kafka_max_block_size.value
-        : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+        : (getContext()->getSettingsRef().max_insert_block_size.value / nonzero_num_consumers);
 }
 
 size_t StorageKafka::getPollMaxBatchSize() const
@@ -1209,10 +1210,6 @@ void registerStorageKafka(StorageFactory & factory)
                             "and ensure you have enough threads "
                             "in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
                             "See also https://clickhouse.com/docs/en/integrations/kafka#tuning-performance", max_consumers);
-        }
-        else if (num_consumers < 1)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be lower than 1");
         }
 
         if (kafka_settings->kafka_max_block_size.changed && kafka_settings->kafka_max_block_size.value < 1)
