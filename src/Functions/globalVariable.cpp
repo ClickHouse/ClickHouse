@@ -55,7 +55,7 @@ public:
         String variable_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
         auto variable = global_variable_map.find(Poco::toLower(variable_name));
         if (variable == global_variable_map.end())
-            return std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeInt32>();
         return variable->second.type;
     }
 
@@ -76,11 +76,14 @@ private:
         DataTypePtr type;
         Field value;
     };
-    std::unordered_map<String, TypeAndValue> global_variable_map
-        = {{"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
-           {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
-           {"version_comment", {std::make_shared<DataTypeString>(), ""}},
-           {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}}};
+    std::unordered_map<String, TypeAndValue> global_variable_map =
+    {
+        {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
+        {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
+        {"version_comment", {std::make_shared<DataTypeString>(), ""}},
+        {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}},
+        {"track_system_variables", {std::make_shared<DataTypeString>(), ""}},
+    };
 };
 
 }
