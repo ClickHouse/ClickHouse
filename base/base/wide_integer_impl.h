@@ -4,7 +4,7 @@
 /// Distributed under the Boost Software License, Version 1.0.
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
-#include "base/wide_integer.h"
+#include "wide_integer.h"
 #include "throwError.h"
 
 #include <bit>
@@ -13,7 +13,6 @@
 #include <cassert>
 #include <tuple>
 #include <limits>
-#include <iostream>
 
 // NOLINTBEGIN(*)
 
@@ -34,14 +33,6 @@ namespace CityHash_v1_0_2 { struct uint128; }
 namespace wide
 {
 
-#if defined(__x86_64__) && defined(__clang__) && (__clang_major__ > 14 || (__clang_major__ == 14 && __clang_minor__ >= 0))
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Wbit-int-extension"
-using BitInt256 = signed _BitInt(256);
-using BitUInt256 = unsigned _BitInt(256);
-#    pragma clang diagnostic pop
-#endif
-
 constexpr bool supportsBitInt256()
 {
 #if defined(__x86_64__) && defined(__clang__) && (__clang_major__ > 14 || (__clang_major__ == 14 && __clang_minor__ >= 0))
@@ -50,6 +41,13 @@ constexpr bool supportsBitInt256()
     return false;
 #endif
 }
+
+#if defined(__x86_64__) && defined(__clang__) && (__clang_major__ > 14 || (__clang_major__ == 14 && __clang_minor__ >= 0))
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wbit-int-extension"
+using BitInt256 = signed _BitInt(256);
+using BitUInt256 = unsigned _BitInt(256);
+#    pragma clang diagnostic pop
 
 struct Error {};
 
@@ -86,6 +84,7 @@ auto fromBitInt256(const T & n)
     using Signed = std::conditional_t<std::is_same_v<T, BitInt256>, signed, unsigned>;
     return *reinterpret_cast<const wide::integer<256, Signed> *>(&n);
 }
+#endif
 
 template <typename T>
 struct IsWideInteger
