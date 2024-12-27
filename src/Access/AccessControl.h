@@ -131,6 +131,9 @@ public:
     /// Sets the default profile's name.
     /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
+    std::optional<UUID> getDefaultProfileId() const;
+    bool isDefaultProfileOrDescendant(const UUID & profile_id) const;
+    bool isExpectedProfileOrDescendant(const UUID & profile_id, const UUID & expected_id) const;
 
     /// Sets prefixes which should be used for custom settings.
     /// This function also enables custom prefixes to be used.

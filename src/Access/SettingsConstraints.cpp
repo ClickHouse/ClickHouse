@@ -140,6 +140,18 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
         if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
             continue;
 
+        if (!current_settings.allow_non_default_profile)
+        {
+            if (element.parent_profile.has_value())
+            {
+                const auto & profile_id = element.parent_profile.value();
+                if (!access_control->isDefaultProfileOrDescendant(profile_id))
+                {
+                    throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "All profiles must be the default profile or inherit from it.");
+                }
+            }
+        }
+
         if (element.value)
         {
             SettingChange value(element.setting_name, *element.value);

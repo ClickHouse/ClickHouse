@@ -22,6 +22,9 @@ public:
     ~SettingsProfilesCache();
 
     void setDefaultProfileName(const String & default_profile_name);
+    std::optional<UUID> getDefaultProfileId();
+    bool isDefaultProfileOrDescendant(const UUID & profile_id);
+    bool isExpectedProfileOrDescendant(const UUID & profile_id, const UUID & expected_id);
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
         const UUID & user_id,
@@ -37,6 +40,8 @@ private:
     void profileRemoved(const UUID & profile_id);
     void mergeSettingsAndConstraints();
     void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const;
+
+    bool isExpectedProfileOrDescendantLocked(const UUID & profile_id, const UUID & expected_id) const;
 
     void substituteProfiles(SettingsProfileElements & elements,
         std::vector<UUID> & profiles,

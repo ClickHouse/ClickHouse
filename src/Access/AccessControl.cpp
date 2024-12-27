@@ -646,6 +646,24 @@ void AccessControl::setDefaultProfileName(const String & default_profile_name)
 }
 
 
+std::optional<UUID> AccessControl::getDefaultProfileId() const
+{
+    return settings_profiles_cache->getDefaultProfileId();
+}
+
+
+bool AccessControl::isDefaultProfileOrDescendant(const UUID & profile_id) const
+{
+    return settings_profiles_cache->isDefaultProfileOrDescendant(profile_id);
+}
+
+
+bool AccessControl::isExpectedProfileOrDescendant(const UUID & profile_id, const UUID & expected_id) const
+{
+    return settings_profiles_cache->isExpectedProfileOrDescendant(profile_id, expected_id);
+}
+
+
 void AccessControl::setCustomSettingsPrefixes(const Strings & prefixes)
 {
     custom_settings_prefixes->registerPrefixes(prefixes);

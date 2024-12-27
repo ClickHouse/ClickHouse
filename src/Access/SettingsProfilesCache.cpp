@@ -100,6 +100,60 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
 }
 
 
+std::optional<UUID> SettingsProfilesCache::getDefaultProfileId()
+{
+    std::lock_guard lock{mutex};
+    ensureAllProfilesRead();
+    return default_profile_id;
+}
+
+
+bool SettingsProfilesCache::isDefaultProfileOrDescendant(const UUID & profile_id)
+{
+    std::lock_guard lock{mutex};
+    ensureAllProfilesRead();
+    if (default_profile_id.has_value())
+    {
+        return isExpectedProfileOrDescendantLocked(profile_id, default_profile_id.value());
+    }
+    return false;
+}
+
+
+bool SettingsProfilesCache::isExpectedProfileOrDescendant(const UUID & profile_id, const UUID & expected_id)
+{
+    std::lock_guard lock{mutex};
+    ensureAllProfilesRead();
+    return isExpectedProfileOrDescendantLocked(profile_id, expected_id);
+}
+
+
+bool SettingsProfilesCache::isExpectedProfileOrDescendantLocked(const UUID & profile_id, const UUID & expected_id) const
+{
+    /// `mutex` is already locked.
+    if (profile_id == expected_id)
+    {
+        return true;
+    }
+    const auto & profile = access_control.tryRead<SettingsProfile>(profile_id);
+    if (profile)
+    {
+        for (auto & element : profile->elements)
+        {
+            if (element.parent_profile.has_value())
+            {
+                if (isExpectedProfileOrDescendantLocked(element.parent_profile.value(), expected_id))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+
+
 void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
