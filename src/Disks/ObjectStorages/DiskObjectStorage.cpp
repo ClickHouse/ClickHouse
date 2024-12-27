@@ -13,6 +13,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <Disks/ObjectStorages/Backup/BackupObjectStorage.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 
@@ -526,6 +527,11 @@ String DiskObjectStorage::getWriteResourceName() const
 {
     std::unique_lock lock(resource_mutex);
     return write_resource_name;
+}
+
+void DiskObjectStorage::wrapWithBackup(const String & layer_name, const String & backup_base_path)
+{
+    object_storage = std::make_shared<BackupObjectStorage>(object_storage, backup_base_path, layer_name);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(

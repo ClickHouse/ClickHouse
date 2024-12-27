@@ -12,15 +12,18 @@ void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSetting
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
 }
 
-NameSet DiskObjectStorage::getCacheLayersNames() const
+NameSet DiskObjectStorage::getLayersNames() const
 {
     NameSet cache_layers;
     auto current_object_storage = object_storage;
-    while (current_object_storage->supportsCache())
+    while (current_object_storage != nullptr)
     {
-        auto * cached_object_storage = assert_cast<CachedObjectStorage *>(current_object_storage.get());
-        cache_layers.insert(cached_object_storage->getCacheConfigName());
-        current_object_storage = cached_object_storage->getWrappedObjectStorage();
+        std::optional<std::string> layer_name = current_object_storage->getLayerName();
+        if (layer_name.has_value())
+        {
+            cache_layers.insert(layer_name.value());
+        }
+        current_object_storage = current_object_storage->getWrappedObjectStorage();
     }
     return cache_layers;
 }

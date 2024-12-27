@@ -224,6 +224,10 @@ public:
     virtual bool isWriteOnce() const { return false; }
     virtual bool isPlain() const { return false; }
 
+    virtual std::optional<std::string>  getLayerName() const { return std::nullopt; }
+
+    virtual ObjectStoragePtr getWrappedObjectStorage() { return nullptr; }
+
     virtual bool supportParallelWrite() const { return false; }
 
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
