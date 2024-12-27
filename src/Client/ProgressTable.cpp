@@ -18,12 +18,13 @@
 #include <numeric>
 #include <unordered_map>
 
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -68,9 +69,7 @@ const std::unordered_map<std::string_view, ProfileEvents::Event> & getEventNameT
         return event_name_to_event;
 
     for (ProfileEvents::Event event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
-    {
         event_name_to_event.emplace(ProfileEvents::getName(event), event);
-    }
 
     return event_name_to_event;
 }
@@ -189,31 +188,26 @@ void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
 }
 
 void ProgressTable::writeTable(
-    WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &, bool show_table, bool toggle_enabled)
+    WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &, bool show_table, bool toggle_enabled, bool is_final)
 {
     std::lock_guard lock{mutex};
+    message << HIDE_CURSOR;
     if (!show_table && toggle_enabled)
     {
-        message << CLEAR_TO_END_OF_SCREEN;
-
-        message << HIDE_CURSOR;
-        message << "\n";
-        message << "Press the space key to toggle the display of the progress table.";
-        message << moveUpNLines(1);
+        message << CLEAR_TO_END_OF_SCREEN << "\nPress the space key to toggle the display of the progress table." << moveUpNLines(1);
         message.next();
         return;
     }
 
     const auto & event_name_to_event = getEventNameToEvent();
 
-    size_t terminal_width = getTerminalWidth(in_fd, err_fd);
+    auto [terminal_width, terminal_height] = getTerminalSize(in_fd, err_fd);
     if (terminal_width < column_event_name_width + COLUMN_VALUE_WIDTH + COLUMN_PROGRESS_WIDTH)
         return;
 
     if (metrics.empty())
         return;
 
-    message << HIDE_CURSOR;
     message << "\n";
     writeWithWidth(message, COLUMN_EVENT_NAME, column_event_name_width);
     writeWithWidth(message, COLUMN_VALUE, COLUMN_VALUE_WIDTH);
@@ -225,10 +219,33 @@ void ProgressTable::writeTable(
 
     double elapsed_sec = watch.elapsedSeconds();
 
-    for (auto & [name, per_host_info] : metrics)
+    /// Sort metrics by the number of iterations passed since update, then by rounded log of the value, then by metric name.
+    /// This will put fresh metrics on top but also avoid flickering.
+
+    std::vector<Metrics::pointer> sorted_metrics;
+    sorted_metrics.reserve(metrics.size());
+    for (auto & elem : metrics)
     {
-        if (!per_host_info.isFresh(elapsed_sec))
-            continue;
+        if (elapsed_sec - elem.second.updateTime() < 1)
+            elem.second.increaseDisplayPriority();
+
+        sorted_metrics.emplace_back(&elem);
+    }
+
+    std::stable_sort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
+    {
+        return std::tuple(a->second.getDisplayPriority(), std::floor(std::log10(1 + a->second.getSummaryValue())))
+            > std::tuple(b->second.getDisplayPriority(), std::floor(std::log10(1 + b->second.getSummaryValue())));
+    });
+
+    size_t row_num = 0;
+    for (auto * ptr : sorted_metrics)
+    {
+        if (!is_final && row_num + 3 > terminal_height)
+            break;
+
+        const auto & name = ptr->first;
+        auto & per_host_info = ptr->second;
 
         message << "\n";
         writeWithWidth(message, name, column_event_name_width);
@@ -239,7 +256,9 @@ void ProgressTable::writeTable(
 
         /// Get the maximum progress before it is updated in getSummaryProgress.
         auto max_progress = per_host_info.getMaxProgress();
-        auto progress = per_host_info.getSummaryProgress(elapsed_sec);
+        auto progress = is_final
+            ? per_host_info.getSummaryAverageProgress(elapsed_sec)
+            : per_host_info.getSummaryRecentProgress(elapsed_sec);
         switch (value_type)
         {
             case ProfileEvents::ValueType::Number:
@@ -268,37 +287,21 @@ void ProgressTable::writeTable(
 
         message << RESET_COLOR;
         message << CLEAR_TO_END_OF_LINE;
+
+        ++row_num;
     }
 
-    message << moveUpNLines(getFreshMetricsCount(elapsed_sec));
+    if (!is_final)
+        message << CLEAR_TO_END_OF_SCREEN << moveUpNLines(1 + row_num);
+    else
+        message << "\n\n" << SHOW_CURSOR;
+
     message.next();
 }
 
-void ProgressTable::writeFinalTable()
+void ProgressTable::writeFinalTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & lock)
 {
-    std::lock_guard lock{mutex};
-    const auto & event_name_to_event = getEventNameToEvent();
-
-    size_t terminal_width = getTerminalWidth(in_fd, err_fd);
-    if (terminal_width < column_event_name_width + COLUMN_VALUE_WIDTH)
-        return;
-
-    if (metrics.empty())
-        return;
-
-    output_stream << "\n";
-    writeWithWidth(output_stream, COLUMN_EVENT_NAME, column_event_name_width);
-    writeWithWidth(output_stream, COLUMN_VALUE, COLUMN_VALUE_WIDTH);
-
-    for (auto & [name, per_host_info] : metrics)
-    {
-        output_stream << "\n";
-        writeWithWidth(output_stream, name, column_event_name_width);
-
-        auto value = per_host_info.getSummaryValue();
-        auto value_type = getValueType(event_name_to_event.at(name));
-        writeWithWidth(output_stream, formatReadableValue(value_type, value), COLUMN_VALUE_WIDTH);
-    }
+    writeTable(message, lock, /*show_table*/ true, /*toggle_enabled*/ false, /*is_final*/ true);
 }
 
 void ProgressTable::updateTable(const Block & block)
@@ -315,24 +318,7 @@ void ProgressTable::updateTable(const Block & block)
     std::lock_guard lock{mutex};
     const auto & event_name_to_event = getEventNameToEvent();
 
-    std::vector<std::pair<std::string, size_t>> name_and_row_num_list;
     for (size_t row_num = 0, rows = block.rows(); row_num < rows; ++row_num)
-    {
-        auto thread_id = array_thread_id[row_num];
-        if (thread_id != THREAD_GROUP_ID)
-            continue;
-
-        auto name = names.getDataAt(row_num).toString();
-        name_and_row_num_list.emplace_back(name, row_num);
-    }
-    /// Sort by metric name in reverse order, as the most recently updated entries are promoted to the front
-    /// of the metric's list.
-    std::sort(
-        name_and_row_num_list.begin(),
-        name_and_row_num_list.end(),
-        [](const auto & a, const auto & b) { return a.first != b.first ? a.first > b.first : a.second < b.second; });
-
-    for (const auto & [name, row_num] : name_and_row_num_list)
     {
         auto thread_id = array_thread_id[row_num];
 
@@ -342,8 +328,7 @@ void ProgressTable::updateTable(const Block & block)
         if (thread_id != THREAD_GROUP_ID)
             continue;
 
-        chassert(name == names.getDataAt(row_num).toString());
-
+        auto name = names.getDataAt(row_num).toString();
         auto value = array_values[row_num];
         auto host_name = host_names.getDataAt(row_num).toString();
         auto type = static_cast<ProfileEvents::Type>(array_type[row_num]);
@@ -356,21 +341,11 @@ void ProgressTable::updateTable(const Block & block)
         if (value == 0)
             continue;
 
-        auto it = metrics_iterators.find(name);
-        if (it == metrics_iterators.end())
-        {
-            metrics.emplace_front(name, MetricInfoPerHost{});
-            metrics_iterators.emplace(name, metrics.begin());
-        }
-        else
-            metrics.splice(metrics.begin(), metrics, it->second);
-
-        metrics.front().second.updateHostValue(host_name, type, value, time_now);
-
+        metrics[name].updateHostValue(host_name, type, value, time_now);
         max_event_name_width = std::max(max_event_name_width, name.size());
     }
 
-    column_event_name_width = max_event_name_width + 1;
+    column_event_name_width = std::max(column_event_name_width, max_event_name_width + 1);
 }
 
 void ProgressTable::clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
@@ -384,22 +359,6 @@ void ProgressTable::resetTable()
     std::lock_guard lock{mutex};
     watch.restart();
     metrics.clear();
-    metrics_iterators.clear();
-}
-
-size_t ProgressTable::getFreshMetricsCount(double time_now) const
-{
-    auto count = std::count_if(
-        metrics.cbegin(),
-        metrics.cend(),
-        [&time_now](const auto & elem)
-        {
-            const auto & per_host_info = elem.second;
-            return per_host_info.isFresh(time_now);
-        });
-
-    /// Number of lines + header.
-    return count == 0 ? 0 : count + 1;
 }
 
 size_t ProgressTable::getColumnDocumentationWidth(size_t terminal_width) const
@@ -441,20 +400,18 @@ void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
     update_time = new_time;
 }
 
-bool ProgressTable::MetricInfo::isFresh(double now) const
-{
-    constexpr double freshness_threshold = 3.0;
-    chassert(now >= update_time);
-    return update_time != 0 && now - update_time <= freshness_threshold;
-}
-
-double ProgressTable::MetricInfo::calculateProgress(double time_now) const
+double ProgressTable::MetricInfo::calculateRecentProgress(double time_now) const
 {
     /// If the value has not been updated for a long time, the progress is 0.
     if (time_now - new_snapshot.time >= 0.5)
         return 0;
 
     return (cur_shapshot.value - prev_shapshot.value) / (cur_shapshot.time - prev_shapshot.time);
+}
+
+double ProgressTable::MetricInfo::calculateAverageProgress(double time_now) const
+{
+    return cur_shapshot.value / time_now;
 }
 
 double ProgressTable::MetricInfo::getValue() const
@@ -470,32 +427,29 @@ void ProgressTable::MetricInfoPerHost::updateHostValue(const HostName & host, Pr
     it->second.updateValue(new_value, new_time);
 }
 
-double ProgressTable::MetricInfoPerHost::getSummaryValue()
+double ProgressTable::MetricInfoPerHost::getSummaryValue() const
 {
-    return std::accumulate(
-        host_to_metric.cbegin(),
-        host_to_metric.cend(),
-        0.0,
-        [](double acc, const auto & host_data)
-        {
-            const MetricInfo & info = host_data.second;
-            return acc + info.getValue();
-        });
+    double res = 0.0;
+    for (const auto & elem : host_to_metric)
+        res += elem.second.getValue();
+    return res;
 }
 
-double ProgressTable::MetricInfoPerHost::getSummaryProgress(double time_now)
+double ProgressTable::MetricInfoPerHost::getSummaryRecentProgress(double time_now)
 {
-    auto progress = std::accumulate(
-        host_to_metric.cbegin(),
-        host_to_metric.cend(),
-        0.0,
-        [time_now](double acc, const auto & host_data)
-        {
-            const MetricInfo & info = host_data.second;
-            return acc + info.calculateProgress(time_now);
-        });
-    max_progress = std::max(max_progress, progress);
-    return progress;
+    double res = 0.0;
+    for (const auto & elem : host_to_metric)
+        res += elem.second.calculateRecentProgress(time_now);
+    max_progress = std::max(max_progress, res);
+    return res;
+}
+
+double ProgressTable::MetricInfoPerHost::getSummaryAverageProgress(double time_now) const
+{
+    double res = 0.0;
+    for (const auto & elem : host_to_metric)
+        res += elem.second.calculateAverageProgress(time_now);
+    return res;
 }
 
 double ProgressTable::MetricInfoPerHost::getMaxProgress() const
@@ -503,8 +457,12 @@ double ProgressTable::MetricInfoPerHost::getMaxProgress() const
     return max_progress;
 }
 
-bool ProgressTable::MetricInfoPerHost::isFresh(double now) const
+double ProgressTable::MetricInfoPerHost::updateTime() const
 {
-    return std::any_of(host_to_metric.cbegin(), host_to_metric.cend(), [&now](const auto & p) { return p.second.isFresh(now); });
+    double res = 0.0;
+    for (const auto & elem : host_to_metric)
+        res = std::max(res, elem.second.updateTime());
+    return res;
 }
+
 }
