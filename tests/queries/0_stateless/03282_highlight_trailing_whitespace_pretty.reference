@@ -204,85 +204,85 @@
 [0m                                                         
 Row 1:
 ──────
-str: string0
+[1mstr: [0mstring0
 
 Row 2:
 ──────
-str: string1[31m[4m [0m
+[1mstr: [0mstring1[31m[4m [0m
 
 Row 3:
 ──────
-str: string2[31m[4m  [0m
+[1mstr: [0mstring2[31m[4m  [0m
 
 Row 4:
 ──────
-str: string3[31m[4m     [0m
+[1mstr: [0mstring3[31m[4m     [0m
 
 Row 5:
 ──────
-str: string4[31m[4m
+[1mstr: [0mstring4[31m[4m
 [0m
 
 Row 6:
 ──────
-str: string5[31m[4m[0m
+[1mstr: [0mstring5[31m[4m[0m
 
 Row 7:
 ──────
-str: string6[31m[4m	[0m
+[1mstr: [0mstring6[31m[4m	[0m
 
 Row 8:
 ──────
-str: string7[31m[4m  	[0m
+[1mstr: [0mstring7[31m[4m  	[0m
 
 Row 9:
 ───────
-str: string8[31m[4m		[0m
+[1mstr: [0mstring8[31m[4m		[0m
 
 Row 10:
 ───────
-str: string9[31m[4m   
+[1mstr: [0mstring9[31m[4m   
 [0m
 
 Row 11:
 ───────
-str: string10[31m[4m	
+[1mstr: [0mstring10[31m[4m	
 [0m
 
 Row 12:
 ───────
-str: string11[31m[4m                                                                      [0m
+[1mstr: [0mstring11[31m[4m                                                                      [0m
 
 Row 13:
 ───────
-str: string 12
+[1mstr: [0mstring 12
 
 Row 14:
 ───────
-str: string   13[31m[4m   [0m
+[1mstr: [0mstring   13[31m[4m   [0m
 
 Row 15:
 ───────
-str: 
+[1mstr: [0m
 
 Row 16:
 ───────
-str: [31m[4m [0m
+[1mstr: [0m[31m[4m [0m
 
 Row 17:
 ───────
-str: [31m[4m
+[1mstr: [0m[31m[4m
 [0m
 
 Row 18:
 ───────
-str: [31m[4m[0m
+[1mstr: [0m[31m[4m[0m
 
 Row 19:
 ───────
-str: [31m[4m	[0m
+[1mstr: [0m[31m[4m	[0m
 
 Row 20:
 ───────
-str: [31m[4m			
+[1mstr: [0m[31m[4m			
 [0m
