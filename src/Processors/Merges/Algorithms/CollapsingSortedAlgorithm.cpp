@@ -15,6 +15,11 @@ constexpr size_t MAX_ERROR_MESSAGES = 10;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int INCORRECT_DATA;
+}
+
 CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
@@ -25,7 +30,8 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     size_t max_block_size_bytes_,
     LoggerPtr log_,
     WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes)
+    bool use_average_block_sizes,
+    bool throw_if_invalid_sign_)
     : IMergingAlgorithmWithSharedChunks(
         header_,
         num_inputs,
@@ -35,6 +41,7 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
         std::make_unique<MergedData>(use_average_block_sizes, max_block_size_rows_, max_block_size_bytes_))
     , sign_column_number(header_.getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
+    , throw_if_invalid_sign(throw_if_invalid_sign_)
     , log(log_)
 {
 }
@@ -194,14 +201,16 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
             ++count_negative;
             last_is_positive = false;
         }
-        else
+        else if (!throw_if_invalid_sign)
         {
             /// Insert row with invalid sign as is
             insertRow(current_row);
-            if (count_incorrect_data < MAX_ERROR_MESSAGES)
+            if (count_invalid_sign < MAX_ERROR_MESSAGES)
                 LOG_WARNING(log, "Incorrect data: Sign = {} (must be 1 or -1).", toString(sign));
-            ++count_incorrect_data;
+            ++count_invalid_sign;
         }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: Sign = {} (must be 1 or -1).", toString(sign));
 
         ++current_pos;
 

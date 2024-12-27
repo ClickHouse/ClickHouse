@@ -36,7 +36,8 @@ public:
         size_t max_block_size_bytes_,
         LoggerPtr log_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
-        bool use_average_block_sizes = false);
+        bool use_average_block_sizes = false,
+        bool throw_if_invalid_sign_ = false);
 
     const char * getName() const override { return "CollapsingSortedAlgorithm"; }
     Status merge() override;
@@ -44,6 +45,7 @@ public:
 private:
     const size_t sign_column_number;
     const bool only_positive_sign;
+    const bool throw_if_invalid_sign;
 
     static constexpr size_t max_row_refs = 4; /// first_negative, last_positive, last, current.
     RowRef first_negative_row;
@@ -61,7 +63,10 @@ private:
     size_t last_positive_pos = 0;                  /// Row number of last_positive
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
-    size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
+    /// To prevent too many error messages from writing to the log.
+    size_t count_incorrect_data = 0;
+    size_t count_invalid_sign = 0;
+
     LoggerPtr log;
 
     void reportIncorrectData();

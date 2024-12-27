@@ -1,4 +1,4 @@
-SET optimize_on_insert = 0, send_logs_level = 'error';
+SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS t_03291_collapsing_invalid_sign;
 
@@ -9,6 +9,10 @@ CREATE TABLE t_03291_collapsing_invalid_sign
 )
 ENGINE = CollapsingMergeTree(sign)
 ORDER BY x;
+
+INSERT INTO t_03291_collapsing_invalid_sign VALUES (1, 1), (1, -1), (1, 2), (1, 1); -- { serverError INCORRECT_DATA }
+
+SET optimize_on_insert = 0;
 
 INSERT INTO t_03291_collapsing_invalid_sign VALUES (1, 1), (1, -1), (1, 2), (1, 1);
 
