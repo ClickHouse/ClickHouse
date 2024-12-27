@@ -573,8 +573,7 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     read_settings.local_fs_method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
-    UInt64 inode;
-    UInt64 last_written_pos;
+    UInt64 inode, last_written_pos;
 
     if (in->eof()) /// File is empty.
     {
@@ -899,7 +898,6 @@ void registerStorageFileLog(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
         });
 }
 

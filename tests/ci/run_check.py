@@ -30,10 +30,19 @@ TRUSTED_CONTRIBUTORS = {
         "amosbird",
         "azat",  # SEMRush
         "bharatnc",  # Many contributions.
+        "cwurm",  # ClickHouse, Inc
         "den-crane",  # Documentation contributor
+        "ildus",  # adjust, ex-pgpro
+        "nvartolomei",  # Seasoned contributor, CloudFlare
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
+        "thomoco",  # ClickHouse, Inc
         "tonickkozlov",  # Cloudflare
+        "tylerhannan",  # ClickHouse, Inc
+        "tsolodov",  # ClickHouse, Inc
+        "justindeguzman",  # ClickHouse, Inc
+        "XuJia0210",  # ClickHouse, Inc
+        "nauu",  # ClickHouse, Inc
     ]
 }
 
@@ -75,21 +84,6 @@ LABEL_CATEGORIES = {
 CATEGORY_TO_LABEL = {
     c: lb for lb, categories in LABEL_CATEGORIES.items() for c in categories
 }
-
-
-def normalize_category(cat: str) -> str:
-    """Drop everything after open parenthesis, drop leading/trailing whitespaces, normalize case"""
-    pos = cat.find("(")
-
-    result = cat[:pos] if pos != -1 else cat
-    return result.strip().casefold()
-
-
-CATEGORIES_FOLD = [
-    normalize_category(c)
-    for lb, categories in LABEL_CATEGORIES.items()
-    for c in categories
-]
 
 
 def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
@@ -160,7 +154,7 @@ def check_pr_description(pr_body: str, repo_name: str) -> Tuple[str, str]:
     # Filter out the PR categories that are not for changelog.
     elif "(changelog entry is not required)" in category:
         pass  # to not check the rest of the conditions
-    elif normalize_category(category) not in CATEGORIES_FOLD:
+    elif category not in CATEGORY_TO_LABEL:
         description_error, category = f"Category '{category}' is not valid", ""
     elif not entry:
         description_error = f"Changelog entry required for category '{category}'"

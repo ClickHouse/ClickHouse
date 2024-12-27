@@ -378,7 +378,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
 
 void BackupWriterS3::removeFile(const String & file_name)
 {
-    deleteFileFromS3(client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, /* if_exists = */ true,
+    deleteFileFromS3(client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, /* if_exists = */ false,
                      blob_storage_log);
 }
 
@@ -392,7 +392,7 @@ void BackupWriterS3::removeFiles(const Strings & file_names)
     /// One call of DeleteObjects() cannot remove more than 1000 keys.
     size_t batch_size = 1000;
 
-    deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ true,
+    deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ false,
                       s3_capabilities, batch_size, blob_storage_log);
 }
 

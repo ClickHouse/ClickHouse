@@ -407,10 +407,6 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
-    bool rightTableCanBeReranged() const override;
-    void tryRerangeRightTableData() override;
-    size_t getAndSetRightTableKeys() const;
-
 private:
     friend class NotJoinedHash;
 
@@ -493,6 +489,7 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
+    void tryRerangeRightTableData() override;
     template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
     void tryRerangeRightTableDataImpl(Map & map);
     void doDebugAsserts() const;

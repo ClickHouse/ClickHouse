@@ -12,7 +12,7 @@ namespace DB
     void ASTCollation::formatImpl(WriteBuffer & ostr, const FormatSettings &s, FormatState &state, FormatStateStacked frame) const
     {
         if (collation)
-            collation->format(ostr, s, state, frame);
+            collation->formatImpl(ostr, s, state, frame);
     }
 
 }

@@ -67,8 +67,6 @@ struct KafkaSettings
 
     void sanityCheck() const;
 
-    static bool hasBuiltin(std::string_view name);
-
 private:
     std::unique_ptr<KafkaSettingsImpl> impl;
 };

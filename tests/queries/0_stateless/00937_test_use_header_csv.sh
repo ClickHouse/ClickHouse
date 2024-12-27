@@ -34,5 +34,5 @@ echo -ne 'str,u\nLine16,1\nLine17,2\n'                  | eval "$INSERT_QUERY" $
 echo -ne 'd,str\n2019-04-18,Line18\n2019-04-18,Line19\n'| eval "$INSERT_QUERY" $USE_HEADER
 echo -ne 'unknown\n\n\n'                                | eval "$INSERT_QUERY" $USE_HEADER $SKIP_UNKNOWN
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM csv ORDER BY ALL"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM csv"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS csv"

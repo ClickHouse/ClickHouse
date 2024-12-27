@@ -1,16 +1,20 @@
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
+#include <base/scope_guard.h>
+#include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
-#include <Disks/IDisk.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/formatAST.h>
-#include <Common/quoteString.h>
-#include "Storages/IStorage.h"
+#include <Storages/IStorage.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -74,7 +78,9 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            db_disk->removeRecursive(getTableDataPath(table_name));
+            fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
+            if (fs::exists(table_data_dir))
+                (void)fs::remove_all(table_data_dir);
         }
     }
     catch (...)
@@ -127,9 +133,9 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::removeDataPath(ContextPtr)
+void DatabaseMemory::removeDataPath(ContextPtr local_context)
 {
-    db_disk->removeRecursive(data_path);
+    (void)std::filesystem::remove_all(local_context->getPath() + data_path);
 }
 
 void DatabaseMemory::drop(ContextPtr local_context)

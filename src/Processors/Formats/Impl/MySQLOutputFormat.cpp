@@ -83,7 +83,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
         }
     }
 
-    flushImpl();
+    flush();
 }
 
 void MySQLOutputFormat::finalizeImpl()
@@ -131,7 +131,7 @@ void MySQLOutputFormat::finalizeImpl()
     }
 }
 
-void MySQLOutputFormat::flushImpl()
+void MySQLOutputFormat::flush()
 {
     packet_endpoint->out->next();
 }

@@ -75,7 +75,7 @@ LIMIT 2;
 
 ``` sql
 SELECT *
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
 LIMIT 2;
 ```
 
@@ -103,7 +103,7 @@ GCS上の以下のURIを持つ複数のファイルがあるとします：
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'name String, value UInt32')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'name String, value UInt32')
 ```
 
 ``` text
@@ -116,7 +116,7 @@ FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-buck
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'name String, value UInt32')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'name String, value UInt32')
 ```
 
 ``` text
@@ -133,7 +133,7 @@ FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-buck
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
 ```
 
 ``` text

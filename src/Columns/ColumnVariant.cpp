@@ -505,10 +505,7 @@ void ColumnVariant::insertRangeFromImpl(const DB::IColumn & src_, size_t start, 
 
         Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
         size_t offset = variants[local_discr]->size();
-
-        if (!skip_discriminator || global_discr != *skip_discriminator)
-            variants[local_discr]->insertRangeFrom(*src.variants[*non_empty_src_local_discr], start, length);
-
+        variants[local_discr]->insertRangeFrom(*src.variants[*non_empty_src_local_discr], start, length);
         getLocalDiscriminators().resize_fill(local_discriminators->size() + length, local_discr);
         auto & offsets_data = getOffsets();
         offsets_data.reserve(offsets_data.size() + length);
@@ -1577,16 +1574,16 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
             filter.reserve_exact(null_map.size());
             for (size_t i = 0; i != local_discriminators_data.size(); ++i)
             {
-                if (null_map[i])
-                {
+               if (null_map[i])
+               {
                     filter.push_back(0);
                     local_discriminators_data[i] = NULL_DISCRIMINATOR;
-                }
-                else
-                {
+               }
+               else
+               {
                    filter.push_back(1);
                    offsets_data[i] = size_hint++;
-                }
+               }
             }
             variants[*non_empty_local_discr] = variants[*non_empty_local_discr]->filter(filter, size_hint);
         }
@@ -1613,7 +1610,7 @@ void ColumnVariant::applyNullMapImpl(const ColumnVector<UInt8>::Container & null
                 auto & variant_filter = variant_filters[discr];
                 /// We create filters lazily.
                 if (variant_filter.empty())
-                    variant_filter.resize_fill(variants[discr]->size(), 1);
+                   variant_filter.resize_fill(variants[discr]->size(), 1);
                 variant_filter[offsets_data[i]] = 0;
                 discr = NULL_DISCRIMINATOR;
             }

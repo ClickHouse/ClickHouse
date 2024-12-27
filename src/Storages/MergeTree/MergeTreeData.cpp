@@ -212,10 +212,12 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_projections;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_compact_part;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
     extern const MergeTreeSettingsUInt64 min_bytes_to_rebalance_partition_over_jbod;
     extern const MergeTreeSettingsUInt64 min_delay_to_insert_ms;
     extern const MergeTreeSettingsUInt64 min_delay_to_mutate_ms;
+    extern const MergeTreeSettingsUInt64 min_rows_for_compact_part;
     extern const MergeTreeSettingsUInt64 min_rows_for_wide_part;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_delay;
     extern const MergeTreeSettingsUInt64 number_of_mutations_to_throw;
@@ -2750,8 +2752,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     }
 
     if (!res.empty())
-        LOG_TRACE(log, "Skipped {} old parts, Found {} old parts to remove. Parts: [{}]",
-                  skipped_parts.size(), res.size(), fmt::join(getPartsNames(res), ", "));
+        LOG_TRACE(log, "Found {} old parts to remove. Parts: [{}]",
+                  res.size(), fmt::join(getPartsNames(res), ", "));
 
     return res;
 }
@@ -3574,12 +3576,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (command.partition)
         {
             getPartitionIDFromQuery(command.partition, local_context);
-        }
-
-        if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
-        {
-            if (old_metadata.settings_changes == nullptr)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
 
         if (command.column_name == merging_params.version_column)
@@ -8547,7 +8543,8 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
 {
     if (!canUseAdaptiveGranularity())
     {
-        if (settings[MergeTreeSetting::min_rows_for_wide_part] != 0 || settings[MergeTreeSetting::min_bytes_for_wide_part] != 0)
+        if ((settings[MergeTreeSetting::min_rows_for_wide_part] != 0 || settings[MergeTreeSetting::min_bytes_for_wide_part] != 0
+            || settings[MergeTreeSetting::min_rows_for_compact_part] != 0 || settings[MergeTreeSetting::min_bytes_for_compact_part] != 0))
         {
             out_reason = fmt::format(
                 "Table can't create parts with adaptive granularity, but settings"

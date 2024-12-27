@@ -1075,8 +1075,7 @@ DECLARE_AVX512VBMI_SPECIFIC_CODE(
 
             __m512i table1 = _mm512_loadu_epi8(data_pos);
             __m512i table2 = _mm512_loadu_epi8(data_pos + 64);
-            __m512i table3;
-            __m512i table4;
+            __m512i table3, table4;
             if (data_size <= 192)
             {
                 /// only 3 tables need to load if size <= 192

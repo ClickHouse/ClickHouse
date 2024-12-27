@@ -58,12 +58,12 @@ protected:
 
         if (database)
         {
-            database->format(ostr, settings, state, frame);
+            database->formatImpl(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table != nullptr, "Table is empty for the ASTQueryWithTableAndOutputImpl.");
-        table->format(ostr, settings, state, frame);
+        table->formatImpl(ostr, settings, state, frame);
     }
 };
 

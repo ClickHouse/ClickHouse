@@ -838,13 +838,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_SETTING)
     {
-        if (!metadata.settings_changes)
-        {
-            auto changes = std::make_shared<ASTSetQuery>();
-            changes->is_standalone = false;
-            metadata.settings_changes = std::move(changes);
-        }
-
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
@@ -859,9 +852,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == RESET_SETTING)
     {
-        if (!metadata.settings_changes)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
-
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & setting_name : settings_resets)
         {
@@ -1344,8 +1334,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
-    NameSet modified_columns;
-    NameSet renamed_columns;
+    NameSet modified_columns, renamed_columns;
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -1556,7 +1545,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
         }
-        else if (command.type == AlterCommand::RESET_SETTING)
+        else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
         {
             if (metadata.settings_changes == nullptr)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");

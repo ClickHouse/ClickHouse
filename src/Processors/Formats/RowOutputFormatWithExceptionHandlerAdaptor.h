@@ -60,12 +60,12 @@ public:
     void write(const Columns & columns, size_t row_num) override { Base::write(columns, row_num); }
     void writeRowBetweenDelimiter() override { Base::writeRowBetweenDelimiter(); }
 
-    void flushImpl() override
+    void flush() override
     {
         if (peekable_out)
             peekable_out->next();
 
-        Base::flushImpl();
+        Base::flush();
     }
 
     void finalizeBuffers() override

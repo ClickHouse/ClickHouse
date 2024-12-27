@@ -239,8 +239,7 @@ TEST(AccessRights, GrantWildcard)
 
 TEST(AccessRights, Union)
 {
-    AccessRights lhs;
-    AccessRights rhs;
+    AccessRights lhs, rhs;
     lhs.grant(AccessType::CREATE_TABLE, "db1", "tb1");
     rhs.grant(AccessType::SELECT, "db2");
     lhs.makeUnion(rhs);
@@ -290,8 +289,7 @@ TEST(AccessRights, Union)
               "SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, "
               "SYSTEM RESTORE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM SYNC DATABASE REPLICA, SYSTEM FLUSH DISTRIBUTED, "
               "SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON db1.*, GRANT TABLE ENGINE ON db1, "
-              "GRANT CREATE USER, ALTER USER, DROP USER, CREATE ROLE, ALTER ROLE, DROP ROLE, SET DEFINER ON db1, "
-              "GRANT NAMED COLLECTION ADMIN ON db1");
+              "GRANT SET DEFINER ON db1, GRANT NAMED COLLECTION ADMIN ON db1");
 
     lhs = {};
     rhs = {};
@@ -326,8 +324,7 @@ TEST(AccessRights, Union)
 
 TEST(AccessRights, Intersection)
 {
-    AccessRights lhs;
-    AccessRights rhs;
+    AccessRights lhs, rhs;
     lhs.grant(AccessType::CREATE_TABLE, "db1", "tb1");
     rhs.grant(AccessType::SELECT, "db2");
     lhs.makeIntersection(rhs);
@@ -451,8 +448,7 @@ TEST(AccessRights, Intersection)
 
 TEST(AccessRights, Difference)
 {
-    AccessRights lhs;
-    AccessRights rhs;
+    AccessRights lhs, rhs;
     lhs.grant(AccessType::SELECT);
     rhs.grant(AccessType::SELECT);
     rhs.revoke(AccessType::SELECT, "system");
@@ -494,8 +490,7 @@ TEST(AccessRights, Difference)
 
 TEST(AccessRights, Contains)
 {
-    AccessRights lhs;
-    AccessRights rhs;
+    AccessRights lhs, rhs;
     lhs.grant(AccessType::SELECT, "db1");
     rhs.grant(AccessType::SELECT, "db1", "tb1");
     ASSERT_EQ(lhs.contains(rhs), true);

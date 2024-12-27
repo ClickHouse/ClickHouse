@@ -938,10 +938,6 @@ formatReadableSize(x)
 ```
 Alias: `FORMAT_BYTES`.
 
-:::note
-This function accepts any numeric type as input, but internally it casts them to Float64. Results might be suboptimal with large values
-:::
-
 **Example**
 
 Query:
@@ -973,10 +969,6 @@ Given a number, this function returns a rounded number with suffix (thousand, mi
 formatReadableQuantity(x)
 ```
 
-:::note
-This function accepts any numeric type as input, but internally it casts them to Float64. Results might be suboptimal with large values
-:::
-
 **Example**
 
 Query:
@@ -1007,10 +999,6 @@ Given a time interval (delta) in seconds, this function returns a time delta wit
 ```sql
 formatReadableTimeDelta(column[, maximum_unit, minimum_unit])
 ```
-
-:::note
-This function accepts any numeric type as input, but internally it casts them to Float64. Results might be suboptimal with large values
-:::
 
 **Arguments**
 
@@ -1077,7 +1065,7 @@ The inverse operations of this function are [formatReadableSize](#formatreadable
 **Syntax**
 
 ```sql
-parseReadableSize(x)
+formatReadableSize(x)
 ```
 
 **Arguments**

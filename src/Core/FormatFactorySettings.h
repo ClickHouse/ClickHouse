@@ -972,9 +972,6 @@ Check page size every this many rows. Consider decreasing if you have columns wi
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
 Add a possibility to write page index into parquet files.
 )", 0) \
-    DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
-Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
-)", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
@@ -1102,9 +1099,6 @@ If enabled and if output is a terminal, highlight every digit corresponding to t
     DECLARE(UInt64, output_format_pretty_single_large_number_tip_threshold, 1'000'000, R"(
 Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)
 )", 0) \
-    DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
-If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
-)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
 
@@ -1156,9 +1150,6 @@ Target row index stride in ORC output format
 )", 0) \
     DECLARE(Double, output_format_orc_dictionary_key_size_threshold, 0.0, R"(
 For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled
-)", 0) \
-    DECLARE(String, output_format_orc_writer_time_zone_name, "GMT", R"(
-The time zone name for ORC writer, the default ORC writer's time zone is GMT.
 )", 0) \
     \
     DECLARE(CapnProtoEnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::CapnProtoEnumComparingMode::BY_VALUES, R"(
@@ -1274,3 +1265,4 @@ Set the quoting style for identifiers in SHOW CREATE query
 #define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
     FORMAT_FACTORY_SETTINGS(M, ALIAS) \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
+

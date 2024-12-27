@@ -142,6 +142,13 @@ void JSONRowOutputFormat::resetFormatterImpl()
     statistics = Statistics();
 }
 
+
+void JSONRowOutputFormat::onProgress(const Progress & value)
+{
+    statistics.progress.incrementPiecewiseAtomically(value);
+}
+
+
 void registerOutputFormatJSON(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSON", [](

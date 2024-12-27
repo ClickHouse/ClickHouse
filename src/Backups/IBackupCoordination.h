@@ -1,6 +1,5 @@
 #pragma once
 
-#include <exception>
 #include <Core/Types.h>
 
 

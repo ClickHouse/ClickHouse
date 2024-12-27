@@ -398,26 +398,16 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     const IColumn & column, const ISerialization & serialization, size_t row_num,
     size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number)
 {
-    String serialized_value;
+    String serialized_value = " ";
     {
         WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
-    /// Highlight groups of thousands.
-    if (color && is_number && format_settings.pretty.highlight_digit_groups)
-        serialized_value = highlightDigitGroups(serialized_value);
-
-    /// Highlight trailing spaces.
-    if (color && format_settings.pretty.highlight_trailing_spaces)
-        serialized_value = highlightTrailingSpaces(serialized_value);
-
-    bool is_cut = false;
     if (cut_to_width && value_width > cut_to_width)
     {
-        is_cut = true;
         serialized_value.resize(UTF8::computeBytesBeforeWidth(
-            reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, format_settings.pretty.max_value_width));
+            reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, 1 + format_settings.pretty.max_value_width));
 
         const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
         if (color)
@@ -431,6 +421,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         value_width = format_settings.pretty.max_value_width;
     }
+    else
+        serialized_value += ' ';
 
     auto write_padding = [&]()
     {
@@ -439,7 +431,9 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
                 writeChar(' ', out);
     };
 
-    out.write(' ');
+    /// Highlight groups of thousands.
+    if (color && is_number && format_settings.pretty.highlight_digit_groups)
+        serialized_value = highlightDigitGroups(serialized_value);
 
     if (align_right)
     {
@@ -451,9 +445,6 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         out.write(serialized_value.data(), serialized_value.size());
         write_padding();
     }
-
-    if (!is_cut)
-        out.write(' ');
 }
 
 

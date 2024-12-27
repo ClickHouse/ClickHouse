@@ -18,7 +18,4 @@ void writeReadableNumberTipIfSingleValue(WriteBuffer & out, const Chunk & chunk,
 /// Underscores digit groups related to thousands using terminal ANSI escape sequences.
 String highlightDigitGroups(String source);
 
-/// Highlights and underscores trailing spaces using ANSI escape sequences.
-String highlightTrailingSpaces(String source);
-
 }
