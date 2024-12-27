@@ -607,6 +607,10 @@ bool ReplicatedMergeTreeSinkImpl<false>::writeExistingPart(MergeTreeData::Mutabl
 
     try
     {
+        bool keep_non_zero_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+        part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
+        part->info.mutation = 0;
+
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
         String block_id = deduplicate ? fmt::format("{}_{}", part->info.partition_id, part->checksums.getTotalChecksumHex()) : "";
         bool deduplicated = commitPart(zookeeper, part, block_id, replicas_num).second;

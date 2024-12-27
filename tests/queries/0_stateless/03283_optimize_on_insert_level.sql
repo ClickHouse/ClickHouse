@@ -15,6 +15,11 @@ INSERT INTO t_optimize_level VALUES (4, 3) (5, 4);
 SELECT _part, a, b FROM t_optimize_level ORDER BY a;
 SELECT count() FROM (EXPLAIN PIPELINE SELECT a, b FROM t_optimize_level FINAL) WHERE explain LIKE '%Replacing%';
 
+ALTER TABLE t_optimize_level DETACH PARTITION tuple();
+ALTER TABLE t_optimize_level ATTACH PARTITION tuple();
+
+SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_optimize_level' AND active;
+
 DROP TABLE t_optimize_level;
 
 CREATE TABLE t_optimize_level (a UInt64, b UInt64)
@@ -28,5 +33,10 @@ INSERT INTO t_optimize_level VALUES (4, 3) (5, 4);
 
 SELECT _part, a, b FROM t_optimize_level ORDER BY a;
 SELECT count() FROM (EXPLAIN PIPELINE SELECT a, b FROM t_optimize_level FINAL) WHERE explain LIKE '%Replacing%';
+
+ALTER TABLE t_optimize_level DETACH PARTITION tuple();
+ALTER TABLE t_optimize_level ATTACH PARTITION tuple();
+
+SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_optimize_level' AND active;
 
 DROP TABLE t_optimize_level;
