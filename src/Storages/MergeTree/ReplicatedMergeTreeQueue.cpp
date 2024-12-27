@@ -494,6 +494,7 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
             status.latest_failed_part_info = MergeTreePartInfo();
             status.latest_fail_time = 0;
             status.latest_fail_reason.clear();
+            status.latest_fail_error_code_name.clear();
         }
     }
 
@@ -2138,6 +2139,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                 LOG_TRACE(log, "Marking mutation {} done because it is <= mutation_pointer ({})", znode, mutation_pointer);
                 mutation.is_done = true;
                 mutation.latest_fail_reason.clear();
+                mutation.latest_fail_error_code_name.clear();
                 alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
                 if (mutation.parts_to_do.size() != 0)
                 {
@@ -2198,6 +2200,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
                 LOG_TRACE(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
                 it->second.latest_fail_reason.clear();
+                it->second.latest_fail_error_code_name.clear();
                 if (entry->isAlterMutation())
                 {
                     LOG_TRACE(log, "Finishing data alter with version {} for entry {}", entry->alter_version, entry->znode_name);
@@ -2317,6 +2320,7 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
         .latest_failed_part = status.latest_failed_part,
         .latest_fail_time = status.latest_fail_time,
         .latest_fail_reason = status.latest_fail_reason,
+        .latest_fail_error_code_name = status.latest_fail_error_code_name,
     };
 
     if (mutation_ids && !status.latest_fail_reason.empty())
@@ -2364,6 +2368,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 status.latest_failed_part,
                 status.latest_fail_time,
                 status.latest_fail_reason,
+                status.latest_fail_error_code_name,
             });
         }
     }
