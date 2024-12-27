@@ -5,7 +5,7 @@
 
 inline float convertFloat16ToFloat32(uint16_t float16_value)
 {
-    DecomposedFloat<_Float16> components(float16_value);
+    DecomposedFloat<Float16Tag> components(float16_value);
 
     uint32_t old_sign = components.isNegative();
     uint32_t old_exponent = components.exponent();

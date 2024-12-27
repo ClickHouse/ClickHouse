@@ -10,8 +10,10 @@
 
 template <typename T> struct FloatTraits;
 
+struct Float16Tag;
+
 template <>
-struct FloatTraits<_Float16>
+struct FloatTraits<Float16Tag>
 {
     using UInt = uint16_t;
     static constexpr size_t bits = 16;
