@@ -21,10 +21,12 @@ private:
     void writeBottom(const Widths & max_widths);
     void writeRow(
         size_t row_num,
+        size_t displayed_row,
         const Block & header,
         const Chunk & chunk,
         const WidthsPerColumn & widths,
         const Widths & max_widths);
+    void writeVerticalCut(const Chunk & chunk, const Widths & max_widths);
 
     void writeChunk(const Chunk & chunk, PortKind port_kind) override;
 };
