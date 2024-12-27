@@ -239,7 +239,7 @@ void ProgressTable::writeTable(
     });
 
     size_t row_num = 0;
-    for (auto ptr : sorted_metrics)
+    for (auto * ptr : sorted_metrics)
     {
         if (!is_final && row_num + 3 > terminal_height)
             break;
