@@ -116,6 +116,10 @@ Conversely, other system tables are node-specific e.g. in-memory or persisting t
 
 To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/docs/en/sql-reference/table-functions/cluster) function. This function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. This approach is particularly valuable for monitoring and debugging cluster-wide operations, ensuring users can effectively analyze the health and performance of their ClickHouse Cloud deployment.
 
+:::note
+ClickHouse Cloud provides clusters of multiple replicas for redundancy and failover. This enables its features, such as dynamic autoscaling and zero-downtime upgrades. At a certain moment in time, new nodes could be in the process of being added to the cluster or removed from the cluster. To skip these nodes, add `SETTINGS skip_unavailable_shards = 1` to queries using `clusterAllReplicas` as shown below.
+:::
+
 For example, consider the difference when querying the `query_log` table - often essential to analysis.
 
 ```sql
@@ -138,7 +142,7 @@ SELECT
     count()
 FROM clusterAllReplicas('default', system.query_log)
 WHERE (event_time >= '2024-12-20 12:30:00') AND (event_time <= '2024-12-20 14:30:00')
-GROUP BY host
+GROUP BY host SETTINGS skip_unavailable_shards = 1
 
 ┌─host──────────────────────────┬─count()─┐
 │ c-ecru-oc-31-server-ectk72m-0 │   84132 │
