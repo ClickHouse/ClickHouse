@@ -1,24 +1,23 @@
 #pragma once
 
-#include <base/DecomposedFloat.h>
+#include <cstdint>
+#include <bit>
 
 
 inline float convertFloat16ToFloat32(uint16_t float16_value)
 {
-    DecomposedFloat<Float16Tag> components(float16_value);
-
-    uint32_t old_sign = components.isNegative();
-    uint32_t old_exponent = components.exponent();
-    uint32_t old_mantissa = static_cast<uint32_t>(components.mantissa());
+    uint32_t old_sign = (float16_value & 0b10000000'00000000);
+    uint32_t old_exponent = (float16_value & 0b01111100'00000000) >> 10;
+    uint32_t old_mantissa = float16_value & 0b00000011'11111111;
 
     uint32_t new_exponent;
     uint32_t new_mantissa;
-    uint32_t new_sign = old_sign << 31;
+    uint32_t new_sign = old_sign << 16;
 
     if (unlikely(old_exponent == 0x1F))
     {
         /// Inf, NaN
-        new_exponent = 0xFF;
+        new_exponent = 0xFFu << 23;
         new_mantissa = old_mantissa << 13;
     }
     else if (old_exponent == 0)
