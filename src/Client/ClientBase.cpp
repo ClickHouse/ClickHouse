@@ -6,7 +6,6 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 
-#include <base/safeExit.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
@@ -32,7 +31,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -81,6 +79,7 @@
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
+#include <base/ask.h>
 #include "config.h"
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -272,7 +271,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 }
 
 /// To cancel the query on local format error.
-class LocalFormatError : public DB::Exception
+class LocalFormatError : public Exception
 {
 public:
     using Exception::Exception;
@@ -579,10 +578,9 @@ try
             out_buf = std_out.get();
         }
 
-        String current_format = default_output_format;
-
         select_into_file = false;
         select_into_file_and_stdout = false;
+        String current_format = default_output_format;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -674,6 +672,23 @@ try
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->setAutoFlush();
+
+        if ((!select_into_file || select_into_file_and_stdout)
+            && stdout_is_a_tty
+            && stdin_is_a_tty
+            && !FormatFactory::instance().checkIfOutputFormatIsTTYFriendly(current_format))
+        {
+            stopKeystrokeInterceptorIfExists();
+            SCOPE_EXIT({ startKeystrokeInterceptorIfExists(); });
+
+            if (!ask(fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
+If you want to output it into a file, use the "INTO OUTFILE" modifier in the query or redirect the output of the shell command.
+Do you want to output it anyway? [y/N] )", current_format)))
+            {
+                output_format = std::make_shared<NullOutputFormat>(block);
+            }
+            *std_out << '\n';
+        }
     }
 }
 catch (...)
@@ -1963,15 +1978,7 @@ void ClientBase::cancelQuery()
 {
     connection->sendCancel();
 
-    if (keystroke_interceptor)
-        try
-        {
-            keystroke_interceptor->stopIntercept();
-        }
-        catch (const DB::Exception &)
-        {
-            error_stream << getCurrentExceptionMessage(false);
-        }
+    stopKeystrokeInterceptorIfExists();
 
     if (need_render_progress && tty_buf)
     {
@@ -2667,7 +2674,7 @@ void ClientBase::startKeystrokeInterceptorIfExists()
         {
             keystroke_interceptor->startIntercept();
         }
-        catch (const DB::Exception &)
+        catch (const Exception &)
         {
             error_stream << getCurrentExceptionMessage(false);
             keystroke_interceptor.reset();

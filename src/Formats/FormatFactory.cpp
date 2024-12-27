@@ -830,6 +830,14 @@ void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
     target = true;
 }
 
+void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
+{
+    auto & target = getOrCreateCreators(name).is_tty_friendly;
+    if (!target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as non-TTY-friendly", name);
+    target = false;
+}
+
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
 {
     const auto & target = getCreators(name);
@@ -889,6 +897,12 @@ bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) c
 {
     const auto & target = getCreators(name);
     return target.prefers_large_blocks;
+}
+
+bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.is_tty_friendly;
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const
