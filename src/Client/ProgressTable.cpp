@@ -244,7 +244,7 @@ void ProgressTable::writeTable(
         if (!is_final && row_num + 3 > terminal_height)
             break;
 
-        auto & name = ptr->first;
+        const auto & name = ptr->first;
         auto & per_host_info = ptr->second;
 
         message << "\n";
@@ -301,7 +301,7 @@ void ProgressTable::writeTable(
 
 void ProgressTable::writeFinalTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & lock)
 {
-    writeTable(message, lock, true, true, true);
+    writeTable(message, lock, /*show_table*/ true, /*toggle_enabled*/ false, /*is_final*/ true);
 }
 
 void ProgressTable::updateTable(const Block & block)
@@ -444,7 +444,7 @@ double ProgressTable::MetricInfoPerHost::getSummaryRecentProgress(double time_no
     return res;
 }
 
-double ProgressTable::MetricInfoPerHost::getSummaryAverageProgress(double time_now)
+double ProgressTable::MetricInfoPerHost::getSummaryAverageProgress(double time_now) const
 {
     double res = 0.0;
     for (const auto & elem : host_to_metric)
@@ -461,8 +461,7 @@ double ProgressTable::MetricInfoPerHost::updateTime() const
 {
     double res = 0.0;
     for (const auto & elem : host_to_metric)
-        if (elem.second.updateTime() > res)
-            res = elem.second.updateTime();
+        res = std::max(res, elem.second.updateTime());
     return res;
 }
 

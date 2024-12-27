@@ -81,10 +81,10 @@ private:
         void updateHostValue(const HostName & host, ProfileEvents::Type type, Int64 new_value, double new_time);
         double getSummaryValue() const;
         double getSummaryRecentProgress(double time_now);
-        double getSummaryAverageProgress(double time_now);
+        double getSummaryAverageProgress(double time_now) const;
         double getMaxProgress() const;
         double updateTime() const;
-        size_t getDisplayPriority() const { return display_priority; }
+        int getDisplayPriority() const { return display_priority; }
         void increaseDisplayPriority() { ++display_priority; }
 
     private:
