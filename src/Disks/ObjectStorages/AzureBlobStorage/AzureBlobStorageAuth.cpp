@@ -8,6 +8,7 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+#include <azure/core/http/curl_transport.hpp>
 
 using namespace Azure::Storage::Blobs;
 
@@ -174,7 +175,15 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
             config.getString(config_prefix + ".account_name"),
             config.getString(config_prefix + ".account_key")
         );
-        return std::make_unique<T>(url, storage_shared_key_credential);
+        if (config.has(config_prefix + ".ca_path")) {
+            auto curl_transport_options = Azure::Core::Http::CurlTransportOptions();
+            curl_transport_options.CAInfo = config.getString(config_prefix + ".ca_path");
+            auto options = BlobClientOptions();
+            options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_transport_options);
+            return std::make_unique<T>(url, storage_shared_key_credential, options);
+        } else {
+            return std::make_unique<T>(url, storage_shared_key_credential);
+        }
     }
 
     auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
