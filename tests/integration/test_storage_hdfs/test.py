@@ -749,7 +749,10 @@ def test_virtual_columns_2(started_cluster):
     table_function = (
         f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
     )
-    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
+    node1.query(
+        f"insert into table function {table_function} SELECT 1, 'kek'",
+        settings={"use_hive_partitioning": 0},
+    )
 
     result = node1.query(f"SELECT _path FROM {table_function}")
     assert result.strip() == "kek"
@@ -1250,6 +1253,8 @@ def test_format_detection(started_cluster):
         result
         == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = HDFS(\\'hdfs://hdfs1:9000/{dir}/test_format_detection1\\', \\'JSON\\', \\'none\\')\n"
     )
+
+    node.query("drop table test_format_detection")
 
 
 def test_write_to_globbed_partitioned_path(started_cluster):
