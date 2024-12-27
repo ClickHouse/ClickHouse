@@ -475,6 +475,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
+        .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
     });
 }
 

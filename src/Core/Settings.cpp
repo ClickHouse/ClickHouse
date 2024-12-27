@@ -535,6 +535,9 @@ Enable very explicit logging of S3 requests. Makes sense for debug only.
     DECLARE(String, s3queue_default_zookeeper_path, "/clickhouse/s3queue/", R"(
 Default zookeeper path prefix for S3Queue engine
 )", 0) \
+    DECLARE(Bool, s3queue_migrate_old_metadata_to_buckets, false, R"(
+Migrate old metadata structure of S3Queue table to a new one
+)", 0) \
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
 )", 0) \
@@ -2388,7 +2391,7 @@ What to do when the limit is exceeded.
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
 If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of the available system memory.
 )", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_group_by, 0., R"(
+    DECLARE(Double, max_bytes_ratio_before_external_group_by, 0.5, R"(
 Ratio of used memory before enabling external GROUP BY. If you set it to 0.6 the external GROUP BY will be used once the memory usage will reach 60% of allowed memory for query.
 )", 0) \
     \
@@ -2407,7 +2410,7 @@ Prefer maximum block bytes for external sort, reduce the memory usage during mer
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
 If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
 )", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_sort, 0., R"(
+    DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
 Ratio of used memory before enabling external ORDER BY. If you set it to 0.6 the external ORDER BY will be used once the memory usage will reach 60% of allowed memory for query.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
@@ -5616,6 +5619,13 @@ Use async and potentially multithreaded execution of materialized view query, ca
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
+    DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
+Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments.
+)", 0) \
+    DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
+Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
+When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
+)", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
@@ -5816,7 +5826,7 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
 
 In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 )", 0) \
-    DECLARE(Bool, optimize_extract_common_expressions, false, R"(
+    DECLARE(Bool, optimize_extract_common_expressions, true, R"(
 Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
 - indices in simple filtering expressions
 - cross to inner join optimization
@@ -5837,6 +5847,9 @@ Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data typ
     DECLARE(Bool, allow_experimental_json_type, false, R"(
 Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
 )", BETA) ALIAS(enable_json_type) \
+    DECLARE(Bool, allow_general_join_planning, true, R"(
+Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
+)", 0) \
     \
     \
     /* ####################################################### */ \
@@ -5858,9 +5871,6 @@ Enable experimental hash functions
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_object_type, false, R"(
 Allow the obsolete Object data type
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_bfloat16_type, false, R"(
-Allow BFloat16 data type (under development).
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
@@ -6009,6 +6019,7 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \

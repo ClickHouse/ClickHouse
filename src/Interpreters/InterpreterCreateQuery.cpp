@@ -253,18 +253,21 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.attach_short_syntax = true;
         create.setDatabase(database_name);
     }
-    else if (!create.storage)
+    else if (!create.storage || !create.storage->engine)
     {
         /// For new-style databases engine is explicitly specified in .sql
         /// When attaching old-style database during server startup, we must always use Ordinary engine
         if (create.attach)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
+        if (!create.storage)
+        {
+            auto storage = std::make_shared<ASTStorage>();
+            create.set(create.storage, storage);
+        }
         auto engine = std::make_shared<ASTFunction>();
-        auto storage = std::make_shared<ASTStorage>();
         engine->name = "Atomic";
         engine->no_empty_args = true;
-        storage->set(storage->engine, engine);
-        create.set(create.storage, storage);
+        create.storage->set(create.storage->engine, engine);
     }
     else if ((create.columns_list
               && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
@@ -940,6 +943,45 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.isParameterizedView())
             return properties;
 
+        if (create.aliases_list)
+        {
+            auto & aliases_children = create.aliases_list->children;
+            const auto * select_with_union_query = create.select->as<ASTSelectWithUnionQuery>();
+
+            if (!select_with_union_query)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectWithUnionQuery");
+
+            const auto & selects = select_with_union_query->list_of_selects->children;
+
+            for (const auto & select : selects)
+            {
+                const auto * select_query = select->as<ASTSelectQuery>();
+
+                if (!select_query)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery inside ASTSelectWithUnionQuery");
+
+                auto select_expression_list = select_query->select();
+
+                if (!select_expression_list)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "No select expressions in SELECT query");
+
+                auto & select_expressions = select_expression_list->children;
+
+                if (select_expressions.size() != aliases_children.size())
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Number of aliases does not match number of expressions in SELECT list");
+                }
+
+                for (size_t i = 0; i < select_expressions.size(); ++i)
+                {
+                    auto & expr = select_expressions[i];
+                    const auto & alias_ast = aliases_children[i]->as<ASTIdentifier &>();
+                    expr->setAlias(alias_ast.name());
+                }
+            }
+        }
+
         Block as_select_sample;
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -1505,7 +1547,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && !create.storage && !create.columns_list)
+    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
         // In case of an ON CLUSTER query, the database may not be present on the initiator node
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
@@ -2043,18 +2085,18 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// Avoid different table name on database replicas
-            UInt16 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
+            UInt64 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
             random_suffix = getHexUIntLowercase(hashed_zk_path);
         }
         else if (!current_context->getCurrentQueryId().empty())
         {
-            random_suffix = getRandomASCIIString(/*length=*/2);
-            UInt8 hashed_query_id = sipHash64(current_context->getCurrentQueryId());
+            random_suffix = getRandomASCIIString(/*length=*/8);
+            UInt32 hashed_query_id = static_cast<UInt32>(sipHash64(current_context->getCurrentQueryId()));
             random_suffix += getHexUIntLowercase(hashed_query_id);
         }
         else
         {
-            random_suffix = getRandomASCIIString(/*length=*/4);
+            random_suffix = getRandomASCIIString(/*length=*/16);
         }
 
         create.setTable(fmt::format("_tmp_replace_{}_{}", getHexUIntLowercase(name_hash), random_suffix));

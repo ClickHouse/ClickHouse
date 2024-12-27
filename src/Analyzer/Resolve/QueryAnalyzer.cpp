@@ -3499,8 +3499,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
 
-            auto set = std::make_shared<Set>(size_limits_for_set, 0, settings[Setting::transform_null_in]);
-
             auto hash = function_arguments[1]->getTreeHash();
             auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(result_block), settings[Setting::transform_null_in], size_limits_for_set);
 
@@ -5041,7 +5039,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*ignore_alias*/);
 
-        auto process_array_join_expression = [&](QueryTreeNodePtr & expression)
+        auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
         {
             auto result_type = expression->getResultType();
             bool is_array_type = isArray(result_type);
