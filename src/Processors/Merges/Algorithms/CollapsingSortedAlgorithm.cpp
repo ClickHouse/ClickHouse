@@ -17,7 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int INCORRECT_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
