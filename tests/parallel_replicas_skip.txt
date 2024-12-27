@@ -118,6 +118,7 @@
 02950_dictionary_ssd_cache_short_circuit
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
+    Actual WithMergeableState
 02477_analyzer_array_join_with_join
 01483_merge_table_join_and_group_by
 03130_analyzer_array_join_prefer_column
@@ -139,12 +140,19 @@
 01720_join_implicit_cast.gen
 00952_input_function
 03246_json_subcolumn_correct_type
+01780_column_sparse_full
+01783_merge_engine_join_key_condition
+02789_filesystem_cache_alignment
 
     https://github.com/ClickHouse/clickhouse-private/issues/13900
 03075_shared_merge_tree_recursive_cte_smoke_test
 03034_recursive_cte_tree
 03034_recursive_cte_tree_merge_tree
-
+03036_recursive_cte_postgres_2
+03037_recursive_cte_postgres_3
+03038_recursive_cte_postgres_4
+03040_recursive_cte_postgres_6
+03154_recursive_cte_distributed
 
 
     https://github.com/ClickHouse/clickhouse-private/issues/20276
@@ -211,8 +219,6 @@
 02377_optimize_sorting_by_input_stream_properties_explain
 03000_minmax_index_first
 
-
-    optimize equal ranges not working?
     https://github.com/ClickHouse/clickhouse-private/issues/14887
 01710_minmax_count_projection
 01710_projection_vertical_merges
@@ -229,6 +235,9 @@
 03254_project_lwd_respects_row_exists
 02968_projection_merge
 01710_normal_projection_fix1
+03128_argMin_combinator_projection
+01710_projections_partial_optimize_aggregation_in_order
+03282_block_number_otehr_mutations
 
     https://github.com/ClickHouse/clickhouse-private/issues/15795
     01345_array_join_LittleMaverick
