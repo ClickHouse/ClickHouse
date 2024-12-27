@@ -67,6 +67,8 @@ private:
     friend class ReadFromObjectStorageQueue;
     using FileIterator = ObjectStorageQueueSource::FileIterator;
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
+    using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
+    using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
 
     ObjectStorageType type;
     const std::string engine_name;
@@ -106,12 +108,13 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
+        ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
         ContextPtr local_context,
         bool commit_once_processed);
 
-    bool hasDependencies(const StorageID & table_id);
+    size_t getDependencies() const;
     bool streamToViews();
     void threadFunc();
 };

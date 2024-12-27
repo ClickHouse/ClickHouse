@@ -18,6 +18,7 @@ workflow = Workflow.Config(
         *Jobs.upgrade_test_jobs,
         *Jobs.performance_comparison_head_jobs,
         *Jobs.compatibility_test_jobs,
+        Jobs.docs_job,
     ],
     artifacts=ARTIFACTS,
     dockers=DOCKERS,
