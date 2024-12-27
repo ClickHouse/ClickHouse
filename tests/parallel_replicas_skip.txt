@@ -1,0 +1,245 @@
+    ## NOT BUGS
+
+    enable_analyzer=0
+    DB::Exception: Method read is not supported by storage Set: While processing x IN (_data_11099353983780129364_3343188837740940051). (NOT_IMPLEMENTED) (version 25.1.1.568) (from [::1]:49284) (comment: 00116_storage_set.sql) (in query: SELECT * FROM tab PREWHERE x IN (set) WHERE x IN (set) LIMIT 1 settings enable_analyzer=0;)
+00116_storage_set
+
+    max_rows_to_read
+    Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: 3.00, current rows: 8.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:38554) (comment: 00319_index_for_like.sql) (in query: SELECT `__table1`.`s` AS `s` FROM `test_l6on3y96`.`index_for_like` AS `__table1` WHERE `__table1`.`s` LIKE 'Hello, World%')
+00319_index_for_like
+    Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: 20.00 million, current rows: 21.00 million.
+00375_shard_group_uniq_array_of_string
+    Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: 5.00, current rows: 20.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:52038) (comment: 00489_pk_subexpression.sql) (in query: SELECT toUInt32(`__table1`.`x`) AS `toUInt32(x)`, `__table1`.`y` AS `y`, `__table1`.`z` AS `z` FROM `test_i815geoe`.`pk` AS `__table1` WHERE (`__table1`.`x` >= _CAST(0, 'DateTime')) AND (`__table1`.`x` <= _CAST(59, 'DateTime')))
+00489_pk_subexpression
+    Limit for rows or bytes to read exceeded, max rows: 7.00, current rows: 8.00: While executing Remote. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::1]:44010) (comment: 00945_bloom_filter_index.sql) (in query: SELECT COUNT() FROM single_column_bloom_filter WHERE i32 IN (SELECT arrayJoin([toInt32(1), toInt32(2)])) SETTINGS max_rows_to_read = 7;)
+00945_bloom_filter_index
+    ???Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: 2.00, current rows: 10.00 thousand. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:52250) (comment: 00979_toFloat_monotonicity.sql) (in query: SELECT `__table1`.`n` AS `n` FROM `test_pvvtiao6`.`test1` AS `__table1` WHERE toFloat64(`__table1`.`n`) = 7777.)
+00979_toFloat_monotonicity
+    Limit for rows (controlled by 'max_rows_to_read' setting) exceeded, max rows: 7.12 thousand, current rows: 51.00 thousand. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:59090) (comment: 01064_incremental_streaming_from_2_src_with_feedback.sql) (in query: SELECT `__table1`.`id` AS `id`, maxMerge(`__table1`.`latest_checkout_time`) AS `current_latest_checkout_time` FROM `test_jgsjo4al`.`target_table` AS `__table1` WHERE `__table1`.`id` IN (SELECT `__table1`.`id` AS `id` FROM `test_jgsjo4al`.`logins` AS `__table1`) GROUP BY `__table1`.`id`)
+01064_incremental_streaming_from_2_src_with_feedback
+
+    ORDER BY ALL is missing for multiple queries
+00326_long_function_multi_if
+00328_long_case_construction
+
+    Cannot select from temporary table
+    ReadFromParallelRemoteReplicasStep: There is no table `_temporary_and_external_tables`.`_tmp_fad23aad-ce65-4447-81fe-114409a5f0f9` on server: 127.0.0.2:9000
+00600_create_temporary_table_if_not_exists
+
+    WINDOW VIEW
+01047_window_view_parser_inner_table
+01048_window_view_parser
+01052_window_view_proc_tumble_to_now
+01053_window_view_proc_hop_to_now
+01054_window_view_proc_tumble_to
+01055_window_view_proc_hop_to
+01056_window_view_proc_hop_watch
+01057_window_view_event_tumble_to_strict_asc
+01058_window_view_event_hop_to_strict_asc
+01059_window_view_event_hop_watch_strict_asc
+01060_window_view_event_tumble_to_asc
+01061_window_view_event_hop_to_asc
+01062_window_view_event_hop_watch_asc
+01063_window_view_event_tumble_to_bounded
+01064_window_view_event_hop_to_bounded
+01065_window_view_event_hop_watch_bounded
+01066_window_view_event_tumble_to_strict_asc_lateness
+01067_window_view_event_tumble_to_asc_lateness
+01068_window_view_event_tumble_to_bounded_lateness
+01069_window_view_proc_tumble_watch
+01070_window_view_watch_events
+01071_window_view_event_tumble_asc_join
+01073_window_view_event_tumble_to_asc_populate
+01074_window_view_event_tumble_asc_join_populate
+01075_window_view_proc_tumble_to_now_populate
+01076_window_view_alter_query_to
+01077_window_view_alter_query_to_modify_source
+01078_window_view_alter_query_watch
+01079_window_view_inner_table_memory_tumble
+01080_window_view_inner_table_memory_hop
+01081_window_view_target_table_engine
+01082_window_view_watch_limit
+01083_window_view_select
+01084_window_view_with_table_identifier
+01087_window_view_alter_query
+01088_window_view_default_column
+
+    ## From cloud
+
+    OK
+02910_object-json-crash-add-column
+02494_query_cache_user_isolation
+02346_non_negative_derivative
+01913_exact_rows_before_limit
+01892_jit_aggregation_function_any_last_long
+03203_optimize_disjunctions_chain_to_in
+02713_array_low_cardinality_string
+00945_bloom_filter_index
+01891_not_in_partition_prune
+01748_partition_id_pruning
+02177_issue_31009
+01505_trivial_count_with_partition_predicate
+01201_read_single_thread_in_order
+03008_optimize_equal_ranges
+01515_force_data_skipping_indices
+01739_index_hint
+01913_quantile_deterministic
+02402_merge_engine_with_view
+
+    analyzer=0
+02918_join_pm_lc_crash
+01925_join_materialized_columns
+02962_join_using_bug_57894
+01049_join_low_card_bug_long.gen
+01721_join_implicit_cast_long.gen
+02516_join_with_totals_and_subquery_bug.gen
+
+
+    ## BUGS
+    CANNOT_PARSE_TEXT
+02771_ignore_data_skipping_indices
+
+    order is never guaranteed
+    https://github.com/ClickHouse/ClickHouse/issues/63203
+01513_optimize_aggregation_in_order_memory_long
+
+    https://github.com/ClickHouse/clickhouse-private/issues/15758
+02366_direct_dictionary_dict_has
+03071_fix_short_circuit_logic
+02234_column_function_short_circuit
+03171_hashed_dictionary_short_circuit_bug_fix
+02950_dictionary_short_circuit
+01852_dictionary_found_rate_long
+01037_polygon_dicts_correctness_all
+01037_polygon_dicts_correctness_fast
+01037_polygon_dicts_simple_functions
+01904_dictionary_default_nullable_type.cloud
+01904_ssd_cache_dictionary_default_nullable_type
+02950_dictionary_ssd_cache_short_circuit
+
+    https://github.com/ClickHouse/clickhouse-private/issues/11670
+02477_analyzer_array_join_with_join
+01483_merge_table_join_and_group_by
+03130_analyzer_array_join_prefer_column
+02769_compare_functions_nan
+00848_join_use_nulls_segfault
+02785_left_anti_join_bug
+02276_full_sort_join_unsupported
+01323_redundant_functions_in_order_by
+02911_cte_invalid_query_analysis
+02174_cte_scalar_cache_mv
+02526_merge_join_int_decimal
+01010_partial_merge_join
+00927_asof_join_long
+01147_partial_merge_full_join
+02933_paste_join
+01495_subqueries_in_with_statement
+03144_asof_join_ddb_doubles
+03200_subcolumns_join_use_nulls
+01720_join_implicit_cast.gen
+00952_input_function
+03246_json_subcolumn_correct_type
+
+    https://github.com/ClickHouse/clickhouse-private/issues/13900
+03075_shared_merge_tree_recursive_cte_smoke_test
+03034_recursive_cte_tree
+03034_recursive_cte_tree_merge_tree
+
+
+
+    https://github.com/ClickHouse/clickhouse-private/issues/20276
+    01031_pmj_new_any_semi_join
+    02273_full_sort_join.gen
+    02275_full_sort_join_long
+    01881_join_on_conditions_merge.gen
+    01881_join_on_conditions_hash.gen
+    03006_join_on_inequal_expression_fast.gen
+
+    https://github.com/ClickHouse/clickhouse-private/issues/20277
+    01031_new_any_join
+    02274_full_sort_join_nodistinct.gen
+
+    https://github.com/ClickHouse/clickhouse-private/issues/20285
+    02374_analyzer_join_using.gen
+
+    https://github.com/ClickHouse/clickhouse-private/issues/14832
+02319_quantile_interpolated_weighted
+00753_quantile_format
+
+    https://github.com/ClickHouse/clickhouse-private/issues/11666
+02941_any_RESPECT_NULL_sparse_column
+02662_first_last_value
+
+    https://github.com/ClickHouse/clickhouse-private/issues/14844
+02367_analyzer_table_alias_columns
+02989_join_using_parent_scope
+02514_if_with_lazy_low_cardinality
+
+
+    PLAN
+02725_agg_projection_resprect_PK
+02676_distinct_reading_in_order_analyzer
+02866_size_of_marks_skip_idx_explain
+03032_redundant_equals
+02943_tokenbf_and_ngrambf_indexes_support_match_function
+02835_join_step_explain
+02877_optimize_read_in_order_from_view
+02707_skip_index_with_in
+03009_consecutive_keys_nullable
+02679_explain_merge_tree_prewhere_row_policy
+02911_analyzer_order_by_read_in_order_query_plan
+02875_merge_engine_set_index
+02911_support_alias_column_in_indices
+03151_analyzer_view_read_only_necessary_columns
+01582_move_to_prewhere_compact_parts
+02354_vector_search_queries
+02500_remove_redundant_distinct
+01737_move_order_key_to_prewhere_select_final
+02842_move_pk_to_end_of_prewhere
+03036_join_filter_push_down_equivalent_sets
+03168_read_in_order_buffering_1
+02245_weird_partitions_pruning
+02481_aggregation_in_order_plan
+02882_primary_key_index_in_function_different_types
+03164_selects_with_pk_usage_profile_event
+02149_read_in_order_fixed_prefix_negative
+02155_read_in_order_max_rows_to_read
+01786_explain_merge_tree
+02496_remove_redundant_sorting
+02317_distinct_in_order_optimization_explain
+02346_aggregation_in_order_fixed_prefix
+02377_optimize_sorting_by_input_stream_properties_explain
+03000_minmax_index_first
+
+
+    optimize equal ranges not working?
+    https://github.com/ClickHouse/clickhouse-private/issues/14887
+01710_minmax_count_projection
+01710_projection_vertical_merges
+01710_force_use_projection
+01710_projection_pk_trivial_count
+01710_projection_additional_filters
+01710_projection_in_index
+02906_force_optimize_projection_name
+01710_projections
+02907_preferred_optimize_projection_name
+01710_projection_aggregation_in_order
+01710_projections_optimize_aggregation_in_order
+03206_projection_merge_special_mergetree_ignore
+03254_project_lwd_respects_row_exists
+02968_projection_merge
+01710_normal_projection_fix1
+
+    https://github.com/ClickHouse/clickhouse-private/issues/15795
+    01345_array_join_LittleMaverick
+    02974_analyzer_array_join_subcolumn
+    00612_pk_in_tuple
+    00014_select_from_table_with_nested
+    01825_new_type_json_ghdata
+
+    https://github.com/ClickHouse/clickhouse-private/issues/17173
+02023_transform_or_to_in
+03174_exact_rows_before_aggregation
+
+    https://github.com/ClickHouse/clickhouse-private/issues/19792
+01622_constraints_simple_optimization
