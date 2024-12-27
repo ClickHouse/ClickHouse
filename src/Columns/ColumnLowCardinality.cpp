@@ -353,15 +353,11 @@ MutableColumnPtr ColumnLowCardinality::cloneNullable() const
 int ColumnLowCardinality::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
 {
     const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(rhs);
-    const auto & column = getDictionary();
-    const auto & rhs_column = low_cardinality_column.getDictionary();
-
     size_t n_index = getIndexes().getUInt(n);
     size_t m_index = low_cardinality_column.getIndexes().getUInt(m);
     if (collator)
-        return column.getNestedColumn()->compareAtWithCollation(n_index, m_index, *rhs_column.getNestedColumn(), nan_direction_hint, *collator);
-
-    return column.getDataType() == rhs_column.getDataType() && column.compareAt(n_index, m_index, rhs_column, nan_direction_hint);
+        return getDictionary().getNestedColumn()->compareAtWithCollation(n_index, m_index, *low_cardinality_column.getDictionary().getNestedColumn(), nan_direction_hint, *collator);
+    return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
