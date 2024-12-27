@@ -1082,12 +1082,6 @@ Field escaping rule (for Regexp format)
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
 Skip lines unmatched by regular expression (for Regexp format)
 )", 0) \
-    \
-    DECLARE(Bool, output_format_enable_streaming, false, R"(
-Enable streaming in output formats that support it.
-
-Disabled by default.
-)", 0) \
     DECLARE(Bool, output_format_write_statistics, true, R"(
 Write statistics about read rows, bytes, time elapsed in suitable output formats.
 
@@ -1267,7 +1261,8 @@ Set the quoting style for identifiers in SHOW CREATE query
     /** Obsolete format settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false)                                                                          \
+    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
+    MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
 
 #endif // __CLION_IDE__
 
