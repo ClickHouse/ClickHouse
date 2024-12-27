@@ -20,29 +20,30 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        { "database",                   std::make_shared<DataTypeString>(), "The name of the database to which the mutation was applied."},
-        { "table",                      std::make_shared<DataTypeString>(), "The name of the table to which the mutation was applied."},
-        { "mutation_id",                std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the <table_path_in_clickhouse_keeper>/mutations/ directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
-        { "command",                    std::make_shared<DataTypeString>(), "The mutation command string (the part of the query after ALTER TABLE [db.]table)."},
-        { "create_time",                std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was submitted for execution."},
-        { "block_numbers.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
-        { "block_numbers.number",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
+        { "database",                      std::make_shared<DataTypeString>(), "The name of the database to which the mutation was applied."},
+        { "table",                         std::make_shared<DataTypeString>(), "The name of the table to which the mutation was applied."},
+        { "mutation_id",                   std::make_shared<DataTypeString>(), "The ID of the mutation. For replicated tables these IDs correspond to znode names in the <table_path_in_clickhouse_keeper>/mutations/ directory in ClickHouse Keeper. For non-replicated tables the IDs correspond to file names in the data directory of the table."},
+        { "command",                       std::make_shared<DataTypeString>(), "The mutation command string (the part of the query after ALTER TABLE [db.]table)."},
+        { "create_time",                   std::make_shared<DataTypeDateTime>(), "Date and time when the mutation command was submitted for execution."},
+        { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
+        { "block_numbers.number",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
             "For mutations of replicated tables, the array contains one record for each partition, with the block number that was acquired by the mutation. "
             "Only parts that contain blocks with numbers less than this number will be mutated in the partition."
             "In non-replicated tables, block numbers in all partitions form a single sequence. "
             "This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation."
         },
-        { "parts_to_do_names",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
-        { "parts_to_do",                std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete."},
-        { "is_done",                    std::make_shared<DataTypeUInt8>(),
+        { "parts_to_do_names",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that need to be mutated for the mutation to complete."},
+        { "parts_to_do",                   std::make_shared<DataTypeInt64>(), "The number of data parts that need to be mutated for the mutation to complete."},
+        { "is_done",                       std::make_shared<DataTypeUInt8>(),
             "The flag whether the mutation is done or not. Possible values: "
             "1 if the mutation is completed, "
             "0 if the mutation is still in process. "
         },
-        { "is_killed",                  std::make_shared<DataTypeUInt8>(), "Only available in ClickHouse Cloud."},
-        { "latest_failed_part",         std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
-        { "latest_fail_time",           std::make_shared<DataTypeDateTime>(), "The date and time of the most recent part mutation failure."},
-        { "latest_fail_reason",         std::make_shared<DataTypeString>(), "The exception message that caused the most recent part mutation failure."},
+        { "is_killed",                    std::make_shared<DataTypeUInt8>(), "Only available in ClickHouse Cloud."},
+        { "latest_failed_part",           std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
+        { "latest_fail_time",             std::make_shared<DataTypeDateTime>(), "The date and time of the most recent part mutation failure."},
+        { "latest_fail_reason",           std::make_shared<DataTypeString>(), "The exception message that caused the most recent part mutation failure."},
+        { "latest_fail_error_code_name",  std::make_shared<DataTypeString>(), "The error code of the exception that caused the most recent part mutation failure."},
     };
 }
 
@@ -161,6 +162,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(status.latest_failed_part);
             res_columns[col_num++]->insert(UInt64(status.latest_fail_time));
             res_columns[col_num++]->insert(status.latest_fail_reason);
+            res_columns[col_num++]->insert(status.latest_fail_error_code_name);
         }
     }
 }
