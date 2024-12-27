@@ -56,7 +56,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
     }
 }
 
-void PostgreSQLOutputFormat::flush()
+void PostgreSQLOutputFormat::flushImpl()
 {
     message_transport.flush();
 }
