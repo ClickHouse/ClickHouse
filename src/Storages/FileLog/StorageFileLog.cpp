@@ -899,6 +899,7 @@ void registerStorageFileLog(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
         });
 }
 
