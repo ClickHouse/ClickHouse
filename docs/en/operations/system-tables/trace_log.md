@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/trace_log
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # trace_log
+
+<SystemTableCloud/>
 
 Contains stack traces collected by the [sampling query profiler](../../operations/optimizing-performance/sampling-query-profiler.md).
 
