@@ -23,7 +23,7 @@ struct CRCBase
     }
 };
 
-template <class T, T polynomial>
+template <class T, T polynomial, T initial = 0>
 struct CRCImpl
 {
     using ReturnType = T;
@@ -32,10 +32,10 @@ struct CRCImpl
     {
         static CRCBase<ReturnType> base(polynomial);
 
-        T crc = 0;
+        T crc = initial;
         for (size_t i = 0; i < size; ++i)
             crc = base.tab[(crc ^ buf[i]) & 0xff] ^ (crc >> 8);
-        return crc;
+        return crc ^ initial;
     }
 };
 
@@ -49,6 +49,12 @@ constexpr UInt32 CRC32_IEEE = 0xedb88320;
 struct CRC32IEEEImpl : public CRCImpl<UInt32, CRC32_IEEE>
 {
     static constexpr auto name = "CRC32IEEE";
+};
+
+constexpr UInt32 CRC32_C = 0x82f63b78;
+struct CRC32CImpl : public CRCImpl<UInt32, CRC32_C, 0xffffffff>
+{
+    static constexpr auto name = "CRC32C";
 };
 
 struct CRC32ZLibImpl
@@ -143,6 +149,7 @@ using FunctionCRC32IEEE = FunctionCRC<CRC32IEEEImpl>;
 // Uses CRC-64-ECMA polynomial
 using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
 
+using FunctionCRC32C = FunctionCRC<CRC32CImpl>;
 }
 
 REGISTER_FUNCTION(CRC)
@@ -150,6 +157,15 @@ REGISTER_FUNCTION(CRC)
     factory.registerFunction<FunctionCRC32ZLib>({}, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionCRC32IEEE>({}, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionCRC64ECMA>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionCRC32C>(
+        FunctionDocumentation{
+            .description = "Returns the CRC32 checksum of a string using CRC-32-C 802.3 polynomial and initial value 0xffffffff.",
+            .syntax = "crc32c(str)",
+            .arguments = {{"str", "String column"}},
+            .returned_value = "Checksum of string, UInt32.",
+            .examples = {{"simple", "SELECT crc32c('Lorem ipsum dolor sit amet');", "3993763883"}},
+            .categories{"Strings"}},
+        FunctionFactory::Case::Insensitive);
 }
 
 }
