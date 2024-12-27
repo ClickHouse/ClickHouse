@@ -380,9 +380,10 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
-    // aggregate, join and sort processors can be spillable.
-    // For unspillable processors, the memory usage is not tracked.
-    virtual bool spillable() const { return false; }
+    /// Returns true iff processor can spill memory to disk.
+    /// Aggregate, join and sort processors can be spillable.
+    /// For unspillable processors, the memory usage is not tracked.
+    inline bool isSpillable() const { return spillable; }
 
     virtual ProcessorMemoryStats getMemoryStats()
     {
@@ -396,6 +397,7 @@ protected:
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
+    bool spillable = false;
 
 private:
     /// For:
@@ -424,6 +426,7 @@ private:
     size_t processor_index = 0;
     String plan_step_name;
     String plan_step_description;
+
 };
 
 

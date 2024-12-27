@@ -11,22 +11,17 @@ namespace DB
 {
 void MemorySpillScheduler::checkAndSpill(IProcessor * processor)
 {
+    chassert(processor->isSpillable());
+    if (!enable || !getHardLimit())
+        return;
 
-    if (!enable || !processor->spillable() || !getHardLimit())
-    {
-        return;
-    }
     auto stats = processor->getMemoryStats();
-    std::lock_guard lock(mutex);
-    processor_stats[processor] = stats;
-    updateTopProcessor();
-    if (getCurrentQueryMemoryUsage() + max_reserved_memory_bytes < getHardLimit())
-        return;
-    LOG_DEBUG(getLogger("MemorySpillScheduler"),
-        "need to spill. current memory usage: {}, hard limit: {}, max_reserved_memory_bytes: {}",
-        getCurrentQueryMemoryUsage(), getHardLimit(), max_reserved_memory_bytes);
-    if (processor == top_processor)
+    auto * selected_processor = selectSpilledProcessor(processor, stats);
+
+    if (processor == selected_processor)
+    {
         processor->spillOnSize(stats.spillable_memory_bytes);
+    }
 }
 
 Int64 MemorySpillScheduler::getHardLimit()
@@ -45,7 +40,7 @@ Int64 MemorySpillScheduler::getHardLimit()
 void MemorySpillScheduler::remove(IProcessor * processor)
 {
     // Only the spillable processors are tracked.
-    if (!enable || !processor->spillable())
+    if (!enable || !processor->isSpillable())
         return;
     std::lock_guard lock(mutex);
     processor_stats.erase(processor);
@@ -65,5 +60,24 @@ void MemorySpillScheduler::updateTopProcessor()
             max_spillable_memory_bytes = stats.spillable_memory_bytes;
         }
     }
+}
+
+IProcessor * MemorySpillScheduler::selectSpilledProcessor(IProcessor * current_processor, const ProcessorMemoryStats & mem_stats)
+{
+    auto current_mem_used = getCurrentQueryMemoryUsage();
+    auto limit = getHardLimit();
+    std::lock_guard lock(mutex);
+    processor_stats[current_processor] = mem_stats;
+
+    // quick check
+    max_reserved_memory_bytes = std::max(mem_stats.need_reserved_memory_bytes, max_reserved_memory_bytes);
+    if (current_mem_used + max_reserved_memory_bytes < limit)
+        return nullptr;
+
+    updateTopProcessor();
+
+    if (current_mem_used + max_reserved_memory_bytes < limit)
+        return nullptr;
+    return top_processor;
 }
 }
