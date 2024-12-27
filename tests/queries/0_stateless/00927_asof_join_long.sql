@@ -1,4 +1,5 @@
--- Tags: long
+-- Tags: long, no-parallel
+-- This test can consume a lot of memory when run in parallel.
 
 DROP TABLE IF EXISTS tvs;
 
