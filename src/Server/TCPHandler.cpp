@@ -2315,7 +2315,8 @@ void TCPHandler::initBlockInput(QueryState & state)
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
-            client_tcp_protocol_version);
+            client_tcp_protocol_version,
+            getFormatSettings(state.query_context));
     }
 }
 
@@ -2365,7 +2366,7 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2376,7 +2377,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
     {
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
