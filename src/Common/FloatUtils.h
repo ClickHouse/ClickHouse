@@ -1,48 +1,49 @@
 #pragma once
 
-#include <cstring>
-#include <cmath>
-#include <cstdint>
-#include <algorithm>
-#include <bit>
+#include <base/DecomposedFloat.h>
 
 
 inline float convertFloat16ToFloat32(uint16_t float16_value)
 {
-    uint16_t sign = (float16_value >> 15) & 0x1;
-    uint16_t exponent = (float16_value >> 10) & 0x1F;
-    uint16_t fraction = float16_value & 0x3FF;
+    DecomposedFloat<_Float16> components(float16_value);
 
-    if (exponent == 0 && fraction == 0)
+    uint32_t old_sign = components.isNegative();
+    uint32_t old_exponent = components.exponent();
+    uint32_t old_mantissa = static_cast<uint32_t>(components.mantissa());
+
+    uint32_t new_exponent;
+    uint32_t new_mantissa;
+    uint32_t new_sign = old_sign << 31;
+
+    if (unlikely(old_exponent == 0x1F))
     {
-        uint32_t float32_value = sign << 31;
-        return std::bit_cast<float>(float32_value);
+        /// Inf, NaN
+        new_exponent = 0xFF;
+        new_mantissa = old_mantissa << 13;
+    }
+    else if (old_exponent == 0)
+    {
+        if (likely(old_mantissa == 0))
+        {
+            /// Zeros
+            new_exponent = 0;
+            new_mantissa = 0;
+        }
+        else
+        {
+            /// Subnormals
+            uint32_t adjustment = __builtin_clz(old_mantissa) - 22;
+            new_exponent = (112 - adjustment) << 23;
+            new_mantissa = (old_mantissa ^ (1 << (9 - adjustment))) << 13 << adjustment;
+        }
+    }
+    else
+    {
+        /// Normals
+        new_exponent = (old_exponent + 112) << 23;
+        new_mantissa = old_mantissa << 13;
     }
 
-    // Handling special cases for exponent
-    if (exponent == 0x1F)
-    {
-        // NaN or Infinity in float16
-        return (fraction == 0) ? std::numeric_limits<float>::infinity() : std::numeric_limits<float>::quiet_NaN();
-    }
-
-    // Convert exponent from float16 to float32 format
-    int32_t new_exponent = static_cast<int32_t>(exponent) - 15 + 127;
-
-    // Constructing the float32 representation
-    uint32_t float32_value = (static_cast<uint32_t>(sign) << 31) |
-                             (static_cast<uint32_t>(new_exponent) << 23) |
-                             (static_cast<uint32_t>(fraction) << 13);
-
-    // Interpret the binary representation as a float
-    float result;
-    memcpy(&result, &float32_value, sizeof(float));
-
-    // Determine decimal places dynamically based on the magnitude of the number
-    int decimal_places = std::max(0, 6 - static_cast<int>(std::log10(std::abs(result))));
-    // Truncate the decimal part to the determined number of decimal places
-    float multiplier = static_cast<float>(std::pow(10.0f, decimal_places));
-    result = std::round(result * multiplier) / multiplier;
-
-    return result;
+    uint32_t float32_value = new_sign | new_exponent | new_mantissa;
+    return std::bit_cast<float>(float32_value);
 }
