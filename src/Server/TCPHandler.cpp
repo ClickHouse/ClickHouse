@@ -500,6 +500,7 @@ void TCPHandler::runImpl()
                 query_state->query_context->getSettingsRef(),
                 query_state->query_context->getOpenTelemetrySpanLog());
             thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+            thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
 
             query_scope.emplace(query_state->query_context, /* fatal_error_callback */ [this, &query_state]
             {
