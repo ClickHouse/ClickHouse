@@ -6,7 +6,6 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 
-#include <base/safeExit.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
@@ -688,7 +687,7 @@ Do you want to output it anyway? [y/N] )", current_format)))
             {
                 output_format = std::make_shared<NullOutputFormat>(block);
             }
-            std_out << '\n';
+            *std_out << '\n';
         }
     }
 }
