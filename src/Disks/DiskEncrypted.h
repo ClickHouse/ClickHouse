@@ -345,6 +345,16 @@ public:
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
 
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map, const std::function<bool(const String &)> & skip_predicate) override
+    {
+        delegate->getRemotePathsRecursive(local_path, paths_map, skip_predicate);
+    }
+
+    UInt32 getRefCount(const String & path) const override
+    {
+        return delegate->getRefCount(path);
+    }
+
     DiskPtr getDelegateDiskIfExists() const override
     {
         return delegate;
