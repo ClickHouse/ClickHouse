@@ -30,8 +30,8 @@ QualifiedTableName QualifiedTableName::parseFromString(const String & maybe_qual
 std::string QualifiedTableName::getFullName() const
 {
     if (database.empty())
-        return backQuoteIfNeed(table);
-    return backQuoteIfNeed(database) + '.' + backQuoteIfNeed(table);
+        return table;
+    return database + '.' + table;
 }
 
 std::optional<QualifiedTableName> QualifiedTableName::tryParseFromString(const String & maybe_qualified_name)
