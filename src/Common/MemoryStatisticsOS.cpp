@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int CANNOT_CLOSE_FILE;
 }
 
-static constexpr auto filename = "/proc/self/statm";
+static constexpr auto filename = "/proc/self/status";
 
 MemoryStatisticsOS::MemoryStatisticsOS()
 {
@@ -63,7 +63,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 {
     Data data;
 
-    constexpr size_t buf_size = 1024;
+    constexpr size_t buf_size = 2048;
     char buf[buf_size];
 
     ssize_t res = 0;
@@ -86,25 +86,57 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
 
     ReadBufferFromMemory in(buf, res);
 
-    uint64_t unused;
-    readIntText(data.virt, in);
-    skipWhitespaceIfAny(in);
-    readIntText(data.resident, in);
-    skipWhitespaceIfAny(in);
-    readIntText(data.shared, in);
-    skipWhitespaceIfAny(in);
-    readIntText(data.code, in);
-    skipWhitespaceIfAny(in);
-    readIntText(unused, in);
-    skipWhitespaceIfAny(in);
-    readIntText(data.data_and_stack, in);
+    data.virt = 0;
+    data.resident = 0;
+    data.swap = 0;
+    data.shared = 0;
+    data.code = 0;
+    data.data_and_stack = 0;
 
-    size_t page_size = static_cast<size_t>(::getPageSize());
-    data.virt *= page_size;
-    data.resident *= page_size;
-    data.shared *= page_size;
-    data.code *= page_size;
-    data.data_and_stack *= page_size;
+    while (!in.eof()) {
+        String name;
+        readString(name, in);
+        skipWhitespaceIfAny(in);
+        if (name == "VmSize:")
+        {
+            readIntText(data.virt, in);
+        }
+        else if (name == "VmRSS:")
+        {
+            readIntText(data.resident, in);
+        }
+        else if (name == "VmSwap:")
+        {
+            readIntText(data.swap, in);
+        }
+        else if (name == "RssFile:" || name == "RssShmem:")
+        {
+            uint64_t rss_file_or_shmem;
+            readIntText(rss_file_or_shmem, in);
+            data.shared += rss_file_or_shmem;
+        }
+        else if (name == "VmData:" || name == "VmStk:")
+        {
+            uint64_t vm_data_or_stack;
+            readIntText(vm_data_or_stack, in);
+            data.data_and_stack += vm_data_or_stack;
+        }
+        else if (name == "VmExe:" || name == "VmLib:")
+        {
+            uint64_t vm_exe_or_lib;
+            readIntText(vm_exe_or_lib, in);
+            data.code += vm_exe_or_lib;
+        }
+        skipToNextLineOrEOF(in);
+    }
+
+    // Everything is in Kb
+    data.virt *= 1024;
+    data.resident *= 1024;
+    data.swap *= 1024;
+    data.shared *= 1024;
+    data.code *= 1024;
+    data.data_and_stack *= 1024;
 
     return data;
 }

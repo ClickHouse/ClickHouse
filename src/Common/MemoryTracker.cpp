@@ -526,9 +526,9 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_)
+void MemoryTracker::setRSSPlusSwap(Int64 rss_plus_swap_, Int64 free_memory_in_allocator_arenas_)
 {
-    Int64 new_amount = rss_;
+    Int64 new_amount = rss_plus_swap_;
     total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
     free_memory_in_allocator_arenas.store(free_memory_in_allocator_arenas_, std::memory_order_relaxed);
 
@@ -537,7 +537,7 @@ void MemoryTracker::setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_)
         CurrentMetrics::set(metric_loaded, new_amount);
 
     bool log_memory_usage = true;
-    total_memory_tracker.updatePeak(rss_, log_memory_usage);
+    total_memory_tracker.updatePeak(new_amount, log_memory_usage);
 }
 
 

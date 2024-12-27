@@ -65,7 +65,7 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
 
             /// Update current usage in memory tracker. Also reset free_memory_in_allocator_arenas to zero though we don't know if they are
             /// really zero. Trying to avoid OOM ...
-            MemoryTracker::setRSS(hard_limit_, 0);
+            MemoryTracker::setRSSPlusSwap(hard_limit_, 0);
         }
         else
         {
@@ -85,7 +85,7 @@ void CgroupsMemoryUsageObserver::setMemoryUsageLimits(uint64_t hard_limit_, uint
 #endif
             /// Reset current usage in memory tracker. Expect zero for free_memory_in_allocator_arenas as we just purged them.
             uint64_t memory_usage = memory_usage_file.readMemoryUsage();
-            MemoryTracker::setRSS(memory_usage, 0);
+            MemoryTracker::setRSSPlusSwap(memory_usage, 0);
 
             LOG_INFO(log, "Purged jemalloc arenas. Current memory usage is {}", ReadableSize(memory_usage));
         }

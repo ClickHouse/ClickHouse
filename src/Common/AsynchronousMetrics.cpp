@@ -624,6 +624,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         new_values["MemoryResident"] = { data.resident,
             "The amount of physical memory used by the server process, in bytes." };
 #if !defined(OS_FREEBSD)
+        new_values["MemorySwap"] = {data.swap,
+            "The amount of memory that was moved from physical ram to disk, in bytes."};
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
@@ -643,6 +645,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             Int64 amount = total_memory_tracker.get();
             Int64 peak = total_memory_tracker.getPeak();
             Int64 rss = data.resident;
+            Int64 swap = 0;
+#if !defined(OS_FREEBSD)
+            swap = data.swap;
+#endif
             Int64 free_memory_in_allocator_arenas = 0;
 
 #if USE_JEMALLOC
@@ -657,19 +663,24 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             free_memory_in_allocator_arenas = je_malloc_pdirty * getPageSize();
 #endif
 
-            Int64 difference = rss - amount;
+            // We need to take in account swap for the memory tracker.
+            // Even with minimal swappiness, if ClickHouse memory slowly trickles to swap,
+            // then more and more non-swap memory is allocated, and the process continues.
+            // When swapped data is suddenly moved back to ram, it can lead to OOM or swap-hell.
+            Int64 new_amount = rss + swap;
+            Int64 difference = new_amount - amount;
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
                 LOG_TRACE(log,
-                    "MemoryTracking: was {}, peak {}, free memory in arenas {}, will set to {} (RSS), difference: {}",
+                    "MemoryTracking: was {}, peak {}, free memory in arenas {}, will set to {} (RSS + Swap), difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
                     ReadableSize(free_memory_in_allocator_arenas),
-                    ReadableSize(rss),
+                    ReadableSize(new_amount),
                     ReadableSize(difference));
 
-            total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
+            total_memory_tracker.setRSSPlusSwap(new_amount, free_memory_in_allocator_arenas);
         }
     }
 

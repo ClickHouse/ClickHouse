@@ -249,10 +249,10 @@ public:
     /// Reset the accumulated data.
     void reset();
 
-    /// Reset current counter to an RSS value.
+    /// Reset current counter to an RSS value and Swap.
     /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
     /// We can free this arenas in case of exception to avoid OOM.
-    static void setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_);
+    static void setRSSPlusSwap(Int64 rss_plus_swap_, Int64 free_memory_in_allocator_arenas_);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

@@ -27,6 +27,7 @@ public:
         uint64_t virt;
         uint64_t resident;
 #if defined(OS_LINUX)
+        uint64_t swap;
         uint64_t shared;
 #endif
         uint64_t code;
