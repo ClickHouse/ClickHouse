@@ -1,5 +1,5 @@
 #include <base/getFQDNOrHostName.h>
-#include <base/demangle.cpp>
+#include <base/demangle.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
