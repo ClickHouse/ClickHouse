@@ -1,3 +1,5 @@
+import random
+import string
 import time
 
 import pytest
@@ -23,13 +25,23 @@ node_2 = cluster.add_instance(
 cluster_nodes = [node_1, node_2]
 
 
-def prepare_dbs():
+@pytest.fixture(scope="function")
+def exclusive_database_name(test_name):
+    normalized = (
+        test_name.replace("[", "_")
+        .replace("]", "_")
+        .replace(" ", "_")
+        .replace("-", "_")
+    )
+    return "repl_db_" + normalized
+
+
+def prepare_db(db_name: str):
     for node in cluster_nodes:
-        node.query("DROP DATABASE IF EXISTS repl_db SYNC")
         node.query(
-            """
-                CREATE DATABASE repl_db 
-                ENGINE=Replicated("/clickhouse/repl_db", '{shard}', '{replica}')
+            f"""
+                CREATE DATABASE {db_name}
+                ENGINE=Replicated("/clickhouse/{db_name}", \'{{shard}}\', \'{{replica}}\')
             """
         )
 
@@ -37,7 +49,7 @@ def prepare_dbs():
 def failed_create_table(node, table_name: str):
     assert node.query_and_get_error(
         f"""
-            CREATE TABLE repl_db.{table_name} (n UInt32)
+            CREATE TABLE {table_name} (n UInt32)
             ENGINE = ReplicatedMergeTree
             ORDER BY n PARTITION BY n % 10;
         """
@@ -47,7 +59,7 @@ def failed_create_table(node, table_name: str):
 def failed_rename_table(node, table_name: str, new_table_name: str):
     assert node.query_and_get_error(
         f"""
-            RENAME TABLE repl_db.{table_name} TO repl_db.{new_table_name}
+            RENAME TABLE {table_name} TO {new_table_name}
         """
     )
 
@@ -55,7 +67,7 @@ def failed_rename_table(node, table_name: str, new_table_name: str):
 def failed_alter_table(node, table_name: str):
     assert node.query_and_get_error(
         f"""
-            ALTER TABLE repl_db.{table_name} ADD COLUMN m String
+            ALTER TABLE {table_name} ADD COLUMN m String
         """
     )
 
@@ -64,7 +76,7 @@ def create_table(node, table_name: str):
     assert node.query(
         f"""
             SET distributed_ddl_task_timeout=10;
-            CREATE TABLE repl_db.{table_name} (n UInt32)
+            CREATE TABLE {table_name} (n UInt32)
             ENGINE = ReplicatedMergeTree
             ORDER BY n PARTITION BY n % 10;
         """
@@ -74,7 +86,7 @@ def create_table(node, table_name: str):
 def rename_table(node, table_name: str, new_table_name: str):
     assert node.query(
         f"""
-            RENAME TABLE repl_db.{table_name} TO repl_db.{new_table_name}
+            RENAME TABLE {table_name} TO {new_table_name}
         """
     )
 
@@ -82,7 +94,7 @@ def rename_table(node, table_name: str, new_table_name: str):
 def alter_table(node, table_name: str):
     assert node.query(
         f"""
-            ALTER TABLE repl_db.{table_name} ADD COLUMN m String
+            ALTER TABLE {table_name} ADD COLUMN m String
         """
     )
 
@@ -90,20 +102,18 @@ def alter_table(node, table_name: str):
 def fill_table(node, table_name: str, amount: int):
     node.query(
         f"""
-            INSERT INTO repl_db.{table_name} SELECT number FROM numbers({amount})
+            INSERT INTO {table_name} SELECT number FROM numbers({amount})
         """
     )
 
 
 def check_contains_table(node, table_name: str, amount: int):
-    assert [f"{amount}"] == node.query(
-        f"SELECT count(*) FROM repl_db.{table_name}"
-    ).split()
+    assert [f"{amount}"] == node.query(f"SELECT count(*) FROM {table_name}").split()
 
 
-def get_tables_from_replicated(node):
+def get_tables_from_replicated(node, db_name: str):
     return node.query(
-        "SELECT table FROM system.tables WHERE database='repl_db' ORDER BY table"
+        f"SELECT table FROM system.tables WHERE database='{db_name}' ORDER BY table"
     ).split()
 
 
@@ -123,7 +133,6 @@ def zk_rmr_with_retries(zk, path):
 def start_cluster():
     try:
         cluster.start()
-        prepare_dbs()
         yield cluster
 
     except Exception as ex:
@@ -204,6 +213,7 @@ def start_cluster():
 )
 def test_query_after_restore_db_replica(
     start_cluster,
+    exclusive_database_name,
     need_restart,
     exists_table,
     handler_create_table,
@@ -215,64 +225,98 @@ def test_query_after_restore_db_replica(
     failed_change_table,
     change_table,
 ):
-
+    prepare_db(exclusive_database_name)
     inserted_data = 1000
 
     if exists_table:
-        handler_create_table(node_1, exists_table)
+        handler_create_table(node_1, f"{exclusive_database_name}.{exists_table}")
 
         if need_fill_tables:
-            fill_table(node_1, exists_table, inserted_data)
+            fill_table(
+                node_1, f"{exclusive_database_name}.{exists_table}", inserted_data
+            )
 
     zk = cluster.get_kazoo_client("zoo1")
 
-    zk_rmr_with_retries(zk, "/clickhouse/repl_db")
-    assert zk.exists("/clickhouse/repl_db") is None
+    zk_rmr_with_retries(zk, f"/clickhouse/{exclusive_database_name}")
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}") is None
 
     expected_tables = []
 
     if exists_table:
         expected_tables.append(exists_table)
 
-    assert expected_tables == get_tables_from_replicated(node_1)
-    assert expected_tables == get_tables_from_replicated(node_2)
+    assert expected_tables == get_tables_from_replicated(
+        node_1, exclusive_database_name
+    )
+    assert expected_tables == get_tables_from_replicated(
+        node_2, exclusive_database_name
+    )
 
-    failed_action_with_table(node_1, process_table)
+    failed_action_with_table(node_1, f"{exclusive_database_name}.{process_table}")
 
-    assert expected_tables == get_tables_from_replicated(node_1)
-    assert expected_tables == get_tables_from_replicated(node_2)
+    assert expected_tables == get_tables_from_replicated(
+        node_1, exclusive_database_name
+    )
+    assert expected_tables == get_tables_from_replicated(
+        node_2, exclusive_database_name
+    )
 
     if need_restart:
         node_1.restart_clickhouse()
 
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}") is None
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}") is None
+    assert (
+        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}")
+        is None
+    )
+    assert (
+        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
+        is None
+    )
 
-    node_1.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
-
-    if exists_table:
-        assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}")
-        if need_fill_tables:
-            check_contains_table(node_1, exists_table, inserted_data)
-
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}") is None
-
-    assert zk.exists("/clickhouse/repl_db/replicas/shard1|replica1")
-    assert zk.exists("/clickhouse/repl_db/replicas/shard1|replica2") is None
-
-    node_2.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
-    assert zk.exists("/clickhouse/repl_db/replicas/shard1|replica2")
+    node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
 
     if exists_table:
-        assert [exists_table] == get_tables_from_replicated(node_1)
-        assert [exists_table] == get_tables_from_replicated(node_2)
+        assert zk.exists(
+            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}"
+        )
         if need_fill_tables:
-            check_contains_table(node_1, exists_table, inserted_data)
-            check_contains_table(node_2, exists_table, inserted_data)
+            check_contains_table(
+                node_1, f"{exclusive_database_name}.{exists_table}", inserted_data
+            )
 
-    action_with_table(node_1, process_table)
+    assert (
+        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
+        is None
+    )
+
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica1")
+    assert (
+        zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica2")
+        is None
+    )
+
+    node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica2")
+
+    if exists_table:
+        assert [exists_table] == get_tables_from_replicated(
+            node_1, exclusive_database_name
+        )
+        assert [exists_table] == get_tables_from_replicated(
+            node_2, exclusive_database_name
+        )
+        if need_fill_tables:
+            check_contains_table(
+                node_1, f"{exclusive_database_name}.{exists_table}", inserted_data
+            )
+            check_contains_table(
+                node_2, f"{exclusive_database_name}.{exists_table}", inserted_data
+            )
+
+    action_with_table(node_1, f"{exclusive_database_name}.{process_table}")
     if need_fill_tables:
-        fill_table(node_1, process_table, inserted_data)
+        fill_table(node_1, f"{exclusive_database_name}.{process_table}", inserted_data)
 
     expected_tables = [process_table]
     if exists_table:
@@ -280,65 +324,105 @@ def test_query_after_restore_db_replica(
 
     expected_tables.sort()
 
-    assert expected_tables == get_tables_from_replicated(node_1)
-    assert expected_tables == get_tables_from_replicated(node_2)
+    assert expected_tables == get_tables_from_replicated(
+        node_1, exclusive_database_name
+    )
+    assert expected_tables == get_tables_from_replicated(
+        node_2, exclusive_database_name
+    )
 
     if need_fill_tables:
-        check_contains_table(node_1, process_table, inserted_data)
-        check_contains_table(node_2, process_table, inserted_data)
+        check_contains_table(
+            node_1, f"{exclusive_database_name}.{process_table}", inserted_data
+        )
+        check_contains_table(
+            node_2, f"{exclusive_database_name}.{process_table}", inserted_data
+        )
 
     if exists_table:
-        assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}")
+        assert zk.exists(
+            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}"
+        )
 
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}")
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
 
-    zk_rmr_with_retries(zk, "/clickhouse/repl_db")
-    assert zk.exists("/clickhouse/repl_db") is None
+    zk_rmr_with_retries(zk, f"/clickhouse/{exclusive_database_name}")
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}") is None
 
-    failed_change_table(node_1, process_table, changed_table)
+    failed_change_table(
+        node_1,
+        f"{exclusive_database_name}.{process_table}",
+        f"{exclusive_database_name}.{changed_table}",
+    )
 
     if need_restart:
         node_1.restart_clickhouse()
 
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}") is None
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}") is None
+    assert (
+        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}")
+        is None
+    )
+    assert (
+        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
+        is None
+    )
 
-    node_1.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
-    node_2.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
+    node_1.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
+    node_2.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
 
     if exists_table:
-        assert zk.exists(f"/clickhouse/repl_db/metadata/{exists_table}")
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}")
+        assert zk.exists(
+            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}"
+        )
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
 
-    change_table(node_1, process_table, changed_table)
+    change_table(
+        node_1,
+        f"{exclusive_database_name}.{process_table}",
+        f"{exclusive_database_name}.{changed_table}",
+    )
 
     if process_table != changed_table:
-        assert zk.exists(f"/clickhouse/repl_db/metadata/{process_table}") is None
-    assert zk.exists(f"/clickhouse/repl_db/metadata/{changed_table}")
+        assert (
+            zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
+            is None
+        )
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{changed_table}")
 
     expected_tables = [changed_table]
     if exists_table:
         expected_tables.append(exists_table)
     expected_tables.sort()
 
-    assert expected_tables == get_tables_from_replicated(node_1)
-    assert expected_tables == get_tables_from_replicated(node_2)
+    assert expected_tables == get_tables_from_replicated(
+        node_1, exclusive_database_name
+    )
+    assert expected_tables == get_tables_from_replicated(
+        node_2, exclusive_database_name
+    )
 
     if need_fill_tables:
         if exists_table:
-            check_contains_table(node_1, exists_table, inserted_data)
-        check_contains_table(node_2, changed_table, inserted_data)
+            check_contains_table(
+                node_1, f"{exclusive_database_name}.{exists_table}", inserted_data
+            )
+        check_contains_table(
+            node_2, f"{exclusive_database_name}.{changed_table}", inserted_data
+        )
 
     if exists_table:
-        node_1.query(f"DROP TABLE repl_db.{exists_table} SYNC")
-    node_1.query(f"DROP TABLE repl_db.{changed_table} SYNC")
+        node_1.query(f"DROP TABLE {exclusive_database_name}.{exists_table} SYNC")
+    node_1.query(f"DROP TABLE {exclusive_database_name}.{changed_table} SYNC")
 
     assert ["0"] == node_1.query(
-        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
     ).split()
     assert ["0"] == node_2.query(
-        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
     ).split()
+
+    node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
+    node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
 
 
 @pytest.mark.parametrize(
@@ -355,8 +439,10 @@ def test_query_after_restore_db_replica(
     ],
 )
 def test_restore_db_replica_with_diffrent_table_metadata(
-    start_cluster, restore_firstly_node_where_created
+    start_cluster, exclusive_database_name, restore_firstly_node_where_created
 ):
+    prepare_db(exclusive_database_name)
+
     test_table_1 = "test_table_1"
     test_table_2 = "test_table_2"
 
@@ -364,15 +450,15 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     count_test_table_1 = 100
 
-    create_table(node_1, test_table_1)
-    fill_table(node_1, test_table_1, count_test_table_1)
+    create_table(node_1, f"{exclusive_database_name}.{test_table_1}")
+    fill_table(node_1, f"{exclusive_database_name}.{test_table_1}", count_test_table_1)
 
     node_1.stop_clickhouse()
 
     assert "is not finished on 1 of 2 hosts" in node_2.query_and_get_error(
         f"""
             SET distributed_ddl_task_timeout=10;
-            CREATE TABLE repl_db.{test_table_2} (n UInt32)
+            CREATE TABLE {exclusive_database_name}.{test_table_2} (n UInt32)
             ENGINE = ReplicatedMergeTree
             ORDER BY n PARTITION BY n % 10;
         """
@@ -380,18 +466,18 @@ def test_restore_db_replica_with_diffrent_table_metadata(
 
     count_test_table_2 = 10
 
-    fill_table(node_2, test_table_2, count_test_table_2)
+    fill_table(node_2, f"{exclusive_database_name}.{test_table_2}", count_test_table_2)
 
-    zk_rmr_with_retries(zk, "/clickhouse/repl_db")
-    assert zk.exists("/clickhouse/repl_db") is None
+    zk_rmr_with_retries(zk, f"/clickhouse/{exclusive_database_name}")
+    assert zk.exists(f"/clickhouse/{exclusive_database_name}") is None
 
     node_1.start_clickhouse()
 
     assert ["0"] == node_1.query(
-        f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'"
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
     ).split()
     assert ["1"] == node_2.query(
-        f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'"
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
     ).split()
 
     nodes = [node_1, node_2]
@@ -399,13 +485,13 @@ def test_restore_db_replica_with_diffrent_table_metadata(
         nodes.reverse()
 
     for node in nodes:
-        node.query("SYSTEM RESTORE DATABASE REPLICA repl_db")
+        node.query(f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}")
 
     assert [f"{count_test_table_1}"] == node_1.query(
-        f"SELECT count(*) FROM repl_db.{test_table_1}"
+        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
     ).split()
     assert [f"{count_test_table_1}"] == node_2.query(
-        f"SELECT count(*) FROM repl_db.{test_table_1}"
+        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}"
     ).split()
 
     expected_count = ["0"]
@@ -415,87 +501,102 @@ def test_restore_db_replica_with_diffrent_table_metadata(
     assert (
         expected_count
         == node_1.query(
-            f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'"
+            f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
         ).split()
     )
     assert (
         expected_count
         == node_2.query(
-            f"SELECT count(*) FROM system.tables WHERE table='{test_table_2}'"
+            f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}' AND table='{test_table_2}'"
         ).split()
     )
 
     if restore_firstly_node_where_created:
         assert [f"{count_test_table_2}"] == node_1.query(
-            f"SELECT count(*) FROM repl_db.{test_table_2}"
+            f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
         ).split()
         assert [f"{count_test_table_2}"] == node_2.query(
-            f"SELECT count(*) FROM repl_db.{test_table_2}"
+            f"SELECT count(*) FROM {exclusive_database_name}.{test_table_2}"
         ).split()
     else:
         assert ["1"] == node_2.query(
-            "SELECT count(*) FROM system.databases WHERE name='repl_db_broken_tables'"
+            f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}_broken_tables'"
         ).split()
         assert ["1"] == node_2.query(
-            "SELECT count(*) FROM system.databases WHERE name='repl_db_broken_replicated_tables'"
+            f"SELECT count(*) FROM system.databases WHERE name='{exclusive_database_name}_broken_replicated_tables'"
         ).split()
         assert (
             []
             == node_2.query(
-                "SELECT table FROM system.tables WHERE database='repl_db_broken_tables'"
+                f"SELECT table FROM system.tables WHERE database='{exclusive_database_name}_broken_tables'"
             ).split()
         )
 
         detached_broken_tables = node_2.query(
-            "SELECT table FROM system.tables WHERE database='repl_db_broken_replicated_tables'"
+            f"SELECT table FROM system.tables WHERE database='{exclusive_database_name}_broken_replicated_tables'"
         ).split()
 
         assert len(detached_broken_tables) == 1
         assert detached_broken_tables[0].startswith(f"{test_table_2}_")
 
         assert [f"{count_test_table_2}"] == node_2.query(
-            f"SELECT count(*) FROM repl_db_broken_replicated_tables.{detached_broken_tables[0]}"
+            f"SELECT count(*) FROM {exclusive_database_name}_broken_replicated_tables.{detached_broken_tables[0]}"
         ).split()
 
-        node_2.query("DROP DATABASE repl_db_broken_tables SYNC")
-        node_2.query("DROP DATABASE repl_db_broken_replicated_tables SYNC")
+        node_2.query(f"DROP DATABASE {exclusive_database_name}_broken_tables SYNC")
+        node_2.query(
+            f"DROP DATABASE {exclusive_database_name}_broken_replicated_tables SYNC"
+        )
 
-    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_1} SYNC")
-    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table_2} SYNC")
+    node_1.query(f"DROP TABLE IF EXISTS {exclusive_database_name}.{test_table_1} SYNC")
+    node_1.query(f"DROP TABLE IF EXISTS {exclusive_database_name}.{test_table_2} SYNC")
 
     assert ["0"] == node_1.query(
-        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
     ).split()
     assert ["0"] == node_2.query(
-        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
     ).split()
+
+    node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
+    node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
 
 
 def test_failed_restore_db_replica_on_normal_replica(
     start_cluster,
+    exclusive_database_name,
 ):
+    prepare_db(exclusive_database_name)
+
     test_table = "test_table_normal_replica"
 
     count_test_table = 100
 
-    create_table(node_1, test_table)
-    fill_table(node_1, test_table, count_test_table)
+    create_table(node_1, f"{exclusive_database_name}.{test_table}")
+    fill_table(node_1, f"{exclusive_database_name}.{test_table}", count_test_table)
 
     assert (
-        "Replica node '/clickhouse/repl_db/replicas/shard1|replica1/digest' in ZooKeeper already exists"
-        in node_1.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
+        f"Replica node '/clickhouse/{exclusive_database_name}/replicas/shard1|replica1/digest' in ZooKeeper already exists"
+        in node_1.query_and_get_error(
+            f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}"
+        )
     )
 
     assert (
-        "Replica node '/clickhouse/repl_db/replicas/shard1|replica2/digest' in ZooKeeper already exists"
-        in node_2.query_and_get_error("SYSTEM RESTORE DATABASE REPLICA repl_db")
+        f"Replica node '/clickhouse/{exclusive_database_name}/replicas/shard1|replica2/digest' in ZooKeeper already exists"
+        in node_2.query_and_get_error(
+            f"SYSTEM RESTORE DATABASE REPLICA {exclusive_database_name}"
+        )
     )
 
-    node_1.query(f"DROP TABLE IF EXISTS repl_db.{test_table} SYNC")
+    node_1.query(f"DROP TABLE IF EXISTS {exclusive_database_name}.{test_table} SYNC")
 
     assert ["0"] == node_1.query(
-        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
     ).split()
     assert ["0"] == node_2.query(
-        "SELECT count(*) FROM system.tables WHERE database='repl_db'"
+        f"SELECT count(*) FROM system.tables WHERE database='{exclusive_database_name}'"
     ).split()
+
+    node_1.query(f"DROP DATABASE {exclusive_database_name} SYNC")
+    node_2.query(f"DROP DATABASE {exclusive_database_name} SYNC")
