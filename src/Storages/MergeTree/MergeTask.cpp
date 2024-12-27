@@ -45,11 +45,13 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include "config.h"
+
 #ifndef NDEBUG
     #include <Processors/Transforms/CheckSortedTransform.h>
 #endif
 
-#ifdef CLICKHOUSE_CLOUD
+#if CLICKHOUSE_CLOUD
     #include <Interpreters/Cache/FileCacheFactory.h>
     #include <Disks/ObjectStorages/DiskObjectStorage.h>
     #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>

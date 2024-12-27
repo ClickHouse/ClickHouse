@@ -21,6 +21,14 @@
 
 #include <cstring>
 
+#if !CLICKHOUSE_CLOUD
+constexpr UInt64 default_max_size_to_drop = 50000000000lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
+#else
+constexpr UInt64 default_max_size_to_drop = 0lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
+#endif
+
 namespace DB
 {
 
@@ -526,6 +534,9 @@ Enable very explicit logging of S3 requests. Makes sense for debug only.
 )", 0) \
     DECLARE(String, s3queue_default_zookeeper_path, "/clickhouse/s3queue/", R"(
 Default zookeeper path prefix for S3Queue engine
+)", 0) \
+    DECLARE(Bool, s3queue_migrate_old_metadata_to_buckets, false, R"(
+Migrate old metadata structure of S3Queue table to a new one
 )", 0) \
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
@@ -3184,7 +3195,7 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
-    DECLARE(UInt64, max_table_size_to_drop, 50000000000lu, R"(
+    DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
 Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
 
 Cloud default value: 1 TB.
@@ -3193,7 +3204,7 @@ Cloud default value: 1 TB.
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
 :::
 )", 0) \
-    DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
+    DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
 Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
 
 Cloud default value: 1 TB.
@@ -5202,7 +5213,7 @@ Only in ClickHouse Cloud. Mode for writing to system.distributed_cache_log
     DECLARE(Bool, distributed_cache_fetch_metrics_only_from_current_az, true, R"(
 Only in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events
 )", 0) \
-    DECLARE(UInt64, distributed_cache_connect_max_tries, 100, R"(
+    DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
 Only in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
@@ -5605,6 +5616,13 @@ Use async and potentially multithreaded execution of materialized view query, ca
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
+    DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
+Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments.
+)", 0) \
+    DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
+Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
+When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
+)", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
@@ -5813,6 +5831,9 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
+    DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
+Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
+)", 0) \
     \
     DECLARE(Bool, allow_experimental_variant_type, false, R"(
 Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
@@ -5844,9 +5865,6 @@ Enable experimental hash functions
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_object_type, false, R"(
 Allow the obsolete Object data type
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_bfloat16_type, false, R"(
-Allow BFloat16 data type (under development).
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
@@ -5968,6 +5986,11 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 Allow experimental database engine Iceberg
 )", EXPERIMENTAL) \
     \
+    /** Experimental tsToGrid aggregate function. */ \
+    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
+Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
+)", EXPERIMENTAL) \
+    \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
@@ -5990,6 +6013,7 @@ Allow experimental database engine Iceberg
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
