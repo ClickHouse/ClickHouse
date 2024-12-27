@@ -129,6 +129,7 @@ void testServerSideEncryption(
         s3_max_redirects,
         s3_retry_attempts,
         enable_s3_requests_logging,
+        /* ca_path = */ {},
         /* for_disk_s3 = */ false,
         /* get_request_throttler = */ {},
         /* put_request_throttler = */ {},

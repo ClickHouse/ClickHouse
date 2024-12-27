@@ -314,6 +314,7 @@ public:
         unsigned int s3_max_redirects,
         unsigned int s3_retry_attempts,
         bool enable_s3_requests_logging,
+        const std::optional<String>& ca_path,
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,
         const ThrottlerPtr & put_request_throttler,

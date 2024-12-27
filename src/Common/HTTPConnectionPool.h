@@ -9,6 +9,7 @@
 
 #include <base/defines.h>
 
+#include <Poco/Net/Context.h>
 #include <Poco/Timespan.h>
 #include <Poco/Net/HTTPClientSession.h>
 
@@ -83,7 +84,7 @@ public:
     void setLimits(Limits disk, Limits storage, Limits http);
     void dropCache();
 
-    IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration);
+    IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, Poco::AutoPtr<Poco::Net::Context> context = {});
 
 private:
     class Impl;

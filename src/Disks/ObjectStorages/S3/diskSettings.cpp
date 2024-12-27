@@ -62,12 +62,17 @@ std::unique_ptr<S3::Client> getClient(
         throw Exception(
             ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Region should be explicitly specified for directory buckets ({})", config_prefix);
 
+    std::optional<String> ca_path;
+    if (config.has(config_prefix + ".ca_path"))
+        ca_path = config.getString(config_prefix + ".ca_path");
+
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
         context->getRemoteHostFilter(),
         static_cast<int>(global_settings.s3_max_redirects),
         static_cast<int>(global_settings.s3_retry_attempts),
         global_settings.enable_s3_requests_logging,
+        ca_path,
         /* for_disk_s3 = */ true,
         settings.request_settings.get_request_throttler,
         settings.request_settings.put_request_throttler,

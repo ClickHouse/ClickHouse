@@ -115,6 +115,10 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     if (config.has(config_elem + ".use_insecure_imds_request"))
         use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
 
+    std::optional<String> ca_path;
+    if (config.has(config_elem + ".ca_path"))
+        ca_path = config.getString(config_elem + ".ca_path");
+
     std::optional<uint64_t> expiration_window_seconds;
     if (config.has(config_elem + ".expiration_window_seconds"))
         expiration_window_seconds = config.getUInt64(config_elem + ".expiration_window_seconds");
@@ -144,6 +148,7 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
         std::move(headers),
         use_environment_credentials,
         use_insecure_imds_request,
+        ca_path,
         expiration_window_seconds,
         no_sign_request,
         std::move(users)
@@ -184,6 +189,9 @@ void AuthSettings::updateFrom(const AuthSettings & from)
 
     if (from.use_insecure_imds_request.has_value())
         use_insecure_imds_request = from.use_insecure_imds_request;
+
+    if (from.ca_path.has_value())
+        ca_path = from.ca_path;
 
     if (from.expiration_window_seconds.has_value())
         expiration_window_seconds = from.expiration_window_seconds;

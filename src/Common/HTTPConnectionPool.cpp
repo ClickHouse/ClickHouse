@@ -587,12 +587,13 @@ public:
     }
 
 private:
-    EndpointConnectionPool(ConnectionGroup::Ptr group_, String host_, UInt16 port_, bool https_, ProxyConfiguration proxy_configuration_)
+    EndpointConnectionPool(ConnectionGroup::Ptr group_, String host_, UInt16 port_, bool https_, ProxyConfiguration proxy_configuration_, Poco::AutoPtr<Poco::Net::Context> context_)
         : host(std::move(host_))
         , port(port_)
         , https(https_)
         , proxy_configuration(std::move(proxy_configuration_))
         , group(group_)
+        , context(context_)
     {
     }
 
@@ -608,7 +609,11 @@ private:
 
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts)
     {
-        auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+        ConnectionPtr connection;
+        if constexpr (std::is_same_v<Session, Poco::Net::HTTPSClientSession>)
+            connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port, context);
+        else
+            connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
 
         connection->setKeepAlive(true);
         setTimeouts(*connection, timeouts);
@@ -672,6 +677,7 @@ private:
     const bool https;
     const ProxyConfiguration proxy_configuration;
     const ConnectionGroup::Ptr group;
+    const Poco::AutoPtr<Poco::Net::Context> context;
 
     std::mutex mutex;
     ConnectionsMinHeap stored_connections TSA_GUARDED_BY(mutex);
@@ -729,13 +735,13 @@ struct Hasher
 };
 
 IExtendedPool::Ptr
-createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, bool secure, ProxyConfiguration proxy_configuration)
+createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, bool secure, ProxyConfiguration proxy_configuration, Poco::AutoPtr<Poco::Net::Context> context = {})
 {
     if (secure)
     {
 #if USE_SSL
         return EndpointConnectionPool<Poco::Net::HTTPSClientSession>::create(
-            group, std::move(host), port, secure, std::move(proxy_configuration));
+            group, std::move(host), port, secure, std::move(proxy_configuration), context);
 #else
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED, "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
@@ -744,7 +750,7 @@ createConnectionPool(ConnectionGroup::Ptr group, std::string host, UInt16 port, 
     else
     {
         return EndpointConnectionPool<Poco::Net::HTTPClientSession>::create(
-            group, std::move(host), port, secure, std::move(proxy_configuration));
+            group, std::move(host), port, secure, std::move(proxy_configuration), context);
     }
 }
 
@@ -767,7 +773,7 @@ private:
     Poco::Timestamp last_wipe_time TSA_GUARDED_BY(mutex);
 
 public:
-    IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)
+    IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, Poco::AutoPtr<Poco::Net::Context> context = {})
     {
         Poco::Timestamp now;
 
@@ -779,7 +785,7 @@ public:
             last_wipe_time = now;
         }
 
-        return getPoolImpl(type, uri, proxy_configuration);
+        return getPoolImpl(type, uri, proxy_configuration, context);
     }
 
     void setLimits(HTTPConnectionPools::Limits disk, HTTPConnectionPools::Limits storage, HTTPConnectionPools::Limits http)
@@ -809,7 +815,7 @@ protected:
         }
     }
 
-    IExtendedPool::Ptr getPoolImpl(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)
+    IExtendedPool::Ptr getPoolImpl(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, Poco::AutoPtr<Poco::Net::Context> context)
         TSA_REQUIRES(mutex)
     {
         auto [host, port, secure] = getHostPortSecure(uri, proxy_configuration);
@@ -819,7 +825,7 @@ protected:
         if (it != endpoints_pool.end())
             return it->second;
 
-        it = endpoints_pool.emplace(key, createConnectionPool(getGroup(type), std::move(host), port, secure, proxy_configuration)).first;
+        it = endpoints_pool.emplace(key, createConnectionPool(getGroup(type), std::move(host), port, secure, proxy_configuration, context)).first;
 
         return it->second;
     }
@@ -889,8 +895,8 @@ void HTTPConnectionPools::dropCache()
 }
 
 IHTTPConnectionPoolForEndpoint::Ptr
-HTTPConnectionPools::getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration)
+HTTPConnectionPools::getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration, Poco::AutoPtr<Poco::Net::Context> context)
 {
-    return impl->getPool(type, uri, proxy_configuration);
+    return impl->getPool(type, uri, proxy_configuration, context);
 }
 }

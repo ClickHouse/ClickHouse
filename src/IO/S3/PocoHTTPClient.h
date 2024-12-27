@@ -44,6 +44,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     unsigned int s3_max_redirects;
     unsigned int s3_retry_attempts;
     bool enable_s3_requests_logging;
+    std::optional<String> ca_path;
     bool for_disk_s3;
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
@@ -66,6 +67,7 @@ private:
         unsigned int s3_max_redirects_,
         unsigned int s3_retry_attempts,
         bool enable_s3_requests_logging_,
+        const std::optional<String> & ca_path_,
         bool for_disk_s3_,
         bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
@@ -186,6 +188,8 @@ protected:
     ThrottlerPtr put_request_throttler;
 
     const HTTPHeaderEntries extra_headers;
+    std::optional<String> ca_path;
+
 };
 
 }

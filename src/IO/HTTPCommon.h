@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 
+#include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
@@ -61,8 +62,8 @@ HTTPSessionPtr makeHTTPSession(
     HTTPConnectionGroupType group,
     const Poco::URI & uri,
     const ConnectionTimeouts & timeouts,
-    ProxyConfiguration proxy_config = {}
-);
+    ProxyConfiguration proxy_config = {},
+    Poco::AutoPtr<Poco::Net::Context> context = {});
 
 bool isRedirect(Poco::Net::HTTPResponse::HTTPStatus status);
 

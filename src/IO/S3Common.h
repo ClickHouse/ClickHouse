@@ -90,6 +90,7 @@ struct AuthSettings
 
     std::optional<bool> use_environment_credentials;
     std::optional<bool> use_insecure_imds_request;
+    std::optional<String> ca_path;
     std::optional<uint64_t> expiration_window_seconds;
     std::optional<bool> no_sign_request;
 
