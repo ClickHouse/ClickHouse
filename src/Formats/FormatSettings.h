@@ -243,6 +243,9 @@ struct FormatSettings
         bool ignore_unnecessary_fields = true;
         bool empty_as_default = false;
         bool type_json_skip_duplicated_paths = false;
+        bool pretty_print = true;
+        char pretty_print_indent = ' ';
+        size_t pretty_print_indent_multiplier = 4;
     } json{};
 
     struct
@@ -301,6 +304,8 @@ struct FormatSettings
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
+        UInt64 max_column_name_width_cut_to = 24;
+        UInt64 max_column_name_width_min_chars_to_cut = 4;
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
