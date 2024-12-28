@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <future>
-#include <limits>
 #include <numeric>
+#include <optional>
 #include <Poco/Util/Application.h>
 #include <Core/Settings.h>
 
@@ -227,8 +227,7 @@ Aggregator::Params::Params(
 
 size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by)
 {
-    size_t threshold = std::numeric_limits<size_t>::max();
-
+    std::optional<size_t> threshold;
     if (max_bytes_before_external_group_by != 0)
         threshold = max_bytes_before_external_group_by;
 
@@ -242,7 +241,10 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
         if (available_system_memory.has_value())
         {
             size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
-            threshold = std::min(threshold, ratio_in_bytes);
+            if (threshold)
+                threshold = std::min(threshold.value(), ratio_in_bytes);
+            else
+                threshold = ratio_in_bytes;
 
             LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {}, available system memory: {})",
                 formatReadableSizeWithBinarySuffix(ratio_in_bytes),
@@ -255,10 +257,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
         }
     }
 
-    if (threshold == std::numeric_limits<size_t>::max())
-        return 0;
-
-    return threshold;
+    return threshold.value_or(0);
 }
 
 Aggregator::Params::Params(

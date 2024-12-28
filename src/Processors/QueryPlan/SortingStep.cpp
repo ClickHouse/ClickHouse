@@ -19,6 +19,7 @@
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 
 #include <memory>
+#include <optional>
 
 namespace CurrentMetrics
 {
@@ -65,8 +66,7 @@ namespace ErrorCodes
 
 size_t getMaxBytesBeforeExternalSort(size_t max_bytes_before_external_sort, double max_bytes_ratio_before_external_sort)
 {
-    size_t threshold = std::numeric_limits<size_t>::max();
-
+    std::optional<size_t> threshold;
     if (max_bytes_before_external_sort != 0)
         threshold = max_bytes_before_external_sort;
 
@@ -80,7 +80,10 @@ size_t getMaxBytesBeforeExternalSort(size_t max_bytes_before_external_sort, doub
         if (available_system_memory.has_value())
         {
             size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
-            threshold = std::min(threshold, ratio_in_bytes);
+            if (threshold)
+                threshold = std::min(threshold.value(), ratio_in_bytes);
+            else
+                threshold = ratio_in_bytes;
 
             LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
                 formatReadableSizeWithBinarySuffix(ratio_in_bytes),
@@ -93,10 +96,7 @@ size_t getMaxBytesBeforeExternalSort(size_t max_bytes_before_external_sort, doub
         }
     }
 
-    if (threshold == std::numeric_limits<size_t>::max())
-        return 0;
-
-    return threshold;
+    return threshold.value_or(0);
 }
 
 SortingStep::Settings::Settings(const Context & context)
