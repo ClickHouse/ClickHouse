@@ -38,7 +38,6 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -269,6 +268,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
+
+    if constexpr (std::is_same_v<TSystemLog, TraceLog>)
+        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", false);
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 

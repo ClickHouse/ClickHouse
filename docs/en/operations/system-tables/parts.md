@@ -76,9 +76,9 @@ Columns:
 
 - `partition_id` ([String](../../sql-reference/data-types/string.md)) – ID of the partition.
 
-- `min_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The minimum number of data parts that make up the current part after merging.
+- `min_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The minimum data block number that makes up the current part after merging.
 
-- `max_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The maximum number of data parts that make up the current part after merging.
+- `max_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The maximum data block number that makes up the current part after merging.
 
 - `level` ([UInt32](../../sql-reference/data-types/int-uint.md)) – Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts.
 

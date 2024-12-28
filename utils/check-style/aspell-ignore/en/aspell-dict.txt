@@ -1627,6 +1627,7 @@ deltalakeCluster
 deltasum
 deltasumtimestamp
 demangle
+demangled
 denormalize
 denormalized
 denormalizing
