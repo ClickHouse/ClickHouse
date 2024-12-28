@@ -30,7 +30,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnsNumber.h>
+#include <Common/FloatUtils.h>
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
@@ -38,8 +38,8 @@
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
-#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
+
 
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
@@ -49,7 +49,6 @@
         M(arrow::Type::UINT64, UInt64) \
         M(arrow::Type::INT64, Int64) \
         M(arrow::Type::DURATION, Int64) \
-        M(arrow::Type::HALF_FLOAT, Float32) \
         M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
 
@@ -416,6 +415,21 @@ static ColumnWithTypeAndName readColumnWithDecimalDataImpl(const std::shared_ptr
         }
     }
     return {std::move(internal_column), internal_type, column_name};
+}
+
+static ColumnWithTypeAndName readColumnWithFloat16Data(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    auto column = ColumnFloat32::create();
+    auto & column_data = column->getData();
+    column_data.reserve(arrow_column->length());
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        auto & chunk = dynamic_cast<arrow::HalfFloatArray &>(*(arrow_column->chunk(chunk_i)));
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            column_data.emplace_back(chunk.IsNull(value_i) ? 0 : convertFloat16ToFloat32(chunk.Value(value_i)));
+    }
+    return {std::move(column), std::make_shared<DataTypeFloat32>(), column_name};
 }
 
 template <typename DecimalArray>
@@ -1062,6 +1076,10 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, column_name);
         FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #    undef DISPATCH
+        case arrow::Type::HALF_FLOAT:
+        {
+            return readColumnWithFloat16Data(arrow_column, column_name);
+        }
         case arrow::Type::TIME32:
         {
             return readColumnWithTime32Data(arrow_column, column_name);

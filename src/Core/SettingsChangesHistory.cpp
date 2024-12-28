@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.1",
         {
+            {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
             {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
@@ -78,6 +79,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
             {"output_format_pretty_highlight_trailing_spaces", false, true, "A new setting."},
             {"allow_experimental_bfloat16_type", false, true, "Add new BFloat16 type"},
+            {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
+            {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -93,7 +96,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
-            {"composed_data_type_output_format_mode", "default", "default", "New setting"},
             {"http_response_headers", "", "", "New setting."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
             {"skip_redundant_aliases_in_udf", false, false, "New setting."},

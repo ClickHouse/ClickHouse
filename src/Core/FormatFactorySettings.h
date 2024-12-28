@@ -849,6 +849,11 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_pretty_print, true, R"(
+When enabled, values in JSON output format will be printed in pretty format.
+
+Enabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md/#jsonobjecteachrow) format.
@@ -892,8 +897,17 @@ Rows limit for Pretty formats.
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(
 Maximum width to pad all values in a column in Pretty formats.
 )", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_cut_to, 24, R"(
+If the column name is too long, cut it to this length.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_min_chars_to_cut, 4, R"(
+Minimum characters to cut if the column name is too long.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width, 10000, R"(
 Maximum width of value to display in Pretty formats. If greater - it will be cut.
+The value 0 means - never cut.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width_apply_for_single_value, false, R"(
 Only cut values (see the `output_format_pretty_max_value_width` setting) when it is not a single value in a block. Otherwise output it entirely, which is useful for the `SHOW CREATE TABLE` query.
@@ -1082,12 +1096,6 @@ Field escaping rule (for Regexp format)
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
 Skip lines unmatched by regular expression (for Regexp format)
 )", 0) \
-    \
-    DECLARE(Bool, output_format_enable_streaming, false, R"(
-Enable streaming in output formats that support it.
-
-Disabled by default.
-)", 0) \
     DECLARE(Bool, output_format_write_statistics, true, R"(
 Write statistics about read rows, bytes, time elapsed in suitable output formats.
 
@@ -1260,36 +1268,6 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
-    DECLARE(String, composed_data_type_output_format_mode, "default", R"(
-Set output format mode for composed data types like Array, Map, Tuple. Possible values: 'default', 'spark'.
-
-In 'default' mode, the output format is the same as in the previous versions of ClickHouse,
-    - Arrays are displayed without spaces between elements.
-    - Maps use curly braces `{}` and colons `:` to separate keys and values.
-    - Tuples are displayed with single quotes around string elements.
-
-Example of 'default' mode:
-
-```
-┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
-│ [1,2,3]   │ {'a':1,'b':2}       │ (123,'abc')  │
-└───────────┴─────────────────────┴──────────────┘
-```
-
-In 'spark' mode, the output format is similar to Apache Spark:
-    - Arrays are displayed with spaces between elements.
-    - Maps use curly braces `{}` and arrows `->` to separate keys and values.
-    - Tuples are displayed without single quotes around string elements.
-
-Example of 'spark' mode:
-
-```
-┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
-│ [1, 2, 3] │ {a -> 1, b -> 2}    │ (123, abc)   │
-└───────────┴─────────────────────┴──────────────┘
-```
-
-)", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 
@@ -1297,7 +1275,8 @@ Example of 'spark' mode:
     /** Obsolete format settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false)                                                                          \
+    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
+    MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
 
 #endif // __CLION_IDE__
 
