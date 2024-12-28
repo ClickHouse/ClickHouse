@@ -1,28 +1,26 @@
 #pragma once
 
-#include "ggml.h"
-#include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <Parsers/Lexer.h>
+#include "ggml.h"
 
 #include <cstddef>
-#include <string>
-#include <vector>
 #include <map>
+#include <string>
 #include <thread>
+#include <vector>
 
 /// TODO: make const where possible
 
 //
 // Vocab utils
 //
-std::string replace(
-        const std::string & s,
-        const std::string & from,
-        const std::string & to);
+std::string replace(const std::string & s, const std::string & from, const std::string & to);
 
-struct GptVocab {
-    using id    = int32_t;
+struct GptVocab
+{
+    using id = int32_t;
     using token = std::string;
 
     std::map<token, id> token_to_id;
@@ -33,21 +31,23 @@ struct GptVocab {
 };
 
 
-class GPTJModel {
-
+class GPTJModel
+{
 private:
-    struct GptjHparams {
+    struct GptjHparams
+    {
         int32_t n_vocab;
         int32_t n_ctx;
         int32_t n_embd;
         int32_t n_head;
         int32_t n_layer;
         int32_t n_rot;
-        int32_t ftype   = 1;
-        float   eps     = 1e-5f;
+        int32_t ftype = 1;
+        float eps = 1e-5f;
     };
 
-    struct GptjLayer {
+    struct GptjLayer
+    {
         // normalization
         struct ggml_tensor * ln_1_g;
         struct ggml_tensor * ln_1_b;
@@ -67,7 +67,8 @@ private:
         struct ggml_tensor * c_mlp_proj_b;
     };
 
-    struct GptjModel {
+    struct GptjModel
+    {
         GptjHparams hparams;
 
         // normalization
@@ -101,7 +102,6 @@ private:
     size_t mem_per_token = 0;
     std::vector<GptVocab::id> current_query_ids;
 
-    
 
     DB::WriteBufferFromFileDescriptor out_err = DB::WriteBufferFromFileDescriptor(STDERR_FILENO, 4096);
 
@@ -111,24 +111,21 @@ private:
 
     std::vector<std::string> ids2Tokens(const std::vector<GptVocab::id> & ids);
 
-    bool gptjEval(const std::vector<GptVocab::id> & ids_input,
-              std::vector<float>         & logits);
-    
+    bool gptjEval(const std::vector<GptVocab::id> & ids_input, std::vector<float> & logits);
 
-    std::vector<GptVocab::id> getTopNIdsFromLogits(const std::vector<float>& logits, size_t top_n);
+
+    std::vector<GptVocab::id> getTopNIdsFromLogits(const std::vector<float> & logits, size_t top_n);
 
 
 public:
     explicit GPTJModel(const std::string & file_name);
 
-    std::vector<std::string> getRecsTopN(const std::vector<std::string>& tokens, size_t top_n);
+    std::vector<std::string> getRecsTopN(const std::vector<std::string> & tokens, size_t top_n);
 
     void reset();
     std::vector<std::string> last_recs;
 
-    ~GPTJModel() {
-        ggml_free(model.ctx);
-    }
+    ~GPTJModel() { ggml_free(model.ctx); }
 
     static const GptVocab::token unk;
     static const GptVocab::token bos;
@@ -138,5 +135,4 @@ public:
     static const GptVocab::token literal;
     static const GptVocab::token identifier;
     static const GptVocab::token operator_token;
-
 };

@@ -1,52 +1,57 @@
 #include <cstddef>
+#include <functional>
 #include <set>
+#include <span>
+#include <string>
 #include <unordered_map>
 #include <vector>
-#include <string>
-#include <span>
-#include <functional>
 
 
 // Hashes/equals for heterogeneous lookups
-struct TransparentStringHash {
+struct TransparentStringHash
+{
     using is_transparent = void;
-    [[nodiscard]] size_t operator()(const char *txt) const;
+    [[nodiscard]] size_t operator()(const char * txt) const;
     [[nodiscard]] size_t operator()(std::string_view txt) const;
-    [[nodiscard]] size_t operator()(const std::string &txt) const;
+    [[nodiscard]] size_t operator()(const std::string & txt) const;
 };
 
 
-struct TransparentVectorHash {
+struct TransparentVectorHash
+{
     using is_transparent = void;
-    [[nodiscard]] size_t operator()(const std::vector<std::string>& v) const;
+    [[nodiscard]] size_t operator()(const std::vector<std::string> & v) const;
     [[nodiscard]] size_t operator()(std::span<const std::string> span) const;
 };
 
 
-struct TransparentVectorEqual {
+struct TransparentVectorEqual
+{
     using is_transparent = void;
-    [[nodiscard]] bool operator()(const std::vector<std::string>& lhs, const std::vector<std::string>& rhs) const;
-    [[nodiscard]] bool operator()(std::span<const std::string> lhs, const std::vector<std::string>& rhs) const;
-    [[nodiscard]] bool operator()(const std::vector<std::string>& lhs, std::span<const std::string> rhs) const;
+    [[nodiscard]] bool operator()(const std::vector<std::string> & lhs, const std::vector<std::string> & rhs) const;
+    [[nodiscard]] bool operator()(std::span<const std::string> lhs, const std::vector<std::string> & rhs) const;
+    [[nodiscard]] bool operator()(const std::vector<std::string> & lhs, std::span<const std::string> rhs) const;
 };
 
 
-
-
 // NGramMap Class
-class NGram {
+class NGram
+{
 public:
-    struct Count {
+    struct Count
+    {
         size_t cnt = 0;
         size_t last_timestamp = 1;
     };
 
-    struct WeightedStats {
+    struct WeightedStats
+    {
         long double weighted_types_count = 0.0l;
         long double weighted_count = 0.0l;
     };
 
-    struct UnigramsWithStats {
+    struct UnigramsWithStats
+    {
         using UnigramMapType = std::unordered_map<std::string, Count, TransparentStringHash, std::equal_to<>>;
 
         UnigramMapType unigram_map;
@@ -54,59 +59,65 @@ public:
 
         long double getWeightedTypesCount() const;
         long double getWeightedCount() const;
-        long double getWeightedWordCount(const std::string& word) const;
-        long double getWeightedWordTypesCount(const std::string& word) const;
+        long double getWeightedWordCount(const std::string & word) const;
+        long double getWeightedWordTypesCount(const std::string & word) const;
     };
 
-    struct SuffixStats {
+    struct SuffixStats
+    {
         std::unordered_map<std::string, long double> ngrams_with_word_weighted_count;
         long double total_weighted_types_count = 0.0l;
     };
 
     using MapType = std::unordered_map<std::vector<std::string>, UnigramsWithStats, TransparentVectorHash, TransparentVectorEqual>;
-    using MapTypeForSuffixLookup = std::unordered_map<std::vector<std::string>, std::vector<const UnigramsWithStats*>, TransparentVectorHash, TransparentVectorEqual>;
+    using MapTypeForSuffixLookup = std::
+        unordered_map<std::vector<std::string>, std::vector<const UnigramsWithStats *>, TransparentVectorHash, TransparentVectorEqual>;
 
-    using MapTypeForSuffixLookup2 = std::unordered_map<std::vector<std::string>, SuffixStats, TransparentVectorHash, TransparentVectorEqual>;
+    using MapTypeForSuffixLookup2
+        = std::unordered_map<std::vector<std::string>, SuffixStats, TransparentVectorHash, TransparentVectorEqual>;
 
     explicit NGram(size_t context_size);
 
     template <typename Key>
-    UnigramsWithStats& operator[](Key&& key) {
+    UnigramsWithStats & operator[](Key && key)
+    {
         validate_size(key);
-        auto& result = map[std::forward<Key>(key)];
+        auto & result = map[std::forward<Key>(key)];
         return result;
     }
 
-    UnigramsWithStats& operator[](std::span<const std::string> span_key) {
+    UnigramsWithStats & operator[](std::span<const std::string> span_key)
+    {
         validate_size(span_key);
-        if (this->contains(span_key)) {
+        if (this->contains(span_key))
+        {
             return *(this->find(span_key));
         }
         return (*this)[std::vector<std::string>(span_key.begin(), span_key.end())];
     }
 
-    const SuffixStats* getSuffixStats(std::span<const std::string> span_key) const;
-    const SuffixStats* getSuffixStats(const std::vector<std::string>& key) const;
+    const SuffixStats * getSuffixStats(std::span<const std::string> span_key) const;
+    const SuffixStats * getSuffixStats(const std::vector<std::string> & key) const;
     bool contains(std::span<const std::string> span_key) const;
-    bool contains(const std::vector<std::string>& key) const;
+    bool contains(const std::vector<std::string> & key) const;
     size_t size() const;
-    const auto& at(const std::vector<std::string>& key) const;
-    const UnigramsWithStats& at(std::span<const std::string> span_key) const;
+    const auto & at(const std::vector<std::string> & key) const;
+    const UnigramsWithStats & at(std::span<const std::string> span_key) const;
 
     auto begin() { return map.begin(); }
     auto end() { return map.end(); }
     auto begin() const { return map.begin(); }
     auto end() const { return map.end(); }
     void printMap() const;
-    void update(std::span<const std::string> context, const std::string& word, size_t timestamp);
+    void update(std::span<const std::string> context, const std::string & word, size_t timestamp);
 
 private:
-    void validate_size(const std::vector<std::string>& key) const;
-    void validate_size(std::span<const std::string>& key) const;
-    void updateLastWords(NGram::UnigramsWithStats& last_words, const std::string& word, size_t timestamp);
+    void validate_size(const std::vector<std::string> & key) const;
+    void validate_size(std::span<const std::string> & key) const;
+    void updateLastWords(NGram::UnigramsWithStats & last_words, const std::string & word, size_t timestamp);
 
-    UnigramsWithStats* find(std::span<const std::string> span_key);
-    UnigramsWithStats* find(const std::vector<std::string>& key);
+    UnigramsWithStats * find(std::span<const std::string> span_key);
+    UnigramsWithStats * find(const std::vector<std::string> & key);
 
     MapType map;
     MapTypeForSuffixLookup2 suffix_map;
@@ -116,17 +127,19 @@ private:
 // ------------------------------------------------------
 
 
-class KneserNey {
+class KneserNey
+{
 private:
-    struct WordWithCount {
+    struct WordWithCount
+    {
         std::string word;
         size_t cnt;
         size_t last_timestamp;
 
         long double getWeightedScore() const;
-        bool operator==(const WordWithCount& other) const;
-        bool operator>(const WordWithCount& other) const;
-        bool operator<(const WordWithCount& other) const;
+        bool operator==(const WordWithCount & other) const;
+        bool operator>(const WordWithCount & other) const;
+        bool operator<(const WordWithCount & other) const;
     };
 
 
@@ -140,12 +153,12 @@ private:
     size_t n_most_frequent_to_rank = 1000;
 
     bool isContextNew(std::span<const std::string> context) const;
-    std::pair<long double, long double> continuationCounts(const std::string& word, std::span<const std::string> context) const;
+    std::pair<long double, long double> continuationCounts(const std::string & word, std::span<const std::string> context) const;
     long double prefixTypesCounts(std::span<const std::string> context) const;
     long double prefixCounts(std::span<const std::string> context) const;
-    std::pair<long double, long double> calcAlphaGamma(const std::string& word, std::span<const std::string> context) const;
-    void updateUnigrams(NGram::UnigramsWithStats& unigrams, const std::string& word, size_t timestamp);
-    long double unigramScore(const std::string& word) const;
+    std::pair<long double, long double> calcAlphaGamma(const std::string & word, std::span<const std::string> context) const;
+    void updateUnigrams(NGram::UnigramsWithStats & unigrams, const std::string & word, size_t timestamp);
+    long double unigramScore(const std::string & word) const;
 
 public:
     NGram::UnigramsWithStats unigrams;
@@ -153,7 +166,7 @@ public:
     explicit KneserNey(size_t order);
     ~KneserNey() = default;
 
-    bool empty() const {return unigrams.unigram_map.empty();}
+    bool empty() const { return unigrams.unigram_map.empty(); }
     void printCounts() const;
     long double score(std::string word, std::span<const std::string> context) const;
     size_t totalNgramsCount() const;
@@ -163,5 +176,5 @@ public:
 
     void addExample(std::span<const std::string> tokens);
     void addFullQuery(std::span<const std::string> tokens);
-    void incTimestamp() {timestamp ++;}
+    void incTimestamp() { timestamp++; }
 };

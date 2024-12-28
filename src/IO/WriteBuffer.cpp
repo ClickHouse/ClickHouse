@@ -24,7 +24,7 @@ WriteBuffer::~WriteBuffer()
             log,
             "WriteBuffer is neither finalized nor canceled when destructor is called. "
             "No exceptions in flight are detected. "
-            "The file might not be written at all or might be truncated."
+            "The file might not be written at all or might be truncated. "
             "Stack trace: {}",
             StackTrace().toString());
         chassert(false && "WriteBuffer is neither finalized nor canceled in destructor.");
