@@ -62,7 +62,7 @@ $CLICKHOUSE_CLIENT -q "
 
 echo "[Sort] -- Big Ratio"
 $CLICKHOUSE_CLIENT -q "
-   SELECT number FROM numbers(10000000) ORDER BY (number::String, (number+1)::String) FORMAT Null
+    SELECT number FROM numbers(10000000) ORDER BY (number::String, (number+1)::String) FORMAT Null
     SETTINGS max_memory_usage_for_user = '500M', max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0.99999999
     -- { serverError MEMORY_LIMIT_EXCEEDED }
 "
