@@ -266,7 +266,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
  *     otherwise use backslash to escape list of special characters and quote_character
  *   - when escape_backslash_with_backslash is true, backslash is escaped with another backslash
  */
-template <char quote_character, bool escape_quote_with_quote = false, bool escape_backslash_with_backslash = true>
+template <char quote_character, bool escape_quote_with_quote = false, bool escape_backslash_with_backslash = true, bool stop_at_first_nul = false>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
@@ -317,6 +317,8 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('t', buf);
                     break;
                 case '\0':
+                    if constexpr (stop_at_first_nul)
+                        return;
                     writeChar('\\', buf);
                     writeChar('0', buf);
                     break;
@@ -581,8 +583,15 @@ inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
 
 inline void writeQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
 {
+    // PostgreSQL:
+    // - escape quote with quote possible (https://www.postgresql.org/docs/current/sql-syntax-lexical.html)
+    // - no null char inside the string (https://www.postgresql.org/docs/current/datatype-character.html)
+    // SQLite:
+    // - escape quote with quote (https://www.sqlite.org/lang_expr.html)
+    // - null inside the string not recommended (https://www.sqlite.org/nulinstr.html)
+    //   also needs to be entered as 'abc'||char(0)||'xyz'
     writeChar('\'', buf);
-    writeAnyEscapedString<'\'', true, false>(ref.data(), ref.data() + ref.size(), buf);
+    writeAnyEscapedString<'\'', true, false, true>(ref.data(), ref.data() + ref.size(), buf);
     writeChar('\'', buf);
 }
 
