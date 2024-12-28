@@ -12,7 +12,7 @@ tests/ci/cancel_and_rerun_workflow_lambda/app.py
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement
 - Documentation (changelog entry is not required)
-- Critical Bug Fix (crash, data loss, RBAC)
+- Critical Bug Fix (crash, data loss, RBAC) or LOGICAL_ERROR
 - Bug Fix (user-visible misbehavior in an official stable release)
 - CI Fix or Improvement (changelog entry is not required)
 - Not for changelog (changelog entry is not required)
@@ -43,7 +43,11 @@ At a minimum, the following information should be added (but add more as needed)
 
 > Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
 
-#### CI Settings (Only check the boxes if you know what you are doing):
+#### CI Settings (Only check the boxes if you know what you are doing)
+
+All builds in Builds_1 and Builds_2 stages are always mandatory
+and will run independently of the checks below:
+
 - [ ] <!---ci_set_required--> Allow: All Required Checks
 - [ ] <!---ci_include_stateless--> Allow: Stateless tests
 - [ ] <!---ci_include_stateful--> Allow: Stateful tests
@@ -57,7 +61,9 @@ At a minimum, the following information should be added (but add more as needed)
 - [ ] <!---ci_exclude_fast--> Exclude: Fast test
 - [ ] <!---ci_exclude_asan--> Exclude: All with ASAN
 - [ ] <!---ci_exclude_tsan|msan|ubsan|coverage--> Exclude: All with TSAN, MSAN, UBSAN, Coverage
-- [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64, release, debug
+- [ ] <!---ci_exclude_aarch64|release|debug--> Exclude: All with aarch64
+- [ ] <!---ci_exclude_release--> Exclude: All with release
+- [ ] <!---ci_exclude_debug--> Exclude: All with debug
 ---
 - [ ] <!---ci_include_fuzzer--> Run only fuzzers related jobs (libFuzzer fuzzers, AST fuzzers, etc.)
 - [ ] <!---ci_exclude_ast--> Exclude: AST fuzzers

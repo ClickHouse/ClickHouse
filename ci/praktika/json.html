@@ -529,7 +529,7 @@
 
     const columnSymbols = {
         name: '🗂️',
-        status: '🧾',
+        status: '✅',
         start_time: '🕒',
         duration: '⏳',
         info: '📝',
@@ -601,7 +601,7 @@
                     td.classList.add('time-column');
                     td.textContent = value ? formatDuration(value) : '';
                 } else if (column === 'info') {
-                    td.textContent = value.includes('\n') ? '↵' : (value || '');
+                    td.textContent = value && value.includes('\n') ? '↵' : (value || '');
                     td.classList.add('info-column');
                 }
 
@@ -798,10 +798,11 @@
                 // Proceed with the rest of the initialization
                 addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
 
-                if (nameParams[1]) {
-                    addKeyValueToStatus("job", nameParams[1]);
-                }
-                addKeyValueToStatus("workflow", nameParams[0]);
+                // These are present in naviagation bar at the bottom. Try to remove as names might be long and do not fit status bar
+                // if (nameParams[1]) {
+                //     addKeyValueToStatus("job", nameParams[1]);
+                // }
+                // addKeyValueToStatus("workflow", nameParams[0]);
 
                 // Check if all required parameters are present to load JSON
                 if (PR && sha && root_name) {

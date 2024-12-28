@@ -25,7 +25,7 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        const auto & disk = client.getCurrentDiskWithPath();
         const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
         bool recursive = options.count("recursive");
         if (disk.getDisk()->existsDirectory(path))
@@ -35,7 +35,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot remove '{}': Is a directory", path);
             }
 
-            disk.getDisk()->removeRecursive(path);
+            disk.getDisk()->removeRecursiveWithLimit(path);
         }
         else if (disk.getDisk()->existsFile(path))
         {

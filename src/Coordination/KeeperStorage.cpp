@@ -30,6 +30,7 @@
 #include <Coordination/KeeperStorage.h>
 
 #include <functional>
+#include <shared_mutex>
 #include <base/defines.h>
 
 namespace ProfileEvents
@@ -538,7 +539,7 @@ struct Overloaded : Ts...
 // explicit deduction guide
 // https://en.cppreference.com/w/cpp/language/class_template_argument_deduction
 template <class... Ts>
-Overloaded(Ts...) -> Overloaded<Ts...>;
+Overloaded(Ts...) -> Overloaded<Ts...>;  /// NOLINT(misc-use-internal-linkage)
 
 template<typename Container>
 std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::tryGetNodeFromStorage(StringRef path, bool should_lock_storage) const
@@ -3620,6 +3621,14 @@ bool KeeperStorageBase::checkDigest(const Digest & first, const Digest & second)
         return true;
 
     return first.value == second.value;
+}
+
+UInt64 KeeperStorageBase::WatchInfoHash::operator()(WatchInfo info) const
+{
+    SipHash hash;
+    hash.update(info.path);
+    hash.update(info.is_list_watch);
+    return hash.get64();
 }
 
 template<typename Container>

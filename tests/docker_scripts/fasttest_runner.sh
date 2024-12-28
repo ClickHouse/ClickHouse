@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-18}
+export LLVM_VERSION=${LLVM_VERSION:-19}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -158,6 +158,7 @@ function clone_submodules
             contrib/libfiu
             contrib/incbin
             contrib/yaml-cpp
+            contrib/corrosion
         )
 
         git submodule sync
