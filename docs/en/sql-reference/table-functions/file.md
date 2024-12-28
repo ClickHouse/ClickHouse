@@ -18,7 +18,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 **Parameters**
 
-- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
+- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
 - `path_to_archive` - The relative path to a zip/tar/7z archive. Supports the same globs as `path`.
 - `format` — The [format](/docs/en/interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.
@@ -128,7 +128,7 @@ Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Globs in path 
+## Globs in path
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix. There is one exception that if the path refers to an existing
 directory and does not use globs, a `*` will be implicitly added to the path so

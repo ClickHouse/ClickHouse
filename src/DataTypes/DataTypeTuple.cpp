@@ -133,6 +133,14 @@ std::string DataTypeTuple::doGetPrettyName(size_t indent) const
     return s.str();
 }
 
+DataTypePtr DataTypeTuple::getNormalizedType() const
+{
+    DataTypes normalized_elems;
+    normalized_elems.reserve(elems.size());
+    for (const auto & elem : elems)
+        normalized_elems.emplace_back(elem->getNormalizedType());
+    return std::make_shared<DataTypeTuple>(normalized_elems);
+}
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
@@ -415,10 +423,9 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     if (names.empty())
         return std::make_shared<DataTypeTuple>(nested_types);
-    else if (names.size() != nested_types.size())
+    if (names.size() != nested_types.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
-    else
-        return std::make_shared<DataTypeTuple>(nested_types, names);
+    return std::make_shared<DataTypeTuple>(nested_types, names);
 }
 
 

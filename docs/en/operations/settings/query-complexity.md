@@ -49,6 +49,18 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
+For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
+
+``` sql
+ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
+```
+
+You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
+
+```sql
+SELECT getSetting('max_memory_usage_for_user');
+```
+
 ## max_rows_to_read {#max-rows-to-read}
 
 The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
@@ -110,6 +122,19 @@ Default value: `0`.
 
 Cloud default value: half the memory amount per replica.
 
+## max_bytes_ratio_before_external_group_by {#settings-max_bytes_ratio_before_external_group_by}
+
+The ratio of available memory that is allowed for `GROUP BY`, once reached, uses external memory for aggregation.
+
+For example, if set to `0.6`, `GROUP BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external aggregation.
+
+Default value: `0.0`.
+
+:::note
+- You cannot use both `max_bytes_ratio_before_external_group_by` and `max_bytes_before_external_group_by`
+- **The algorithm is experimental and subject to change**
+:::
+
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
 Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
@@ -120,6 +145,19 @@ Enables or disables execution of `ORDER BY` clauses in external memory. See [ORD
 Default value: 0.
 
 Cloud default value: half the memory amount per replica.
+
+## max_bytes_ratio_before_external_sort {#settings-max_bytes_ratio_before_external_sort}
+
+The ratio of available memory that is allowed for `ORDER BY`, once reached, uses external sort.
+
+For example, if set to `0.6`, `ORDER BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+
+Default value: `0.0`.
+
+:::note
+- You cannot use both `max_bytes_ratio_before_external_sort` and `max_bytes_before_external_sort`
+- **The algorithm is experimental and subject to change**
+:::
 
 ## max_rows_to_sort {#max-rows-to-sort}
 

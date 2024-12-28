@@ -89,6 +89,8 @@ public:
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
+    const SettingsChanges & settingsFromServer() const;
+
     /// For log and exception messages.
     const String & getDescription(bool with_extra = false) const override; /// NOLINT
     const String & getHost() const;
@@ -108,6 +110,7 @@ public:
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
+        const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
     void sendCancel() override;
@@ -133,7 +136,6 @@ public:
     bool checkConnected(const ConnectionTimeouts & timeouts) override { return connected && ping(timeouts); }
 
     void disconnect() override;
-
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -210,8 +212,10 @@ private:
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
+    UInt64 server_parallel_replicas_protocol_version = 0;
     String server_timezone;
     String server_display_name;
+    SettingsChanges settings_from_server;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
@@ -274,6 +278,9 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
+
+    void cancel() noexcept;
+    void reset() noexcept;
 
 #if USE_SSH
     void performHandshakeForSSHAuth();

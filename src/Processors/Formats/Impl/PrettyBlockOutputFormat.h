@@ -38,13 +38,12 @@ protected:
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
-    void writeReadableNumberTip(const Chunk & chunk);
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
@@ -56,9 +55,9 @@ protected:
     }
 
     bool color;
+    bool readable_number_tip = false;
 
 private:
-    bool readable_number_tip = false;
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;

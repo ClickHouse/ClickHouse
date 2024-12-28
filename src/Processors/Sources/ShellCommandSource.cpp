@@ -173,9 +173,8 @@ public:
                     std::string_view str(stderr_read_buf.get(), res);
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
-                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
-                        LOG_WARNING(
-                            getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                    if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                        LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -610,8 +609,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 {
                     if (execute_direct)
                         return ShellCommand::executeDirect(command_config);
-                    else
-                        return ShellCommand::execute(command_config);
+                    return ShellCommand::execute(command_config);
                 };
 
                 return std::make_unique<ShellCommandHolder>(std::move(func));

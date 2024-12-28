@@ -153,7 +153,7 @@ static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false, typename LimitNumElems = std::false_type>
-class AggregateFunctionGroupUniqArrayGeneric
+class AggregateFunctionGroupUniqArrayGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData,
         AggregateFunctionGroupUniqArrayGeneric<is_plain_column, LimitNumElems>>
 {
@@ -245,7 +245,7 @@ public:
 
 /// Substitute return type for Date and DateTime
 template <typename HasLimit>
-class AggregateFunctionGroupUniqArrayDate : public AggregateFunctionGroupUniqArray<DataTypeDate::FieldType, HasLimit>
+class AggregateFunctionGroupUniqArrayDate final : public AggregateFunctionGroupUniqArray<DataTypeDate::FieldType, HasLimit>
 {
 public:
     explicit AggregateFunctionGroupUniqArrayDate(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
@@ -254,7 +254,7 @@ public:
 };
 
 template <typename HasLimit>
-class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType, HasLimit>
+class AggregateFunctionGroupUniqArrayDateTime final : public AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType, HasLimit>
 {
 public:
     explicit AggregateFunctionGroupUniqArrayDateTime(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
@@ -263,7 +263,7 @@ public:
 };
 
 template <typename HasLimit>
-class AggregateFunctionGroupUniqArrayIPv4 : public AggregateFunctionGroupUniqArray<DataTypeIPv4::FieldType, HasLimit>
+class AggregateFunctionGroupUniqArrayIPv4 final : public AggregateFunctionGroupUniqArray<DataTypeIPv4::FieldType, HasLimit>
 {
 public:
     explicit AggregateFunctionGroupUniqArrayIPv4(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
@@ -276,16 +276,15 @@ IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, TAr
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate<HasLimit>(argument_type, args...);
-    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime<HasLimit>(argument_type, args...);
-    else if (which.idx == TypeIndex::IPv4) return new AggregateFunctionGroupUniqArrayIPv4<HasLimit>(argument_type, args...);
-    else
-    {
-        /// Check that we can use plain version of AggregateFunctionGroupUniqArrayGeneric
-        if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return new AggregateFunctionGroupUniqArrayGeneric<true, HasLimit>(argument_type, args...);
-        else
-            return new AggregateFunctionGroupUniqArrayGeneric<false, HasLimit>(argument_type, args...);
-    }
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionGroupUniqArrayDateTime<HasLimit>(argument_type, args...);
+    if (which.idx == TypeIndex::IPv4)
+        return new AggregateFunctionGroupUniqArrayIPv4<HasLimit>(argument_type, args...);
+
+    /// Check that we can use plain version of AggregateFunctionGroupUniqArrayGeneric
+    if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        return new AggregateFunctionGroupUniqArrayGeneric<true, HasLimit>(argument_type, args...);
+    return new AggregateFunctionGroupUniqArrayGeneric<false, HasLimit>(argument_type, args...);
 }
 
 template <typename HasLimit, typename ... TArgs>
@@ -336,8 +335,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
 
     if (!limit_size)
         return createAggregateFunctionGroupUniqArrayImpl<std::false_type>(name, argument_types[0], parameters);
-    else
-        return createAggregateFunctionGroupUniqArrayImpl<std::true_type>(name, argument_types[0], parameters, max_elems);
+    return createAggregateFunctionGroupUniqArrayImpl<std::true_type>(name, argument_types[0], parameters, max_elems);
 }
 
 }

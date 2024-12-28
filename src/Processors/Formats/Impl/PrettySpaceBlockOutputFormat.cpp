@@ -1,4 +1,5 @@
 #include <Formats/FormatFactory.h>
+#include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/PrettySpaceBlockOutputFormat.h>
@@ -31,7 +32,8 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    Strings names;
+    calculateWidths(header, chunk, widths, max_widths, name_widths, names);
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
         writeString(String(row_number_width, ' '), out);
@@ -54,7 +56,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
 
                 if (color)
                     writeCString("\033[1m", out);
-                writeString(col.name, out);
+                writeString(names[i], out);
                 if (color)
                     writeCString("\033[0m", out);
             }
@@ -62,7 +64,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             {
                 if (color)
                     writeCString("\033[1m", out);
-                writeString(col.name, out);
+                writeString(names[i], out);
                 if (color)
                     writeCString("\033[0m", out);
 
@@ -102,7 +104,8 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             writeValueWithPadding(
                 *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
         }
-        writeReadableNumberTip(chunk);
+        if (readable_number_tip)
+            writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
         writeChar('\n', out);
     }
 

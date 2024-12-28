@@ -127,17 +127,12 @@ inline std::array<std::pair<UInt64, UInt64>, 2> createRangeFromCorners(UInt64 x1
             std::pair<UInt64, UInt64>{y_min, y_min + range_size}
         };
     }
-    else
-    {
-        UInt64 x_max = std::max(x1, x2);
-        UInt64 y_max = std::max(y1, y2);
-        chassert(x_max >= range_size);
-        chassert(y_max >= range_size);
-        return {
-            std::pair<UInt64, UInt64>{x_max - range_size, x_max},
-            std::pair<UInt64, UInt64>{y_max - range_size, y_max}
-        };
-    }
+
+    UInt64 x_max = std::max(x1, x2);
+    UInt64 y_max = std::max(y1, y2);
+    chassert(x_max >= range_size);
+    chassert(y_max >= range_size);
+    return {std::pair<UInt64, UInt64>{x_max - range_size, x_max}, std::pair<UInt64, UInt64>{y_max - range_size, y_max}};
 }
 
 /** Unpack an interval of Hilbert curve to hyperrectangles covered by it across N dimensions.

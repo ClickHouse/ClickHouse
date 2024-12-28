@@ -209,7 +209,7 @@ ReadFromSystemDetachedTables::ReadFromSystemDetachedTables(
     Block sample_block,
     std::vector<UInt8> columns_mask_,
     size_t max_block_size_)
-    : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
     , columns_mask(std::move(columns_mask_))
     , max_block_size(max_block_size_)
 {
@@ -231,7 +231,7 @@ void ReadFromSystemDetachedTables::initializePipeline(QueryPipelineBuilder & pip
 {
     auto pipe = Pipe(std::make_shared<DetachedTablesBlockSource>(
         std::move(columns_mask),
-        getOutputStream().header,
+        getOutputHeader(),
         max_block_size,
         std::move(filtered_databases_column),
         std::move(filtered_tables_column),

@@ -15,15 +15,19 @@ namespace DB
 class NativeInputFormat final : public IInputFormat
 {
 public:
-    NativeInputFormat(ReadBuffer & buf, const Block & header_, const FormatSettings & settings)
+    NativeInputFormat(ReadBuffer & buf, const Block & header_, const FormatSettings & settings_)
         : IInputFormat(header_, &buf)
         , reader(std::make_unique<NativeReader>(
               buf,
               header_,
               0,
-              settings,
-              settings.defaults_for_omitted_fields ? &block_missing_values : nullptr))
-        , header(header_) {}
+              settings_,
+              settings_.defaults_for_omitted_fields ? &block_missing_values : nullptr))
+        , header(header_)
+        , block_missing_values(header.columns())
+        , settings(settings_)
+        {
+        }
 
     String getName() const override { return "Native"; }
 
@@ -52,11 +56,11 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) override
     {
-        reader = std::make_unique<NativeReader>(in_, header, 0);
+        reader = std::make_unique<NativeReader>(in_, header, 0, settings, settings.defaults_for_omitted_fields ? &block_missing_values : nullptr);
         IInputFormat::setReadBuffer(in_);
     }
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -64,6 +68,7 @@ private:
     std::unique_ptr<NativeReader> reader;
     Block header;
     BlockMissingValues block_missing_values;
+    const FormatSettings settings;
     size_t approx_bytes_read_for_chunk = 0;
 };
 
@@ -137,6 +142,7 @@ void registerOutputFormatNative(FormatFactory & factory)
     {
         return std::make_shared<NativeOutputFormat>(buf, sample, settings, settings.client_protocol_version);
     });
+    factory.markOutputFormatNotTTYFriendly("Native");
 }
 
 

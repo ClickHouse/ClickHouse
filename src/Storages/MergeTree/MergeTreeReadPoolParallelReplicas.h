@@ -19,6 +19,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
+        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     ~MergeTreeReadPoolParallelReplicas() override = default;
@@ -31,12 +32,13 @@ public:
 private:
     mutable std::mutex mutex;
 
+    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
     const ParallelReadingExtension extension;
     const CoordinationMode coordination_mode;
     size_t min_marks_per_task{0};
+    size_t mark_segment_size{0};
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
-    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
 };
 
 }
