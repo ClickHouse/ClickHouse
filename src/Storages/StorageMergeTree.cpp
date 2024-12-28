@@ -1565,7 +1565,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         size_t done_count = 0;
         for (auto it = begin_it; it != end_it; ++it)
         {
-            ++done_count;
             auto & entry = it->second;
 
             if (!entry.tid.isPrehistoric())
@@ -1579,6 +1578,8 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
                 entry.is_done = true;
                 decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
             }
+
+            ++done_count;
         }
 
         if (done_count <= finished_mutations_to_keep)
