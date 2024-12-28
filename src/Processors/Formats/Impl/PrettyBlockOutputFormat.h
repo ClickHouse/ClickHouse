@@ -81,8 +81,6 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
                     && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
         });
-        if (!mono_block)
-            factory.markOutputFormatSupportsParallelFormatting(name);
     };
     creator(factory, base_name, false, false);
     creator(factory, base_name + "NoEscapes", true, false);

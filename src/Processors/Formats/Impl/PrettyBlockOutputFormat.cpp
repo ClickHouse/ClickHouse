@@ -151,7 +151,8 @@ struct GridSymbols
 
 GridSymbols utf8_grid_symbols;
 
-GridSymbols ascii_grid_symbols {
+GridSymbols ascii_grid_symbols
+{
     "+",
     "+",
     "+",
@@ -543,7 +544,9 @@ void PrettyBlockOutputFormat::writeSuffix()
     if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("  Showed ", out);
-        writeIntText(format_settings.pretty.max_rows, out);
+        writeIntText(displayed_rows, out);
+        writeCString(" out of ", out);
+        writeIntText(total_rows, out);
         writeCString(" rows.\n", out);
     }
 }

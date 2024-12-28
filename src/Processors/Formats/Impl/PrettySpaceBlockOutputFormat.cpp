@@ -91,7 +91,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
                 if (format_settings.pretty.output_format_pretty_row_numbers)
                     cut_width += row_number_width;
                 for (size_t j = 0; j < num_columns; ++j)
-                    cut_width += 2 + max_widths[j];
+                    cut_width += (j == 0 ? 1 : 3) + max_widths[j];
 
                 for (size_t ch = 0; ch < cut_width; ++ch)
                     writeChar(ch % 2 ? '-' : ' ', out);
@@ -153,7 +153,9 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
     if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("\nShowed ", out);
-        writeIntText(format_settings.pretty.max_rows, out);
+        writeIntText(displayed_rows, out);
+        writeCString(" out of ", out);
+        writeIntText(total_rows, out);
         writeCString(" rows.\n", out);
     }
 }

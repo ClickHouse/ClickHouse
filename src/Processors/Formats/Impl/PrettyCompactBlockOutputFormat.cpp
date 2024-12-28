@@ -11,13 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-
-
-}
-
-
 namespace
 {
 
@@ -38,7 +31,8 @@ struct GridSymbols
 
 GridSymbols utf8_grid_symbols;
 
-GridSymbols ascii_grid_symbols {
+GridSymbols ascii_grid_symbols
+{
     "+",
     "+",
     "+",
@@ -46,7 +40,7 @@ GridSymbols ascii_grid_symbols {
     "+",
     "+",
     "-",
-    "|"
+    "|",
     "-",
 };
 
@@ -181,13 +175,9 @@ void PrettyCompactBlockOutputFormat::writeRow(
     if (!format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0)
         cut_to_width = 0;
 
-    writeCString(grid_symbols.bar, out);
-
     for (size_t j = 0; j < num_columns; ++j)
     {
-        if (j != 0)
-            writeCString(grid_symbols.bar, out);
-
+        writeCString(grid_symbols.bar, out);
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][displayed_row];
         writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
