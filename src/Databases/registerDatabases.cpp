@@ -15,7 +15,6 @@ void registerDatabaseReplicated(DatabaseFactory & factory);
 
 #if USE_MYSQL
 void registerDatabaseMySQL(DatabaseFactory & factory);
-void registerDatabaseMaterializedMySQL(DatabaseFactory & factory);
 #endif
 
 #if USE_LIBPQXX
@@ -53,7 +52,6 @@ void registerDatabases()
 
 #if USE_MYSQL
     registerDatabaseMySQL(factory);
-    registerDatabaseMaterializedMySQL(factory);
 #endif
 
 #if USE_LIBPQXX
