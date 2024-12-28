@@ -181,6 +181,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.ignore_unnecessary_fields = settings[Setting::input_format_json_ignore_unnecessary_fields];
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
@@ -212,6 +213,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
     format_settings.pretty.max_column_pad_width = settings[Setting::output_format_pretty_max_column_pad_width];
     format_settings.pretty.max_rows = settings[Setting::output_format_pretty_max_rows];
+    format_settings.pretty.max_column_name_width_cut_to = settings[Setting::output_format_pretty_max_column_name_width_cut_to];
+    format_settings.pretty.max_column_name_width_min_chars_to_cut = settings[Setting::output_format_pretty_max_column_name_width_min_chars_to_cut];
     format_settings.pretty.max_value_width = settings[Setting::output_format_pretty_max_value_width];
     format_settings.pretty.max_value_width_apply_for_single_value = settings[Setting::output_format_pretty_max_value_width_apply_for_single_value];
     format_settings.pretty.highlight_digit_groups = settings[Setting::output_format_pretty_highlight_digit_groups];
@@ -254,7 +257,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.values.deduce_templates_of_expressions = settings[Setting::input_format_values_deduce_templates_of_expressions];
     format_settings.values.interpret_expressions = settings[Setting::input_format_values_interpret_expressions];
     format_settings.values.escape_quote_with_quote = settings[Setting::output_format_values_escape_quote_with_quote];
-    format_settings.composed_data_type_output_format_mode = settings[Setting::composed_data_type_output_format_mode];
     format_settings.with_names_use_header = settings[Setting::input_format_with_names_use_header];
     format_settings.with_types_use_header = settings[Setting::input_format_with_types_use_header];
     format_settings.write_statistics = settings[Setting::output_format_write_statistics];
@@ -833,6 +835,14 @@ void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
     target = true;
 }
 
+void FormatFactory::markOutputFormatNotTTYFriendly(const String & name)
+{
+    auto & target = getOrCreateCreators(name).is_tty_friendly;
+    if (!target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as non-TTY-friendly", name);
+    target = false;
+}
+
 bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
 {
     const auto & target = getCreators(name);
@@ -892,6 +902,12 @@ bool FormatFactory::checkIfOutputFormatPrefersLargeBlocks(const String & name) c
 {
     const auto & target = getCreators(name);
     return target.prefers_large_blocks;
+}
+
+bool FormatFactory::checkIfOutputFormatIsTTYFriendly(const String & name) const
+{
+    const auto & target = getCreators(name);
+    return target.is_tty_friendly;
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const

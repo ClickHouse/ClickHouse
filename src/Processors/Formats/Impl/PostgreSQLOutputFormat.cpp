@@ -68,5 +68,7 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
         [](WriteBuffer & buf,
            const Block & sample,
            const FormatSettings & settings) { return std::make_shared<PostgreSQLOutputFormat>(buf, sample, settings); });
+    factory.markOutputFormatNotTTYFriendly("PostgreSQLWire");
 }
+
 }
