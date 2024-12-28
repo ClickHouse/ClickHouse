@@ -44,7 +44,7 @@ protected:
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
