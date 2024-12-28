@@ -87,7 +87,7 @@ public:
         else
             nested_type = dynamic_cast<const IFunction &>(impl).getReturnTypeImpl(nested_arguments);
 
-        if constexpr (std::is_same_v<Impl, FunctionArrayMap>)
+        if constexpr (std::is_same_v<Impl, FunctionArrayMap> || std::is_same_v<Impl, FunctionArrayConcat>)
         {
             /// Check if nested type is Array(Tuple(key, value))
             const auto * type_array = typeid_cast<const DataTypeArray *>(nested_type.get());
