@@ -304,6 +304,8 @@ struct FormatSettings
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
+        UInt64 max_column_name_width_cut_to = 24;
+        UInt64 max_column_name_width_min_chars_to_cut = 4;
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;

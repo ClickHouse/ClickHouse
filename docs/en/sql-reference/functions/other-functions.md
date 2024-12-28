@@ -1225,7 +1225,7 @@ SELECT parseTimeDelta('1yr2mo')
 
 ## least
 
-Returns the smallest arguments of one or more input arguments.  NULL arguments are ignored.
+Returns the smallest arguments of one or more input arguments. `NULL` arguments are ignored.
 
 **Syntax**
 
@@ -1233,15 +1233,23 @@ Returns the smallest arguments of one or more input arguments.  NULL arguments a
 least(a, b)
 ```
 
+:::note
+Version [24.12](https://clickhouse.com/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+:::
+
 ## greatest
 
-Returns the largest arguments of one or more input arguments.  NULL arguments are ignored.
+Returns the largest arguments of one or more input arguments. `NULL` arguments are ignored.
 
 **Syntax**
 
 ```sql
 greatest(a, b)
 ```
+
+:::note
+Version [24.12](https://clickhouse.com/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+:::
 
 ## uptime
 
