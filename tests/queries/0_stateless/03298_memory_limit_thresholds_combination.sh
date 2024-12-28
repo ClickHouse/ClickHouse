@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-parallel, no-fasttest, no-tsan, no-asan, no-msan, no-ubsan
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-parallel, no-fasttest, no-tsan, no-asan, no-msan, no-ubsan
 # no sanitizers -- memory consumption is unpredicatable with sanitizers
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 let numbers_count=10000000
-let limit=500000000
+let limit=300000000
 let near_limit="$limit-1"
 let half_limit="$limit/2"
 
