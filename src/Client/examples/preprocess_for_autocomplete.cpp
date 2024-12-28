@@ -1,14 +1,15 @@
 #include "Client/AutocompleteModel.h"
 #include "Parsers/Lexer.h"
 
-#include <iostream>
 #include <filesystem>
 #include <fstream>
-#include <vector>
+#include <iostream>
 #include <string>
+#include <vector>
 
 
-std::vector<std::string> preprocessStringQuery(const std::string& query, AutocompleteModel& model) {
+std::vector<std::string> preprocessStringQuery(const std::string & query, AutocompleteModel & model)
+{
     auto lexer = DB::Lexer(query.data(), query.data() + query.size(), query.size());
 
     auto [preprocessed_for_tf, preprocessed_for_markov] = model.preprocessTokens(lexer);
@@ -17,8 +18,10 @@ std::vector<std::string> preprocessStringQuery(const std::string& query, Autocom
 }
 
 
-int main() {
-    std::string folder_1, folder_2;
+int main()
+{
+    std::string folder_1;
+    std::string folder_2;
     std::cout << "Enter folder_1 path: ";
     std::cin >> folder_1;
     std::cout << "Enter folder_2 path: ";
@@ -28,10 +31,13 @@ int main() {
 
     std::filesystem::create_directories(folder_2);
 
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(folder_1)) {
-        if (entry.is_regular_file()) {
+    for (const auto & entry : std::filesystem::recursive_directory_iterator(folder_1))
+    {
+        if (entry.is_regular_file())
+        {
             std::ifstream input_file(entry.path());
-            if (!input_file.is_open()) {
+            if (!input_file.is_open())
+            {
                 std::cerr << "Could not open file: " << entry.path() << std::endl;
                 continue;
             }
@@ -42,28 +48,35 @@ int main() {
             std::filesystem::create_directories(output_file_path.parent_path());
 
             std::ofstream output_file(output_file_path);
-            if (!output_file.is_open()) {
+            if (!output_file.is_open())
+            {
                 std::cerr << "Could not open file: " << output_file_path << std::endl;
                 continue;
             }
 
             std::string line;
-            while (std::getline(input_file, line)) {
+            while (std::getline(input_file, line))
+            {
                 std::vector<std::string> result = preprocessStringQuery(line, model);
 
                 // Those are bad examples, not gonna take them
-                if (result.size() >= 2) {
-                    if (result[0] == "SELECT" && result[1] == "Operator") {
+                if (result.size() >= 2)
+                {
+                    if (result[0] == "SELECT" && result[1] == "Operator")
+                    {
                         continue;
                         // std::cout << entry.path() << "\n";
                         // std::cout << line << "\n";
                     }
                 }
 
-                if (!result.empty()) {
-                    for (size_t i = 0; i < result.size(); ++i) {
+                if (!result.empty())
+                {
+                    for (size_t i = 0; i < result.size(); ++i)
+                    {
                         output_file << result[i];
-                        if (i != result.size() - 1) {
+                        if (i != result.size() - 1)
+                        {
                             output_file << " ";
                         }
                     }

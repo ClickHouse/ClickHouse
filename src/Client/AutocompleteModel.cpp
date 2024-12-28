@@ -1,80 +1,102 @@
-#include "AutocompleteModel.h"
-#include <cassert>
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <base/defines.h>
+
+#include <Client/AutocompleteModel.h>
 #include <Client/TransformerModel.h>
 #include <Parsers/Lexer.h>
 
-std::string toUpperCaseString(const char *begin, const char *end) {
-        std::string result;
-        
-        result.reserve(end - begin);
 
-        for (const char *ptr = begin; ptr != end; ++ptr) {
-            result += std::toupper(*ptr);
-        }
+std::string toUpperCaseString(const char * begin, const char * end)
+{
+    std::string result;
 
-        return result;
+    result.reserve(end - begin);
+
+    for (const char * ptr = begin; ptr != end; ++ptr)
+    {
+        result += std::toupper(*ptr);
+    }
+
+    return result;
 }
 
-bool AutocompleteModel::isTokenIdentifier(const DB::Token& token) const {
-    if (token.type == DB::TokenType::QuotedIdentifier) {
+bool AutocompleteModel::isTokenIdentifier(const DB::Token & token) const
+{
+    if (token.type == DB::TokenType::QuotedIdentifier)
+    {
         return true;
     }
-    if (token.type != DB::TokenType::BareWord) {
+    if (token.type != DB::TokenType::BareWord)
+    {
         return false;
     }
     std::string token_content_uppercase = toUpperCaseString(token.begin, token.end);
-    if (keywords.contains(token_content_uppercase)) {
+    if (keywords.contains(token_content_uppercase))
+    {
         return false;
     }
     return true;
 }
 
-bool AutocompleteModel::isTokenKeyword(const DB::Token& token) const {
+bool AutocompleteModel::isTokenKeyword(const DB::Token & token) const
+{
     return (token.type == DB::TokenType::BareWord && !isTokenIdentifier(token));
-
 }
 
-bool AutocompleteModel::isTokenLiteral(const DB::Token& token) const {
-    return (token.type == DB::TokenType::StringLiteral || token.type == DB::TokenType::Number || toUpperCaseString(token.begin, token.end) == "NULL");
+bool AutocompleteModel::isTokenLiteral(const DB::Token & token) const
+{
+    return (
+        token.type == DB::TokenType::StringLiteral || token.type == DB::TokenType::Number
+        || toUpperCaseString(token.begin, token.end) == "NULL");
 }
 
-bool AutocompleteModel::isTokenOperator(const DB::Token& prev_token, const DB::Token& token) const {
-    if (token.type == DB::TokenType::Asterisk) {
+bool AutocompleteModel::isTokenOperator(const DB::Token & prev_token, const DB::Token & token) const
+{
+    if (token.type == DB::TokenType::Asterisk)
+    {
         return isTokenIdentifier(prev_token) || isTokenLiteral(prev_token);
     }
     return operator_types.contains(token.type) || bare_words_operators.contains(toUpperCaseString(token.begin, token.end));
 }
 
-bool AutocompleteModel::isShortRec(const std::string& recomendation) const {
-    return short_tokens.contains(recomendation);
+bool AutocompleteModel::isShortRec(const std::string & recommendation) const
+{
+    return short_tokens.contains(recommendation);
 }
 
-bool AutocompleteModel::isBadRec(const std::string& rec) const {
+bool AutocompleteModel::isBadRec(const std::string & rec) const
+{
     return isShortRec(rec) || rec == GPTJModel::unk || rec == GPTJModel::eos || rec == GPTJModel::bos || rec == GPTJModel::pad;
 }
 
-std::vector<std::string> AutocompleteModel::postprocessRecs(const std::vector<std::string>& raw_recs) const {
+std::vector<std::string> AutocompleteModel::postprocessRecs(const std::vector<std::string> & raw_recs) const
+{
     std::vector<std::string> result;
     result.reserve(raw_recs.size());
 
-    if (raw_recs.empty() || raw_recs[0] == GPTJModel::eos || raw_recs[0] == GPTJModel::bos || raw_recs[0] == GPTJModel::pad) {
+    if (raw_recs.empty() || raw_recs[0] == GPTJModel::eos || raw_recs[0] == GPTJModel::bos || raw_recs[0] == GPTJModel::pad)
+    {
         return result;
     }
 
-    for (const auto& rec: raw_recs) {
-        if (isBadRec(rec)) {
+    for (const auto & rec : raw_recs)
+    {
+        if (isBadRec(rec))
+        {
             continue;
         }
-        if (rec == GPTJModel::literal && markov_literals.empty()) {
+        if (rec == GPTJModel::literal && markov_literals.empty())
+        {
             continue;
         }
-        if (rec == GPTJModel::identifier && markov_identifiers.empty()) {
+        if (rec == GPTJModel::identifier && markov_identifiers.empty())
+        {
             continue;
         }
-        if (rec == GPTJModel::operator_token && markov_operators.empty()) {
+        if (rec == GPTJModel::operator_token && markov_operators.empty())
+        {
             continue;
         }
         result.push_back(rec);
@@ -83,28 +105,38 @@ std::vector<std::string> AutocompleteModel::postprocessRecs(const std::vector<st
     return result;
 }
 
-void AutocompleteModel::replaceWithMarkovPredictions(std::vector<std::string>& transformer_recs, std::span<const std::string> preprocessed_tokens_for_markov) const {
-    if (transformer_recs.empty()) {
+void AutocompleteModel::replaceWithMarkovPredictions(
+    std::vector<std::string> & transformer_recs, std::span<const std::string> preprocessed_tokens_for_markov) const
+{
+    if (transformer_recs.empty())
+    {
         return;
     }
 
     size_t max_predictions = 3;
 
-    for (size_t i = 0; i < transformer_recs.size(); ++i) {
+    for (size_t i = 0; i < transformer_recs.size(); ++i)
+    {
         std::vector<std::string> markov_predictions;
 
         size_t predictions_num = std::max(1, static_cast<int>(max_predictions - i));
 
-        if (transformer_recs[i] == GPTJModel::literal && !markov_literals.empty()) {
+        if (transformer_recs[i] == GPTJModel::literal && !markov_literals.empty())
+        {
             markov_predictions = markov_literals.predictNext(preprocessed_tokens_for_markov, predictions_num);
-        } else if (transformer_recs[i] == GPTJModel::identifier && !markov_identifiers.empty()) {
+        }
+        else if (transformer_recs[i] == GPTJModel::identifier && !markov_identifiers.empty())
+        {
             markov_predictions = markov_identifiers.predictNext(preprocessed_tokens_for_markov, predictions_num);
-        } else if (transformer_recs[i] == GPTJModel::operator_token && !markov_operators.empty()) {
+        }
+        else if (transformer_recs[i] == GPTJModel::operator_token && !markov_operators.empty())
+        {
             markov_predictions = markov_operators.predictNext(preprocessed_tokens_for_markov, predictions_num);
         }
 
         // If we have Markov predictions, replace the transformer_rec with them
-        if (!markov_predictions.empty()) {
+        if (!markov_predictions.empty())
+        {
             transformer_recs.erase(transformer_recs.begin() + i);
             transformer_recs.insert(transformer_recs.begin() + i, markov_predictions.begin(), markov_predictions.end());
 
@@ -113,28 +145,36 @@ void AutocompleteModel::replaceWithMarkovPredictions(std::vector<std::string>& t
     }
 }
 
-void AutocompleteModel::deleteDuplicatesKeepOrder(std::vector<std::string>& recs) const {
+void AutocompleteModel::deleteDuplicatesKeepOrder(std::vector<std::string> & recs) const
+{
     std::unordered_set<std::string> seen;
     auto it = recs.begin();
 
-    while (it != recs.end()) {
-        if (seen.find(*it) != seen.end()) {
+    while (it != recs.end())
+    {
+        if (seen.find(*it) != seen.end())
+        {
             it = recs.erase(it);
-        } else {
+        }
+        else
+        {
             seen.insert(*it);
             ++it;
         }
     }
 }
 
-std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer& lexer) {
-    if (processed_queries_cnt < 1) {
+std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer & lexer)
+{
+    if (processed_queries_cnt < 1)
+    {
         return {};
     }
 
     auto [preprocessed_for_tf, preprocessed_for_markov] = preprocessTokens(lexer);
 
-    if (preprocessed_for_tf.empty() || preprocessed_for_markov.empty()) {
+    if (preprocessed_for_tf.empty() || preprocessed_for_markov.empty())
+    {
         return {};
     }
 
@@ -142,11 +182,13 @@ std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer& lexer) {
 
     recs = postprocessRecs(recs);
 
-    if (!markov_all.empty()) {
+    if (!markov_all.empty())
+    {
         auto [markov_all_rec, prob] = markov_all.predictNextWithProb(preprocessed_for_markov);
 
-        if (prob > 0.8 && markov_all_rec.size() > 1) {
-            recs.insert(recs.begin(),markov_all_rec); 
+        if (prob > 0.8 && markov_all_rec.size() > 1)
+        {
+            recs.insert(recs.begin(), markov_all_rec);
         }
     }
 
@@ -156,32 +198,43 @@ std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer& lexer) {
     return recs;
 }
 
-void AutocompleteModel::addQuery(DB::Lexer& lexer) {
-    if (markov_order == 0) {
+void AutocompleteModel::addQuery(DB::Lexer & lexer)
+{
+    if (markov_order == 0)
+    {
         return;
     }
     auto [preprocessed_for_tf, preprocessed_for_markov] = preprocessTokens(lexer);
-    
-    if (preprocessed_for_tf.empty() || preprocessed_for_markov.empty()) {
+
+    if (preprocessed_for_tf.empty() || preprocessed_for_markov.empty())
+    {
         return;
     }
 
-    for (size_t i = 1; i != markov_order; ++i) {
+    for (size_t i = 1; i != markov_order; ++i)
+    {
         preprocessed_for_markov.insert(preprocessed_for_markov.begin(), GPTJModel::bos);
         preprocessed_for_tf.insert(preprocessed_for_tf.begin(), GPTJModel::bos);
     }
 
     markov_all.addFullQuery(preprocessed_for_markov);
 
-    for (size_t i = markov_order - 1; i != preprocessed_for_tf.size(); ++i) {
-        if (preprocessed_for_tf[i] == GPTJModel::literal) {
-            markov_literals.addExample(std::span<const std::string>(preprocessed_for_markov.begin() + (i + 1) - markov_order, preprocessed_for_markov.begin() + i + 1));
+    for (size_t i = markov_order - 1; i != preprocessed_for_tf.size(); ++i)
+    {
+        if (preprocessed_for_tf[i] == GPTJModel::literal)
+        {
+            markov_literals.addExample(std::span<const std::string>(
+                preprocessed_for_markov.begin() + (i + 1) - markov_order, preprocessed_for_markov.begin() + i + 1));
         }
-        if (preprocessed_for_tf[i] == GPTJModel::identifier) {
-            markov_identifiers.addExample(std::span<const std::string>(preprocessed_for_markov.begin() + (i + 1) - markov_order, preprocessed_for_markov.begin() + i + 1));
+        if (preprocessed_for_tf[i] == GPTJModel::identifier)
+        {
+            markov_identifiers.addExample(std::span<const std::string>(
+                preprocessed_for_markov.begin() + (i + 1) - markov_order, preprocessed_for_markov.begin() + i + 1));
         }
-        if (preprocessed_for_tf[i] == GPTJModel::operator_token) {
-            markov_operators.addExample(std::span<const std::string>(preprocessed_for_markov.begin() + (i + 1) - markov_order, preprocessed_for_markov.begin() + i + 1));
+        if (preprocessed_for_tf[i] == GPTJModel::operator_token)
+        {
+            markov_operators.addExample(std::span<const std::string>(
+                preprocessed_for_markov.begin() + (i + 1) - markov_order, preprocessed_for_markov.begin() + i + 1));
         }
     }
 
@@ -192,19 +245,22 @@ void AutocompleteModel::addQuery(DB::Lexer& lexer) {
     markov_all.incTimestamp();
 
     processed_queries_cnt++;
-
 }
 
-bool AutocompleteModel::isBareWordEqualToString(const DB::Token& token, const std::string& str) const {
+bool AutocompleteModel::isBareWordEqualToString(const DB::Token & token, const std::string & str) const
+{
     return token.type == DB::TokenType::BareWord && toUpperCaseString(token.begin, token.end) == str;
 }
 
 
-void AutocompleteModel::squashTokens(std::vector<DB::Token>& tokens, size_t start_index, size_t end_index, const std::string& operator_literal) const {
+void AutocompleteModel::squashTokens(
+    std::vector<DB::Token> & tokens, size_t start_index, size_t end_index, const std::string & operator_literal) const
+{
     auto it = bare_words_operators.find(operator_literal);
-    if (it != bare_words_operators.end()) {
-        const char* begin_replacement = it->c_str();
-        const char* end_replacement = begin_replacement + std::strlen(begin_replacement);
+    if (it != bare_words_operators.end())
+    {
+        const char * begin_replacement = it->c_str();
+        const char * end_replacement = begin_replacement + std::strlen(begin_replacement);
         DB::Token new_token(DB::TokenType::BareWord, begin_replacement, end_replacement);
 
         tokens.erase(tokens.begin() + start_index, tokens.begin() + end_index + 1);
@@ -214,9 +270,10 @@ void AutocompleteModel::squashTokens(std::vector<DB::Token>& tokens, size_t star
 }
 
 
-
-void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) const {
-    if (tokens.size() < 3) {
+void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token> & tokens) const
+{
+    if (tokens.size() < 3)
+    {
         return;
     }
 
@@ -226,13 +283,13 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) con
     std::vector<std::string> after_not = {"BETWEEN", "IN", "LIKE", "EXISTS"};
     std::vector<std::string> before_not = {"AND", "OR"};
 
-    for (size_t i = 1; i != tokens.size(); ++i) {
-        
-        if (i >= 2) {
-            if (isBareWordEqualToString(tokens[i - 2], "GLOBAL") &&
-                isBareWordEqualToString(tokens[i - 1], "NOT") &&
-                isBareWordEqualToString(tokens[i], "IN")) {
-                
+    for (size_t i = 1; i != tokens.size(); ++i)
+    {
+        if (i >= 2)
+        {
+            if (isBareWordEqualToString(tokens[i - 2], "GLOBAL") && isBareWordEqualToString(tokens[i - 1], "NOT")
+                && isBareWordEqualToString(tokens[i], "IN"))
+            {
                 squashTokens(tokens, i - 2, i, "GLOBAL NOT IN");
                 i -= 2;
                 replaced_3_cnt++;
@@ -240,15 +297,18 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) con
             }
         }
 
-        if (isBareWordEqualToString(tokens[i - 1], "GLOBAL") && isBareWordEqualToString(tokens[i], "IN")) {
+        if (isBareWordEqualToString(tokens[i - 1], "GLOBAL") && isBareWordEqualToString(tokens[i], "IN"))
+        {
             squashTokens(tokens, i - 1, i, "GLOBAL IN");
             i--;
             replaced_2_cnt++;
             continue;
         }
 
-        for (const auto& word: after_not) {
-            if (isBareWordEqualToString(tokens[i - 1], "NOT") && isBareWordEqualToString(tokens[i], word)) {
+        for (const auto & word : after_not)
+        {
+            if (isBareWordEqualToString(tokens[i - 1], "NOT") && isBareWordEqualToString(tokens[i], word))
+            {
                 std::string operator_literal = "NOT ";
                 operator_literal += word;
                 squashTokens(tokens, i - 1, i, operator_literal);
@@ -257,8 +317,10 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) con
             }
         }
 
-        for (const auto& word: before_not) {
-            if (isBareWordEqualToString(tokens[i - 1], word) && isBareWordEqualToString(tokens[i], "NOT")) {
+        for (const auto & word : before_not)
+        {
+            if (isBareWordEqualToString(tokens[i - 1], word) && isBareWordEqualToString(tokens[i], "NOT"))
+            {
                 std::string operator_literal = word;
                 operator_literal += " NOT";
                 squashTokens(tokens, i - 1, i, operator_literal);
@@ -268,13 +330,15 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) con
         }
 
 
-        if (tokens[i - 1].type == DB::TokenType::Minus) {
-            if (i >= 2 && !(isTokenIdentifier(tokens[i - 2]) || isTokenLiteral(tokens[i - 2]))) {
-                
+        if (tokens[i - 1].type == DB::TokenType::Minus)
+        {
+            if (i >= 2 && !(isTokenIdentifier(tokens[i - 2]) || isTokenLiteral(tokens[i - 2])))
+            {
                 // If the current token is a Number, squash the Minus and Number tokens
-                if (tokens[i].type == DB::TokenType::Number) {
-                    const char* begin_replacement = tokens[i - 1].begin;
-                    const char* end_replacement = tokens[i].end;
+                if (tokens[i].type == DB::TokenType::Number)
+                {
+                    const char * begin_replacement = tokens[i - 1].begin;
+                    const char * end_replacement = tokens[i].end;
                     DB::Token new_token(DB::TokenType::Number, begin_replacement, end_replacement);
 
                     tokens.erase(tokens.begin() + i - 1, tokens.begin() + i + 1);
@@ -287,51 +351,63 @@ void AutocompleteModel::squashOperatorTokens(std::vector<DB::Token>& tokens) con
             }
         }
     }
-    assert(tokens.size() == initial_size - replaced_2_cnt - 2 * replaced_3_cnt);
+    chassert(tokens.size() == initial_size - replaced_2_cnt - 2 * replaced_3_cnt);
 }
 
-std::vector<std::string> AutocompleteModel::preprocessForTransformer(const std::vector<DB::Token>& tokens) const {
+std::vector<std::string> AutocompleteModel::preprocessForTransformer(const std::vector<DB::Token> & tokens) const
+{
     std::vector<std::string> result;
     result.reserve(tokens.size());
-    for (size_t i = 0; i != tokens.size(); ++i) {
-        if (i >= 1 && isTokenOperator(tokens[i - 1], tokens[i])) {
+    for (size_t i = 0; i != tokens.size(); ++i)
+    {
+        if (i >= 1 && isTokenOperator(tokens[i - 1], tokens[i]))
+        {
             result.push_back(GPTJModel::operator_token);
             continue;
         }
-        if (isTokenLiteral(tokens[i])) {
+        if (isTokenLiteral(tokens[i]))
+        {
             result.push_back(GPTJModel::literal);
             continue;
         }
-        if (isTokenKeyword(tokens[i])) {
+        if (isTokenKeyword(tokens[i]))
+        {
             result.push_back(toUpperCaseString(tokens[i].begin, tokens[i].end));
             continue;
         }
-        if (isTokenIdentifier(tokens[i])) {
+        if (isTokenIdentifier(tokens[i]))
+        {
             result.push_back(GPTJModel::identifier);
             continue;
         }
         result.push_back(getTokenName(tokens[i].type));
     }
-    assert(result.size() == tokens.size());
+    chassert(result.size() == tokens.size());
     return result;
 }
 
-std::vector<std::string> AutocompleteModel::preprocessForMarkov(const std::vector<DB::Token>& tokens) const {
+std::vector<std::string> AutocompleteModel::preprocessForMarkov(const std::vector<DB::Token> & tokens) const
+{
     std::vector<std::string> result;
     result.reserve(tokens.size());
-    for (const auto & token : tokens) {
-        if (isTokenKeyword(token)) {
+    for (const auto & token : tokens)
+    {
+        if (isTokenKeyword(token))
+        {
             result.push_back(toUpperCaseString(token.begin, token.end));
-        } else {
+        }
+        else
+        {
             result.push_back(std::string(token.begin, token.end));
         }
     }
-    assert(result.size() == tokens.size());
+    chassert(result.size() == tokens.size());
     return result;
 }
 
 
-std::pair<std::vector<std::string>, std::vector<std::string>> AutocompleteModel::preprocessTokens(DB::Lexer& lexer) const {
+std::pair<std::vector<std::string>, std::vector<std::string>> AutocompleteModel::preprocessTokens(DB::Lexer & lexer) const
+{
     std::vector<DB::Token> tokens_from_lexer{};
 
     while (true)
@@ -346,7 +422,7 @@ std::pair<std::vector<std::string>, std::vector<std::string>> AutocompleteModel:
 
         if (!token.isSignificant())
             continue;
-        
+
         tokens_from_lexer.push_back(token);
     }
 
@@ -356,12 +432,12 @@ std::pair<std::vector<std::string>, std::vector<std::string>> AutocompleteModel:
     auto tokens_for_markov = preprocessForMarkov(tokens_from_lexer);
 
 
-    assert(tokens_for_tf.size() == tokens_for_markov.size());
+    chassert(tokens_for_tf.size() == tokens_for_markov.size());
     return {tokens_for_tf, tokens_for_markov};
 }
 
 
-const std::unordered_set<std::string> AutocompleteModel::bare_words_operators {
+const std::unordered_set<std::string> AutocompleteModel::bare_words_operators{
     "AND",
     "OR",
     "NOT",
@@ -379,7 +455,7 @@ const std::unordered_set<std::string> AutocompleteModel::bare_words_operators {
     "NOT EXISTS",
 };
 
-const std::unordered_set<DB::TokenType> AutocompleteModel::operator_types {
+const std::unordered_set<DB::TokenType> AutocompleteModel::operator_types{
     // arithm
     DB::TokenType::Plus,
     DB::TokenType::Minus,
@@ -397,7 +473,7 @@ const std::unordered_set<DB::TokenType> AutocompleteModel::operator_types {
 };
 
 
-const std::unordered_set<std::string> AutocompleteModel::short_tokens {
+const std::unordered_set<std::string> AutocompleteModel::short_tokens{
     DB::getTokenName(DB::TokenType::Equals),
     DB::getTokenName(DB::TokenType::LessOrEquals),
     DB::getTokenName(DB::TokenType::GreaterOrEquals),

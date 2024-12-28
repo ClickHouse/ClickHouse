@@ -1,43 +1,61 @@
-#include "Autocomplete.h"
+#include <Client/Autocomplete.h>
 #include <replxx.hxx>
+#include <base/defines.h>
 
 
-namespace DB {
+namespace DB
+{
 
 
 template <>
-replxx::Replxx::completions_t Autocomplete::getPossibleNextWords<replxx::Replxx::completions_t>(const String & prefix, size_t, const char * word_break_characters) {
-    if (!loading_finished) {
+replxx::Replxx::completions_t
+Autocomplete::getPossibleNextWords<replxx::Replxx::completions_t>(const String & prefix, size_t, const char * word_break_characters)
+{
+    if (!loading_finished)
+    {
         return replxx::Replxx::completions_t{};
     }
-    assert(isLastCharSpace(prefix, word_break_characters));
+    chassert(isLastCharSpace(prefix, word_break_characters));
     Lexer lexer(prefix.data(), prefix.data() + prefix.size());
     auto result = model.predictNextWords(lexer);
     return replxx::Replxx::completions_t(result.begin(), result.end());
 }
 
 template <>
-replxx::Replxx::hints_t Autocomplete::getPossibleNextWords<replxx::Replxx::hints_t>(const String & prefix, size_t, const char * word_break_characters) {
-    if (!loading_finished) {
+replxx::Replxx::hints_t
+Autocomplete::getPossibleNextWords<replxx::Replxx::hints_t>(const String & prefix, size_t, const char * word_break_characters)
+{
+    if (!loading_finished)
+    {
         return replxx::Replxx::hints_t{};
     }
-    assert(isLastCharSpace(prefix, word_break_characters));
+    chassert(isLastCharSpace(prefix, word_break_characters));
     Lexer lexer(prefix.data(), prefix.data() + prefix.size());
     auto result = model.predictNextWords(lexer);
     return replxx::Replxx::hints_t(result.begin(), result.end());
 }
 
-void Autocomplete::addQuery(const String& query) {
+void Autocomplete::addQuery(const String & query)
+{
     Lexer lexer(query.data(), query.data() + query.size());
     model.addQuery(lexer);
 }
 
-void Autocomplete::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
+void Autocomplete::fetch(
+    IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
 {
     auto client_info_copy = client_info;
     client_info_copy.is_generated = true;
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info_copy, false, {});
+        timeouts,
+        query,
+        {} /* query_parameters */,
+        "" /* query_id */,
+        QueryProcessingStage::Complete,
+        nullptr,
+        &client_info_copy,
+        false,
+        {}, {});
 
     while (true)
     {
@@ -66,8 +84,8 @@ void Autocomplete::fetch(IServerConnection & connection, const ConnectionTimeout
                 return;
 
             default:
-                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                    packet.type, connection.getDescription());
+                throw Exception(
+                    ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection.getDescription());
         }
     }
 }
@@ -75,49 +93,44 @@ void Autocomplete::fetch(IServerConnection & connection, const ConnectionTimeout
 template <typename ConnectionType>
 void Autocomplete::load(ContextPtr context, const ConnectionParameters & connection_parameters)
 {
-    loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, this]
-    {
-        ThreadStatus thread_status;
-        for (size_t retry = 0; retry < 10; ++retry)
+    loading_thread = std::thread(
+        [my_context = Context::createCopy(context), connection_parameters, this]
         {
-            try
+            ThreadStatus thread_status;
+            for (size_t retry = 0; retry < 10; ++retry)
             {
-                auto connection = ConnectionType::createConnection(connection_parameters, my_context);
-                fetch(*connection,
-                    connection_parameters.timeouts,
-                    history_query,
-                    my_context->getClientInfo());
-            }
-            catch (const Exception & e)
-            {
-                last_error = e.code();
-                if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
-                    continue;
-                else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+                try
                 {
+                    auto connection = ConnectionType::createConnection(connection_parameters, my_context);
+                    fetch(*connection, connection_parameters.timeouts, history_query, my_context->getClientInfo());
+                }
+                catch (const Exception & e)
+                {
+                    last_error = e.code();
+                    if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                        continue;
+                    else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+                    {
+                        WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
+                        out << "Cannot load data for command line autocomplete: " << getCurrentExceptionMessage(false, true) << "\n";
+                        out.next();
+                    }
+                }
+                catch (...)
+                {
+                    last_error = getCurrentExceptionCode();
                     WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                     out << "Cannot load data for command line autocomplete: " << getCurrentExceptionMessage(false, true) << "\n";
                     out.next();
                 }
-            }
-            catch (...)
-            {
-                last_error = getCurrentExceptionCode();
-                WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
-                out << "Cannot load data for command line autocomplete: " << getCurrentExceptionMessage(false, true) << "\n";
-                out.next();
-            }
 
-            break;
-        }
-        loading_finished = true;
-    });
-
+                break;
+            }
+            loading_finished = true;
+        });
 }
 
-void Autocomplete::load(IServerConnection & connection,
-                    const ConnectionTimeouts & timeouts,
-                    const ClientInfo & client_info)
+void Autocomplete::load(IServerConnection & connection, const ConnectionTimeouts & timeouts, const ClientInfo & client_info)
 {
     try
     {
@@ -146,17 +159,15 @@ void Autocomplete::fillQueriesFromBlock(const Block & block)
     std::vector<std::string> new_queries;
     new_queries.reserve(rows);
     std::lock_guard lock(mutex);
-    for (size_t i = 0; i < rows; ++i) {
+    for (size_t i = 0; i < rows; ++i)
+    {
         history_queries.emplace_back(column[i].safeGet<String>());
         addQuery(history_queries.back());
-    }   
+    }
 }
 
 
+template void Autocomplete::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters);
 
-template
-void Autocomplete::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters);
-
-template
-void Autocomplete::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters);
+template void Autocomplete::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters);
 }
