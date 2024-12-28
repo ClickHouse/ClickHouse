@@ -23,7 +23,7 @@
     ├────────┼─────────────────────────┤
 25. │     24 │ Hello24                 │
     └────────┴─────────────────────────┘
-  Showed 10 rows.
+  Showed 10 out of 25 rows.
     ┌─number─┬─concat('Hello', number)─┐
  1. │      0 │ Hello0                  │
  2. │      1 │ Hello1                  │
@@ -37,7 +37,7 @@
 24. │     23 │ Hello23                 │
 25. │     24 │ Hello24                 │
     └────────┴─────────────────────────┘
-  Showed 10 rows.
+  Showed 10 out of 25 rows.
      number   concat('Hello', number)
 
  1.       0   Hello0                  
@@ -52,7 +52,7 @@
 24.      23   Hello23                 
 25.      24   Hello24                 
 
-Showed 10 rows.
+Showed 10 out of 25 rows.
     ┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━┓
     ┃ number ┃ concat('Hello', number) ┃
     ┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━┩
@@ -80,7 +80,7 @@ Showed 10 rows.
     ├────────┼─────────────────────────┤
 25. │     24 │ Hello24                 │
     └────────┴─────────────────────────┘
-  Showed 11 rows.
+  Showed 11 out of 25 rows.
     ┌─number─┬─concat('Hello', number)─┐
  1. │      0 │ Hello0                  │
  2. │      1 │ Hello1                  │
@@ -95,7 +95,7 @@ Showed 10 rows.
 24. │     23 │ Hello23                 │
 25. │     24 │ Hello24                 │
     └────────┴─────────────────────────┘
-  Showed 11 rows.
+  Showed 11 out of 25 rows.
      number   concat('Hello', number)
 
  1.       0   Hello0                  
@@ -111,4 +111,4 @@ Showed 10 rows.
 24.      23   Hello23                 
 25.      24   Hello24                 
 
-Showed 11 rows.
+Showed 11 out of 25 rows.
