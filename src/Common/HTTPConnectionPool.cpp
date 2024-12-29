@@ -12,6 +12,7 @@
 #include <Common/SipHash.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>

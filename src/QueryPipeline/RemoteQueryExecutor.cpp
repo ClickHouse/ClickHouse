@@ -407,7 +407,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     std::vector<String> local_granted_roles;
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries] && !modified_client_info.initial_user.empty())
     {
-        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, true);
+        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
         boost::container::flat_set<String> granted_roles;
         if (user)
         {
@@ -957,6 +957,8 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
 #if defined(OS_LINUX)
+
+    OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
 
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)

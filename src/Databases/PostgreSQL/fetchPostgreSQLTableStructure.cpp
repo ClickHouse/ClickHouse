@@ -108,7 +108,8 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
         /// there will be Numeric(x, y), otherwise just Numeric
-        UInt32 precision, scale;
+        UInt32 precision;
+        UInt32 scale;
         if (type.ends_with(")"))
         {
             res = DataTypeFactory::instance().get(type);
@@ -256,7 +257,7 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
             {
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}",
+                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}. Make sure no empty array values in the first row.",
                     postgres_table,
                     postgres_column);
             }

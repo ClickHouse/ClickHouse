@@ -4,12 +4,14 @@ from typing import List
 
 import requests
 from jwt import JWT, jwk_from_pem
-from praktika import Workflow
-from praktika.mangle import _get_workflows
-from praktika.settings import Settings
-from praktika.utils import Shell
+
+from . import Workflow
+from .mangle import _get_workflows
+from .settings import Settings
+from .utils import Shell
 
 
+# XXX: dead code with a bug in return installations[0]["id"] and using legacy jwt module
 class GHAuth:
     @staticmethod
     def _generate_jwt(client_id, pem):

@@ -129,6 +129,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
@@ -159,6 +160,8 @@ endif()
 if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
+
+add_headers_and_sources(dbms Databases/Iceberg)
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
