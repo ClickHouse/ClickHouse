@@ -33,6 +33,9 @@ namespace Setting
 }
 
 
+namespace
+{
+
 class FunctionSerial : public IFunction
 {
 private:
@@ -138,8 +141,9 @@ public:
 
         return col_res;
     }
-
 };
+
+}
 
 REGISTER_FUNCTION(Serial)
 {
