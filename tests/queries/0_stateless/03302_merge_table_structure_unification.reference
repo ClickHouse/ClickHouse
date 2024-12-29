@@ -8,3 +8,12 @@ b	String
 -1	['Goodbye']	2025-01-01 02:03:04	
 1	['World']	1970-01-01 00:00:00	Hello
 1	['World']	1970-01-01 00:00:00	Hello
+-1	['Goodbye']	2025-01-01 02:03:04	
+1	['World']	1970-01-01 00:00:00	Hello
+a	UInt8					
+b	String					
+c	Array(String)					
+1	Hello	['World']
+1	Hello	['World']
+255		['Goodbye']
+255		['Goodbye']

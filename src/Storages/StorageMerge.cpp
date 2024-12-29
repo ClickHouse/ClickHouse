@@ -222,7 +222,6 @@ ColumnsDescription StorageMerge::unifyColumnsDescription(std::function<void(std:
     if (res.empty())
         throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "There are no tables satisfied provided regexp, you must specify table structure manually"};
 
-    std::cerr << res.toString() << "\n";
     return res;
 }
 

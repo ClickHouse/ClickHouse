@@ -170,7 +170,6 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 
     return StorageMerge::unifyColumnsDescription([&table_num, &context, max_tables_to_look, this](std::function<void(const StoragePtr &)> callback)
     {
-        ++table_num;
         for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
         {
             for (const auto & table : db_with_tables.second)
