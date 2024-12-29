@@ -612,9 +612,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"add_minmax_index_for_numeric_columns", false, false, "New setting"},
             {"add_minmax_index_for_string_columns", false, false, "New setting"},
-        }
-    },
-    {"24.12",
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {
