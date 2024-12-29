@@ -3,6 +3,11 @@
 #include <cstdint>
 #include <Common/VariableContext.h>
 
+namespace DB
+{
+class TraceCollector;
+}
+
 /// To be able to temporarily stop memory tracking from current thread.
 struct MemoryTrackerBlockerInThread
 {
@@ -29,4 +34,5 @@ public:
 
     friend class MemoryTracker;
     friend struct AllocationTrace;
+    friend class DB::TraceCollector;
 };
