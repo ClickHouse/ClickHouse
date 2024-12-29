@@ -1,5 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/escapeForFileName.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -102,6 +103,7 @@ public:
 
         if (series_name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name cannot be empty");
+        series_name = escapeForFileName(series_name);
         if (series_name.size() > 100) /// Arbitrary safety threshold
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name '{}' is too long", series_name);
 
