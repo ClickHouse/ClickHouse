@@ -256,7 +256,7 @@ def test_async_load_system_database(started_cluster):
         node2.query(f"drop table if exists system.query_log_{i + 1}_test")
 
 
-def test_materialzed_views(started_cluster):
+def test_materialized_views(started_cluster):
     query = node1.query
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
@@ -278,7 +278,7 @@ def test_materialzed_views(started_cluster):
     query("drop database test_mv")
 
 
-def test_materialzed_views_cascaded(started_cluster):
+def test_materialized_views_cascaded(started_cluster):
     query = node1.query
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
@@ -300,39 +300,52 @@ def test_materialzed_views_cascaded(started_cluster):
     query("drop database test_mv")
 
 
-def test_materialzed_views_cascaded_multiple(started_cluster):
+def test_materialized_views_cascaded_multiple(started_cluster):
     query = node1.query
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.x (IdText String) engine=MergeTree order by IdText")
+    query("create table to_join (Id UInt64, IdBy100 UInt64) engine=MergeTree order by Id") # default DB
     query(
         "create table test_mv.z (Id UInt64, IdTextLength UInt64) engine=MergeTree order by Id"
     )
-    query("create materialized view t_to_a to test_mv.a as select Id from test_mv.t")
+    query(
+        "create table test_mv.zz (Id UInt64, IdBy100 UInt64) engine=MergeTree order by Id"
+    )
+    query("create materialized view t_to_a to test_mv.a as select Id from test_mv.t") # default DB
     query(
         "create materialized view t_to_x to test_mv.x as select toString(Id) as IdText from test_mv.t"
     )
     query(
         "create materialized view ax_to_z to test_mv.z as select Id, (select max(length(IdText)) from test_mv.x) as IdTextLength from test_mv.a"
     )
+    query(
+        "create materialized view test_mv.join_to_zz to test_mv.zz as select Id, IdBy100 from test_mv.t INNER JOIN to_join USING(Id);"
+    )
+
+    query("insert into to_join values(42, 4200)")
 
     node1.restart_clickhouse()
     query("insert into test_mv.t values(42)")
     assert query("select * from test_mv.a Format CSV") == "42\n"
     assert query("select * from test_mv.x Format CSV") == '"42"\n'
     assert query("select * from test_mv.z Format CSV") == "42,2\n"
+    assert query("select * from test_mv.zz Format CSV") == "42,4200\n"
 
     query("drop view t_to_a sync")
     query("drop view t_to_x sync")
     query("drop view ax_to_z sync")
+    query("drop view test_mv.join_to_zz")
     query("drop table test_mv.t sync")
     query("drop table test_mv.a sync")
     query("drop table test_mv.x sync")
     query("drop table test_mv.z sync")
+    query("drop table test_mv.zz sync")
+    query("drop table to_join sync")
     query("drop database test_mv sync")
 
-def test_materialzed_views_replicated(started_cluster):
+def test_materialized_views_replicated(started_cluster):
     nodenum=1
     for node in [node1, node2]:
         node.query(

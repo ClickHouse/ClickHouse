@@ -125,16 +125,19 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
         /// Gather tasks to startup before this table
         LoadTaskPtrs startup_mv_dependency_tasks;
         for (const StorageID & dependency_id : all_startup_dependencies.getDependencies(table_id))
-            startup_mv_dependency_tasks.push_back(startup_table[dependency_id.getFullTableName()]);
+            if (startup_table.contains(dependency_id.getFullTableName()))
+                startup_mv_dependency_tasks.push_back(startup_table[dependency_id.getFullTableName()]);
 
         // Make startup table task
         auto table_name = table_id.getQualifiedName();
+        if (!databases.contains(table_name.database) || !load_table.contains(table_id.getFullTableName()))
+            // Materialized view target does not necessary exist
+            continue;
+
         auto task = databases[table_name.database]->startupTableAsync(
             async_loader,
             joinJobs(load_table[table_id.getFullTableName()]->goals(),
                 getGoals(startup_mv_dependency_tasks, startup_after)),
-            // joinJobs(joinJobs(load_table[table_id.getFullTableName()]->goals(), startup_after),
-            //     startup_table[table_id.getFullTableName()]->goals()),
             table_name,
             strictness_mode);
         startup_table[table_id.getFullTableName()] = task;
