@@ -159,11 +159,11 @@ The server should be configured with Keeper.
 The series are stored in Keeper nodes under the path, which can be configured in `series_keeper_path` in the server configuration.
 By default, it is `/clickhouse/series/`.
 )",
-        .syntax = "generateSerialID(identifier)",
+        .syntax = "generateSerialID('identifier')",
         .arguments{
-            {"series identifier", "Series identifier (String or FixedString)"}
+            {"series identifier", "Series identifier (a short constant String)"}
         },
-        .returned_value = "Sequential numbers of type Int64 starting from the previous counter value",
+        .returned_value = "Sequential numbers starting from the previous counter value",
         .examples{
             {"first call", "SELECT generateSerialID('id1')", R"(
 ┌─generateSerialID('id1')──┐
