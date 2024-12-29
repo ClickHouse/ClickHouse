@@ -87,6 +87,10 @@ public:
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
 
+    /// Returns a unified column structure among multiple tables.
+    /// Takes a function that invokes a callback for every table. NOTE: This is quite inconvenient.
+    static ColumnsDescription unifyColumnsDescription(std::function<void(std::function<void(const StoragePtr &)>)> for_each_table);
+
 private:
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
@@ -123,7 +127,7 @@ private:
 
     ColumnSizeByName getColumnSizes() const override;
 
-    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+    ColumnsDescription getColumnsDescriptionFromSourceTables(size_t max_tables_to_look) const;
 
     static VirtualColumnsDescription createVirtuals();
 

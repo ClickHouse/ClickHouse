@@ -82,6 +82,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_bfloat16_type", false, true, "Add new BFloat16 type"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
+            {"merge_table_max_tables_to_look_for_schema_inference", 1, 1000, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
