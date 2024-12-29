@@ -259,6 +259,15 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
     writeChar('"', buf);
 }
 
+enum AnyEscapedStringFlags : std::uint64_t
+{
+    escape_default = 0,
+    escape_backslash_with_backslash = 1,
+    escape_quote_with_quote = 2,
+    escape_nul_with_concat_sqlite = 4,
+    escape_stop_at_first_nul = 8,
+};
+
 
 /** Will escape quote_character and a list of special characters('\b', '\f', '\n', '\r', '\t', '\0', '\\').
  *   - when escape_quote_with_quote is true, use backslash to escape list of special characters,
@@ -266,7 +275,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
  *     otherwise use backslash to escape list of special characters and quote_character
  *   - when escape_backslash_with_backslash is true, backslash is escaped with another backslash
  */
-template <char quote_character, bool escape_quote_with_quote = false, bool escape_backslash_with_backslash = true, bool stop_at_first_nul = false>
+template <char quote_character, AnyEscapedStringFlags flags = AnyEscapedStringFlags::escape_backslash_with_backslash>
 void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & buf)
 {
     const char * pos = begin;
@@ -289,7 +298,7 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
             {
                 case quote_character:
                 {
-                    if constexpr (escape_quote_with_quote)
+                    if constexpr ((flags & AnyEscapedStringFlags::escape_quote_with_quote) == AnyEscapedStringFlags::escape_quote_with_quote)
                         writeChar(quote_character, buf);
                     else
                         writeChar('\\', buf);
@@ -317,13 +326,20 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
                     writeChar('t', buf);
                     break;
                 case '\0':
-                    if constexpr (stop_at_first_nul)
+                    if constexpr ((flags & AnyEscapedStringFlags::escape_stop_at_first_nul) == AnyEscapedStringFlags::escape_stop_at_first_nul)
                         return;
-                    writeChar('\\', buf);
-                    writeChar('0', buf);
+                    else if constexpr ((flags & AnyEscapedStringFlags::escape_nul_with_concat_sqlite) == AnyEscapedStringFlags::escape_nul_with_concat_sqlite)
+                    {
+                        writeString(std::string_view("'||char(0)||'"), buf);
+                    }
+                    else
+                    {
+                        writeChar('\\', buf);
+                        writeChar('0', buf);
+                    }
                     break;
                 case '\\':
-                    if constexpr (escape_backslash_with_backslash)
+                    if constexpr ((flags & AnyEscapedStringFlags::escape_backslash_with_backslash) == AnyEscapedStringFlags::escape_backslash_with_backslash)
                         writeChar('\\', buf);
                     writeChar('\\', buf);
                     break;
@@ -581,17 +597,26 @@ inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
     writeAnyQuotedString<'\''>(ref.data(), ref.data() + ref.size(), buf);
 }
 
+inline void writeQuotedStringSQLite(std::string_view ref, WriteBuffer & buf)
+{
+    // SQLite:
+    // - escape quote with quote (https://www.sqlite.org/lang_expr.html)
+    // - null inside the string not recommended (https://www.sqlite.org/nulinstr.html)
+    //   also needs to be entered as 'abc'||char(0)||'xyz'
+    constexpr auto flags = static_cast<AnyEscapedStringFlags>(AnyEscapedStringFlags::escape_quote_with_quote | AnyEscapedStringFlags::escape_nul_with_concat_sqlite);
+    writeChar('\'', buf);
+    writeAnyEscapedString<'\'', flags>(ref.data(), ref.data() + ref.size(), buf);
+    writeChar('\'', buf);
+}
+
 inline void writeQuotedStringPostgreSQL(std::string_view ref, WriteBuffer & buf)
 {
     // PostgreSQL:
     // - escape quote with quote possible (https://www.postgresql.org/docs/current/sql-syntax-lexical.html)
     // - no null char inside the string (https://www.postgresql.org/docs/current/datatype-character.html)
-    // SQLite:
-    // - escape quote with quote (https://www.sqlite.org/lang_expr.html)
-    // - null inside the string not recommended (https://www.sqlite.org/nulinstr.html)
-    //   also needs to be entered as 'abc'||char(0)||'xyz'
+    constexpr auto flags = static_cast<AnyEscapedStringFlags>(AnyEscapedStringFlags::escape_quote_with_quote | AnyEscapedStringFlags::escape_stop_at_first_nul);
     writeChar('\'', buf);
-    writeAnyEscapedString<'\'', true, false, true>(ref.data(), ref.data() + ref.size(), buf);
+    writeAnyEscapedString<'\'', flags>(ref.data(), ref.data() + ref.size(), buf);
     writeChar('\'', buf);
 }
 
@@ -620,7 +645,7 @@ inline void writeBackQuotedString(StringRef s, WriteBuffer & buf)
 inline void writeBackQuotedStringMySQL(StringRef s, WriteBuffer & buf)
 {
     writeChar('`', buf);
-    writeAnyEscapedString<'`', true>(s.data, s.data + s.size, buf);
+    writeAnyEscapedString<'`', AnyEscapedStringFlags::escape_quote_with_quote>(s.data, s.data + s.size, buf);
     writeChar('`', buf);
 }
 

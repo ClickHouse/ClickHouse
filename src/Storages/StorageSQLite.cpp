@@ -29,6 +29,7 @@ ContextPtr makeSQLiteWriteContext(ContextPtr context)
 {
     auto write_context = Context::createCopy(context);
     write_context->setSetting("output_format_values_escape_quote_with_quote", Field(true));
+    write_context->setSetting("output_format_values_escape_nul_with_concat_sqlite", Field(true));
     return write_context;
 }
 

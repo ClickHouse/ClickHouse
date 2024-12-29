@@ -414,6 +414,7 @@ struct FormatSettings
         bool accurate_types_of_literals = true;
         bool allow_data_after_semicolon = false;
         bool escape_quote_with_quote = false;
+        bool escape_nul_with_concat_sqlite = false;
     } values{};
 
     enum class ORCCompression : uint8_t

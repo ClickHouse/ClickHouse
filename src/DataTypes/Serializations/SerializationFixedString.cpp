@@ -202,7 +202,9 @@ bool SerializationFixedString::tryDeserializeTextEscaped(IColumn & column, ReadB
 void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    if (settings.values.escape_quote_with_quote)
+    if (settings.values.escape_nul_with_concat_sqlite)
+        writeQuotedStringSQLite({pos, pos + n}, ostr);
+    else if (settings.values.escape_quote_with_quote)
         writeQuotedStringPostgreSQL({pos, pos + n}, ostr);
     else
         writeAnyQuotedString<'\''>(pos, pos + n, ostr);
