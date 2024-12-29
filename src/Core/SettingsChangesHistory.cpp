@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
+            {"query_plan_try_use_vector_search", false, true, "New setting."},
             {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
             {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."},
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
