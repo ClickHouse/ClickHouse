@@ -214,8 +214,6 @@ endif ()
 
 add_contrib (xxHash-cmake xxHash)
 
-add_contrib (expected-cmake expected)
-
 add_contrib (libbcrypt-cmake libbcrypt)
 
 add_contrib (google-benchmark-cmake google-benchmark)

@@ -23,7 +23,6 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Core/Settings.cpp
     $ROOT_PATH/src/Databases/Iceberg/DatabaseIcebergSettings.cpp
     $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp
-    $ROOT_PATH/src/Databases/MySQL/MaterializedMySQLSettings.cpp
     $ROOT_PATH/src/IO/S3AuthSettings.cpp
     $ROOT_PATH/src/IO/S3RequestSettings.cpp
     $ROOT_PATH/src/Processors/QueryPlan/QueryPlanSerializationSettings.cpp
