@@ -922,6 +922,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
+        .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 
     factory.registerStorage("MergeTree", create, features);

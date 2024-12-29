@@ -32,7 +32,8 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    Strings names;
+    calculateWidths(header, chunk, widths, max_widths, name_widths, names);
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
         writeString(String(row_number_width, ' '), out);
@@ -55,7 +56,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
 
                 if (color)
                     writeCString("\033[1m", out);
-                writeString(col.name, out);
+                writeString(names[i], out);
                 if (color)
                     writeCString("\033[0m", out);
             }
@@ -63,7 +64,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             {
                 if (color)
                     writeCString("\033[1m", out);
-                writeString(col.name, out);
+                writeString(names[i], out);
                 if (color)
                     writeCString("\033[0m", out);
 

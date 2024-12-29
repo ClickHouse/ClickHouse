@@ -1175,7 +1175,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
-        /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.
+        /// However, it's needed for Materialized...SQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
     }
 
