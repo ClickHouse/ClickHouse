@@ -6901,6 +6901,8 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
         /* is_attach */ true,
         /* allow_attach_while_readonly */ true);
 
+    results.reserve(loaded_parts.size());
+
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         const String old_name = loaded_parts[i]->name;
@@ -8334,6 +8336,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         partitions.emplace(getPartitionIDFromQuery(partition, query_context));
     }
     LOG_INFO(log, "Will try to attach {} partitions", partitions.size());
+
+    if (partitions.empty())
+        return;
 
     const Stopwatch watch;
     ProfileEventsScope profile_events_scope;
