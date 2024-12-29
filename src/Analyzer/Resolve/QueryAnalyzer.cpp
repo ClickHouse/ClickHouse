@@ -690,9 +690,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     const auto & scalar_column_with_type = scalar_block.safeGetByPosition(0);
     const auto & scalar_type = scalar_column_with_type.type;
 
-    Field scalar_value;
-    scalar_column_with_type.column->get(0, scalar_value);
-
     const auto * scalar_type_name = scalar_block.safeGetByPosition(0).type->getFamilyName();
     static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
     auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -701,10 +698,10 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     if (!context->getSettingsRef()[Setting::enable_scalar_subquery_optimization] || !useless_literal_types.contains(scalar_type_name)
         || !context->hasQueryContext() || !nearest_query_scope)
     {
-        auto constant_value = std::make_shared<ConstantValue>(std::move(scalar_value), scalar_type);
+        ConstantValue constant_value{ scalar_column_with_type.column, scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);
 
-        if (constant_node->getValue().isNull())
+        if (scalar_column_with_type.column->isNullAt(0))
         {
             node = buildCastFunction(constant_node, constant_node->getResultType(), context);
             node = std::make_shared<ConstantNode>(std::move(constant_value), node);
@@ -727,8 +724,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     std::string get_scalar_function_name = "__getScalar";
 
-    auto scalar_query_hash_constant_value = std::make_shared<ConstantValue>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
-    auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_constant_value));
+    auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
 
     auto get_scalar_function_node = std::make_shared<FunctionNode>(get_scalar_function_name);
     get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
@@ -870,8 +866,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             "{} numeric constant expression is not representable as UInt64",
             expression_description);
 
-    auto constant_value = std::make_shared<ConstantValue>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
-    auto result_constant_node = std::make_shared<ConstantNode>(std::move(constant_value));
+    auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
     result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
 
     expression_node = std::move(result_constant_node);
@@ -919,7 +914,7 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if (table_expression_has_alias)
         return;
 
-    if (join_node->as<JoinNode &>().getKind() == JoinKind::Paste)
+    if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() == JoinKind::Paste)
         return;
 
     auto * query_node = table_expression_node->as<QueryNode>();
@@ -1709,6 +1704,13 @@ bool hasTableExpressionInJoinTree(const QueryTreeNodePtr & join_tree_node, const
             nodes_to_process.push_back(join_node.getLeftTableExpression());
             nodes_to_process.push_back(join_node.getRightTableExpression());
         }
+
+        if (node_to_process->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
+        {
+            const auto & join_node = node_to_process->as<CrossJoinNode &>();
+            for (const auto & expr : join_node.getTableExpressions())
+                nodes_to_process.push_back(expr);
+        }
     }
     return false;
 }
@@ -1990,6 +1992,30 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     table_expression_column_node = std::move(array_join_resolved_expression);
             }
 
+            continue;
+        }
+
+        auto * cross_join_node = table_expression->as<CrossJoinNode>();
+
+        if (cross_join_node)
+        {
+            size_t stack_size = table_expressions_column_nodes_with_names_stack.size();
+            size_t num_tables = cross_join_node->getTableExpressions().size();
+            if (stack_size < cross_join_node->getTableExpressions().size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Expected at least {} table expressions on stack before CROSS_JOIN processing. Actual {}",
+                    num_tables,
+                    stack_size);
+
+            QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
+            for (size_t i = stack_size - num_tables; i < stack_size; ++i)
+            {
+                for (auto && table_column_with_name : table_expressions_column_nodes_with_names_stack[i])
+                    matched_expression_nodes_with_column_names.push_back(std::move(table_column_with_name));
+            }
+
+            table_expressions_column_nodes_with_names_stack.resize(stack_size - num_tables);
+            table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));
             continue;
         }
 
@@ -3054,7 +3080,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
-            argument_column.column = constant_node->getResultType()->createColumnConst(1, constant_node->getValue());
+            argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
             argument_is_constant = true;
         }
@@ -3458,7 +3484,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (first_argument_constant_node && second_argument_constant_node)
         {
             const auto & first_argument_constant_type = first_argument_constant_node->getResultType();
-            const auto & second_argument_constant_literal = second_argument_constant_node->getValue();
+            const auto second_argument_constant_literal = second_argument_constant_node->getValue();
             const auto & second_argument_constant_type = second_argument_constant_node->getResultType();
 
             const auto & settings = scope.context->getSettingsRef();
@@ -3467,8 +3493,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 first_argument_constant_type, second_argument_constant_literal, second_argument_constant_type, settings[Setting::transform_null_in]);
 
             SizeLimits size_limits_for_set = {settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]};
-
-            auto set = std::make_shared<Set>(size_limits_for_set, 0, settings[Setting::transform_null_in]);
 
             auto hash = function_arguments[1]->getTreeHash();
             auto future_set = std::make_shared<FutureSetFromTuple>(hash, std::move(result_block), settings[Setting::transform_null_in], size_limits_for_set);
@@ -3482,7 +3506,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         argument_columns[1].type = std::make_shared<DataTypeSet>();
     }
 
-    std::shared_ptr<ConstantValue> constant_value;
+    ConstantNodePtr constant_node;
 
     try
     {
@@ -3511,7 +3535,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (all_arguments_constants)
             {
-                size_t num_rows = 0;
+                size_t num_rows = 1;
                 if (!argument_columns.empty())
                     num_rows = argument_columns.front().column->size();
                 column = executable_function->execute(argument_columns, result_type, num_rows, true);
@@ -3538,9 +3562,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
-                Field column_constant_value;
-                column->get(0, column_constant_value);
-                constant_value = std::make_shared<ConstantValue>(std::move(column_constant_value), result_type);
+                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node);
             }
         }
 
@@ -3552,8 +3574,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         throw;
     }
 
-    if (constant_value)
-        node = std::make_shared<ConstantNode>(std::move(constant_value), node);
+    if (constant_node)
+        node = std::move(constant_node);
 
     return result_projection_names;
 }
@@ -3883,6 +3905,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
         case QueryTreeNodeType::TABLE_FUNCTION:
             [[fallthrough]];
         case QueryTreeNodeType::ARRAY_JOIN:
+            [[fallthrough]];
+        case QueryTreeNodeType::CROSS_JOIN:
             [[fallthrough]];
         case QueryTreeNodeType::JOIN:
         {
@@ -4446,6 +4470,16 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 break;
             }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                auto & join = current_join_tree_node->as<CrossJoinNode &>();
+                for (auto & expr : join.getTableExpressions())
+                    join_tree_node_ptrs_to_process_queue.push_back(&expr);
+
+                scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
+                scope.joins_count += join.getTableExpressions().size() - 1;
+                break;
+            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join = current_join_tree_node->as<JoinNode &>();
@@ -4998,7 +5032,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, true /*ignore_alias*/);
 
-        auto process_array_join_expression = [&](QueryTreeNodePtr & expression)
+        auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
         {
             auto result_type = expression->getResultType();
             bool is_array_type = isArray(result_type);
@@ -5066,17 +5100,17 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     array_join_nodes = std::move(array_join_column_expressions);
 }
 
-void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope)
+void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope)
 {
     Names column_names;
     if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
         return;
 
-    if (join_node->as<JoinNode &>().getKind() != JoinKind::Paste)
+    if (join_node.getKind() != JoinKind::Paste)
         return;
 
-    auto * left_node = left_table_expr->as<QueryNode>();
-    auto * right_node = right_table_expr->as<QueryNode>();
+    auto * left_node = join_node.getLeftTableExpression()->as<QueryNode>();
+    auto * right_node = join_node.getRightTableExpression()->as<QueryNode>();
 
     if (!left_node && !right_node)
         return;
@@ -5096,7 +5130,20 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & joi
         if (column_names[i] == column_names[i+1])
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Name of columns and aliases should be unique for this query (you can add/change aliases to avoid duplication)"
-                            "While processing '{}'", join_node->formatASTForErrorMessage());
+                            "While processing '{}'", join_node.formatASTForErrorMessage());
+}
+
+/// Resolve join node in scope
+void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
+{
+    auto & cross_join_node_typed = cross_join_node->as<CrossJoinNode &>();
+    auto & expressions = cross_join_node_typed.getTableExpressions();
+
+    for (auto & expr : expressions)
+    {
+        resolveQueryJoinTreeNode(expr, scope, expressions_visitor);
+        validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
+    }
 }
 
 /// Resolve join node in scope
@@ -5111,7 +5158,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
 
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
-        checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression(), scope);
+        checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);
 
     if (join_node_typed.isOnJoinExpression())
     {
@@ -5302,6 +5349,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             resolveArrayJoin(join_tree_node, scope, expressions_visitor);
+            break;
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+        {
+            resolveCrossJoin(join_tree_node, scope, expressions_visitor);
             break;
         }
         case QueryTreeNodeType::JOIN:

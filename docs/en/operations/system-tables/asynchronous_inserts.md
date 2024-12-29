@@ -2,7 +2,11 @@
 title: asynchronous_inserts
 slug: /en/operations/system-tables/asynchronous_inserts
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # asynchronous_inserts
+
+<SystemTableCloud/>
 
 Contains information about pending asynchronous inserts in queue.
 

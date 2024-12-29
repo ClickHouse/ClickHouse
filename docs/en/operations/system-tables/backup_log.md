@@ -2,7 +2,11 @@
 title: backup_log
 slug: /en/operations/system-tables/backup_log
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # backup_log
+
+<SystemTableCloud/>
 
 Contains logging entries with the information about `BACKUP` and `RESTORE` operations.
 

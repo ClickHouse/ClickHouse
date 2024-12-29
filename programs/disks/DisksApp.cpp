@@ -18,6 +18,8 @@
 #include <Formats/registerFormats.h>
 #include <Common/TerminalSize.h>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -289,7 +291,7 @@ void DisksApp::addOptions()
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
     command_descriptions.emplace("help", makeCommandHelp(*this));
-#ifdef CLICKHOUSE_CLOUD
+#if CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
 #endif
     for (const auto & [command_name, command_ptr] : command_descriptions)

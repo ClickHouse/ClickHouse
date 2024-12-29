@@ -2,7 +2,11 @@
 title: errors
 slug: /en/operations/system-tables/errors
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # errors
+
+<SystemTableCloud/>
 
 Contains error codes with the number of times they have been triggered.
 

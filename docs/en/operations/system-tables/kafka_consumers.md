@@ -2,7 +2,11 @@
 title: kafka_consumers
 slug: /en/operations/system-tables/kafka_consumers
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # kafka_consumers
+
+<SystemTableCloud/>
 
 Contains information about Kafka consumers.
 Applicable for [Kafka table engine](../../engines/table-engines/integrations/kafka) (native ClickHouse integration)
