@@ -41,7 +41,6 @@ public:
     void copyFile(const String & destination, const String & source, size_t size) override;
 
     void removeFile(const String & file_name) override;
-    void removeFiles(const Strings & file_names) override;
     void removeEmptyDirectories() override;
 
 private:
