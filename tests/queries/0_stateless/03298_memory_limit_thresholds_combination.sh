@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-let numbers_count=10000000
+let numbers_count=100000000
 let limit=300000000
 let near_limit="$limit-1"
 let half_limit="$limit/2"
