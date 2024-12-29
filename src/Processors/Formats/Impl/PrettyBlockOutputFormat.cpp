@@ -46,7 +46,7 @@ void PrettyBlockOutputFormat::calculateWidths(
     WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names)
 {
     size_t num_rows = chunk.getNumRows();
-    size_t num_displayed_rows = std::min(num_rows, format_settings.pretty.max_rows);
+    size_t num_displayed_rows = std::min<size_t>(num_rows, format_settings.pretty.max_rows);
 
     /// len(num_rows + total_rows) + len(". ")
     row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3;
