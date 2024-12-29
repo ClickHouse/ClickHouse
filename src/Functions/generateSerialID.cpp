@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int KEEPER_EXCEPTION;
     extern const int LIMIT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
 }
