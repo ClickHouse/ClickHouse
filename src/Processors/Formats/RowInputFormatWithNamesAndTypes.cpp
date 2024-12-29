@@ -60,16 +60,17 @@ RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTyp
     bool with_types_,
     const FormatSettings & format_settings_,
     std::unique_ptr<FormatReaderImpl> format_reader_,
-    bool try_detect_header_)
+    bool try_detect_header_,
+    bool allow_variable_number_of_columns_)
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
     , format_settings(format_settings_)
     , data_types(header_.getDataTypes())
     , with_names(with_names_)
     , with_types(with_types_)
-    , allow_variable_number_of_columns(allow_variable_number_of_columns_)
     , format_reader(std::move(format_reader_))
     , is_binary(is_binary_)
     , try_detect_header(try_detect_header_)
+    , allow_variable_number_of_columns(allow_variable_number_of_columns_)
 {
     column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
@@ -630,4 +631,3 @@ template class RowInputFormatWithNamesAndTypes<CustomSeparatedFormatReader>;
 template class RowInputFormatWithNamesAndTypes<BinaryFormatReader<true>>;
 template class RowInputFormatWithNamesAndTypes<BinaryFormatReader<false>>;
 }
-
