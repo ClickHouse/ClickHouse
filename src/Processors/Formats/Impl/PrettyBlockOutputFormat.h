@@ -27,6 +27,7 @@ protected:
     void consumeExtremes(Chunk) override;
 
     size_t total_rows = 0;
+    size_t displayed_rows = 0;
     size_t row_number_width = 7; // "10000. "
 
     const FormatSettings format_settings;
@@ -54,7 +55,10 @@ protected:
     void resetFormatterImpl() override
     {
         total_rows = 0;
+        displayed_rows = 0;
     }
+
+    static bool cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows);
 
     bool color;
     bool readable_number_tip = false;
