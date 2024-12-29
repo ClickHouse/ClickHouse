@@ -574,7 +574,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 }
             }
         }
-        
+
         /// Otherwise just clear data on disk
         if (!clear && !partition)
             metadata.columns.remove(column_name);
