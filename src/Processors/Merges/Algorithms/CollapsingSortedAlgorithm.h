@@ -54,6 +54,7 @@ private:
 
     size_t count_positive = 0;    /// The number of positive rows for the current primary key.
     size_t count_negative = 0;    /// The number of negative rows for the current primary key.
+    size_t count_invalid = 0;     /// The number of rows with invalid sign values for the current primary key.
     bool last_is_positive = false;  /// true if the last row for the current primary key is positive.
 
     /// Fields specific for VERTICAL merge algorithm.

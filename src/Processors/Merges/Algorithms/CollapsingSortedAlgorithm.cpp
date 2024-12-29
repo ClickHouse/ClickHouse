@@ -77,7 +77,7 @@ void CollapsingSortedAlgorithm::insertRow(RowRef & row)
 
 std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 {
-    if (count_positive == 0 && count_negative == 0)
+    if (count_positive == 0 && count_negative == 0 && count_invalid == 0)
     {
         /// No input rows have been read.
         return {};
@@ -205,6 +205,10 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
         {
             /// Insert row with invalid sign as is
             insertRow(current_row);
+            ++count_invalid;
+            if (out_row_sources_buf)
+                current_row_sources[current_pos].setSkipFlag(false);
+
             if (count_invalid_sign < MAX_ERROR_MESSAGES)
                 LOG_WARNING(log, "Incorrect data: Sign = {} (must be 1 or -1).", toString(sign));
             ++count_invalid_sign;

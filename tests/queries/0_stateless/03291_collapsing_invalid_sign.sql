@@ -38,3 +38,17 @@ DELETE FROM t0 WHERE TRUE;
 SELECT * FROM t0;
 
 DROP TABLE t0;
+
+-- CI found a LOGICAL_ERROR during vertical merge, testing for it here
+DROP TABLE IF EXISTS t_03291_collapsing_invalid_sign_vertical_merge;
+
+CREATE TABLE t_03291_collapsing_invalid_sign_vertical_merge (c0 Int64, c1 Int8) ENGINE = CollapsingMergeTree(c1) ORDER BY tuple()
+SETTINGS enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 0, vertical_merge_algorithm_min_bytes_to_activate = 0, vertical_merge_algorithm_min_columns_to_activate = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO TABLE t_03291_collapsing_invalid_sign_vertical_merge VALUES (1, 0);
+
+INSERT INTO TABLE t_03291_collapsing_invalid_sign_vertical_merge VALUES (1, 0);
+
+OPTIMIZE TABLE t_03291_collapsing_invalid_sign_vertical_merge;
+
+DROP TABLE t_03291_collapsing_invalid_sign_vertical_merge;
