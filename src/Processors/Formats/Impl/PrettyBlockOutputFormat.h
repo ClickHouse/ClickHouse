@@ -26,6 +26,7 @@ protected:
     void consumeExtremes(Chunk) override;
 
     size_t total_rows = 0;
+    size_t displayed_rows = 0;
     size_t row_number_width = 7; // "10000. "
 
     const FormatSettings format_settings;
@@ -52,7 +53,10 @@ protected:
     void resetFormatterImpl() override
     {
         total_rows = 0;
+        displayed_rows = 0;
     }
+
+    static bool cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows);
 
     bool color;
     bool readable_number_tip = false;
@@ -77,8 +81,6 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
                     && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
         });
-        if (!mono_block)
-            factory.markOutputFormatSupportsParallelFormatting(name);
     };
     creator(factory, base_name, false, false);
     creator(factory, base_name + "NoEscapes", true, false);
