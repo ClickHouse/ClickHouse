@@ -2750,8 +2750,8 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
     }
 
     if (!res.empty())
-        LOG_TRACE(log, "Found {} old parts to remove. Parts: [{}]",
-                  res.size(), fmt::join(getPartsNames(res), ", "));
+        LOG_TRACE(log, "Skipped {} old parts, Found {} old parts to remove. Parts: [{}]",
+                  skipped_parts.size(), res.size(), fmt::join(getPartsNames(res), ", "));
 
     return res;
 }
@@ -2924,7 +2924,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         );
     }
 
-
     if (!remove_parts_in_order)
     {
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
@@ -2947,7 +2946,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         }
 
         runner.waitForAllToFinishAndRethrowFirstError();
-
         return;
     }
 

@@ -59,7 +59,8 @@ static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 }
 
 
-FutureSetFromStorage::FutureSetFromStorage(Hash hash_, SetPtr set_) : hash(hash_), set(std::move(set_)) {}
+FutureSetFromStorage::FutureSetFromStorage(Hash hash_, SetPtr set_, std::optional<StorageID> storage_id_)
+    : hash(hash_), storage_id(std::move(storage_id_)), set(std::move(set_)) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
 FutureSet::Hash FutureSetFromStorage::getHash() const { return hash; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
@@ -105,6 +106,17 @@ FutureSetFromTuple::FutureSetFromTuple(
 
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 FutureSet::Hash FutureSetFromTuple::getHash() const { return hash; }
+
+Columns FutureSetFromTuple::getKeyColumns()
+{
+    if (!set->hasExplicitSetElements())
+    {
+        set->fillSetElements();
+        set->appendSetElements(set_key_columns);
+    }
+
+    return set->getSetElements();
+}
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
@@ -291,6 +303,7 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ColumnsWithTy
     auto from_tuple = std::make_shared<FutureSetFromTuple>(
         key, std::move(block),
         settings[Setting::transform_null_in], size_limits);
+
     const auto & set_types = from_tuple->getTypes();
     auto & sets_by_hash = sets_from_tuple[key];
 
@@ -302,9 +315,9 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ColumnsWithTy
     return from_tuple;
 }
 
-FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)
+FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_, StorageID storage_id)
 {
-    auto from_storage = std::make_shared<FutureSetFromStorage>(key, std::move(set_));
+    auto from_storage = std::make_shared<FutureSetFromStorage>(key, std::move(set_), std::move(storage_id));
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
 
     if (!inserted)
