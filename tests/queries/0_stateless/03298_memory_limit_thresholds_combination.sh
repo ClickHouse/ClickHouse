@@ -11,49 +11,51 @@ let limit=300000000
 let near_limit="$limit-1"
 let half_limit="$limit/2"
 
+export common_settings="max_rows_to_read=$numbers_count, max_memory_usage_for_user=$limit"
+
 echo "[Aggregation] -- No Limits"
 $CLICKHOUSE_CLIENT -q "
     SELECT uniqExact(number::String), uniqExact((number, number)) FROM numbers($numbers_count) GROUP BY (number % 1000)::String FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0
+    SETTINGS $common_settings, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0
     -- { serverError MEMORY_LIMIT_EXCEEDED }
 "
 
 echo "[Aggregation] -- Big Ratio"
 $CLICKHOUSE_CLIENT -q "
     SELECT uniqExact(number::String), uniqExact((number, number)) FROM numbers($numbers_count) GROUP BY (number % 1000)::String FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0.99999999
+    SETTINGS $common_settings, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0.99999999
     -- { serverError MEMORY_LIMIT_EXCEEDED }
 "
 
 echo "[Aggregation] -- Big Bytes"
 $CLICKHOUSE_CLIENT -q "
     SELECT uniqExact(number::String), uniqExact((number, number)) FROM numbers($numbers_count) GROUP BY (number % 1000)::String FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_group_by = $near_limit, max_bytes_ratio_before_external_group_by = 0
+    SETTINGS $common_settings, max_bytes_before_external_group_by = $near_limit, max_bytes_ratio_before_external_group_by = 0
     -- { serverError MEMORY_LIMIT_EXCEEDED }
 "
 
 echo "[Aggregation] -- Bytes Limit Only"
 $CLICKHOUSE_CLIENT -q "
     SELECT uniqExact(number::String), uniqExact((number, number)) FROM numbers($numbers_count) GROUP BY (number % 1000)::String FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_group_by = $half_limit, max_bytes_ratio_before_external_group_by = 0
+    SETTINGS $common_settings, max_bytes_before_external_group_by = $half_limit, max_bytes_ratio_before_external_group_by = 0
 "
 
 echo "[Aggregation] -- Ratio Limit Only"
 $CLICKHOUSE_CLIENT -q "
     SELECT uniqExact(number::String), uniqExact((number, number)) FROM numbers($numbers_count) GROUP BY (number % 1000)::String FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0.5
+    SETTINGS $common_settings, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0.5
 "
 
 echo "[Aggregation] -- Small Bytes Big Ratio"
 $CLICKHOUSE_CLIENT -q "
     SELECT uniqExact(number::String), uniqExact((number, number)) FROM numbers($numbers_count) GROUP BY (number % 1000)::String FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_group_by = $half_limit, max_bytes_ratio_before_external_group_by = 0.99999999
+    SETTINGS $common_settings, max_bytes_before_external_group_by = $half_limit, max_bytes_ratio_before_external_group_by = 0.99999999
 "
 
 echo "[Aggregation] -- Big Bytes Small Ratio"
 $CLICKHOUSE_CLIENT -q "
     SELECT uniqExact(number::String), uniqExact((number, number)) FROM numbers($numbers_count) GROUP BY (number % 1000)::String FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_group_by = $near_limit, max_bytes_ratio_before_external_group_by = 0.5
+    SETTINGS $common_settings, max_bytes_before_external_group_by = $near_limit, max_bytes_ratio_before_external_group_by = 0.5
 "
 
 ####################################################
@@ -61,44 +63,44 @@ $CLICKHOUSE_CLIENT -q "
 echo "[Sort] -- No Limits"
 $CLICKHOUSE_CLIENT -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0
+    SETTINGS $common_settings, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0
     -- { serverError MEMORY_LIMIT_EXCEEDED }
 "
 
 echo "[Sort] -- Big Ratio"
 $CLICKHOUSE_CLIENT -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0.99999999
+    SETTINGS $common_settings, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0.99999999
     -- { serverError MEMORY_LIMIT_EXCEEDED }
 "
 
 echo "[Sort] -- Big Bytes"
 $CLICKHOUSE_CLIENT -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_sort = $near_limit, max_bytes_ratio_before_external_sort = 0
+    SETTINGS $common_settings, max_bytes_before_external_sort = $near_limit, max_bytes_ratio_before_external_sort = 0
     -- { serverError MEMORY_LIMIT_EXCEEDED }
 "
 
 echo "[Sort] -- Bytes Limit Only"
 $CLICKHOUSE_CLIENT -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_sort = $half_limit, max_bytes_ratio_before_external_sort = 0
+    SETTINGS $common_settings, max_bytes_before_external_sort = $half_limit, max_bytes_ratio_before_external_sort = 0
 "
 
 echo "[Sort] -- Ratio Limit Only"
 $CLICKHOUSE_CLIENT -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0.5
+    SETTINGS $common_settings, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0.5
 "
 
 echo "[Sort] -- Small Bytes Big Ratio"
 $CLICKHOUSE_CLIENT -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_sort = $half_limit, max_bytes_ratio_before_external_sort = 0.99999999
+    SETTINGS $common_settings, max_bytes_before_external_sort = $half_limit, max_bytes_ratio_before_external_sort = 0.99999999
 "
 
 echo "[Sort] -- Big Bytes Small Ratio"
 $CLICKHOUSE_CLIENT -q "
     SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS max_memory_usage_for_user = $limit, max_bytes_before_external_sort = $near_limit, max_bytes_ratio_before_external_sort = 0.5
+    SETTINGS $common_settings, max_bytes_before_external_sort = $near_limit, max_bytes_ratio_before_external_sort = 0.5
 "
