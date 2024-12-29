@@ -2924,7 +2924,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         );
     }
 
-
     if (!remove_parts_in_order)
     {
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
@@ -2947,7 +2946,6 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         }
 
         runner.waitForAllToFinishAndRethrowFirstError();
-
         return;
     }
 
