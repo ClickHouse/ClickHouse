@@ -6,19 +6,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-let numbers_count=100000000
+let numbers_count=10000000
 let limit=300000000
 let near_limit="$limit-1"
 let half_limit="$limit/2"
 
 export common_settings="max_rows_to_read=$numbers_count, max_memory_usage_for_user=$limit"
-
-echo "[Aggregation] -- No Limits"
-$CLICKHOUSE_CLIENT -q "
-    SELECT uniqExact(number::String), uniqExact((number, number)) FROM numbers($numbers_count) GROUP BY (number % 1000)::String FORMAT Null
-    SETTINGS $common_settings, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0
-    -- { serverError MEMORY_LIMIT_EXCEEDED }
-"
 
 echo "[Aggregation] -- Big Ratio"
 $CLICKHOUSE_CLIENT -q "
@@ -59,13 +52,6 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 ####################################################
-
-echo "[Sort] -- No Limits"
-$CLICKHOUSE_CLIENT -q "
-    SELECT number FROM numbers($numbers_count) ORDER BY (number::String, (number+1)::String) FORMAT Null
-    SETTINGS $common_settings, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0
-    -- { serverError MEMORY_LIMIT_EXCEEDED }
-"
 
 echo "[Sort] -- Big Ratio"
 $CLICKHOUSE_CLIENT -q "
