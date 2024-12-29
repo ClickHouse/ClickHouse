@@ -139,11 +139,11 @@ namespace
 /// As an optimization, for error_handling = Zero/Null, we only care that
 /// an error happened but not which one specifically. This removes the need
 /// to copy the error string.
-#define RETURN_ERROR(error_code, ...)                                        \
-{                                                                            \
-    if constexpr (error_handling == ErrorHandling::Exception)                \
+#define RETURN_ERROR(error_code, ...)                                         \
+{                                                                             \
+    if constexpr (error_handling == ErrorHandling::Exception)                 \
         return std::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
-    else                                                                     \
+    else                                                                      \
         return std::unexpected(ErrorCodeAndMessage(error_code));              \
 }
 
@@ -151,14 +151,14 @@ namespace
 #define RETURN_ERROR_IF_FAILED(function_call)             \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
-        return std::unexpected(result.error());            \
+        return std::unexpected(result.error());           \
 }
 
 /// Run a function and either assign the result (if successful) or return an error.
 #define ASSIGN_RESULT_OR_RETURN_ERROR(res, function_call) \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
-        return std::unexpected(result.error());            \
+        return std::unexpected(result.error());           \
     else                                                  \
         (res) = *result;                                  \
 }
