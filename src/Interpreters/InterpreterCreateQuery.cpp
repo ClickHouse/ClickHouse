@@ -657,11 +657,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         /// ignore or not other database extensions depending on compatibility settings
         if (col_decl.default_specifier == "AUTO_INCREMENT"
-            && !context_->getSettingsRef()[Setting::compatibility_ignore_auto_increment_in_create_table])
+            && !context_->getSettingsRef()[Setting::compatibility_ignore_auto_increment_in_create_table]
+            && mode <= LoadingStrictnessLevel::CREATE)
         {
             throw Exception(ErrorCodes::SYNTAX_ERROR,
-                            "AUTO_INCREMENT is not supported. To ignore the keyword "
-                            "in column declaration, set `compatibility_ignore_auto_increment_in_create_table` to true");
+                "AUTO_INCREMENT is not supported. To ignore the keyword "
+                "in column declaration, set `compatibility_ignore_auto_increment_in_create_table` to true");
         }
 
         if (col_decl.default_expression)

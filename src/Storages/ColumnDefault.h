@@ -14,7 +14,8 @@ enum class ColumnDefaultKind : uint8_t
     Default,
     Materialized,
     Alias,
-    Ephemeral
+    Ephemeral,
+    AutoIncrement,
 };
 
 

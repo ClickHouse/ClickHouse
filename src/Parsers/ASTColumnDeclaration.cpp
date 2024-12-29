@@ -80,10 +80,10 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
                       << (*null_modifier ? "" : "NOT ") << "NULL" << (format_settings.hilite ? hilite_none : "");
     }
 
-    if (default_expression)
+    if (!default_specifier.empty())
     {
         ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
-        if (!ephemeral_default)
+        if (default_expression)
         {
             ostr << ' ';
             default_expression->format(ostr, format_settings, state, frame);
