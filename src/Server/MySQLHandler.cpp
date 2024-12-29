@@ -174,7 +174,7 @@ static String killConnectionIdReplacementQuery(const String & query)
 /** MySQL returns this error code, HY000, so should we.
   *
   * These error codes represent the worst legacy practices in software engineering from 1970s
-  * (fixed-size fields, short variable names, cryptic abbreviations, lack of documentation)
+  * (fixed-size fields, short variable names, cryptic abbreviations, lack of documentation, made-up alphabets)
   * We should never ever fall into these practices, and having this compatibility error code is probably the only exception.
   *
   * You might be wondering, why it is HY000, and more precisely, what do the letters H and Y mean?
