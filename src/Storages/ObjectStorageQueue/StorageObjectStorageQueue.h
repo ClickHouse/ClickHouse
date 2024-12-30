@@ -74,10 +74,12 @@ private:
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-    UInt64 polling_min_timeout_ms;
-    UInt64 polling_max_timeout_ms;
-    UInt64 polling_backoff_ms;
-    const CommitSettings commit_settings;
+
+    mutable std::mutex mutex;
+    UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
+    UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
+    UInt64 polling_backoff_ms TSA_GUARDED_BY(mutex);
+    CommitSettings commit_settings TSA_GUARDED_BY(mutex);
 
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     ConfigurationPtr configuration;

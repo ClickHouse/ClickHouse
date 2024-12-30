@@ -181,5 +181,7 @@
 
   "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v4_fails_with_wrong_resolution",
   "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v4",
-  "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v6"
+  "test_host_regexp_multiple_ptr_records/test.py::test_host_regexp_multiple_ptr_v6",
+
+  "test_grpc_protocol/test.py"
 ]
