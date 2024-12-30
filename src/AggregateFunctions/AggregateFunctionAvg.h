@@ -7,6 +7,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
@@ -211,6 +212,25 @@ public:
 
         auto * double_numerator = nativeCast<Numerator>(b, numerator_value, this->getResultType());
         auto * double_denominator = nativeCast<Denominator>(b, denominator_value, this->getResultType());
+
+        /// If numerator is decimal, we need to scale it to the result type
+        if constexpr (is_decimal<Numerator>)
+        {
+            auto scale = getDecimalScale(*removeNullable(this->argument_types[0]));
+            auto multipler = DecimalUtils::scaleMultiplier<NativeType<Numerator>>(scale);
+
+            llvm::Value * multipler_value = nullptr;
+            if constexpr (!is_over_big_decimal<Numerator>)
+                multipler_value = llvm::ConstantInt::get(numerator_type, static_cast<uint64_t>(multipler), true);
+            else
+            {
+                llvm::APInt value(numerator_type->getIntegerBitWidth(), multipler.items);
+                multipler_value = llvm::ConstantInt::get(numerator_type, value);
+            }
+
+            auto double_multipler = nativeCast<Numerator>(b, multipler_value, this->getResultType());
+            double_denominator = b.CreateFMul(double_denominator, double_multipler);
+        }
 
         return b.CreateFDiv(double_numerator, double_denominator);
     }
