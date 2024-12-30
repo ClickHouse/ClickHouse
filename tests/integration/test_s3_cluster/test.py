@@ -513,13 +513,23 @@ def test_cluster_default_expression(started_cluster):
 def test_hive_partitioning(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     for i in range(1, 5):
-        node.query(
+        exists = node.query(
             f"""
-            INSERT
-                INTO FUNCTION s3('http://minio1:9001/root/data/hive/key={i}/data.parquet', 'minio', 'minio123', 'Parquet', 'key Int32, value Int32')
-                VALUES ({i}, {i})
+            SELECT
+                count()
+                FROM s3('http://minio1:9001/root/data/hive/key={i}/*', 'minio', 'minio123', 'Parquet', 'key Int32, value Int32')
+                GROUP BY ALL
+                FORMAT TSV
             """
         )
+        if int(exists) == 0:
+            node.query(
+                f"""
+                INSERT
+                    INTO FUNCTION s3('http://minio1:9001/root/data/hive/key={i}/data.parquet', 'minio', 'minio123', 'Parquet', 'key Int32, value Int32')
+                    VALUES ({i}, {i})
+                """
+            )
 
     query_id_full = str(uuid.uuid4())
     result = node.query(
