@@ -883,9 +883,7 @@ void RemoteQueryExecutor::sendExternalTables()
                         storage_snapshot, query_info, my_context,
                         read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
 
-                    auto builder = plan.buildQueryPipeline(
-                        QueryPlanOptimizationSettings::fromContext(my_context),
-                        BuildQueryPipelineSettings::fromContext(my_context));
+                    auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context));
 
                     builder->resize(1);
                     builder->addTransform(std::make_shared<LimitsCheckingTransform>(builder->getHeader(), limits));
@@ -957,6 +955,8 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard() const
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
 #if defined(OS_LINUX)
+
+    OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
 
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)
