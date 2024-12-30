@@ -343,11 +343,11 @@ static FunctionNodePtr wrapExpressionNodeInFunctionWithSecondConstantStringArgum
     auto function_node = std::make_shared<FunctionNode>(std::move(function_name));
 
     auto constant_node_type = std::make_shared<DataTypeString>();
-    auto constant_value = std::make_shared<ConstantValue>(std::move(second_argument), std::move(constant_node_type));
+    auto constant_value = ConstantValue{second_argument, std::move(constant_node_type)};
 
     ColumnsWithTypeAndName argument_columns;
     argument_columns.push_back({nullptr, expression->getResultType(), {}});
-    argument_columns.push_back({constant_value->getType()->createColumnConst(1, constant_value->getValue()), constant_value->getType(), {}});
+    argument_columns.push_back({constant_value.getColumn(), constant_value.getType(), {}});
 
     auto function = FunctionFactory::instance().tryGet(function_node->getFunctionName(), context);
     auto function_base = function->build(argument_columns);
@@ -1399,7 +1399,7 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     if (!second_argument || second_argument->getValue().getType() != Field::Types::String)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected constant string as second argument of getSubcolumn function {}", resolved_function->dumpTree());
 
-    const auto & resolved_subcolumn_path = second_argument->getValue().safeGet<String &>();
+    auto resolved_subcolumn_path = second_argument->getValue().safeGet<String>();
     if (!startsWith(resolved_subcolumn_path, array_join_subcolumn_prefix))
         return {};
 
@@ -1408,7 +1408,48 @@ QueryTreeNodePtr IdentifierResolver::matchArrayJoinSubcolumns(
     return wrapExpressionNodeInSubcolumn(std::move(column_node), resolved_subcolumn_path.substr(array_join_subcolumn_prefix.size()), scope.context);
 }
 
-QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpressions(const QueryTreeNodePtr & resolved_expression,
+QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinNestedExpression(
+    const QueryTreeNodePtr & resolved_expression,
+    IdentifierResolveScope & scope,
+    ColumnNode & array_join_column_expression_typed,
+    QueryTreeNodePtr & array_join_column_inner_expression)
+{
+    auto * array_join_column_inner_expression_function = array_join_column_inner_expression->as<FunctionNode>();
+
+    if (array_join_column_inner_expression_function
+        && array_join_column_inner_expression_function->getFunctionName() == "nested"
+        && array_join_column_inner_expression_function->getArguments().getNodes().size() > 1
+        && isTuple(array_join_column_expression_typed.getResultType()))
+    {
+        const auto & nested_function_arguments = array_join_column_inner_expression_function->getArguments().getNodes();
+        size_t nested_function_arguments_size = nested_function_arguments.size();
+
+        const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode &>();
+        const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array &>();
+        size_t nested_keys_names_size = nested_keys_names.size();
+
+        if (nested_keys_names_size == nested_function_arguments_size - 1)
+        {
+            for (size_t i = 1; i < nested_function_arguments_size; ++i)
+            {
+                if (!nested_function_arguments[i]->isEqual(*resolved_expression))
+                    continue;
+
+                auto array_join_column = std::make_shared<ColumnNode>(
+                    array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource());
+
+                const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
+                Identifier nested_identifier = Identifier(nested_key_name);
+                return wrapExpressionNodeInTupleElement(array_join_column, nested_identifier, scope.context);
+            }
+        }
+    }
+
+    return {};
+}
+
+QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpressions(
+    const QueryTreeNodePtr & resolved_expression,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
@@ -1432,38 +1473,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
             continue;
 
         auto & array_join_column_inner_expression = array_join_column_expression_typed.getExpressionOrThrow();
-        auto * array_join_column_inner_expression_function = array_join_column_inner_expression->as<FunctionNode>();
-
-        if (array_join_column_inner_expression_function &&
-            array_join_column_inner_expression_function->getFunctionName() == "nested" &&
-            array_join_column_inner_expression_function->getArguments().getNodes().size() > 1 &&
-            isTuple(array_join_column_expression_typed.getResultType()))
-        {
-            const auto & nested_function_arguments = array_join_column_inner_expression_function->getArguments().getNodes();
-            size_t nested_function_arguments_size = nested_function_arguments.size();
-
-            const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode & >();
-            const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array &>();
-            size_t nested_keys_names_size = nested_keys_names.size();
-
-            if (nested_keys_names_size == nested_function_arguments_size - 1)
-            {
-                for (size_t i = 1; i < nested_function_arguments_size; ++i)
-                {
-                    if (!nested_function_arguments[i]->isEqual(*resolved_expression))
-                        continue;
-
-                    auto array_join_column = std::make_shared<ColumnNode>(array_join_column_expression_typed.getColumn(),
-                        array_join_column_expression_typed.getColumnSource());
-
-                    const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
-                    Identifier nested_identifier = Identifier(nested_key_name);
-                    array_join_resolved_expression = wrapExpressionNodeInTupleElement(array_join_column, nested_identifier, scope.context);
-                    break;
-                }
-            }
-        }
-
+        array_join_resolved_expression = tryResolveExpressionFromArrayJoinNestedExpression(resolved_expression, scope, array_join_column_expression_typed, array_join_column_inner_expression);
         if (array_join_resolved_expression)
             break;
 
@@ -1521,6 +1531,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromArrayJoin(const Ide
             array_join_column_expression_typed.getColumnSource());
         if (identifier_view.empty())
             return array_join_column;
+
+        if (resolved_identifier)
+        {
+            auto resolved_nested_subcolumn = tryResolveExpressionFromArrayJoinNestedExpression(
+                    resolved_identifier, scope, array_join_column_expression_typed, array_join_column_expression_typed.getExpressionOrThrow());
+            if (resolved_nested_subcolumn)
+                return resolved_nested_subcolumn;
+        }
 
         /// Resolve subcolumns. Example : SELECT x.y.z FROM tab ARRAY JOIN arr AS x
         auto compound_expr = tryResolveIdentifierFromCompoundExpression(
