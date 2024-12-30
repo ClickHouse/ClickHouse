@@ -4,8 +4,11 @@ sidebar_position: 63
 sidebar_label: JSON
 keywords: [json, data type]
 ---
+import BetaBadge from '@theme/badges/BetaBadge';
 
 # JSON Data Type
+
+<BetaBadge/>
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
