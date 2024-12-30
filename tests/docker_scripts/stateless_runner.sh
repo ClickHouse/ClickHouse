@@ -73,6 +73,40 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     remove_keeper_config "use_xid_64" "[[:digit:]]\+"
 fi
 
+cache_policy=""
+if [ $((RANDOM % 3)) -eq 0 ]; then
+    cache_policy="SLRU"
+elif [ $((RANDOM % 3)) -eq 1 ]; then
+    cache_policy="LRU"
+else
+    cache_policy="SIEVE"
+fi
+echo "Using cache policy: $cache_policy"
+
+if [ "$cache_policy" = "LRU" ]; then
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>LRU</mark_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>LRU</uncompressed_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+fi
+
+if [ "$cache_policy" = "SIEVE" ]; then
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>SIEVE</mark_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+
+    sudo cat /etc/clickhouse-server/config.d/cache_policy.xml \
+    | sed "s|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>SIEVE</uncompressed_cache_policy>|" \
+    > /etc/clickhouse-server/config.d/cache_policy.xml.tmp
+    mv /etc/clickhouse-server/config.d/cache_policy.xml.tmp /etc/clickhouse-server/config.d/cache_policy.xml
+fi
+
 export IS_FLAKY_CHECK=0
 
 # Export NUM_TRIES so python scripts will see its value as env variable
