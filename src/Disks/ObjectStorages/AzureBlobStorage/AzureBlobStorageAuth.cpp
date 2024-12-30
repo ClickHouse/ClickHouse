@@ -4,11 +4,13 @@
 
 #include <Common/Exception.h>
 #include <Common/re2.h>
+#include <Common/logger_useful.h>
 #include <optional>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
 #include <azure/core/http/curl_transport.hpp>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureDelegatedKeyPolicy.h>
 
 using namespace Azure::Storage::Blobs;
 
@@ -165,6 +167,22 @@ template <class T>
 std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    if (config.has(config_prefix + ".account_name") && config.has(config_prefix + ".signature_delegation_url"))
+    {
+        auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
+            config.getString(config_prefix + ".account_name"), /* account_key= */ "ignored");
+        Azure::Storage::Blobs::BlobClientOptions options;
+        options.PerRetryPolicies.emplace_back(
+           std::make_unique<AzureDelegatedKeyPolicy>(storage_shared_key_credential, config.getString(config_prefix + ".signature_delegation_url")));
+        if (config.has(config_prefix + ".ca_path"))
+        {
+            auto curl_transport_options = Azure::Core::Http::CurlTransportOptions();
+            curl_transport_options.CAInfo = config.getString(config_prefix + ".ca_path");
+            options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_transport_options);
+        }
+        return std::make_unique<T>(url, options);
+    }
+
     std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
         connection_str = config.getString(config_prefix + ".connection_string");
