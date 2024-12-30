@@ -68,6 +68,14 @@ bool BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
 }
 
 
+bool BackgroundJobsAssignee::scheduleEarlyFetchTask(ExecutableTaskPtr fetch_task)
+{
+    bool res = getContext()->getEarlyFetchesExecutor()->trySchedule(fetch_task);
+    res ? trigger() : postpone();
+    return res;
+}
+
+
 bool BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 {
     bool res = getContext()->getMovesExecutor()->trySchedule(move_task);
@@ -116,6 +124,7 @@ void BackgroundJobsAssignee::finish()
 
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        getContext()->getEarlyFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }

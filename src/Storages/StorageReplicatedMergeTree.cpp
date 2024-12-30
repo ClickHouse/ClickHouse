@@ -131,6 +131,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric BackgroundEarlyFetchesPoolTask;
     extern const Metric ReadonlyReplica;
 }
 
@@ -3665,11 +3666,15 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (job_type == LogEntry::GET_PART || job_type == LogEntry::ATTACH_PART)
     {
-        assignee.scheduleFetchTask(std::make_shared<ExecutableLambdaAdapter>(
+        auto fetch_task = std::make_shared<ExecutableLambdaAdapter>(
             [this, selected_entry] () mutable
             {
                 return processQueueEntry(selected_entry);
-            }, common_assignee_trigger, getStorageID()));
+            }, common_assignee_trigger, getStorageID());
+        if (selected_entry->log_entry->source_replica == "" && getSettings()->use_early_fetch_pool)
+            assignee.scheduleEarlyFetchTask(fetch_task);
+        else
+            assignee.scheduleFetchTask(fetch_task);
         return true;
     }
     else if (job_type == LogEntry::MERGE_PARTS)
@@ -3727,12 +3732,29 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
         return false;
     }
 
-    auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
-    size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
-    if (busy_threads_in_pool >= replicated_fetches_pool_size)
+    if (entry.source_replica == "" && getSettings()->use_early_fetch_pool)
     {
-        disable_reason = fmt::format("Not executing fetch of part {} because {} fetches already executing, max {}.", entry.new_part_name, busy_threads_in_pool, replicated_fetches_pool_size);
-        return false;
+        auto replicated_early_fetches_pool_size = getContext()->getEarlyFetchesExecutor()->getMaxTasksCount();
+        size_t busy_early_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundEarlyFetchesPoolTask].load(
+                std::memory_order_relaxed);
+        if (busy_early_threads_in_pool >= replicated_early_fetches_pool_size) {
+            disable_reason = fmt::format(
+                    "Not executing fetch of part {} because {} early fetches already executing, max {}.",
+                    entry.new_part_name, busy_early_threads_in_pool, replicated_early_fetches_pool_size);
+            return false;
+        }
+    }
+    else
+    {
+        auto replicated_fetches_pool_size = getContext()->getFetchesExecutor()->getMaxTasksCount();
+        size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask].load(std::memory_order_relaxed);
+        if (busy_threads_in_pool >= replicated_fetches_pool_size)
+        {
+            disable_reason = fmt::format(
+                    "Not executing fetch of part {} because {} fetches already executing, max {}.",
+                    entry.new_part_name, busy_threads_in_pool, replicated_fetches_pool_size);
+            return false;
+        }
     }
 
     if (replicated_fetches_throttler->isThrottling())

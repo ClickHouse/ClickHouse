@@ -1304,10 +1304,9 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
         }
 
         constexpr auto fmt_string = "Not executing log entry {} for part {} "
-                                    "because it is not disjoint with part {} that is currently executing.";
-
+                                    "because it is not disjoint with {} part {} that is currently executing.";
         /// This message can be too noisy, do not print it more than once per second
-        LOG_TEST(LogToStr(out_reason, LogFrequencyLimiter(log, 5)), fmt_string, entry.znode_name, new_part_name, future_part_elem.first);
+        LOG_TEST(LogToStr(out_reason, LogFrequencyLimiter(log, 5)), fmt_string, entry.znode_name, new_part_name, future_part_elem.second->typeToString(), future_part_elem.first);
         return true;
     }
 
