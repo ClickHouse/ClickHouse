@@ -1222,7 +1222,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
     /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id && !create.attach && !is_restore_from_backup)
+    if (create.select
+        && create.is_materialized_view
+        && create.to_table_id
+        && !create.attach
+        && !is_restore_from_backup
+        && getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
             {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
