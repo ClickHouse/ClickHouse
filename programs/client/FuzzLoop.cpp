@@ -666,6 +666,7 @@ bool Client::buzzHouse()
                 }
             }
         }
+        BuzzHouse::clearSystemTables();
     }
     return server_up;
 }
