@@ -1,0 +1,1 @@
+SELECT 1, 2 INTO OUTFILE '/dev/null' TRUNCATE FORMAT Npy -- { clientError TOO_MANY_COLUMNS }
