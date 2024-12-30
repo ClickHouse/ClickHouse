@@ -861,6 +861,19 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
         part->info.mutation = 0;
 
         part->setName(part->getNewName(part->info));
+
+        const auto storage_settings = storage.getSettings();
+        if (part->isStoredOnDisk() && storage_settings->allow_remote_fs_zero_copy_replication && part->getDataPartStorage().supportZeroCopyReplication()) {
+            const auto zero_copy_lock_part_paths = storage.getZeroCopyPartPath(
+                *storage_settings, part->getDataPartStorage().getDiskType(), storage.getTableSharedID(),
+                part->name, storage.zookeeper_path);
+            for (const auto & path : zero_copy_lock_part_paths)
+            {
+                zookeeper->createAncestors(path);
+                zookeeper->createIfNotExists(path, "");
+            }
+        }
+
         retry_context.actual_part_name = part->name;
 
         /// Prepare transaction to ZooKeeper

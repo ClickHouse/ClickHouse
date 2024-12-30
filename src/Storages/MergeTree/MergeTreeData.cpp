@@ -2837,19 +2837,6 @@ void MergeTreeData::dropAllData()
 
         try
         {
-            if (!disk->isDirectoryEmpty(relative_data_path) &&
-                supportsReplication() && disk->supportZeroCopyReplication()
-                && settings_ptr->allow_remote_fs_zero_copy_replication)
-            {
-                std::vector<std::string> files_left;
-                disk->listFiles(relative_data_path, files_left);
-
-                throw Exception(
-                                ErrorCodes::ZERO_COPY_REPLICATION_ERROR,
-                                "Directory {} with table {} not empty (files [{}]) after drop. Will not drop.",
-                                relative_data_path, getStorageID().getNameForLogs(), fmt::join(files_left, ", "));
-            }
-
             LOG_INFO(log, "dropAllData: removing table directory recursive to cleanup garbage");
             disk->removeRecursive(relative_data_path);
         }
