@@ -564,7 +564,7 @@ bool QueryStatus::checkTimeLimitSoft()
     if (is_killed.load())
         return false;
 
-    return limits.checkTimeLimit(watch, OverflowMode::BREAK);
+    return limits.checkTimeLimit(watch.elapsed(), OverflowMode::BREAK);
 }
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
