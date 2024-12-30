@@ -111,21 +111,18 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
 {
     auto client_ptr = client.get();
 
-    /// What a shame, no Exists method...
-    Azure::Storage::Blobs::ListBlobsOptions options;
-    options.Prefix = object.remote_path;
-    options.PageSizeHint = 1;
-
-    auto blobs_list_response = client_ptr->ListBlobs(options);
-    auto blobs_list = blobs_list_response.Blobs;
-
-    for (const auto & blob : blobs_list)
+    try
     {
-        if (object.remote_path == blob.Name)
-            return true;
+        auto blob_client = client_ptr->GetBlobClient(object.remote_path);
+        blob_client.GetProperties();
+        return true;
     }
-
-    return false;
+    catch (const Azure::Storage::StorageException & e)
+    {
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+            return false;
+        throw;
+    }
 }
 
 ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix) const
@@ -140,7 +137,9 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 {
     auto client_ptr = client.get();
 
-    /// What a shame, no Exists method...
+    /// NOTE: list doesn't work if endpoint contains non-empty prefix for blobs.
+    /// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
+
     Azure::Storage::Blobs::ListBlobsOptions options;
     options.Prefix = path;
     if (max_keys)
