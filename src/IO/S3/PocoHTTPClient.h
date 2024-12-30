@@ -15,10 +15,10 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/SessionAwareIOStream.h>
 
-#include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
+#include <aws/s3/S3ClientConfiguration.h>
 
 namespace Aws::Http::Standard
 {
@@ -36,7 +36,7 @@ namespace DB::S3
 class ClientFactory;
 class PocoHTTPClient;
 
-struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
+struct PocoHTTPClientConfiguration : public Aws::S3::S3ClientConfiguration
 {
     std::function<DB::ProxyConfiguration()> per_request_configuration;
     String force_region;
@@ -49,6 +49,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     ThrottlerPtr get_request_throttler;
     ThrottlerPtr put_request_throttler;
     HTTPHeaderEntries extra_headers;
+    String signature_delegation_url;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -72,6 +73,7 @@ private:
         bool s3_use_adaptive_timeouts_,
         const ThrottlerPtr & get_request_throttler_,
         const ThrottlerPtr & put_request_throttler_,
+        const String & signature_delegation_url_,
         std::function<void(const DB::ProxyConfiguration &)> error_report_
     );
 

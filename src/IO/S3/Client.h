@@ -133,10 +133,9 @@ public:
     static std::unique_ptr<Client> create(
             size_t max_redirects_,
             ServerSideEncryptionKMSConfig sse_kms_config_,
-            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
-            const PocoHTTPClientConfiguration & client_configuration,
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-            const ClientSettings & client_settings);
+            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
+            const PocoHTTPClientConfiguration & client_configuration_,
+            const ClientSettings & client_settings_);
 
     std::unique_ptr<Client> clone() const;
 
@@ -220,8 +219,7 @@ private:
     Client(size_t max_redirects_,
            ServerSideEncryptionKMSConfig sse_kms_config_,
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
-           const PocoHTTPClientConfiguration & client_configuration,
-           Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
+           const PocoHTTPClientConfiguration & client_configuration_,
            const ClientSettings & client_settings_);
 
     Client(
@@ -268,7 +266,6 @@ private:
     String initial_endpoint;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;
-    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads;
     ClientSettings client_settings;
 
     std::string explicit_region;
@@ -318,7 +315,8 @@ public:
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,
         const ThrottlerPtr & put_request_throttler,
-        const String & protocol = "https");
+        const String & protocol = "https",
+        const String & signature_delegation_url = "");
 
 private:
     ClientFactory();

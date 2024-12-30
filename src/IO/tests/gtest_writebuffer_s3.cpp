@@ -209,7 +209,6 @@ struct Client : DB::S3::Client
             DB::S3::ServerSideEncryptionKMSConfig(),
             std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
             GetClientConfiguration(),
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
             DB::S3::ClientSettings{
                 .use_virtual_addressing = true,
                 .disable_checksum = false,

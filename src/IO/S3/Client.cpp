@@ -15,6 +15,7 @@
 
 #include <Poco/Net/NetException.h>
 
+#include <IO/S3/AWSAuthV4DelegatedSigner.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -124,14 +125,15 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
 std::unique_ptr<Client> Client::create(
     size_t max_redirects_,
     ServerSideEncryptionKMSConfig sse_kms_config_,
-    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
-    const PocoHTTPClientConfiguration & client_configuration,
-    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-    const ClientSettings & client_settings)
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
+    const PocoHTTPClientConfiguration & client_configuration_,
+    const ClientSettings & client_settings_)
 {
-    verifyClientConfiguration(client_configuration);
+    PocoHTTPClientConfiguration client_configuration = client_configuration_;
+    client_configuration.useVirtualAddressing = client_settings_.use_virtual_addressing;
+    verifyClientConfiguration(client_configuration_);
     return std::unique_ptr<Client>(
-        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
+        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider_, client_configuration, client_settings_));
 }
 
 std::unique_ptr<Client> Client::clone() const
@@ -160,12 +162,22 @@ Client::Client(
     ServerSideEncryptionKMSConfig sse_kms_config_,
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
     const PocoHTTPClientConfiguration & client_configuration_,
-    Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads_,
     const ClientSettings & client_settings_)
-    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, client_settings_.use_virtual_addressing)
+    : Aws::S3::S3Client(
+        Aws::MakeShared<Aws::Auth::DefaultAuthSignerProvider>(
+            S3Client::ALLOCATION_TAG,
+            Aws::MakeShared<DB::S3::AWSAuthV4DelegatedSigner>(
+                S3Client::ALLOCATION_TAG,
+                client_configuration_.signature_delegation_url,
+                credentials_provider_,
+                S3Client::SERVICE_NAME,
+                Aws::Region::ComputeSignerRegion(client_configuration_.region),
+                client_configuration_.payloadSigningPolicy,
+                /*doubleEncodeValue*/ false))
+        ,  Aws::MakeShared<Aws::S3::S3EndpointProvider>(S3Client::ALLOCATION_TAG)
+        , client_configuration_)
     , credentials_provider(credentials_provider_)
     , client_configuration(client_configuration_)
-    , sign_payloads(sign_payloads_)
     , client_settings(client_settings_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
@@ -207,12 +219,22 @@ Client::Client(
 
 Client::Client(
     const Client & other, const PocoHTTPClientConfiguration & client_configuration_)
-    : Aws::S3::S3Client(other.credentials_provider, client_configuration_, other.sign_payloads,
-                        other.client_settings.use_virtual_addressing)
+    : Aws::S3::S3Client(
+        Aws::MakeShared<Aws::Auth::DefaultAuthSignerProvider>(
+            S3Client::ALLOCATION_TAG,
+            Aws::MakeShared<DB::S3::AWSAuthV4DelegatedSigner>(
+                S3Client::ALLOCATION_TAG,
+                client_configuration_.signature_delegation_url,
+                other.credentials_provider,
+                S3Client::SERVICE_NAME,
+                Aws::Region::ComputeSignerRegion(client_configuration_.region),
+                client_configuration_.payloadSigningPolicy,
+                /*doubleEncodeValue*/ false))
+        ,  Aws::MakeShared<Aws::S3::S3EndpointProvider>(S3Client::ALLOCATION_TAG)
+        , client_configuration_)
     , initial_endpoint(other.initial_endpoint)
     , credentials_provider(other.credentials_provider)
     , client_configuration(client_configuration_)
-    , sign_payloads(other.sign_payloads)
     , client_settings(other.client_settings)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
@@ -923,8 +945,6 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
-        client_settings.is_s3express_bucket ? Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::RequestDependent
-                                            : Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
         client_settings);
 }
 
@@ -938,7 +958,8 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool for_disk_s3,
     const ThrottlerPtr & get_request_throttler,
     const ThrottlerPtr & put_request_throttler,
-    const String & protocol)
+    const String & protocol,
+    const String & signature_delegation_url)
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
@@ -959,6 +980,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
         get_request_throttler,
         put_request_throttler,
+        signature_delegation_url,
         error_report);
 
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());
