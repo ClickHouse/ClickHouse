@@ -378,7 +378,7 @@ def test_reload_via_client(cluster, zk):
                         configure_from_zk(zk)
                     break
                 except QueryRuntimeException:
-                    logging.exception("The new socket is not binded yet")
+                    logging.exception("The new socket is not bound yet")
                     time.sleep(0.1)
 
     if exception:

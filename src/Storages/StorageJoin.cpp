@@ -217,8 +217,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.next();
-        backup_buf->next();
+        compressed_backup_buf.finalize();
         backup_buf->finalize();
 
         std::vector<std::string> files;
@@ -230,6 +229,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         }
 
         disk->replaceFile(path + tmp_backup_file_name, path + std::to_string(increment) + ".bin");
+    }
+    else
+    {
+        compressed_backup_buf.cancel();
+        backup_buf->cancel();
     }
 }
 
@@ -359,6 +363,20 @@ void StorageJoin::convertRightBlock(Block & block) const
 
 void registerStorageJoin(StorageFactory & factory)
 {
+    auto has_builtin_fn = [](std::string_view name)
+    {
+        static const std::unordered_set<std::string_view> valid_settings
+            = {"join_use_nulls",
+               "max_rows_in_join",
+               "max_bytes_in_join",
+               "join_overflow_mode",
+               "join_any_take_last_row",
+               "any_join_distinct_right_table_keys",
+               "disk",
+               "persistent"};
+        return valid_settings.contains(name);
+    };
+
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         /// Join(ANY, LEFT, k1, k2, ...)
@@ -486,7 +504,13 @@ void registerStorageJoin(StorageFactory & factory)
             persistent);
     };
 
-    factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    factory.registerStorage(
+        "Join",
+        creator_fn,
+        StorageFactory::StorageFeatures{
+            .supports_settings = true,
+            .has_builtin_setting_fn = has_builtin_fn,
+        });
 }
 
 template <typename T>

@@ -1,6 +1,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <shared_mutex>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperReconfiguration.h>
@@ -142,13 +143,14 @@ void KeeperStateMachine<Storage>::init()
         }
         catch (...)
         {
-            tryLogCurrentException(
+            LOG_FATAL(
                 log,
-                fmt::format(
-                    "Aborting because of failure to load from latest snapshot with index {}. Problematic snapshot can be removed but it will "
-                    "lead to data loss",
-                    latest_log_index));
-            std::abort();
+                "Failure to load from latest snapshot with index {}: {}",
+                latest_log_index,
+                getCurrentExceptionMessage(true, true, false));
+            LOG_FATAL(
+                log, "Manual intervention is necessary for recovery. Problematic snapshot can be removed but it will lead to data loss");
+            abort();
         }
     }
 
@@ -267,7 +269,11 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     size_t request_size = sizeof(uint32_t) + Coordination::size(request->getOpNum()) + request->sizeImpl();
     Coordination::write(static_cast<int32_t>(request_size), write_buf);
     XidHelper xid_helper{.xid = request->xid};
-    Coordination::write(xid_helper.parts.lower, write_buf);
+    if (request_for_session.use_xid_64)
+        Coordination::write(xid_helper.parts.lower, write_buf);
+    else
+        Coordination::write(static_cast<int32_t>(xid_helper.xid), write_buf);
+
     Coordination::write(request->getOpNum(), write_buf);
     request->writeImpl(write_buf);
 
@@ -276,13 +282,15 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
     DB::writeIntBinary(KeeperStorageBase::DigestVersion::NO_DIGEST, write_buf); /// digest version or NO_DIGEST flag
     DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
-    Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
+
+    if (request_for_session.use_xid_64)
+        Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
     /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
     return write_buf.getBuffer();
 }
 
-std::shared_ptr<KeeperStorageBase::RequestForSession>
-IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
+std::shared_ptr<KeeperStorageBase::RequestForSession> IKeeperStateMachine::parseRequest(
+    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
     ReadBufferFromNuraftBuffer buffer(data);
     auto request_for_session = std::make_shared<KeeperStorageBase::RequestForSession>();
@@ -301,6 +309,9 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
     /// go to end of the buffer and read extra information including second part of XID
     auto buffer_position = buffer.getPosition();
     buffer.seek(length - sizeof(uint32_t), SEEK_CUR);
+
+    if (request_end_position)
+        *request_end_position = buffer.getPosition();
 
     using enum ZooKeeperLogSerializationVersion;
     ZooKeeperLogSerializationVersion version = INITIAL;
@@ -332,6 +343,10 @@ IKeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLo
     {
         version = WITH_XID_64;
         Coordination::read(xid_helper.parts.upper, buffer);
+    }
+    else
+    {
+        xid_helper.xid = static_cast<int32_t>(xid_helper.parts.lower);
     }
 
     if (serialization_version)
@@ -414,8 +429,13 @@ bool KeeperStateMachine<Storage>::preprocess(const KeeperStorageBase::RequestFor
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to preprocess stored log at index {}, aborting to avoid inconsistent state", request_for_session.log_idx));
-        std::abort();
+        LOG_FATAL(
+            log,
+            "Failed to preprocess stored log at index {}: {}",
+            request_for_session.log_idx,
+            getCurrentExceptionMessage(true, true, false));
+        LOG_FATAL(log, "Aborting to avoid inconsistent state");
+        abort();
     }
 
     if (keeper_context->digestEnabled() && request_for_session.digest)

@@ -59,6 +59,9 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table
+    keeper_required_feature_flags=[
+        "create_if_not_exists"
+    ],  # new Kafka doesn't work without this feature
     macros={
         "kafka_broker": "kafka1",
         "kafka_topic_old": KAFKA_TOPIC_OLD,
@@ -4193,7 +4196,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             ],
             "expected": {
                 "raw_message": "050102696405496E743634000000000000000007626C6F636B4E6F06537472696E67034241440476616C3106537472696E6702414D0476616C3207466C6F617433320000003F0476616C330555496E743801",
-                "error": "Cannot convert: String to UInt16",
+                "error": "Cannot parse string 'BAD' as UInt16",
             },
             "printable": False,
         },
@@ -5273,7 +5276,7 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     while True:
         result_rdkafka_stat = instance.query(
             """
-            SELECT table, JSONExtractString(rdkafka_stat, 'type')
+            SELECT table, JSONExtractString(rdkafka_stat, 'type') AS value
             FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
             """
         )
@@ -5286,8 +5289,8 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
         result_rdkafka_stat
         == """Row 1:
 ──────
-table:                                   kafka
-JSONExtractString(rdkafka_stat, 'type'): consumer
+table: kafka
+value: consumer
 """
     )
 

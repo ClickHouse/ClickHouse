@@ -1,4 +1,5 @@
 #include <Formats/FormatFactory.h>
+#include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/PrettySpaceBlockOutputFormat.h>
@@ -31,7 +32,8 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    Strings names;
+    calculateWidths(header, chunk, widths, max_widths, name_widths, names);
 
     if (format_settings.pretty.output_format_pretty_row_numbers)
         writeString(String(row_number_width, ' '), out);
@@ -54,7 +56,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
 
                 if (color)
                     writeCString("\033[1m", out);
-                writeString(col.name, out);
+                writeString(names[i], out);
                 if (color)
                     writeCString("\033[0m", out);
             }
@@ -62,7 +64,7 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
             {
                 if (color)
                     writeCString("\033[1m", out);
-                writeString(col.name, out);
+                writeString(names[i], out);
                 if (color)
                     writeCString("\033[0m", out);
 
@@ -77,33 +79,58 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     };
     write_names(false);
 
-    for (size_t row = 0; row < num_rows && total_rows + row < max_rows; ++row)
+    bool vertical_filler_written = false;
+    size_t displayed_row = 0;
+    for (size_t row = 0; row < num_rows && displayed_rows < max_rows; ++row)
     {
-        if (format_settings.pretty.output_format_pretty_row_numbers)
+        if (cutInTheMiddle(row, num_rows, format_settings.pretty.max_rows))
         {
-            // Write row number;
-            auto row_num_string = std::to_string(row + 1 + total_rows) + ". ";
-            for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
-                writeChar(' ', out);
-            if (color)
-                writeCString("\033[90m", out);
-            writeString(row_num_string, out);
-            if (color)
-                writeCString("\033[0m", out);
+            if (!vertical_filler_written)
+            {
+                size_t cut_width = 0;
+                if (format_settings.pretty.output_format_pretty_row_numbers)
+                    cut_width += row_number_width;
+                for (size_t j = 0; j < num_columns; ++j)
+                    cut_width += (j == 0 ? 1 : 3) + max_widths[j];
 
+                for (size_t ch = 0; ch < cut_width; ++ch)
+                    writeChar(ch % 2 ? '-' : ' ', out);
+
+                writeChar('\n', out);
+                vertical_filler_written = true;
+            }
         }
-        for (size_t column = 0; column < num_columns; ++column)
+        else
         {
-            if (column != 0)
-                writeCString(" ", out);
+            if (format_settings.pretty.output_format_pretty_row_numbers)
+            {
+                // Write row number;
+                auto row_num_string = std::to_string(row + 1 + total_rows) + ". ";
+                for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
+                    writeChar(' ', out);
+                if (color)
+                    writeCString("\033[90m", out);
+                writeString(row_num_string, out);
+                if (color)
+                    writeCString("\033[0m", out);
 
-            const auto & type = *header.getByPosition(column).type;
-            auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            writeValueWithPadding(
-                *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+            }
+            for (size_t column = 0; column < num_columns; ++column)
+            {
+                if (column != 0)
+                    writeChar(' ', out);
+
+                const auto & type = *header.getByPosition(column).type;
+                auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][displayed_row];
+                writeValueWithPadding(
+                    *columns[column], *serializations[column], row, cur_width, max_widths[column], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+            }
+            if (readable_number_tip)
+                writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
+            writeChar('\n', out);
+            ++displayed_row;
+            ++displayed_rows;
         }
-        writeReadableNumberTip(chunk);
-        writeChar('\n', out);
     }
 
     /// Write blank line between last row and footer
@@ -125,9 +152,11 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
 
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        writeCString("\nShowed first ", out);
-        writeIntText(format_settings.pretty.max_rows, out);
-        writeCString(".\n", out);
+        writeCString("\nShowed ", out);
+        writeIntText(displayed_rows, out);
+        writeCString(" out of ", out);
+        writeIntText(total_rows, out);
+        writeCString(" rows.\n", out);
     }
 }
 

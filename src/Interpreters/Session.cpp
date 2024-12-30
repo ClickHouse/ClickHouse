@@ -6,10 +6,13 @@
 #include <Access/ContextAccess.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Access/User.h>
+#include <Access/Role.h>
+#include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
@@ -25,12 +28,12 @@
 #include <unordered_map>
 #include <vector>
 
-
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsUInt64 max_sessions_for_user;
+    extern const SettingsBool push_external_roles_in_interserver_queries;
 }
 
 namespace ErrorCodes
@@ -51,9 +54,9 @@ using NamedSessionKey = std::pair<UUID, String>;
 struct NamedSessionData
 {
     NamedSessionKey key;
-    UInt64 close_cycle = 0;
     ContextMutablePtr context;
     std::chrono::steady_clock::duration timeout;
+    std::chrono::steady_clock::time_point close_time_bucket{};
     NamedSessionsStorage & parent;
 
     NamedSessionData(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessionsStorage & parent_)
@@ -137,6 +140,18 @@ public:
 
         if (!isSharedPtrUnique(session))
             throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
+
+        if (session->close_time_bucket != std::chrono::steady_clock::time_point{})
+        {
+            auto bucket_it = close_time_buckets.find(session->close_time_bucket);
+            auto & bucket_sessions = bucket_it->second;
+            bucket_sessions.erase(key);
+            if (bucket_sessions.empty())
+                close_time_buckets.erase(bucket_it);
+
+            session->close_time_bucket = std::chrono::steady_clock::time_point{};
+        }
+
         return {session, false};
     }
 
@@ -179,33 +194,31 @@ private:
         }
     };
 
-    /// TODO it's very complicated. Make simple std::map with time_t or boost::multi_index.
     using Container = std::unordered_map<Key, std::shared_ptr<NamedSessionData>, SessionKeyHash>;
-    using CloseTimes = std::deque<std::vector<Key>>;
     Container sessions;
-    CloseTimes close_times;
-    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
-    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
-    UInt64 close_cycle = 0;
+
+    // Ordered map of close times for sessions, grouped by the next multiple of close_interval
+    using CloseTimes = std::map<std::chrono::steady_clock::time_point, std::unordered_set<Key, SessionKeyHash>>;
+    CloseTimes close_time_buckets;
+
+    constexpr static std::chrono::steady_clock::duration close_interval = std::chrono::milliseconds(1000);
+    constexpr static std::chrono::nanoseconds::rep close_interval_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(close_interval).count();
 
     void scheduleCloseSession(NamedSessionData & session, std::unique_lock<std::mutex> &)
     {
-        /// Push it on a queue of sessions to close, on a position corresponding to the timeout.
-        /// (timeout is measured from current moment of time)
+        chassert(session.close_time_bucket == std::chrono::steady_clock::time_point{});
 
-        const UInt64 close_index = session.timeout / close_interval + 1;
-        const auto new_close_cycle = close_cycle + close_index;
+        const auto session_close_time = std::chrono::steady_clock::now() + session.timeout;
+        const auto session_close_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(session_close_time.time_since_epoch()).count();
+        const auto bucket_padding = close_interval - std::chrono::nanoseconds(session_close_time_ns % close_interval_ns);
+        const auto close_time_bucket = session_close_time + bucket_padding;
 
-        if (session.close_cycle != new_close_cycle)
-        {
-            session.close_cycle = new_close_cycle;
-            if (close_times.size() < close_index + 1)
-                close_times.resize(close_index + 1);
-            close_times[close_index].emplace_back(session.key);
-        }
+        session.close_time_bucket = close_time_bucket;
+        auto & bucket_sessions = close_time_buckets[close_time_bucket];
+        bucket_sessions.insert(session.key);
 
         LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
-                 session.key.second, session.key.first);
+            session.key.second, session.key.first);
     }
 
     void cleanThread()
@@ -214,55 +227,46 @@ private:
         std::unique_lock lock{mutex};
         while (!quit)
         {
-            auto interval = closeSessions(lock);
-            if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
+            closeSessions(lock);
+            if (cond.wait_for(lock, close_interval, [this]() -> bool { return quit; }))
                 break;
         }
     }
 
-    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
-    std::chrono::steady_clock::duration closeSessions(std::unique_lock<std::mutex> & lock)
+    void closeSessions(std::unique_lock<std::mutex> & lock)
     {
         const auto now = std::chrono::steady_clock::now();
 
-        /// The time to close the next session did not come
-        if (now < close_cycle_time)
-            return close_cycle_time - now;  /// Will sleep until it comes.
-
-        const auto current_cycle = close_cycle;
-
-        ++close_cycle;
-        close_cycle_time = now + close_interval;
-
-        if (close_times.empty())
-            return close_interval;
-
-        auto & sessions_to_close = close_times.front();
-
-        for (const auto & key : sessions_to_close)
+        for (auto bucket_it = close_time_buckets.begin(); bucket_it != close_time_buckets.end(); bucket_it = close_time_buckets.erase(bucket_it))
         {
-            const auto session = sessions.find(key);
+            const auto & [time_bucket, session_keys] = *bucket_it;
+            if (time_bucket > now)
+                break;
 
-            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
+            for (const auto & key : session_keys)
             {
-                if (session->second.use_count() != 1)
-                {
-                    LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}", key.second, key.first);
+                const auto & session_it = sessions.find(key);
 
-                    /// Skip but move it to close on the next cycle.
-                    session->second->timeout = std::chrono::steady_clock::duration{0};
-                    scheduleCloseSession(*session->second, lock);
-                }
-                else
+                if (session_it == sessions.end())
+                    continue;
+
+                const auto & session = session_it->second;
+
+                if (session.use_count() != 1)
                 {
-                    LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, key.first);
-                    sessions.erase(session);
+                    LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
+                        key.second, key.first, session.use_count());
+
+                    session->timeout = std::chrono::steady_clock::duration{0};
+                    scheduleCloseSession(*session, lock);
+                    continue;
                 }
+
+                LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, key.first);
+
+                sessions.erase(session_it);
             }
         }
-
-        close_times.pop_front();
-        return close_interval;
     }
 
     std::mutex mutex;
@@ -287,7 +291,7 @@ void Session::shutdownNamedSessions()
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure, const std::string & certificate)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
-      log(getLogger(String{magic_enum::enum_name(interface_)} + "-Session"))
+      log(getLogger(String{magic_enum::enum_name(interface_)} + "-Session-" + toString(auth_id)))
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
@@ -341,12 +345,12 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
 }
 
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address)
+void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_)
 {
-    authenticate(BasicCredentials{user_name, password}, address);
+    authenticate(BasicCredentials{user_name, password}, address, external_roles_);
 }
 
-void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_)
+void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_)
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
@@ -358,8 +362,8 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
         address = Poco::Net::SocketAddress{"127.0.0.1", 0};
 
-    LOG_DEBUG(log, "{} Authenticating user '{}' from {}",
-            toString(auth_id), credentials_.getUserName(), address.toString());
+    LOG_DEBUG(log, "Authenticating user '{}' from {}",
+            credentials_.getUserName(), address.toString());
 
     try
     {
@@ -369,6 +373,14 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         settings_from_auth_server = auth_result.settings;
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
+
+        if (!external_roles_.empty() && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
+        {
+            external_roles = global_context->getAccessControl().find<Role>(external_roles_);
+
+            LOG_DEBUG(log, "User {} has external_roles applied: [{}] ({})",
+                      toString(*user_id), fmt::join(external_roles_, ", "), external_roles_.size());
+        }
     }
     catch (const Exception & e)
     {
@@ -382,18 +394,18 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
 void Session::checkIfUserIsStillValid()
 {
-    if (user && user->valid_until)
+    if (const auto valid_until = user_authenticated_with.getValidUntil())
     {
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-        if (now > user->valid_until)
-            throw Exception(ErrorCodes::USER_EXPIRED, "User expired");
+        if (now > valid_until)
+            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used has expired");
     }
 }
 
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
-    LOG_DEBUG(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
+    LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
     if (auto session_log = getSessionLog())
     {
         /// Add source address to the log
@@ -519,8 +531,8 @@ ContextMutablePtr Session::makeSessionContext()
     if (session_tracker_handle)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before making session");
 
-    LOG_DEBUG(log, "{} Creating session context with user_id: {}",
-            toString(auth_id), toString(*user_id));
+    LOG_DEBUG(log, "Creating session context with user_id: {}",
+            toString(*user_id));
     /// Make a new session context.
     ContextMutablePtr new_session_context;
     new_session_context = Context::createCopy(global_context);
@@ -531,7 +543,7 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id);
+    new_session_context->setUser(*user_id, external_roles);
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -562,8 +574,8 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     if (session_tracker_handle)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session tracker handle was created before making session");
 
-    LOG_DEBUG(log, "{} Creating named session context with name: {}, user_id: {}",
-            toString(auth_id), session_name_, toString(*user_id));
+    LOG_DEBUG(log, "Creating named session context with name: {}, user_id: {}",
+            session_name_, toString(*user_id));
 
     /// Make a new session context OR
     /// if the `session_id` and `user_id` were used before then just get a previously created session context.
@@ -586,7 +598,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Set user information for the new context: current profiles, roles, access rights.
     if (!access->tryGetUser())
     {
-        new_session_context->setUser(*user_id);
+        new_session_context->setUser(*user_id, external_roles);
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
     }
     else
@@ -638,7 +650,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
-    bool from_session_context = static_cast<bool>(session_context);
+    const bool from_session_context = static_cast<bool>(session_context);
 
     /// Create a new query context.
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
@@ -678,7 +690,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id);
+        query_context->setUser(*user_id, external_roles);
 
     /// Query context is ready.
     query_context_created = true;

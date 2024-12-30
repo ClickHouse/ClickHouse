@@ -90,6 +90,8 @@ public:
     {
         /// Zero means unlimited. Can be overridden by the same merge tree setting.
         size_t max_parts_to_merge_at_once = 100;
+        /// Zero means no minimum. Can be overridden by the same merge tree setting.
+        size_t min_parts_to_merge_at_once = 0;
 
         /// Some sort of a maximum number of parts in partition. Can be overridden by the same merge tree setting.
         size_t parts_to_throw_insert = 3000;

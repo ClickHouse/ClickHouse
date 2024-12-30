@@ -11,11 +11,13 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
 #include <Disks/DiskLocal.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
@@ -497,7 +499,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     size_t current_session_size = 0;
     while (current_session_size < active_sessions_size)
     {
-        int64_t active_session_id, timeout;
+        int64_t active_session_id;
+        int64_t timeout;
         readBinary(active_session_id, in);
         readBinary(timeout, in);
         storage.addSessionID(active_session_id, timeout);
@@ -511,7 +514,8 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             size_t session_auth_counter = 0;
             while (session_auth_counter < session_auths_size)
             {
-                String scheme, id;
+                String scheme;
+                String id;
                 readBinary(scheme, in);
                 readBinary(id, in);
                 ids.emplace_back(typename Storage::AuthID{scheme, id});

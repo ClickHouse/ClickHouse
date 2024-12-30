@@ -4,9 +4,9 @@
 
 #include <Storages/FileLog/Buffer_fwd.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
-#include <Storages/FileLog/FileLogSettings.h>
 
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Common/SettingsChanges.h>
 
@@ -25,6 +25,7 @@ namespace ErrorCodes
 }
 
 class FileLogDirectoryWatcher;
+struct FileLogSettings;
 
 class StorageFileLog final : public IStorage, WithContext
 {

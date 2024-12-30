@@ -78,11 +78,10 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
-    extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int BAD_ARGUMENTS;
+    extern const int OPENSSL_ERROR;
 }
 
 using namespace std::chrono_literals;
@@ -92,47 +91,38 @@ namespace
 
 #if USE_SSL
 
-int callSetCertificate(SSL * ssl, void * arg)
+auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std::string_view key)
 {
-    if (!arg)
-        return -1;
-
-    const CertificateReloader::Data * data = reinterpret_cast<CertificateReloader::Data *>(arg);
-    return setCertificateCallback(ssl, data, getLogger("SSLContext"));
-}
-
-void setSSLParams(nuraft::asio_service::options & asio_opts)
-{
-    const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
-    String certificate_file_property = "openSSL.server.certificateFile";
-    String private_key_file_property = "openSSL.server.privateKeyFile";
-    String root_ca_file_property = "openSSL.server.caConfig";
-
-    if (!config.has(certificate_file_property))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server certificate file is not set.");
-
-    if (!config.has(private_key_file_property))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Server private key file is not set.");
+    String load_default_ca_file_property = fmt::format("openSSL.{}.loadDefaultCAFile", key);
+    String verification_mode_property = fmt::format("openSSL.{}.verificationMode", key);
+    String root_ca_file_property = fmt::format("openSSL.{}.caConfig", key);
+    String private_key_passphrase_property = fmt::format("openSSL.{}.privateKeyPassphraseHandler.options.password", key);
 
     Poco::Net::Context::Params params;
-    params.certificateFile = config.getString(certificate_file_property);
-    if (params.certificateFile.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server certificate file in config '{}' is empty", certificate_file_property);
+    String certificate_file_property = fmt::format("openSSL.{}.certificateFile", key);
+    String private_key_file_property = fmt::format("openSSL.{}.privateKeyFile", key);
+    if (config.has(certificate_file_property))
+        params.certificateFile = config.getString(certificate_file_property);
 
-    params.privateKeyFile = config.getString(private_key_file_property);
-    if (params.privateKeyFile.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server key file in config '{}' is empty", private_key_file_property);
+    if (config.has(private_key_file_property))
+        params.privateKeyFile = config.getString(private_key_file_property);
 
-    auto pass_phrase = config.getString("openSSL.server.privateKeyPassphraseHandler.options.password", "");
-    auto certificate_data = std::make_shared<CertificateReloader::Data>(params.certificateFile, params.privateKeyFile, pass_phrase);
+    std::shared_ptr<CertificateReloader::Data> certificate_data;
+    if (config.has(private_key_passphrase_property))
+    {
+        certificate_data = std::make_shared<CertificateReloader::Data>(
+            params.certificateFile, params.privateKeyFile, config.getString(private_key_passphrase_property));
+        params.certificateFile.clear();
+        params.privateKeyFile.clear();
+    }
 
     if (config.has(root_ca_file_property))
         params.caLocation = config.getString(root_ca_file_property);
 
-    params.loadDefaultCAs = config.getBool("openSSL.server.loadDefaultCAFile", false);
-    params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString("openSSL.server.verificationMode", "none"));
+    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
+    params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
 
-    std::string disabled_protocols_list = config.getString("openSSL.server.disableProtocols", "");
+    std::string disabled_protocols_list = config.getString(fmt::format("openSSL.{}.disableProtocols", key), "");
     Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
     int disabled_protocols = 0;
     for (const auto & token : dp_tok)
@@ -149,20 +139,53 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
             disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
     }
 
-    asio_opts.ssl_context_provider_server_ = [params, certificate_data, disabled_protocols]
+    auto prefer_server_cypher = config.getBool(fmt::format("openSSL.{}.preferServerCiphers", key), false);
+    auto cache_sessions = config.getBool(fmt::format("openSSL.{}.cache_sessions", key), false);
+    return [params, disabled_protocols, prefer_server_cypher, cache_sessions, is_server = key == "server", certificate_data]
     {
-        Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_SERVER_USE, params);
+        Poco::Net::Context context(is_server ? Poco::Net::Context::Usage::SERVER_USE : Poco::Net::Context::Usage::CLIENT_USE, params);
         context.disableProtocols(disabled_protocols);
-        SSL_CTX * ssl_ctx = context.takeSslContext();
-        SSL_CTX_set_cert_cb(ssl_ctx, callSetCertificate, reinterpret_cast<void *>(certificate_data.get()));
-        return ssl_ctx;
-    };
 
-    asio_opts.ssl_context_provider_client_ = [ctx_params = std::move(params)]
-    {
-        Poco::Net::Context context(Poco::Net::Context::Usage::TLSV1_2_CLIENT_USE, ctx_params);
+        if (prefer_server_cypher)
+            context.preferServerCiphers();
+
+        if (cache_sessions)
+            context.enableSessionCache();
+
+        auto * ssl_ctx = context.sslContext();
+        if (certificate_data)
+        {
+            if (auto err = SSL_CTX_clear_chain_certs(ssl_ctx); err != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Clear certificates {}", Poco::Net::Utility::getLastError());
+
+            if (auto err = SSL_CTX_use_certificate(ssl_ctx, const_cast<X509 *>(certificate_data->certs_chain[0].certificate())); err != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Use certificate {}", Poco::Net::Utility::getLastError());
+
+            for (auto cert = certificate_data->certs_chain.begin() + 1; cert != certificate_data->certs_chain.end(); cert++)
+            {
+                if (auto err = SSL_CTX_add1_chain_cert(ssl_ctx, const_cast<X509 *>(cert->certificate())); err != 1)
+                    throw Exception(ErrorCodes::OPENSSL_ERROR, "Add certificate to chain {}", Poco::Net::Utility::getLastError());
+            }
+
+            if (auto err = SSL_CTX_use_PrivateKey(ssl_ctx, const_cast<EVP_PKEY *>(static_cast<const EVP_PKEY *>(certificate_data->key))); err != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Use private key {}", Poco::Net::Utility::getLastError());
+
+            if (auto err = SSL_CTX_check_private_key(ssl_ctx); err != 1)
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Unusable key-pair {}", Poco::Net::Utility::getLastError());
+        }
+
+
         return context.takeSslContext();
     };
+}
+
+void setSSLParams(nuraft::asio_service::options & asio_opts)
+{
+    asio_opts.enable_ssl_ = true;
+
+    const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+    asio_opts.ssl_context_provider_server_ = getSslContextProvider(config, "server");
+    asio_opts.ssl_context_provider_client_ = getSslContextProvider(config, "client");
 }
 #endif
 
@@ -266,7 +289,7 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         }
 
         const size_t voting_members = get_num_voting_members();
-        const auto not_responding_peers = get_not_responding_peers();
+        const auto not_responding_peers = get_not_responding_peers_count();
         const auto quorum_size = voting_members / 2 + 1;
         const auto max_not_responding_peers = voting_members - quorum_size;
 
@@ -301,6 +324,11 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     std::unique_lock<std::recursive_mutex> lockRaft()
     {
         return std::unique_lock(lock_);
+    }
+
+    std::unique_lock<std::mutex> lockCommit()
+    {
+        return std::unique_lock(commit_lock_);
     }
 
     bool isCommitInProgress() const
@@ -478,7 +506,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for NuRaft is disabled because ClickHouse was built without SSL support.");
 #endif
     }
-
     if (is_recovering)
         enterRecoveryMode(params);
 
@@ -514,12 +541,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::ptr<nuraft::delayed_task_scheduler> scheduler = asio_service;
     nuraft::ptr<nuraft::rpc_client_factory> rpc_cli_factory = asio_service;
 
-    nuraft::ptr<nuraft::state_mgr> casted_state_manager = state_manager;
-    nuraft::ptr<nuraft::state_machine> casted_state_machine = state_machine;
+    nuraft::ptr<nuraft::state_mgr> cast_state_manager = state_manager;
+    nuraft::ptr<nuraft::state_machine> cast_state_machine = state_machine;
 
     /// raft_server creates unique_ptr from it
     nuraft::context * ctx
-        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
+        = new nuraft::context(cast_state_manager, cast_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
@@ -531,15 +558,15 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::raft_server::limits raft_limits;
     raft_limits.reconnect_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit], "raft_limits_reconnect_limit", log);
     raft_limits.response_limit_ = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::raft_limits_response_limit], "response_limit", log);
-    raft_instance->set_raft_limits(raft_limits);
+    KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
-    nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
+    nuraft::ptr<nuraft::raft_server> cast_raft_server = raft_instance;
 
     for (const auto & asio_listener : asio_listeners)
     {
-        asio_listener->listen(casted_raft_server);
+        asio_listener->listen(cast_raft_server);
     }
 }
 
@@ -877,7 +904,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 auto entry_buf = entry->get_buf_ptr();
 
                 IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
-                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version);
+                size_t request_end_position = 0;
+                auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
                 if (!state_machine->preprocess(*request_for_session))
                     return nuraft::cb_func::ReturnCode::ReturnNull;
@@ -892,9 +920,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_ZXID_DIGEST)
                     bytes_missing += sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version) + sizeof(request_for_session->digest->value);
 
-                if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_XID_64)
-                    bytes_missing += sizeof(uint32_t);
-
                 if (bytes_missing != 0)
                 {
                     auto new_buffer = nuraft::buffer::alloc(entry_buf->size() + bytes_missing);
@@ -904,12 +929,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 }
 
                 size_t write_buffer_header_size = sizeof(request_for_session->zxid) + sizeof(request_for_session->digest->version)
-                    + sizeof(request_for_session->digest->value) + sizeof(uint32_t);
+                    + sizeof(request_for_session->digest->value);
 
                 if (serialization_version < IKeeperStateMachine::ZooKeeperLogSerializationVersion::WITH_TIME)
                     write_buffer_header_size += sizeof(request_for_session->time);
+                else
+                    request_end_position += sizeof(request_for_session->time);
 
-                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + entry_buf->size() - write_buffer_header_size);
+                auto * buffer_start = reinterpret_cast<BufferBase::Position>(entry_buf->data_begin() + request_end_position);
 
                 WriteBufferFromPointer write_buf(buffer_start, write_buffer_header_size);
 
@@ -1228,6 +1255,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
+    auto commit_lock = raft_instance->lockCommit();
     uint64_t log_idx = raft_instance->create_snapshot();
     if (log_idx != 0)
         LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);

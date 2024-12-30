@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <vector>
 #include <unordered_map>
 #include <Poco/Timestamp.h>
@@ -134,6 +135,8 @@ public:
     /// Create empty file in metadata storage
     virtual void createEmptyMetadataFile(const std::string & path) = 0;
 
+    virtual void createEmptyFile(const std::string & /* path */) {}
+
     /// Create metadata file on paths with content (blob_name, size_in_bytes)
     virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
 
@@ -196,6 +199,13 @@ public:
     }
 
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
+
+    virtual std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const
+    {
+        if (existsFileOrDirectory(path))
+            return getLastModified(path);
+        return std::nullopt;
+    }
 
     virtual time_t getLastChanged(const std::string & /* path */) const
     {

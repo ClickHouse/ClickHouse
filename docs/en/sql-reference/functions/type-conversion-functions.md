@@ -122,7 +122,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [Int8](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toInt8(128) == -128;`.
 :::
 
@@ -370,7 +370,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [Int16](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toInt16(32768) == -32768;`.
 :::
 
@@ -618,7 +618,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [Int32](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toInt32(2147483648) == -2147483648;`
 :::
 
@@ -865,7 +865,7 @@ Unsupported types:
 
 :::note
 If the input value cannot be represented within the bounds of [Int64](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
 :::
 
@@ -1608,7 +1608,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt8](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toUInt8(256) == 0;`.
 :::
 
@@ -1856,7 +1856,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt16](../data-types/int-uint.md), overflow or underflow of the result occurs.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toUInt16(65536) == 0;`.
 :::
 
@@ -2104,7 +2104,7 @@ Unsupported arguments:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt32](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toUInt32(4294967296) == 0;`
 :::
 
@@ -2353,7 +2353,7 @@ Unsupported types:
 
 :::note
 If the input value cannot be represented within the bounds of [UInt64](../data-types/int-uint.md), the result over or under flows.
-This is not considered an error.  
+This is not considered an error.
 For example: `SELECT toUInt64(18446744073709551616) == 0;`
 :::
 
@@ -3691,8 +3691,8 @@ toDateTime(expr[, time_zone ])
 - `time_zone` — Time zone. [String](../data-types/string.md).
 
 :::note
-If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).  
-If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.  
+If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
+If `expr` is a [String](../data-types/string.md), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
 :::
 
@@ -5536,7 +5536,7 @@ Result:
 
 ## reinterpretAsUInt256
 
-Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
+Performs byte reinterpretation by treating the input value as a value of type UInt256. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
 
 **Syntax**
 
@@ -5612,7 +5612,7 @@ Result:
 
 ## reinterpretAsInt16
 
-Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.  
+Performs byte reinterpretation by treating the input value as a value of type Int16. Unlike [`CAST`](#cast), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is meaningless.
 
 **Syntax**
 
@@ -6257,7 +6257,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T)
 
-Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the casted value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the cast value is not representable in the target type.
 
 **Syntax**
 
@@ -6310,7 +6310,7 @@ Result:
 
 ## accurateCastOrDefault(x, T[, default_value])
 
-Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the casted value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Returns default type value or `default_value` if specified if the cast value is not representable in the target type.
 
 **Syntax**
 
@@ -6791,7 +6791,7 @@ parseDateTime(str[, format[, timezone]])
 
 **Returned value(s)**
 
-Returns DateTime values parsed from input string according to a MySQL style format string.
+Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a MySQL-style format string.
 
 **Supported format specifiers**
 
@@ -6840,7 +6840,7 @@ parseDateTimeInJodaSyntax(str[, format[, timezone]])
 
 **Returned value(s)**
 
-Returns DateTime values parsed from input string according to a Joda style format.
+Return a [DateTime](../data-types/datetime.md) value parsed from the input string according to a Joda-style format string.
 
 **Supported format specifiers**
 
@@ -6866,6 +6866,64 @@ Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that 
 ## parseDateTimeInJodaSyntaxOrNull
 
 Same as for [parseDateTimeInJodaSyntax](#parsedatetimeinjodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+## parseDateTime64
+
+Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
+
+**Syntax**
+
+``` sql
+parseDateTime64(str[, format[, timezone]])
+```
+
+**Arguments**
+
+- `str` — The String to be parsed.
+- `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
+
+**Returned value(s)**
+
+Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a MySQL-style format string.
+The precision of the returned value is 6.
+
+## parseDateTime64OrZero
+
+Same as for [parseDateTime64](#parsedatetime64) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTime64OrNull
+
+Same as for [parseDateTime64](#parsedatetime64) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+## parseDateTime64InJodaSyntax
+
+Converts a [String](../data-types/string.md) to [DateTime64](../data-types/datetime64.md) according to a [Joda format string](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
+
+**Syntax**
+
+``` sql
+parseDateTime64InJodaSyntax(str[, format[, timezone]])
+```
+
+**Arguments**
+
+- `str` — The String to be parsed.
+- `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
+
+**Returned value(s)**
+
+Return a [DateTime64](../data-types/datetime64.md) value parsed from the input string according to a Joda-style format string.
+The precision of the returned value equal to the number of `S` placeholders in the format string (but at most 6).
+
+## parseDateTime64InJodaSyntaxOrZero
+
+Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTime64InJodaSyntaxOrNull
+
+Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
@@ -7131,6 +7189,45 @@ Result:
 └───────────────────────┘
 ```
 
+## toUnixTimestamp64Second
+
+Converts a `DateTime64` to a `Int64` value with fixed second precision. The input value is scaled up or down appropriately depending on its precision.
+
+:::note
+The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
+:::
+
+**Syntax**
+
+```sql
+toUnixTimestamp64Second(value)
+```
+
+**Arguments**
+
+- `value` — DateTime64 value with any precision. [DateTime64](../data-types/datetime64.md).
+
+**Returned value**
+
+- `value` converted to the `Int64` data type. [Int64](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime64('2009-02-13 23:31:31.011', 3, 'UTC') AS dt64
+SELECT toUnixTimestamp64Second(dt64);
+```
+
+Result:
+
+```response
+┌─toUnixTimestamp64Second(dt64)─┐
+│                    1234567891 │
+└───────────────────────────────┘
+```
+
 ## toUnixTimestamp64Milli
 
 Converts a `DateTime64` to a `Int64` value with fixed millisecond precision. The input value is scaled up or down appropriately depending on its precision.
@@ -7248,6 +7345,48 @@ Result:
 └─────────────────────────────┘
 ```
 
+## fromUnixTimestamp64Second
+
+Converts an `Int64` to a `DateTime64` value with fixed second precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
+
+:::note
+Please note that input value is treated as a UTC timestamp, not timestamp at the given (or implicit) timezone.
+:::
+
+**Syntax**
+
+``` sql
+fromUnixTimestamp64Second(value[, timezone])
+```
+
+**Arguments**
+
+- `value` — value with any precision. [Int64](../data-types/int-uint.md).
+- `timezone` — (optional) timezone name of the result. [String](../data-types/string.md).
+
+**Returned value**
+
+- `value` converted to DateTime64 with precision `0`. [DateTime64](../data-types/datetime64.md).
+
+**Example**
+
+Query:
+
+``` sql
+WITH CAST(1733935988, 'Int64') AS i64
+SELECT
+    fromUnixTimestamp64Second(i64, 'UTC') AS x,
+    toTypeName(x);
+```
+
+Result:
+
+```response
+┌───────────────────x─┬─toTypeName(x)────────┐
+│ 2024-12-11 16:53:08 │ DateTime64(0, 'UTC') │
+└─────────────────────┴──────────────────────┘
+```
+
 ## fromUnixTimestamp64Milli
 
 Converts an `Int64` to a `DateTime64` value with fixed millisecond precision and optional timezone. The input value is scaled up or down appropriately depending on its precision.
@@ -7276,7 +7415,7 @@ fromUnixTimestamp64Milli(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Milli(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7286,7 +7425,7 @@ Result:
 
 ```response
 ┌───────────────────────x─┬─toTypeName(x)────────┐
-│ 2009-02-13 23:31:31.011 │ DateTime64(3, 'UTC') │
+│ 2024-12-11 16:53:08.123 │ DateTime64(3, 'UTC') │
 └─────────────────────────┴──────────────────────┘
 ```
 
@@ -7318,7 +7457,7 @@ fromUnixTimestamp64Micro(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123456, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Micro(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7328,7 +7467,7 @@ Result:
 
 ```response
 ┌──────────────────────────x─┬─toTypeName(x)────────┐
-│ 1970-01-15 06:56:07.891011 │ DateTime64(6, 'UTC') │
+│ 2024-12-11 16:53:08.123456 │ DateTime64(6, 'UTC') │
 └────────────────────────────┴──────────────────────┘
 ```
 
@@ -7360,7 +7499,7 @@ fromUnixTimestamp64Nano(value[, timezone])
 Query:
 
 ``` sql
-WITH CAST(1234567891011, 'Int64') AS i64
+WITH CAST(1733935988123456789, 'Int64') AS i64
 SELECT
     fromUnixTimestamp64Nano(i64, 'UTC') AS x,
     toTypeName(x);
@@ -7370,7 +7509,7 @@ Result:
 
 ```response
 ┌─────────────────────────────x─┬─toTypeName(x)────────┐
-│ 1970-01-01 00:20:34.567891011 │ DateTime64(9, 'UTC') │
+│ 2024-12-11 16:53:08.123456789 │ DateTime64(9, 'UTC') │
 └───────────────────────────────┴──────────────────────┘
 ```
 

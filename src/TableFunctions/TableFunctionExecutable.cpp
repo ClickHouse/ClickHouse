@@ -10,6 +10,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/ExecutableSettings.h>
 #include <Storages/StorageExecutable.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <boost/algorithm/string.hpp>

@@ -193,6 +193,20 @@ public:
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const String & from_path, const String & to_path) = 0;
 
+    virtual void renameExchange(const std::string &, const std::string &)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Method `renameExchange()` not implemented for disk: {}", getDataSourceDescription().toString());
+    }
+
+    virtual bool renameExchangeIfSupported(const std::string &, const std::string &)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method `renameExchangeIfSupported()` not implemented for disk: {}",
+            getDataSourceDescription().toString());
+    }
+
     /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
     virtual void copyDirectoryContent(
         const String & from_dir,
@@ -246,8 +260,21 @@ public:
     /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
     virtual void removeDirectory(const String & path) = 0;
 
+    virtual void removeDirectoryIfExists(const String &)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method `removeDirectoryIfExists()` is not implemented for disk: {}",
+            getDataSourceDescription().toString());
+    }
+
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
+
+    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
+    /// Differs from removeRecursive for S3/HDFS disks
+    /// Limits the number of removing files in batches to prevent high memory consumption.
+    virtual void removeRecursiveWithLimit(const String & path) { removeRecursive(path); }
 
     /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
     /// Differs from removeFile for S3/HDFS disks
@@ -356,6 +383,49 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
+
+    virtual bool isSymlinkSupported() const { return false; }
+    virtual bool isSymlink(const String &) const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink() is not implemented for disk type: {}", getDataSourceDescription().toString());
+    }
+
+    virtual bool isSymlinkNoThrow(const String &) const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method isSymlinkNothrow() is not implemented for disk type: {}",
+            getDataSourceDescription().toString());
+    }
+
+    virtual void createDirectoriesSymlink(const String &, const String &)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method createDirectoriesSymlink() is not implemented for disk type: {}",
+            getDataSourceDescription().toString());
+    }
+
+    virtual String readSymlink(const fs::path &) const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method readSymlink() is not implemented for disk type: {}",
+            getDataSourceDescription().toString());
+    }
+
+    virtual bool equivalent(const String &, const String &) const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
+    }
+
+    virtual bool equivalentNoThrow(const String &, const String &) const
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
+    }
 
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
@@ -497,7 +567,7 @@ public:
 
 
 protected:
-    friend class DiskDecorator;
+    friend class DiskReadOnlyWrapper;
 
     const String name;
 
@@ -579,6 +649,7 @@ inline String directoryPath(const String & path)
 {
     return fs::path(path).parent_path() / "";
 }
+
 
 }
 

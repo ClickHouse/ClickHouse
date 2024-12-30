@@ -199,6 +199,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
     last_pipeline->addResources(std::move(resources));
+    last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
     return last_pipeline;
 }
@@ -206,6 +207,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());
+    map.add("Node Id", step.getUniqID());
 
     if (options.description)
     {

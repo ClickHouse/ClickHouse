@@ -194,33 +194,13 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             CompletedPipelineExecutor executor(pipeline);
             executor.execute();
         }
-    }
-    catch (...)
-    {
-        auto message = getCurrentExceptionMessage(true);
-        response.setStatusAndReason(
-                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
 
-        try
-        {
-            writeStringBinary(message, out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-
-        tryLogCurrentException(log);
-    }
-
-    try
-    {
         out.finalize();
     }
     catch (...)
     {
         tryLogCurrentException(log);
+        out.cancelWithException(request, getCurrentExceptionCode(), getCurrentExceptionMessage(true), nullptr);
     }
 }
 

@@ -226,6 +226,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         future_mutated_part,
         task_context);
 
+    storage.writePartLog(
+        PartLogElement::MUTATE_PART_START, {}, 0,
+        entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {});
+
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
             entry.create_time, task_context, NO_TRANSACTION_PTR, reserved_space, table_lock_holder);

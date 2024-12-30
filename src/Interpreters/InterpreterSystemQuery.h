@@ -64,7 +64,10 @@ private:
     void syncReplica(ASTSystemQuery & query);
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
+
+    void loadPrimaryKeys();
     void unloadPrimaryKeys();
+    void loadOrUnloadPrimaryKeysImpl(bool load);
 
     void syncReplicatedDatabase(ASTSystemQuery & query);
 
@@ -82,6 +85,12 @@ private:
 
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     void startStopAction(StorageActionBlockType action_type, bool start);
+
+    void prewarmMarkCache();
+    void prewarmPrimaryIndexCache();
+
+    void stopReplicatedDDLQueries();
+    void startReplicatedDDLQueries();
 };
 
 

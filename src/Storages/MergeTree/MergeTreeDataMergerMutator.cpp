@@ -48,6 +48,16 @@ namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
 }
+namespace ProfileEvents
+{
+
+    extern const Event MergerMutatorsGetPartsForMergeElapsedMicroseconds;
+    extern const Event MergerMutatorPrepareRangesForMergeElapsedMicroseconds;
+    extern const Event MergerMutatorSelectPartsForMergeElapsedMicroseconds;
+    extern const Event MergerMutatorRangesForMergeCount;
+    extern const Event MergerMutatorPartsInRangesForMergeCount;
+    extern const Event MergerMutatorSelectRangePartsCount;
+}
 
 namespace DB
 {
@@ -70,6 +80,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
+    extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
+    extern const MergeTreeSettingsFloat merge_selector_base;
+    extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
 }
 
 namespace ErrorCodes
@@ -213,6 +226,7 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
 {
     PartitionIdsHint res;
     MergeTreeData::DataPartsVector data_parts = getDataPartsToSelectMergeFrom(txn);
+
     if (data_parts.empty())
         return res;
 
@@ -254,7 +268,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
         if (status == SelectPartsDecision::SELECTED)
             res.insert(all_partition_ids[i]);
         else
-            LOG_TEST(log, "Nothing to merge in partition {}: {}", all_partition_ids[i], out_disable_reason.text);
+            LOG_TEST(log, "Nothing to merge in partition {} with max_total_size_to_merge = {} (looked up {} ranges): {}",
+                all_partition_ids[i], ReadableSize(max_total_size_to_merge), ranges_per_partition[i].size(), out_disable_reason.text);
     }
 
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
@@ -270,6 +285,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
 MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectMergeFrom(
     const MergeTreeTransactionPtr & txn, const PartitionIdsHint * partitions_hint) const
 {
+
+    Stopwatch get_data_parts_for_merge_timer;
     auto res = getDataPartsToSelectMergeFrom(txn);
     if (!partitions_hint)
         return res;
@@ -278,6 +295,8 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::getDataPartsToSelectM
     {
         return !partitions_hint->contains(part->info.partition_id);
     });
+
+    ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, get_data_parts_for_merge_timer.elapsedMicroseconds());
     return res;
 }
 
@@ -355,6 +374,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
     const MergeTreeTransactionPtr & txn,
     PreformattedMessage & out_disable_reason) const
 {
+    Stopwatch ranges_for_merge_timer;
     MergeSelectingInfo res;
 
     res.current_time = std::time(nullptr);
@@ -437,6 +457,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
 
         auto & partition_info = partitions_info[partition_id];
         partition_info.min_age = std::min(partition_info.min_age, part_info.age);
+        ++partition_info.num_parts;
 
         ++res.parts_selected_precondition;
 
@@ -455,6 +476,10 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         prev_part = &part;
     }
 
+    ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, res.parts_selected_precondition);
+    ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, res.parts_ranges.size());
+    ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
+
     return res;
 }
 
@@ -469,6 +494,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
     PreformattedMessage & out_disable_reason,
     bool dry_run)
 {
+    Stopwatch select_parts_from_ranges_timer;
     const auto data_settings = data.getSettings();
     IMergeSelector::PartsRange parts_to_merge;
 
@@ -540,6 +566,10 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
             /// Override value from table settings
             simple_merge_settings.window_size = (*data_settings)[MergeTreeSetting::merge_selector_window_size];
             simple_merge_settings.max_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::max_parts_to_merge_at_once];
+            simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = (*data_settings)[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
+            simple_merge_settings.base = (*data_settings)[MergeTreeSetting::merge_selector_base];
+            simple_merge_settings.min_parts_to_merge_at_once = (*data_settings)[MergeTreeSetting::min_parts_to_merge_at_once];
+
             if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
                 simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
 
@@ -565,7 +595,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 
         if (parts_to_merge.empty())
         {
-            out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors)");
+            ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
+            out_disable_reason = PreformattedMessage::create("Did not find any parts to merge (with usual merge selectors) in {}ms", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
             return SelectPartsDecision::CANNOT_SELECT;
         }
     }
@@ -578,8 +609,11 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
         parts.push_back(part);
     }
 
-    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    LOG_DEBUG(log, "Selected {} parts from {} to {} in {}ms", parts.size(), parts.front()->name, parts.back()->name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
+    ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, parts.size());
+
     future_part->assign(std::move(parts));
+    ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
     return SelectPartsDecision::SELECTED;
 }
 
@@ -606,11 +640,21 @@ String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
     auto best_partition_it = std::max_element(
         partitions_info.begin(),
         partitions_info.end(),
-        [](const auto & e1, const auto & e2) { return e1.second.min_age < e2.second.min_age; });
+        [](const auto & e1, const auto & e2)
+        {
+            // If one partition has only a single part, always select the other partition.
+            if (e1.second.num_parts == 1)
+                return true;
+            if (e2.second.num_parts == 1)
+                return false;
+            // If both partitions have more than one part, select the older partition.
+            return e1.second.min_age < e2.second.min_age;
+        });
 
     assert(best_partition_it != partitions_info.end());
 
-    if (static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
+    if ((static_cast<size_t>(best_partition_it->second.min_age) < (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds])
+        || static_cast<size_t>(best_partition_it->second.num_parts) == 1)
         return {};
 
     return best_partition_it->first;
