@@ -92,6 +92,8 @@ private:
         ProjectionsDescription projections;
     };
 
+    BlockIO createReplicatedDatabaseByClient();
+    void checkDatabaseNameAllowed();
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
 

@@ -141,6 +141,9 @@ namespace DB
     M(UInt64, http_connections_soft_limit, 100, "Connections above this limit have significantly shorter time to live. The limit applies to the http connections which do not belong to any disk or storage.", 0) \
     M(UInt64, http_connections_warn_limit, 1000, "Warning massages are written to the logs if number of in-use connections are higher than this limit. The limit applies to the http connections which do not belong to any disk or storage.", 0) \
     M(UInt64, http_connections_store_limit, 5000, "Connections above this limit reset after use. Set to 0 to turn connection cache off. The limit applies to the http connections which do not belong to any disk or storage.", 0) \
+    M(String, reserved_replicated_database_prefixes, "", "Comma separated list of prohibited replicated database prefixes.", 0) \
+    M(String, user_with_indirect_database_creation, "", "Database creation for this user is simplified by setting necessary parameters automatically and prohibiting dangerous behavoir.", 0) \
+    M(String, cluster_database, "", "Database used for cluster creation.", 0) \
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in StorageSystemServerSettings.cpp
 

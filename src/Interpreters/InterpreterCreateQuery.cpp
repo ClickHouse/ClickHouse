@@ -6,6 +6,7 @@
 #include <Access/User.h>
 
 #include "Common/Exception.h"
+#include "Common/escapeString.h"
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -14,6 +15,7 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
+#include "Planner/PlannerContext.h"
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/hex.h>
@@ -94,6 +96,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
@@ -112,8 +115,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
+    extern const int SETTING_CONSTRAINT_VIOLATION;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_PARAMETER;
 }
 
 namespace fs = std::filesystem;
@@ -1775,12 +1780,85 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
 }
 
+BlockIO InterpreterCreateQuery::createReplicatedDatabaseByClient() {
+    auto & create = query_ptr->as<ASTCreateQuery &>();
+    auto context = getContext();
+    auto cluster_database = context->getServerSettings().getString("cluster_database");
+    if (cluster_database.empty())
+        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting cluster_database should be set.");
+    auto default_database = DatabaseCatalog::instance().getDatabase(cluster_database);
+    DatabaseReplicated * replicated_database = dynamic_cast<DatabaseReplicated *>(default_database.get());
+    if (!replicated_database)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database default should have Replicated engine");
+    String db_name = create.getDatabase();
+    String create_db_query = "CREATE DATABASE " + escapeString(db_name) + " ON CLUSTER " + escapeString(cluster_database) +
+        " ENGINE = Replicated("
+        "'/clickhouse/databases/" + escapeForFileName(db_name) +
+        "', '" + replicated_database->getShardMacros() + "', '{replica}') "
+        "SETTINGS collection_name='cluster_secret'";
+    auto new_context = Context::createCopy(context);
+    new_context->setGlobalContext();
+    new_context->setSetting("allow_distributed_ddl", 1);
+    executeQuery(create_db_query, new_context, QueryFlags{ .internal = true });
+    auto username = context->getUserName();
+    String grant_query = "GRANT DEFAULT REPLICATED DATABASE PRIVILEGES ON " + escapeString(db_name) + ".* TO " + escapeString(username);
+    auto exec_result = executeQuery(grant_query, new_context, QueryFlags{ .internal = true });
+    return {};
+}
+
+void InterpreterCreateQuery::checkDatabaseNameAllowed() {
+    auto & create = query_ptr->as<ASTCreateQuery &>();
+    if (!create.database || internal)
+        return;
+    auto *storage = create.storage;
+    if (!storage || !storage->engine || storage->engine->name != "Replicated")
+        return;
+    String db_name = create.getDatabase();
+    auto context = getContext();
+    auto prohibited_prefixes = context->getServerSettings().getString("reserved_replicated_database_prefixes");
+    if (prohibited_prefixes.empty())
+        return;
+    Tokens tokens(prohibited_prefixes.data(), prohibited_prefixes.data() + prohibited_prefixes.size());
+    IParser::Pos pos(tokens, 1, 1);
+    Expected expected;
+
+    /// Use an unordered list rather than string vector
+    auto check_name_allowed = [&]
+    {
+        String prefix;
+        if (!parseIdentifierOrStringLiteral(pos, expected, prefix))
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Cannot parse reserved_replicated_database_prefixes setting.");
+        if (db_name.starts_with(prefix))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Database name cannot start with '{}'", prefix);
+        return true;
+    };
+    ParserList::parseUtil(pos, expected, check_name_allowed, false);
+}
+
+
 BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
-
     bool is_create_database = create.database && !create.table;
+    if (is_create_database)
+        checkDatabaseNameAllowed();
+    auto context = getContext();
+    auto username = context->getUserName();
+    auto user_with_interect_db_creation = context->getServerSettings().getString("user_with_indirect_database_creation");
+    if (is_create_database && !user_with_interect_db_creation.empty() && username == user_with_interect_db_creation && !internal) {
+        auto *storage = create.storage;
+        if (!storage || !storage->engine || storage->engine->name != "Replicated")
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Only Replicated database can be created through SQL.");
+        if (storage->engine->arguments && storage->engine->arguments->children.size() > 0)
+            throw Exception(ErrorCodes::UNSUPPORTED_PARAMETER, "Arguments cannot be specified for Replicated database engine.");
+        if (storage && storage->settings && storage->settings->changes.size() > 0) {
+            throw Exception(ErrorCodes::UNSUPPORTED_PARAMETER, "Settings are not allowed for Replicated database.");
+        }
+        if (!create.cluster.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_PARAMETER, "ON CLUSTER cannot be used in CREATE DATABASE, it will be set implicitly.");
+        return createReplicatedDatabaseByClient();
+    }
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         auto on_cluster_version = getContext()->getSettingsRef().distributed_ddl_entry_format_version;

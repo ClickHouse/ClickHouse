@@ -1180,8 +1180,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
                 }
 
-                if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
+                if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter)) {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                    // create_interpreter->setInternal(flags.internal);
+                }
 
                 {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;

@@ -96,12 +96,14 @@ DatabaseReplicated::DatabaseReplicated(
     UUID uuid,
     const String & zookeeper_path_,
     const String & shard_name_,
+    const String & shard_macros_,
     const String & replica_name_,
     DatabaseReplicatedSettings db_settings_,
     ContextPtr context_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_path(zookeeper_path_)
     , shard_name(shard_name_)
+    , shard_macros(shard_macros_)
     , replica_name(replica_name_)
     , db_settings(std::move(db_settings_))
     , tables_metadata_digest(0)
@@ -1762,11 +1764,11 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
 
         String zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
-        String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
+        String shard_macros = safeGetLiteralValue<String>(arguments[1], "Replicated");
         String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
         zookeeper_path = args.context->getMacros()->expand(zookeeper_path);
-        shard_name = args.context->getMacros()->expand(shard_name);
+        String shard_name = args.context->getMacros()->expand(shard_macros);
         replica_name = args.context->getMacros()->expand(replica_name);
 
         DatabaseReplicatedSettings database_replicated_settings{};
@@ -1779,6 +1781,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             args.uuid,
             zookeeper_path,
             shard_name,
+            shard_macros,
             replica_name,
             std::move(database_replicated_settings), args.context);
     };

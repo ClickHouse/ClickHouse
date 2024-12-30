@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Access/AccessControl.h>
@@ -8,12 +9,16 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
+#include "Common/escapeString.h"
+#include "Databases/IDatabase.h"
+#include "base/sleep.h"
 
 namespace DB
 {
@@ -21,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -468,6 +474,54 @@ BlockIO InterpreterGrantQuery::execute()
 
     if (need_check_grantees_are_allowed)
         current_user_access->checkGranteesAreAllowed(grantees);
+
+    if (query.default_replicated_db_privileges) {
+        auto context = getContext();
+        auto username = context->getUserName();
+        if (query.access_rights_elements.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected number of access rights elements: {}.", query.access_rights_elements.size());
+        String db_name = query.access_rights_elements[0].database;
+        if (query.grantees->names.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected number of grantees.");
+        String grantee = query.grantees->names[0];
+        // We cannot check if database is replicated because it might be not created yet.
+
+        auto cluster_database = context->getServerSettings().getString("cluster_database");
+        String default_grant_query = "GRANT ";
+        if (db_name != cluster_database)
+            default_grant_query += "DROP DATABASE, ";
+        default_grant_query +=
+            "ALTER UPDATE, "
+            "ALTER DELETE, "
+            "ALTER COLUMN, "
+            "ALTER MODIFY COMMENT, "
+            "ALTER INDEX, "
+            "ALTER PROJECTION, "
+            "ALTER CONSTRAINT, "
+            "ALTER TTL, "
+            "ALTER MATERIALIZE TTL, "
+            "ALTER SETTINGS, "
+            "ALTER MOVE PARTITION, "
+            "ALTER FETCH PARTITION, "
+            "ALTER VIEW, "
+            // CREATE TABLE implicitly enables CREATE VIEW
+            "CREATE TABLE, "
+            // DROP TABLE implicitly enables DROP VIEW
+            "DROP TABLE, "
+            "CREATE DICTIONARY, "
+            "DROP DICTIONARY, "
+            "dictGet, "
+            "INSERT, "
+            "OPTIMIZE, "
+            "SELECT, "
+            "SHOW, "
+            "SYSTEM SYNC REPLICA, "
+            "TRUNCATE "
+            "ON " + escapeString(db_name) + ".* TO " + escapeString(grantee) + " WITH GRANT OPTION";
+
+        auto exec_result = executeQuery(default_grant_query, getContext(), QueryFlags{ .internal = true });
+        return {};
+    }
 
     AccessRights new_rights;
     if (query.current_grants)
