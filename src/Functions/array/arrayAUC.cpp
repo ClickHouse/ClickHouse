@@ -136,7 +136,7 @@ private:
     static constexpr size_t partial_auc_offsets_arg_index = is_pr ? 2 : 3;
     static constexpr size_t partial_auc_offsets_size = is_pr ? 3 : 4;
 
-    static Float64 increase_unscaled_area([[maybe_unused]] size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp)
+    static Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp)
     {
         if constexpr (is_pr)
             /** PR curve plots Precision x Recall
@@ -181,7 +181,7 @@ private:
             return (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
     }
 
-    static Float64 scale_back_area(Float64 area, size_t total_positive_labels, [[maybe_unused]] size_t total_negative_labels)
+    static Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels)
     {
         if constexpr (is_pr)
             /** To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
@@ -358,7 +358,8 @@ public:
         {
             if (!isBool(arguments[2].type) || arguments[2].column.get() == nullptr || !isColumnConst(*arguments[2].column))
                 throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be of type const Bool", getName());
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be of type const Bool",
+                    getName());
         }
 
         /// `arr_partial_offsets` argument validation
@@ -414,12 +415,12 @@ public:
         if (!col_array1->hasEqualOffsets(*col_array2))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
 
-        /// Handle `scale` argument (if passed and the function is arrayROCAUC, otherwise default to true)
+        /// Handle the `scale` argument (if passed and the function is arrayROCAUC, otherwise default to true)
         bool scale = true;
         if (!is_pr && number_of_arguments >= 3 && input_rows_count > 0)
             scale = arguments[2].column->getBool(0);
 
-        /// Handle `arr_partial_offsets argument (if passed)
+        /// Handle the `arr_partial_offsets argument (if passed)
         ColumnPtr col_offsets = nullptr;
         const ColumnArray * col_array_offsets = nullptr;
         if (number_of_arguments == partial_auc_offsets_arg_index + 1)
