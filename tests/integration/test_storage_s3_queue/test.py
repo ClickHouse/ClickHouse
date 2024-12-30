@@ -2296,7 +2296,11 @@ def test_alter_settings(started_cluster):
         tracked_file_ttl_sec=10000,
         polling_min_timeout_ms=222,
         polling_max_timeout_ms=333,
-        polling_backoff_ms=111
+        polling_backoff_ms=111,
+        max_processed_files_before_commit=444,
+        max_processed_rows_before_commit=555,
+        max_processed_bytes_before_commit=666,
+        max_processing_time_sec_before_commit=777
     """
     )
 
@@ -2308,6 +2312,10 @@ def test_alter_settings(started_cluster):
         "polling_min_timeout_ms": 222,
         "polling_max_timeout_ms": 333,
         "polling_backoff_ms": 111,
+        "max_processed_files_before_commit": 444,
+        "max_processed_rows_before_commit": 555,
+        "max_processed_bytes_before_commit": 666,
+        "max_processing_time_sec_before_commit": 777,
     }
     string_settings = {"after_processing": "delete"}
 
