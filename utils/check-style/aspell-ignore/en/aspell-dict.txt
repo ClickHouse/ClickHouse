@@ -293,6 +293,7 @@ ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
 ExecutablePool
+ExperimentalBadge
 ExtType
 ExternalDistributed
 FFFD
