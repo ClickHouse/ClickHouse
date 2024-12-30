@@ -6,7 +6,6 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 
-#include <base/safeExit.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
@@ -32,7 +31,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -81,6 +79,7 @@
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
+#include <base/ask.h>
 #include "config.h"
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -272,7 +271,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 }
 
 /// To cancel the query on local format error.
-class LocalFormatError : public DB::Exception
+class LocalFormatError : public Exception
 {
 public:
     using Exception::Exception;
@@ -295,7 +294,7 @@ ClientBase::ClientBase(
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
     , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
     , progress_indication(output_stream_, in_fd_, err_fd_)
-    , progress_table(output_stream_, in_fd_, err_fd_)
+    , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
     , output_stream(output_stream_)
     , error_stream(error_stream_)
@@ -488,7 +487,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
         std::unique_lock lock(tty_mutex);
-        progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled);
+        progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled, false);
     }
 }
 
@@ -579,10 +578,9 @@ try
             out_buf = std_out.get();
         }
 
-        String current_format = default_output_format;
-
         select_into_file = false;
         select_into_file_and_stdout = false;
+        String current_format = default_output_format;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -674,6 +672,23 @@ try
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->setAutoFlush();
+
+        if ((!select_into_file || select_into_file_and_stdout)
+            && stdout_is_a_tty
+            && stdin_is_a_tty
+            && !FormatFactory::instance().checkIfOutputFormatIsTTYFriendly(current_format))
+        {
+            stopKeystrokeInterceptorIfExists();
+            SCOPE_EXIT({ startKeystrokeInterceptorIfExists(); });
+
+            if (!ask(fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
+If you want to output it into a file, use the "INTO OUTFILE" modifier in the query or redirect the output of the shell command.
+Do you want to output it anyway? [y/N] )", current_format)))
+            {
+                output_format = std::make_shared<NullOutputFormat>(block);
+            }
+            *std_out << '\n';
+        }
     }
 }
 catch (...)
@@ -1433,7 +1448,7 @@ void ClientBase::onProfileEvents(Block & block)
         {
             bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
             std::unique_lock lock(tty_mutex);
-            progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled);
+            progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled, false);
         }
 
         if (profile_events.print)
@@ -1753,9 +1768,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 client_context->getSettingsRef()[Setting::max_block_size],
                 getNumberOfCPUCoresToUse());
 
-            auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(client_context),
-                BuildQueryPipelineSettings::fromContext(client_context));
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(client_context), BuildQueryPipelineSettings(client_context));
 
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
@@ -1963,15 +1976,7 @@ void ClientBase::cancelQuery()
 {
     connection->sendCancel();
 
-    if (keystroke_interceptor)
-        try
-        {
-            keystroke_interceptor->stopIntercept();
-        }
-        catch (const DB::Exception &)
-        {
-            error_stream << getCurrentExceptionMessage(false);
-        }
+    stopKeystrokeInterceptorIfExists();
 
     if (need_render_progress && tty_buf)
     {
@@ -2170,7 +2175,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
         bool show_progress_table = !toggle_enabled || progress_table_toggle_on;
         if (need_render_progress_table && show_progress_table)
-            progress_table.writeFinalTable();
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.writeFinalTable(*tty_buf, lock);
+        }
         output_stream << std::endl << std::endl;
     }
     else
@@ -2664,7 +2672,7 @@ void ClientBase::startKeystrokeInterceptorIfExists()
         {
             keystroke_interceptor->startIntercept();
         }
-        catch (const DB::Exception &)
+        catch (const Exception &)
         {
             error_stream << getCurrentExceptionMessage(false);
             keystroke_interceptor.reset();
