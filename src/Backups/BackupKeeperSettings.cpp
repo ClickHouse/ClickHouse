@@ -10,18 +10,18 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 backup_restore_keeper_max_retries;
-    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
-    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 backup_restore_failure_after_host_disconnected_for_seconds;
-    extern const SettingsUInt64 backup_restore_keeper_max_retries_while_initializing;
-    extern const SettingsUInt64 backup_restore_keeper_max_retries_while_handling_error;
-    extern const SettingsUInt64 backup_restore_finish_timeout_after_error_sec;
-    extern const SettingsUInt64 backup_restore_keeper_value_max_size;
+    extern const SettingsFloat backup_restore_keeper_fault_injection_probability;
     extern const SettingsUInt64 backup_restore_batch_size_for_keeper_multi;
     extern const SettingsUInt64 backup_restore_batch_size_for_keeper_multiread;
-    extern const SettingsFloat backup_restore_keeper_fault_injection_probability;
+    extern const SettingsUInt64 backup_restore_failure_after_host_disconnected_for_seconds;
+    extern const SettingsUInt64 backup_restore_finish_timeout_after_error_sec;
     extern const SettingsUInt64 backup_restore_keeper_fault_injection_seed;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries_while_handling_error;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries_while_initializing;
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_value_max_size;
 }
 
 BackupKeeperSettings BackupKeeperSettings::fromContext(const ContextPtr & context)
