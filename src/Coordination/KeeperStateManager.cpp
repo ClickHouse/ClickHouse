@@ -4,6 +4,7 @@
 #include <Coordination/Defines.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -485,7 +486,8 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
 {
     auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]);
 
-    std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
+    std::unordered_map<int, KeeperServerConfigPtr> new_ids;
+    std::unordered_map<int, KeeperServerConfigPtr> old_ids;
     for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())
         new_ids[new_server->get_id()] = new_server;
 

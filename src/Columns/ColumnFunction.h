@@ -198,6 +198,9 @@ public:
     /// Create copy of this column, but with recursively_convert_result_to_full_column_if_low_cardinality = true
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
 
+    const FunctionBasePtr & getFunction() const { return function; }
+    const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
+
 private:
     size_t elements_size;
     FunctionBasePtr function;

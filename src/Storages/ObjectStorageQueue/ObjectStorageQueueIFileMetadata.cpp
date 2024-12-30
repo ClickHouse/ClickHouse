@@ -62,6 +62,15 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
     last_exception = exception;
 }
 
+void ObjectStorageQueueIFileMetadata::FileStatus::reset()
+{
+    state = FileStatus::State::None;
+    processing_start_time = {};
+    processing_end_time = {};
+    processed_rows = 0;
+    retries = 0;
+}
+
 void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 {
     state = state_;
@@ -243,6 +252,21 @@ bool ObjectStorageQueueIFileMetadata::setProcessing()
              processing_id_version.has_value() ? toString(processing_id_version.value()) : "None");
 
     return success;
+}
+
+void ObjectStorageQueueIFileMetadata::resetProcessing()
+{
+    auto state = file_status->state.load();
+    if (state != FileStatus::State::Processing)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset non-processing state: {}", state);
+
+    resetProcessingImpl();
+    file_status->reset();
+}
+
+void ObjectStorageQueueIFileMetadata::resetProcessingImpl()
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "resetProcessingImpl is not implemented");
 }
 
 void ObjectStorageQueueIFileMetadata::setProcessed()

@@ -14,7 +14,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include "Common/logger_useful.h"
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -74,7 +74,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsBool prewarm_mark_cache;
 }
 
 namespace ErrorCodes
@@ -104,7 +103,7 @@ void buildScatterSelector(
 
     for (size_t i = 0; i < num_rows; ++i)
     {
-        Data::key_type key = hash128(i, columns.size(), columns);
+        Data::key_type key = ColumnsHashing::hash128(i, columns.size(), columns);
         typename Data::LookupResult it;
         bool inserted;
         partitions_map.emplace(key, it, inserted);
@@ -202,6 +201,19 @@ void updateTTL(
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 }
 
+void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
+{
+    /// Iterate over required columns in the expression and check if block doesn't have this column.
+    /// It can happen only if required column is a actually a subcolumn of some column in the block.
+    /// In this case we should add this subcolumn to the block as a separate column so it can be
+    /// processed as a separate input in the expression actions.
+    for (const auto & required_column : expr->getRequiredColumns())
+    {
+        if (!block.has(required_column))
+            block.insert(block.getSubcolumnByName(required_column));
+    }
+}
+
 }
 
 void MergeTreeDataWriter::TemporaryPart::cancel()
@@ -224,6 +236,28 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
     part->getDataPartStorage().precommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
         projection->getDataPartStorage().precommitTransaction();
+}
+
+/// This method must be called after rename and commit of part
+/// because a correct path is required for the keys of caches.
+void MergeTreeDataWriter::TemporaryPart::prewarmCaches()
+{
+    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
+
+    if (auto mark_cache = part->storage.getMarkCacheToPrewarm(bytes_uncompressed))
+    {
+        for (const auto & stream : streams)
+        {
+            auto marks = stream.stream->releaseCachedMarks();
+            addMarksToCache(*part, marks, mark_cache.get());
+        }
+    }
+
+    if (auto index_cache = part->storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
+    {
+        /// Index was already set during writing. Now move it to cache.
+        part->moveIndexToCache(*index_cache);
+    }
 }
 
 std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfoPtr async_insert_info, const IColumn::Selector & selector, size_t partition_num)
@@ -519,15 +553,25 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
+    {
+        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices)->execute(block);
+    }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
     for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(sort_columns[i], 1, 1);
+    {
+        if (!reverse_flags.empty() && reverse_flags[i])
+            sort_description.emplace_back(sort_columns[i], -1, 1);
+        else
+            sort_description.emplace_back(sort_columns[i], 1, 1);
+    }
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
@@ -689,7 +733,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-    bool save_marks_in_cache = (*data_settings)[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
@@ -707,8 +750,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         compression_codec,
         std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
+        block.bytes(),
         /*reset_columns=*/ false,
-        save_marks_in_cache,
         /*blocks_are_granules_size=*/ false,
         context->getWriteSettings());
 
@@ -800,12 +843,18 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {})->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
     for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(sort_columns[i], 1, 1);
+    {
+        if (!reverse_flags.empty() && reverse_flags[i])
+            sort_description.emplace_back(sort_columns[i], -1, 1);
+        else
+            sort_description.emplace_back(sort_columns[i], 1, 1);
+    }
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocks);
 
@@ -844,7 +893,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-    bool save_marks_in_cache = (*data.getSettings())[MergeTreeSetting::prewarm_mark_cache] && data.getContext()->getMarkCache();
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
@@ -863,8 +911,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
+        block.bytes(),
         /*reset_columns=*/ false,
-        save_marks_in_cache,
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings());
 

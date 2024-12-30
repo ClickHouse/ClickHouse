@@ -158,7 +158,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
-    if check_name in ("amd_release", "amd_debug", "arm_release"):
+    if check_name.startswith("amd_") or check_name.startswith("arm_"):
         # this is praktika based CI
         print("Copy input *.deb artifacts")
         assert Shell.check(

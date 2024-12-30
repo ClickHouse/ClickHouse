@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
-#include <Storages/MergeTree/VectorSimilarityCondition.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
@@ -42,6 +41,7 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
+#include <Common/quoteString.h>
 #include <base/sleep.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -80,6 +80,8 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
 }
 
 namespace MergeTreeSetting
@@ -631,9 +633,22 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes,
     bool find_exact_ranges)
 {
-    RangesInDataParts parts_with_ranges;
-    parts_with_ranges.resize(parts.size());
     const Settings & settings = context->getSettingsRef();
+
+    if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
+    {
+        // Skip index analysis and return parts with all marks
+        // The coordinator will chose ranges to read for workers based on index analysis on its side
+        RangesInDataParts parts_with_ranges;
+        parts_with_ranges.reserve(parts.size());
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        {
+            const auto & part = parts[part_index];
+            parts_with_ranges.emplace_back(part, part_index, MarkRanges{{0, part->getMarksCount()}});
+        }
+        return parts_with_ranges;
+    }
 
     if (use_skip_indexes && settings[Setting::force_data_skipping_indices].changed)
     {
@@ -672,6 +687,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
+
+    RangesInDataParts parts_with_ranges(parts.size());
 
     /// Let's find what range to read from each part.
     {
@@ -941,6 +958,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         mutations_snapshot,
+        std::nullopt,
         metadata_snapshot,
         query_info,
         context,
@@ -1070,18 +1088,25 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
+    std::vector<bool> reverse_flags;
     const auto & key_indices = key_condition.getKeyIndices();
     DataTypes key_types;
     if (!key_indices.empty())
     {
-        const auto & index = part->getIndex();
+        const auto index = part->getIndex();
 
         for (size_t i : key_indices)
         {
             if (i < index->size())
+            {
                 index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+                reverse_flags.push_back(!primary_key.reverse_flags.empty() && primary_key.reverse_flags[i]);
+            }
             else
+            {
                 index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
+                reverse_flags.push_back(false);
+            }
 
             key_types.emplace_back(primary_key.data_types[i]);
         }
@@ -1130,28 +1155,32 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
+                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
+                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, index_left[i]);
+                        create_field_ref(range.begin, i, left);
                     else
-                        index_left[i] = NEGATIVE_INFINITY;
+                        left = NEGATIVE_INFINITY;
 
-                    index_right[i] = POSITIVE_INFINITY;
+                    right = POSITIVE_INFINITY;
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
+                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
+                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, index_left[i]);
-                        create_field_ref(range.end, i, index_right[i]);
+                        create_field_ref(range.begin, i, left);
+                        create_field_ref(range.end, i, right);
                     }
                     else
                     {
                         /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        index_left[i] = NEGATIVE_INFINITY;
-                        index_right[i] = POSITIVE_INFINITY;
+                        left = NEGATIVE_INFINITY;
+                        right = POSITIVE_INFINITY;
                     }
                 }
             }

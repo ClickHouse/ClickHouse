@@ -137,6 +137,13 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 }
 
 
+void SettingsConstraints::check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const
+{
+    check(current_settings, profile_elements.add_settings, source);
+    check(current_settings, profile_elements.modify_settings, source);
+    /// We don't check `drop_settings` here.
+}
+
 void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const
 {
     for (const auto & element : profile_elements)
@@ -414,13 +421,13 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
             if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
                 return Checker(
                     PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allowed_feature_tier')",
+                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allow_feature_tier')",
                         setting_name),
                     ErrorCodes::READONLY);
             if (setting_tier == SettingsTierType::BETA && !allowed_beta)
                 return Checker(
                     PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allowed_feature_tier')",
+                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
                         setting_name),
                     ErrorCodes::READONLY);
         }
