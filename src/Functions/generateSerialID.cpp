@@ -41,6 +41,8 @@ class FunctionSerial : public IFunction
 private:
     ContextPtr context;
     String keeper_path;
+    size_t max_series = 0;
+    bool at_capacity = false;
 
 public:
     static constexpr auto name = "generateSerialID";
@@ -49,7 +51,7 @@ public:
     {
         keeper_path = context->getServerSettings()[ServerSetting::series_keeper_path];
         zkutil::ZooKeeperPtr keeper = context->getZooKeeper();
-        size_t max_series = context->getSettingsRef()[Setting::max_autoincrement_series];
+        max_series = context->getSettingsRef()[Setting::max_autoincrement_series];
 
         Coordination::Stat stat;
         if (keeper->exists(keeper_path, &stat))
@@ -58,6 +60,9 @@ public:
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                     "Too many series created by {} function, maximum: {}. This is controlled by the `max_autoincrement_series` setting.",
                     getName(), max_series);
+
+            if (static_cast<size_t>(stat.numChildren) == max_series)
+                at_capacity = true;
         }
         else
         {
@@ -114,7 +119,15 @@ public:
         String serial_path = std::filesystem::path(keeper_path) / series_name;
 
         zkutil::ZooKeeperPtr keeper = context->getZooKeeper();
-        keeper->createIfNotExists(serial_path, "0");
+        if (at_capacity)
+        {
+            if (!keeper->exists(serial_path))
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                    "Too many series created by {} function, maximum: {}. This is controlled by the `max_autoincrement_series` setting.",
+                    getName(), max_series);
+        }
+        else
+            keeper->createIfNotExists(serial_path, "0");
 
         UInt64 counter = 0;
         Coordination::Stat stat;
