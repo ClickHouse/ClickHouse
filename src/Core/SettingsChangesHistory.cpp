@@ -91,6 +91,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
+            {"parallel_with_query_max_threads", 0, 4, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {

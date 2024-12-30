@@ -6015,6 +6015,16 @@ Allow experimental database engine Iceberg
 Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
 )", EXPERIMENTAL) \
     \
+    /** Experimental "statement1 PARALLEL WITH statement2" syntax. */ \
+    DECLARE(UInt64, parallel_with_query_max_threads, 4, R"(
+The maximum number of threads to execute statements around the [PARALLEL WITH](../../sql-reference/statements/parallel_with.md) clause.
+
+Possible values:
+
+- 0 (or 1) — Statements are executed one after another.
+- Positive integer. Bigger than 1.
+)", EXPERIMENTAL) \
+    \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
