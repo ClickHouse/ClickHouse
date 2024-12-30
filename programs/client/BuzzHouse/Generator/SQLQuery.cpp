@@ -1218,7 +1218,23 @@ int StatementGenerator::generateTopSelect(RandomGenerator & rg, const bool force
     }
     if (rg.nextSmallNumber() < 3)
     {
+        SelectIntoFile * sif = ts->mutable_intofile();
+        const std::filesystem::path & qfile = fc.db_file_path / "file.data";
+
         ts->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+        sif->set_path(qfile.generic_string());
+        if (rg.nextSmallNumber() < 4)
+        {
+            sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+        }
+        if (rg.nextSmallNumber() < 4)
+        {
+            sif->set_compression(static_cast<FileCompression>((rg.nextRandomUInt32() % static_cast<uint32_t>(FileCompression_MAX)) + 1));
+        }
+        if (rg.nextSmallNumber() < 4)
+        {
+            sif->set_level((rg.nextRandomUInt32() % 22) + 1);
+        }
     }
     if (this->allow_not_deterministic && rg.nextSmallNumber() < 3)
     {
