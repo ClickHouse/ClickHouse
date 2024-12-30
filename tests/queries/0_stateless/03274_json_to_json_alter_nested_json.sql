@@ -1,4 +1,5 @@
 set allow_experimental_json_type = 1;
+set output_format_native_write_json_as_string = 0;
 
 drop table if exists test;
 create table test (json JSON(max_dynamic_paths=8, max_dynamic_types=4)) engine=Memory;
