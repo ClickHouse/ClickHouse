@@ -32,6 +32,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/Context.h>
 #include <base/interpolate.h>
+#include <Core/ServerSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
@@ -104,6 +105,10 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSizeForMerge(size_t max_coun
             data_settings->max_bytes_to_merge_at_max_space_in_pool,
             static_cast<double>(free_entries) / data_settings->number_of_free_entries_in_pool_to_lower_max_size_of_merge));
 
+    UInt64 max_bytes_to_merge_override = data.getContext()->getMaxBytesToMergeOverride();
+    if (max_bytes_to_merge_override != 0)
+        max_size = std::min(max_size, max_bytes_to_merge_override);
+
     return std::min(max_size, static_cast<UInt64>(data.getStoragePolicy()->getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
@@ -121,12 +126,18 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
 
+    UInt64 max_size = 0;
     /// Allow mutations only if there are enough threads, leave free threads for merges else
     if (occupied <= 1
-        || max_tasks_count - occupied >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
-        return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
+        || max_tasks_count - occupied >= data_settings->number_of_free_entries_in_pool_to_execute_mutation) {
+        max_size = static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
-    return 0;
+        UInt64 max_bytes_to_mutate_override = data.getContext()->getMaxBytesToMutateOverride();
+        if (max_bytes_to_mutate_override != 0)
+            max_size = std::min(max_size, max_bytes_to_mutate_override);
+    }
+
+    return max_size;
 }
 
 SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(

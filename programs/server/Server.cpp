@@ -1425,6 +1425,9 @@ try
             global_context->setMaxTableNumToWarn(new_server_settings.max_table_num_to_warn);
             global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
             global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
+            global_context->setMaxBytesToMergeOverride(new_server_settings.max_bytes_to_merge_override);
+            global_context->setMaxBytesToMutateOverride(new_server_settings.max_bytes_to_mutate_override);
+
 
             SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
             if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)

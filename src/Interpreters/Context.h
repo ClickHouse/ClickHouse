@@ -1113,6 +1113,12 @@ public:
     void clearStorageReplicatedQueueSize(const UUID & storage_uuid);
     UInt64 getReplicatedQueuesTotalSize() const;
 
+    /// Dynamically restrict the size of MergeTree merge tasks
+    void setMaxBytesToMergeOverride(size_t max_bytes_to_merge);
+    size_t getMaxBytesToMergeOverride() const;
+    void setMaxBytesToMutateOverride(size_t max_bytes_to_mutate);
+    size_t getMaxBytesToMutateOverride() const;
+
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 

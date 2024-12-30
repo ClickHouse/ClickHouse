@@ -359,6 +359,9 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<DistributedSettings> distributed_settings TSA_GUARDED_BY(mutex);
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
+    std::atomic_size_t max_bytes_to_merge_override = 0lu; /// Dynamically restrict the size of MergeTree merge tasks
+    std::atomic_size_t max_bytes_to_mutate_override = 0lu; /// Dynamically restrict the size of MergeTree mutate tasks
+
     /// No lock required for format_schema_path modified only during initialization
     std::atomic_size_t max_database_num_to_warn = 1000lu;
     std::atomic_size_t max_table_num_to_warn = 5000lu;
@@ -4397,6 +4400,29 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 {
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
+
+
+void Context::setMaxBytesToMergeOverride(size_t max_bytes_to_merge)
+{
+    shared->max_bytes_to_merge_override.store(max_bytes_to_merge, std::memory_order_relaxed);
+}
+
+
+size_t Context::getMaxBytesToMergeOverride() const {
+    return shared->max_bytes_to_merge_override.load();
+}
+
+
+void Context::setMaxBytesToMutateOverride(size_t max_bytes_to_mutate)
+{
+    shared->max_bytes_to_mutate_override.store(max_bytes_to_mutate, std::memory_order_relaxed);
+}
+
+
+size_t Context::getMaxBytesToMutateOverride() const {
+    return shared->max_bytes_to_mutate_override.load();
+}
+
 
 InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, std::optional<size_t> max_parsing_threads) const
 {
