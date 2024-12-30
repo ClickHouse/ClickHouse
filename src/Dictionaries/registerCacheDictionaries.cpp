@@ -275,7 +275,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if REGISTER_DICTIONARY_LAYOUT_SSD && (defined(OS_LINUX) || defined(OS_FREEBSD))
 
     auto create_simple_ssd_cache_layout = [=](const std::string & full_name,
                                               const DictionaryStructure & dict_struct,
