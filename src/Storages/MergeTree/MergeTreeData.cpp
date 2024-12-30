@@ -7280,7 +7280,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
             minmax_idx_condition.emplace(
                 filter_dag, query_context, minmax_columns_names,
-                getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(query_context)));
+                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
             partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
         }
 
