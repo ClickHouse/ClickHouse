@@ -145,6 +145,9 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 
 void PrettyCompactBlockOutputFormat::writeRow(
     size_t row_num,
+    bool split_by_lines,
+    std::vector<std::optional<String>> & serialized_values,
+    std::vector<size_t> & offsets_inside_serialized_values,
     size_t displayed_row,
     const Block & header,
     const Chunk & chunk,
@@ -175,18 +178,37 @@ void PrettyCompactBlockOutputFormat::writeRow(
     if (!format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0)
         cut_to_width = 0;
 
+    /// A value can span multiple values, and we want to iterate over them.
     for (size_t j = 0; j < num_columns; ++j)
     {
-        writeCString(grid_symbols.bar, out);
-        const auto & type = *header.getByPosition(j).type;
-        const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][displayed_row];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+        serialized_values[j].reset();
+        offsets_inside_serialized_values[j] = 0;
     }
 
-    writeCString(grid_symbols.bar, out);
-    if (readable_number_tip)
-        writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
-    writeCString("\n", out);
+    /// As long as there are lines in any of fields, output a line.
+    while (true)
+    {
+        bool all_lines_printed = true;
+        for (size_t j = 0; j < num_columns; ++j)
+        {
+            writeCString(grid_symbols.bar, out);
+            const auto & type = *header.getByPosition(j).type;
+            const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][displayed_row];
+            writeValueWithPadding(*columns[j], *serializations[j], row_num,
+                true /* TODO */, serialized_values[j], offsets_inside_serialized_values[j],
+                cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
+            if (offsets_inside_serialized_values[j] != serialized_values[j]->size())
+                all_lines_printed = false;
+        }
+
+        writeCString(grid_symbols.bar, out);
+        if (readable_number_tip)
+            writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
+        writeCString("\n", out);
+
+        if (all_lines_printed)
+            break;
+    }
 }
 
 void PrettyCompactBlockOutputFormat::writeVerticalCut(const Chunk & chunk, const Widths & max_widths)
@@ -213,6 +235,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     UInt64 max_rows = format_settings.pretty.max_rows;
 
     size_t num_rows = chunk.getNumRows();
+    size_t num_columns = chunk.getNumColumns();
     const auto & header = getPort(port_kind).getHeader();
 
     WidthsPerColumn widths;
@@ -225,6 +248,9 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 
     bool vertical_filler_written = false;
     size_t displayed_row = 0;
+    std::vector<std::optional<String>> serialized_values(num_columns);
+    std::vector<size_t> offsets_inside_serialized_values(num_columns);
+
     for (size_t i = 0; i < num_rows && displayed_rows < max_rows; ++i)
     {
         if (cutInTheMiddle(i, num_rows, format_settings.pretty.max_rows))
@@ -237,7 +263,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
         }
         else
         {
-            writeRow(i, displayed_row, header, chunk, widths, max_widths);
+            writeRow(i, true /* TODO */, serialized_values, offsets_inside_serialized_values, displayed_row, header, chunk, widths, max_widths);
             ++displayed_row;
             ++displayed_rows;
         }

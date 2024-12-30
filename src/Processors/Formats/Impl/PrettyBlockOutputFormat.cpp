@@ -335,6 +335,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     bool vertical_filler_written = false;
     size_t displayed_row = 0;
+
+    std::vector<std::optional<String>> serialized_values(num_columns);
+    std::vector<size_t> offsets_inside_serialized_values(num_columns);
+
     for (size_t i = 0; i < num_rows && displayed_rows < format_settings.pretty.max_rows; ++i)
     {
         if (cutInTheMiddle(i, num_rows, format_settings.pretty.max_rows))
@@ -370,40 +374,60 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 writeString(middle_values_separator_s, out);
             }
 
-            if (format_settings.pretty.output_format_pretty_row_numbers)
-            {
-                // Write row number;
-                auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
-
-                for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
-                    writeChar(' ', out);
-                if (color)
-                    writeCString("\033[90m", out);
-                writeString(row_num_string, out);
-                if (color)
-                    writeCString("\033[0m", out);
-            }
-
+            /// A value can span multiple values, and we want to iterate over them.
             for (size_t j = 0; j < num_columns; ++j)
             {
-                writeCString(grid_symbols.bar, out);
-                const auto & type = *header.getByPosition(j).type;
-                writeValueWithPadding(
-                    *columns[j],
-                    *serializations[j],
-                    i,
-                    widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
-                    max_widths[j],
-                    cut_to_width,
-                    type.shouldAlignRightInPrettyFormats(),
-                    isNumber(type));
+                serialized_values[j].reset();
+                offsets_inside_serialized_values[j] = 0;
             }
 
-            writeCString(grid_symbols.bar, out);
-            if (readable_number_tip)
-                writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
+            /// As long as there are lines in any of fields, output a line.
+            while (true)
+            {
+                if (format_settings.pretty.output_format_pretty_row_numbers)
+                {
+                    // Write row number;
+                    auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
 
-            writeCString("\n", out);
+                    for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
+                        writeChar(' ', out);
+                    if (color)
+                        writeCString("\033[90m", out);
+                    writeString(row_num_string, out);
+                    if (color)
+                        writeCString("\033[0m", out);
+                }
+
+                bool all_lines_printed = true;
+                for (size_t j = 0; j < num_columns; ++j)
+                {
+                    writeCString(grid_symbols.bar, out);
+                    const auto & type = *header.getByPosition(j).type;
+                    writeValueWithPadding(
+                        *columns[j],
+                        *serializations[j],
+                        i,
+                        true /* TODO */, serialized_values[j], offsets_inside_serialized_values[j],
+                        widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
+                        max_widths[j],
+                        cut_to_width,
+                        type.shouldAlignRightInPrettyFormats(),
+                        isNumber(type));
+
+                    if (offsets_inside_serialized_values[j] != serialized_values[j]->size())
+                        all_lines_printed = false;
+                }
+
+                writeCString(grid_symbols.bar, out);
+                if (readable_number_tip)
+                    writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
+
+                writeCString("\n", out);
+
+                if (all_lines_printed)
+                    break;
+            }
+
             ++displayed_row;
             ++displayed_rows;
         }
@@ -447,40 +471,73 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
 void PrettyBlockOutputFormat::writeValueWithPadding(
     const IColumn & column, const ISerialization & serialization, size_t row_num,
+    bool split_by_lines, std::optional<String> & serialized_value, size_t & start_from_offset,
     size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number)
 {
-    String serialized_value;
+    if (!serialized_value)
     {
-        WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
+        serialized_value = String();
+        start_from_offset = 0;
+        WriteBufferFromString out_serialize(*serialized_value, AppendModeTag());
         serialization.serializeText(column, row_num, out_serialize, format_settings);
+    }
+
+    bool is_continuation = start_from_offset > 0 && start_from_offset < serialized_value->size();
+
+    String serialized_fragment;
+    if (start_from_offset == serialized_value->size())
+    {
+        /// Only padding, nothing remains.
+        value_width = 0;
+    }
+    else if (split_by_lines)
+    {
+        const char * end = serialized_value->data() + serialized_value->size();
+        const char * next_nl = find_first_symbols<'\n'>(serialized_value->data() + start_from_offset, end);
+        size_t next_offset = next_nl - serialized_value->data();
+        serialized_fragment = serialized_value->substr(start_from_offset, next_offset - start_from_offset);
+        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), 0);
+        start_from_offset = next_offset;
+    }
+    else
+    {
+        serialized_fragment = *serialized_value;
+        start_from_offset = serialized_value->size();
     }
 
     /// Highlight groups of thousands.
     if (color && is_number && format_settings.pretty.highlight_digit_groups)
-        serialized_value = highlightDigitGroups(serialized_value);
+        serialized_fragment = highlightDigitGroups(serialized_fragment);
 
     /// Highlight trailing spaces.
     if (color && format_settings.pretty.highlight_trailing_spaces)
-        serialized_value = highlightTrailingSpaces(serialized_value);
+        serialized_fragment = highlightTrailingSpaces(serialized_fragment);
+
+    const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
 
     bool is_cut = false;
     if (cut_to_width && value_width > cut_to_width)
     {
         is_cut = true;
-        serialized_value.resize(UTF8::computeBytesBeforeWidth(
-            reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), 0, format_settings.pretty.max_value_width));
+        serialized_fragment.resize(UTF8::computeBytesBeforeWidth(
+            reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), 0, format_settings.pretty.max_value_width));
 
-        const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
         if (color)
         {
-            serialized_value += "\033[31;1m";
-            serialized_value += ellipsis;
-            serialized_value += "\033[0m";
+            serialized_fragment += "\033[31;1m";
+            serialized_fragment += ellipsis;
+            serialized_fragment += "\033[0m";
         }
         else
-            serialized_value += ellipsis;
+            serialized_fragment += ellipsis;
 
         value_width = format_settings.pretty.max_value_width;
+    }
+    if (start_from_offset != serialized_value->size())
+    {
+        is_cut = true;
+
+        serialized_fragment += ellipsis;
     }
 
     auto write_padding = [&]()
@@ -490,16 +547,19 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
                 writeChar(' ', out);
     };
 
-    out.write(' ');
+    if (is_continuation)
+        writeCString(ellipsis, out);
+    else
+        out.write(' ');
 
     if (align_right)
     {
         write_padding();
-        out.write(serialized_value.data(), serialized_value.size());
+        out.write(serialized_fragment.data(), serialized_fragment.size());
     }
     else
     {
-        out.write(serialized_value.data(), serialized_value.size());
+        out.write(serialized_fragment.data(), serialized_fragment.size());
         write_padding();
     }
 
