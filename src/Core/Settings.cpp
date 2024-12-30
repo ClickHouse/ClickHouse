@@ -2,7 +2,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
-#include <Core/DistributedCacheProtocol.h>
+#include <Core/DistributedCacheDefines.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
@@ -20,6 +20,14 @@
 #include <Poco/Util/Application.h>
 
 #include <cstring>
+
+#if !CLICKHOUSE_CLOUD
+constexpr UInt64 default_max_size_to_drop = 50000000000lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = 20lu;
+#else
+constexpr UInt64 default_max_size_to_drop = 0lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
+#endif
 
 namespace DB
 {
@@ -526,6 +534,9 @@ Enable very explicit logging of S3 requests. Makes sense for debug only.
 )", 0) \
     DECLARE(String, s3queue_default_zookeeper_path, "/clickhouse/s3queue/", R"(
 Default zookeeper path prefix for S3Queue engine
+)", 0) \
+    DECLARE(Bool, s3queue_migrate_old_metadata_to_buckets, false, R"(
+Migrate old metadata structure of S3Queue table to a new one
 )", 0) \
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
@@ -2380,7 +2391,7 @@ What to do when the limit is exceeded.
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
 If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of the available system memory.
 )", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_group_by, 0., R"(
+    DECLARE(Double, max_bytes_ratio_before_external_group_by, 0.5, R"(
 Ratio of used memory before enabling external GROUP BY. If you set it to 0.6 the external GROUP BY will be used once the memory usage will reach 60% of allowed memory for query.
 )", 0) \
     \
@@ -2399,7 +2410,7 @@ Prefer maximum block bytes for external sort, reduce the memory usage during mer
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
 If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
 )", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_sort, 0., R"(
+    DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
 Ratio of used memory before enabling external ORDER BY. If you set it to 0.6 the external ORDER BY will be used once the memory usage will reach 60% of allowed memory for query.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
@@ -3149,6 +3160,9 @@ Allow execute multiIf function columnar
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
+    DECLARE(Bool, formatdatetime_f_prints_scale_number_of_digits, false, R"(
+Formatter '%f' in function 'formatDateTime' prints only the scale amount of digits for a DateTime64 instead of fixed 6 digits.
+)", 0) \
     DECLARE(Bool, formatdatetime_parsedatetime_m_is_month_name, true, R"(
 Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the month name instead of minutes.
 )", 0) \
@@ -3184,7 +3198,7 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
-    DECLARE(UInt64, max_table_size_to_drop, 50000000000lu, R"(
+    DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
 Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
 
 Cloud default value: 1 TB.
@@ -3193,7 +3207,7 @@ Cloud default value: 1 TB.
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
 :::
 )", 0) \
-    DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
+    DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
 Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
 
 Cloud default value: 1 TB.
@@ -4114,7 +4128,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md) behaviour.
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) behaviour.
 )", 0) \
     DECLARE(Bool, optimize_use_projections, true, R"(
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
@@ -4526,10 +4540,10 @@ Compatibility version of distributed DDL (ON CLUSTER) queries
 )", 0) \
     \
     DECLARE(UInt64, external_storage_max_read_rows, 0, R"(
-Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled
+Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
 )", 0) \
     DECLARE(UInt64, external_storage_max_read_bytes, 0, R"(
-Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled
+Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
 )", 0)  \
     DECLARE(UInt64, external_storage_connect_timeout_sec, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, R"(
 Connect timeout in seconds. Now supported only for MySQL
@@ -4586,7 +4600,7 @@ Possible values:
 - 0 - Disable all optimizations at the query plan level
 - 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
 )", 0) \
-    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10000, R"(
+    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10'000, R"(
 Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
 Useful to avoid long optimization times for complex queries.
 If the actual number of optimizations exceeds this setting, an exception is thrown.
@@ -4749,6 +4763,19 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_try_use_vector_search, true, R"(
+Toggles a query-plan-level optimization which tries to use the vector similarity index.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 :::note
@@ -4996,7 +5023,6 @@ Prefer prefetched threadpool if all parts are on remote filesystem
 Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
-    DECLARE(UInt64, object_storage_remove_recursive_file_limit, DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT, "Max number of files to store in memory during remove. Zero value means unlimited. Used to reduce memory usage.", 0) \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the prefetch buffer to read from the filesystem.
 )", 0) \
@@ -5203,7 +5229,7 @@ Only in ClickHouse Cloud. Mode for writing to system.distributed_cache_log
     DECLARE(Bool, distributed_cache_fetch_metrics_only_from_current_az, true, R"(
 Only in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events
 )", 0) \
-    DECLARE(UInt64, distributed_cache_connect_max_tries, 100, R"(
+    DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
 Only in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
@@ -5218,7 +5244,7 @@ Only in ClickHouse Cloud. Wait time in milliseconds to receive connection from c
     DECLARE(Bool, distributed_cache_bypass_connection_pool, false, R"(
 Only in ClickHouse Cloud. Allow to bypass distributed cache connection pool
 )", 0) \
-    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL, R"(
+    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::WAIT, R"(
 Only in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
 )", 0) \
     DECLARE(UInt64, distributed_cache_read_alignment, 0, R"(
@@ -5232,6 +5258,9 @@ Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a 
 )", 0) \
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only in ClickHouse Cloud. Discard connection if some data is unread.
+)", 0) \
+    DECLARE(Bool, distributed_cache_min_bytes_for_seek, 0, R"(
+Only in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
@@ -5603,6 +5632,13 @@ Use async and potentially multithreaded execution of materialized view query, ca
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
+    DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
+Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments.
+)", 0) \
+    DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
+Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
+When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
+)", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
@@ -5796,20 +5832,23 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option is not applied when 'enable_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
 
 In `clickhouse-local` it is enabled by default and can be explicitly disabled.
 )", 0) \
-    DECLARE(Bool, optimize_extract_common_expressions, false, R"(
+    DECLARE(Bool, optimize_extract_common_expressions, true, R"(
 Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
 - indices in simple filtering expressions
 - cross to inner join optimization
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
+Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
     \
     DECLARE(Bool, allow_experimental_variant_type, false, R"(
@@ -5821,6 +5860,9 @@ Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data typ
     DECLARE(Bool, allow_experimental_json_type, false, R"(
 Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
 )", BETA) ALIAS(enable_json_type) \
+    DECLARE(Bool, allow_general_join_planning, true, R"(
+Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
+)", 0) \
     \
     \
     /* ####################################################### */ \
@@ -5842,9 +5884,6 @@ Enable experimental hash functions
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_object_type, false, R"(
 Allow the obsolete Object data type
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_bfloat16_type, false, R"(
-Allow BFloat16 data type (under development).
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
@@ -5951,9 +5990,6 @@ Timeout for waiting for window view fire signal in event time processing
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with SYSTEM START VIEWS or SYSTEM START VIEW \\<name\\> afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_database_materialized_mysql, false, R"(
-Allow to create database with Engine=MaterializedMySQL(...).
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
 )", EXPERIMENTAL) \
@@ -5964,6 +6000,11 @@ Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine Iceberg
+)", EXPERIMENTAL) \
+    \
+    /** Experimental tsToGrid aggregate function. */ \
+    DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
+Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
@@ -5988,6 +6029,7 @@ Allow experimental database engine Iceberg
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
@@ -6045,7 +6087,7 @@ Allow experimental database engine Iceberg
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
     MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
     MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
-
+    MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

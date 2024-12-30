@@ -1073,12 +1073,13 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
     ContextPtr context,
+    PreparedSetsPtr prepared_sets,
     const ASTTablesInSelectQueryElement & join_element,
     TableJoin & analyzed_join,
     SelectQueryOptions query_options)
 {
     /// Actions which need to be calculated on joined block.
-    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context);
+    auto joined_block_actions = analyzed_join.createJoinedBlockActions(context, std::move(prepared_sets));
     NamesWithAliases required_columns_with_aliases = analyzed_join.getRequiredColumns(
         Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
@@ -1184,7 +1185,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 
     if (auto storage = analyzed_join->getStorageJoin())
     {
-        auto joined_block_actions = analyzed_join->createJoinedBlockActions(getContext());
+        auto joined_block_actions = analyzed_join->createJoinedBlockActions(getContext(), getPreparedSets());
         NamesWithAliases required_columns_with_aliases = analyzed_join->getRequiredColumns(
             Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 
@@ -1197,7 +1198,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
         return storage->getJoinLocked(analyzed_join, getContext(), original_right_column_names);
     }
 
-    joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
+    joined_plan = buildJoinedPlan(getContext(), getPreparedSets(), join_element, *analyzed_join, query_options);
 
     const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentHeader().getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
@@ -1407,7 +1408,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
             ActionsDAG actions_dag(columns_after_join);
             getRootActions(child, only_types, actions_dag);
             group_by_elements_actions.emplace_back(
-                std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
+                std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes)));
         }
     }
 
@@ -1686,7 +1687,7 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendOrderBy(
             ActionsDAG actions_dag(columns_after_join);
             getRootActions(child, only_types, actions_dag);
             order_by_elements_actions.emplace_back(
-                std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes)));
+                std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes)));
         }
     }
 
@@ -1891,7 +1892,7 @@ ActionsDAG ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool remove_unuse
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool remove_unused_result, CompileExpressions compile_expressions)
 {
     return std::make_shared<ExpressionActions>(
-        getActionsDAG(add_aliases, remove_unused_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions), add_aliases && remove_unused_result);
+        getActionsDAG(add_aliases, remove_unused_result), ExpressionActionsSettings(getContext(), compile_expressions), add_aliases && remove_unused_result);
 }
 
 ActionsDAG ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
@@ -1904,7 +1905,7 @@ ActionsDAG ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName &
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
 {
     auto actions = getConstActionsDAG(constant_inputs);
-    return std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings::fromContext(getContext()));
+    return std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings(getContext()));
 }
 
 std::unique_ptr<QueryPlan> SelectQueryExpressionAnalyzer::getJoinedPlan()
@@ -2041,7 +2042,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 {
                     ExpressionActions(
                         prewhere_dag_and_flags->dag.clone(),
-                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_prewhere_sample);
+                        ExpressionActionsSettings(context->getSettingsRef())).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -2075,7 +2076,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 {
                     ExpressionActions(
                         before_where->dag.clone(),
-                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
+                        ExpressionActionsSettings(context->getSettingsRef())).execute(before_where_sample);
 
                     auto & column_elem
                         = before_where_sample.getByName(query.where()->getColumnName());
