@@ -21,7 +21,7 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
 
 private:
-    Chunk chunk;
+    Port::Data data;
     bool has_data = false;
     std::vector<char> was_output_processed;
 

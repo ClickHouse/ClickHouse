@@ -39,7 +39,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <exception>
+#include <iterator>
 #include <memory>
 #include <ranges>
 
@@ -240,6 +242,12 @@ public:
     void work() override;
 
 private:
+    struct ViewStatus
+    {  
+        bool is_finished = false;
+        std::exception_ptr exception;
+    };
+
     static std::pair<bool, std::exception_ptr> unwrapExternalException(std::exception_ptr & e)
     {
         try
@@ -259,7 +267,9 @@ private:
     const bool materialized_views_ignore_errors = false;
     OutputPort & output;
     ViewsDataPtr views_data;
-    std::vector<std::exception_ptr> exceptions;
+    //std::vector<std::exception_ptr> exceptions;
+    std::vector<ViewStatus> statuses;
+    std::exception_ptr first_exception;
 };
 
 /// Generates one chain part for every view in buildPushingToViewsChain
@@ -878,7 +888,8 @@ FinalizingViewsTransform::FinalizingViewsTransform(std::vector<Block> headers, V
     , output(outputs.front())
     , views_data(std::move(data))
 {
-    exceptions.resize(views_data->views.size());
+    // exceptions.resize(views_data->views.size());
+    statuses.resize(views_data->views.size());
 }
 
 InputPorts FinalizingViewsTransform::initPorts(std::vector<Block> headers)
@@ -892,11 +903,22 @@ InputPorts FinalizingViewsTransform::initPorts(std::vector<Block> headers)
 
 IProcessor::Status FinalizingViewsTransform::prepare()
 {
+    LOG_DEBUG(getLogger("PushingToViews"), "prepare");
+
     if (output.isFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize views because output port is finished");
 
     if (!output.canPush())
         return Status::PortFull;
+
+    if (statuses.empty())
+    {
+        if (first_exception && !materialized_views_ignore_errors)
+            output.pushException(first_exception);
+
+        output.finish();
+        return Status::Finished;
+    }
 
     size_t num_finished = 0;
     size_t i = 0;
@@ -908,6 +930,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         if (input.isFinished())
         {
             ++num_finished;
+            statuses[pos].is_finished = true;
             continue;
         }
 
@@ -920,28 +943,45 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         if (!data.exception)
             continue;
 
-        ++num_finished;
+        if (statuses[pos].exception)
+        {
+            ++num_finished;
+            continue;
+        }
 
         auto [is_external, original_exception] = unwrapExternalException(data.exception);
 
-        if (is_external || !materialized_views_ignore_errors)
+        auto view = views_data->views.begin();
+        std::advance(view, pos);
+        LOG_DEBUG(
+            getLogger("PushingToViews"),
+                "unwrapExternalException is_external {} in storege {}", is_external, view->table_id.getFullTableName());
+
+        if (is_external)
         {
             output.pushException(original_exception);
             return Status::PortFull;
         }
 
-        if (!exceptions[pos])
-            exceptions[pos] = data.exception;
-    }
+        if (!first_exception)
+            first_exception = original_exception;
 
-    if (num_finished == inputs.size())
-    {
-        if (!exceptions.empty())
+        if (!is_external && !statuses[pos].exception)
+            statuses[pos].exception = original_exception;
+
+        if (!materialized_views_ignore_errors)
+        {
             return Status::Ready;
-
-        output.finish();
-        return Status::Finished;
+        }
+        else 
+        {
+            ++num_finished;
+        }
     }
+
+    LOG_DEBUG(getLogger("PushingToViews"), "prepare finished {}/{}", num_finished, inputs.size());
+    if (num_finished == inputs.size())
+        return Status::Ready;
 
     return Status::NeedData;
 }
@@ -965,21 +1005,23 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
 
 void FinalizingViewsTransform::work()
 {
+    LOG_DEBUG(getLogger("PushingToViews"), "work");
+
     size_t i = 0;
     for (auto & view : views_data->views)
     {
-        auto & exception = exceptions[i];
+        auto & status = statuses[i];
         ++i;
 
-        if (exception)
+        if (status.exception)
         {
-            view.setException(addStorageToException(exception, view.table_id));
+            view.setException(addStorageToException(status.exception, view.table_id));
 
             /// Exception will be ignored, it is saved here for the system.query_views_log
             if (materialized_views_ignore_errors)
                 tryLogException(view.exception, getLogger("PushingToViews"), "Cannot push to the storage, ignoring the error");
         }
-        else
+        else if (status.is_finished)
         {
             view.runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
 
@@ -990,10 +1032,17 @@ void FinalizingViewsTransform::work()
                 view.table_id.getNameForLogs(),
                 view.runtime_stats->elapsed_ms);
         }
+        else 
+        {
+            chassert(first_exception);
+            chassert(!materialized_views_ignore_errors);
+            view.setException(addStorageToException(first_exception, view.table_id));
+        }
     }
 
     logQueryViews(views_data->views, views_data->context);
 
-    exceptions.clear();
+    //exceptions.clear();
+    statuses.clear();
 }
 }

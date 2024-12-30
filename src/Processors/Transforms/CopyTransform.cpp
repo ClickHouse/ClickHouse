@@ -58,7 +58,7 @@ IProcessor::Status CopyTransform::prepareConsume()
     if (!input.hasData())
         return Status::NeedData;
 
-    chunk = input.pull();
+    data = input.pullData();
     has_data = true;
     was_output_processed.assign(outputs.size(), false);
 
@@ -87,7 +87,10 @@ IProcessor::Status CopyTransform::prepareGenerate()
             continue;
         }
 
-        output.push(chunk.clone());
+        if (data.exception)
+            output.pushException(data.exception);
+        else
+            output.push(data.chunk.clone());
         was_processed = true;
     }
 
