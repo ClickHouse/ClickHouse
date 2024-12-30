@@ -408,6 +408,8 @@ public:
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
 
+    virtual bool supportsNamedCollectionReloading() const { return false; }
+
     virtual ~IDatabase();
 
 protected:

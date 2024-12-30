@@ -1,3 +1,4 @@
+#include "Storages/StorageMySQL.h"
 #include "config.h"
 
 #if USE_MYSQL
@@ -95,9 +96,10 @@ StoragePtr TableFunctionMySQL::executeImpl(
     ColumnsDescription cached_columns,
     bool /*is_insert_query*/) const
 {
+    auto pool_ptr = std::make_shared<mysqlxx::PoolWithFailover>(*pool);
     auto res = std::make_shared<StorageMySQL>(
         StorageID(getDatabaseName(), table_name),
-        std::move(*pool),
+        pool_ptr,
         configuration->database,
         configuration->table,
         configuration->replace_query,

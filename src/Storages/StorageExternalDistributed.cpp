@@ -146,9 +146,9 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             {
                 auto current_configuration{configuration};
                 current_configuration.addresses = parseRemoteDescriptionForExternalDatabase(shard_address, max_addresses, 3306);
-                auto pool = createMySQLPoolWithFailover(current_configuration, mysql_settings);
+                auto pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(current_configuration, mysql_settings));
                 shards.insert(std::make_shared<StorageMySQL>(
-                    args.table_id, std::move(pool), configuration.database, configuration.table,
+                    args.table_id, pool, configuration.database, configuration.table,
                     /* replace_query = */ false, /* on_duplicate_clause = */ "",
                     args.columns, args.constraints, String{}, context, mysql_settings));
             }

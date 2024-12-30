@@ -26,7 +26,7 @@ class StorageMySQL final : public IStorage, WithContext
 public:
     StorageMySQL(
         const StorageID & table_id_,
-        mysqlxx::PoolWithFailover && pool_,
+        mysqlxx::PoolWithFailoverPtr & pool_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         bool replace_query_,
@@ -35,7 +35,8 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        const MySQLSettings & mysql_settings_);
+        const MySQLSettings & mysql_settings_,
+        const std::optional<String> & named_collection_name_ = {});
 
     std::string getName() const override { return "MySQL"; }
 
@@ -68,9 +69,11 @@ public:
 
         Addresses addresses; /// Failover replicas.
         String addresses_expr;
+        std::optional<String> named_collection_name;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings);
+    static StorageMySQL::Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings);
+    static std::variant<StorageMySQL::Configuration, String> getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, bool allow_missing_named_collection);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
@@ -82,9 +85,14 @@ public:
         const String & table,
         const ContextPtr & context_);
 
+    std::optional<String> getNamedCollectionName() const override { return named_collection_name; }
+
+    void reload(ContextPtr context_, ASTs engine_args) override;
+
 private:
     friend class StorageMySQLSink;
 
+    std::optional<String> named_collection_name;
     std::string remote_database_name;
     std::string remote_table_name;
     bool replace_query;

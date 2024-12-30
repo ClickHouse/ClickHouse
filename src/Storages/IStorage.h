@@ -267,6 +267,28 @@ public:
     /// in totalRows() or totalRowsByPartitionPredicate() methods or with optimized reading in read() method.
     virtual bool supportsTrivialCountOptimization() const { return false; }
 
+    /// Returns the name of the named collection that was used to create the storage.
+    virtual std::optional<String> getNamedCollectionName() const { return {}; }
+
+    /// Reload the storage.
+    virtual void reload(ContextPtr /* context_ */, ASTs /* engine_args */) { }
+
+    /// The named collection has been deleted - disable the storage.
+    void namedCollectionDeleted() { named_collection_deleted = true; }
+
+    /// The named collection has been restored - enable the storage.
+    void namedCollectionRestored() { named_collection_deleted = false; }
+
+    /// Returns true if the named collection has been deleted and the storage is disabled.
+    bool isNamedCollectionDeleted() const { return named_collection_deleted; }
+
+    /// Raises an exception if the named collection has been deleted.
+    void assertNamedCollectionExists() const {
+      if (isNamedCollectionDeleted()) {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection `{}` has been deleted", *getNamedCollectionName());
+      }
+    }
+
 private:
     StorageID storage_id;
 
@@ -277,6 +299,8 @@ private:
 
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
+
+    bool named_collection_deleted = false;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

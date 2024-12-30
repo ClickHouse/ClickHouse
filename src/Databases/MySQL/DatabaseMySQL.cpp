@@ -259,11 +259,13 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
             local_tables_cache.erase(iterator);
         }
 
+        mysqlxx::PoolWithFailoverPtr pool = std::make_shared<mysqlxx::PoolWithFailover>(mysql_pool);
+
         local_tables_cache[table_name] = std::make_pair(
             table_modification_time,
             std::make_shared<StorageMySQL>(
                 StorageID(database_name, table_name),
-                std::move(mysql_pool),
+                pool,
                 database_name_in_mysql,
                 table_name,
                 /* replace_query_ */ false,

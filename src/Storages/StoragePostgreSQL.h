@@ -34,7 +34,8 @@ public:
         const String & comment,
         ContextPtr context_,
         const String & remote_table_schema_ = "",
-        const String & on_conflict = "");
+        const String & on_conflict = "",
+        const std::optional<String> & named_collection_name_ = {});
 
     String getName() const override { return "PostgreSQL"; }
 
@@ -64,9 +65,11 @@ public:
 
         std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
         String addresses_expr;
+        std::optional<String> named_collection_name;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+    static StoragePostgreSQL::Configuration getConfiguration(ASTs engine_args, ContextPtr context);
+    static std::variant<StoragePostgreSQL::Configuration, String> getConfiguration(ASTs engine_args, ContextPtr context, bool allow_missing_named_collection);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
 
@@ -76,7 +79,12 @@ public:
         const String & schema,
         const ContextPtr & context_);
 
+    std::optional<String> getNamedCollectionName() const override { return named_collection_name; }
+
+    void reload(ContextPtr context_, ASTs engine_args) override;
+
 private:
+    std::optional<String> named_collection_name;
     String remote_table_name;
     String remote_table_schema;
     String on_conflict;

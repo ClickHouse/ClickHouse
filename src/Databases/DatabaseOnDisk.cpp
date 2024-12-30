@@ -62,7 +62,8 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool allow_missing_named_collection)
 {
     ast_create_query.attach = true;
     ast_create_query.setDatabase(database_name);
@@ -124,7 +125,8 @@ std::pair<String, StoragePtr> createTableFromAST(
             context->getGlobalContext(),
             columns,
             constraints,
-            mode)
+            mode,
+            allow_missing_named_collection)
     };
 }
 

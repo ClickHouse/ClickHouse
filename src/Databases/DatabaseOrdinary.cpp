@@ -247,7 +247,8 @@ void DatabaseOrdinary::loadTableFromMetadata(
             name.database,
             getTableDataPath(query),
             local_context,
-            mode);
+            mode,
+            /* allow_missing_named_collection = */ true);
 
         attachTable(local_context, table_name, table, getTableDataPath(query));
     }

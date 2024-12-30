@@ -46,6 +46,7 @@ public:
         const ConstraintsDescription & constraints;
         LoadingStrictnessLevel mode;
         const String & comment;
+        bool allow_missing_named_collection;
 
         ContextMutablePtr getContext() const;
         ContextMutablePtr getLocalContext() const;
@@ -87,7 +88,8 @@ public:
         ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        LoadingStrictnessLevel mode) const;
+        LoadingStrictnessLevel mode,
+        bool allow_missing_named_collection = false) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.

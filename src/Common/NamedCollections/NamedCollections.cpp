@@ -125,10 +125,10 @@ void NamedCollectionFactory::addUnlocked(
     }
 }
 
-void NamedCollectionFactory::remove(const std::string & collection_name)
+void NamedCollectionFactory::remove(const std::string & collection_name, bool force)
 {
     std::lock_guard lock(mutex);
-    bool removed = removeIfExistsUnlocked(collection_name, lock);
+    bool removed = removeIfExistsUnlocked(collection_name, lock, force);
     if (!removed)
     {
         throw Exception(
@@ -146,13 +146,14 @@ void NamedCollectionFactory::removeIfExists(const std::string & collection_name)
 
 bool NamedCollectionFactory::removeIfExistsUnlocked(
     const std::string & collection_name,
-    std::lock_guard<std::mutex> & lock)
+    std::lock_guard<std::mutex> & lock,
+    bool force)
 {
     auto collection = tryGetUnlocked(collection_name, lock);
     if (!collection)
         return false;
 
-    if (!collection->isMutable())
+    if (!force && !collection->isMutable())
     {
         throw Exception(
             ErrorCodes::NAMED_COLLECTION_IS_IMMUTABLE,

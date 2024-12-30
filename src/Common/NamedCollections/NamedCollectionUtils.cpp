@@ -1,3 +1,5 @@
+#include <format>
+#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FieldVisitorToString.h>
@@ -16,6 +18,9 @@
 #include <Interpreters/Context.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include "Databases/IDatabase.h"
+#include "Interpreters/DatabaseCatalog.h"
+#include "Storages/IStorage.h"
 
 #include <filesystem>
 
@@ -362,10 +367,85 @@ void loadFromConfig(const Poco::Util::AbstractConfiguration & config)
 void reloadFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = lockNamedCollectionsTransaction();
-    auto collections = LoadFromConfig(config).getAll();
-    auto & instance = NamedCollectionFactory::instance();
-    instance.removeById(SourceId::CONFIG);
-    instance.add(collections);
+    auto context = Context::getGlobalContextInstance();
+    auto new_collections = LoadFromConfig(config).getAll();
+    auto & named_collections = NamedCollectionFactory::instance();
+    std::set<String> new_or_changed;
+    std::set<String> removed;
+
+    // Add or update collections from the config
+    for (auto & [name, collection] : new_collections)
+    {
+        if (named_collections.exists(name)) {
+            auto existing_collection = named_collections.get(name);
+            if (existing_collection->getSourceId() != SourceId::CONFIG) {
+                LOG_ERROR(
+                    &Poco::Logger::get("NamedCollectionsUtils"),
+                    "Named collection {} from config conflicts with existing named collection", name);
+            } else if (*existing_collection != *collection) {
+                named_collections.remove(name, true);
+                named_collections.add(name, collection);
+                new_or_changed.emplace(name);
+            }
+        }
+        else {
+            named_collections.add(name, collection);
+            new_or_changed.emplace(name);
+        }
+    }
+
+    // Remove collections that are no longer in the config
+    for (auto & [name, collection] : named_collections.getAll())
+    {
+        if (!new_collections.contains(name) && collection->getSourceId() == SourceId::CONFIG) {
+            named_collections.remove(name, true);
+            removed.emplace(name);
+        }
+    }
+
+    // If no changes were made, return early
+    if (new_or_changed.empty() && removed.empty()) {
+        is_loaded_from_config = true;
+        return;
+    }
+
+    // Reload tables that use named collections that were changed or removed
+    DatabaseCatalog & catelog = DatabaseCatalog::instance();
+    Databases databases = catelog.getDatabases();
+    for (auto [name, database] : databases) {
+        if (!database->supportsNamedCollectionReloading()) {
+            continue;
+        }
+
+        auto tables =  database->getTablesIterator(context);
+        while (tables->isValid()) {
+            StoragePtr table = tables->table();
+            if (table != nullptr) {
+                const std::optional<String> collection_name = table->getNamedCollectionName();
+                if (collection_name.has_value()) {
+                    if (new_or_changed.contains(*collection_name)) {
+                        ASTPtr query = database->getCreateTableQuery(tables->name(), context);
+                        auto create_query = query->as<ASTCreateQuery &>();
+                        const ASTFunction * engine_def = create_query.storage->engine;
+
+                        ASTs engine_args;
+                        if (engine_def->arguments)
+                            engine_args = engine_def->arguments->children;
+
+                        try {
+                            table->reload(context, engine_args);
+                        } catch (...) {
+                            auto message = std::format("Failed to reload table {} with collection {}", tables->name(), *collection_name);
+                            tryLogCurrentException(&Poco::Logger::get("NamedCollectionsUtils"), message);
+                        }
+                    } else if (removed.contains(*collection_name)) {
+                        table->namedCollectionDeleted();
+                    }
+                }
+            }
+            tables->next();
+        }
+    }
     is_loaded_from_config = true;
 }
 

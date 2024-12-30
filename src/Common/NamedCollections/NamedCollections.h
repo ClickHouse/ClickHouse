@@ -74,6 +74,24 @@ public:
 
     SourceId getSourceId() const { return source_id; }
 
+    String getName() const { return collection_name; }
+
+    bool operator==(const NamedCollection & other) const {
+        if (collection_name != other.collection_name || source_id != other.source_id) {
+            return false;
+        }
+
+        if (getKeys() != other.getKeys()) return false;
+
+        for (const auto & key : getKeys()) {
+            if (isOverridable(key, false) != other.isOverridable(key, false)
+                || isOverridable(key, true) != other.isOverridable(key, true)
+                || get<String>(key) != other.get<String>(key))
+                return false;
+        }
+        return true;
+    }
+
 private:
     class Impl;
     using ImplPtr = std::unique_ptr<Impl>;
@@ -115,7 +133,7 @@ public:
 
     void update(NamedCollectionsMap collections);
 
-    void remove(const std::string & collection_name);
+    void remove(const std::string & collection_name, bool force = false);
 
     void removeIfExists(const std::string & collection_name);
 
@@ -139,7 +157,8 @@ private:
 
     bool removeIfExistsUnlocked(
         const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock);
+        std::lock_guard<std::mutex> & lock,
+        bool force = false);
 
     mutable NamedCollectionsMap loaded_named_collections;
 

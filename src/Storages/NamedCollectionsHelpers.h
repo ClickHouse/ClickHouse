@@ -17,6 +17,8 @@ namespace ErrorCodes
 namespace DB
 {
 
+std::optional<std::string> getCollectionName(ASTs asts);
+
 /// Helper function to get named collection for table engine.
 /// Table engines have collection name as first argument of ast and other arguments are key-value overrides.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
@@ -25,6 +27,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
+
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
+    const String & collection_name, ASTs asts, ContextPtr context, bool throw_unknown_collection = true, std::vector<std::pair<std::string, ASTPtr>> * complex_args = nullptr);
 
 /// Parses asts as key value pairs and returns a map of them.
 /// If key or value cannot be parsed as literal or interpreted

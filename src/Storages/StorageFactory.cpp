@@ -64,7 +64,8 @@ StoragePtr StorageFactory::get(
     ContextMutablePtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    LoadingStrictnessLevel mode) const
+    LoadingStrictnessLevel mode,
+    bool allow_missing_named_collection) const
 {
     String name, comment;
 
@@ -220,7 +221,8 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .mode = mode,
-        .comment = comment};
+        .comment = comment,
+        .allow_missing_named_collection = allow_missing_named_collection};
 
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 

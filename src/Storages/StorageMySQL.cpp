@@ -1,5 +1,7 @@
 #include "StorageMySQL.h"
+#include "mysqlxx/PoolWithFailover.h"
 #include "Core/SettingsEnums.h"
+#include "Interpreters/Context.h"
 
 #if USE_MYSQL
 
@@ -38,7 +40,7 @@ namespace ErrorCodes
 
 StorageMySQL::StorageMySQL(
     const StorageID & table_id_,
-    mysqlxx::PoolWithFailover && pool_,
+    mysqlxx::PoolWithFailoverPtr & pool_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
     const bool replace_query_,
@@ -47,23 +49,29 @@ StorageMySQL::StorageMySQL(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
-    const MySQLSettings & mysql_settings_)
+    const MySQLSettings & mysql_settings_,
+    const std::optional<String> & named_collection_name_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , named_collection_name(named_collection_name_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(mysql_settings_)
-    , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
+    , pool(pool_)
     , log(getLogger("StorageMySQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
+    if (pool == nullptr) namedCollectionDeleted();
+
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_name, context_);
-        storage_metadata.setColumns(columns);
+        if (pool != nullptr) {
+            auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_name, context_);
+            storage_metadata.setColumns(columns);
+        }
     }
     else
         storage_metadata.setColumns(columns_);
@@ -99,6 +107,7 @@ Pipe StorageMySQL::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
+    assertNamedCollectionExists();
     storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(
         query_info_,
@@ -247,6 +256,7 @@ private:
 
 SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    assertNamedCollectionExists();
     return std::make_shared<StorageMySQLSink>(
         *this,
         metadata_snapshot,
@@ -255,6 +265,18 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
         pool->get(),
         local_context->getSettingsRef().mysql_max_rows_to_insert);
 }
+
+
+void StorageMySQL::reload(ContextPtr context_, ASTs engine_args) {
+    auto configuration = StorageMySQL::getConfiguration(engine_args, context_, mysql_settings);
+    pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
+    remote_table_name = configuration.table;
+    remote_database_name = configuration.database;
+    replace_query = configuration.replace_query;
+    on_duplicate_clause = configuration.on_duplicate_clause;
+    namedCollectionRestored();
+}
+
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table)
@@ -302,15 +324,29 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
             storage_settings.set(setting_name, named_collection.get<String>(setting_name));
     }
 
+    configuration.named_collection_name = named_collection.getName();
     return configuration;
 }
 
-StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings)
+
+StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings) {
+    return std::get<StorageMySQL::Configuration>(getConfiguration(engine_args, context_, storage_settings, false));
+}
+
+
+std::variant<StorageMySQL::Configuration, String> StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, bool allow_missing_named_collection)
 {
     StorageMySQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_))
-    {
-        configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
+    std::optional<String> collection_name = getCollectionName(engine_args);
+    if (collection_name.has_value()) {
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(*collection_name, engine_args, context_, false))
+        {
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
+        } else {
+            if (!allow_missing_named_collection)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection `{}` doesn't exist", *collection_name);
+            return *collection_name;
+        }
     }
     else
     {
@@ -350,7 +386,12 @@ void registerStorageMySQL(StorageFactory & factory)
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings);
+        ContextPtr context = args.getLocalContext();
+        auto configuration_or_collection_name = StorageMySQL::getConfiguration(
+            args.engine_args,
+            context,
+            mysql_settings,
+            args.allow_missing_named_collection || context->getSettingsRef().allow_missing_named_collections);
 
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);
@@ -358,20 +399,39 @@ void registerStorageMySQL(StorageFactory & factory)
         if (!mysql_settings.connection_pool_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "connection_pool_size cannot be zero.");
 
-        mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
-
-        return std::make_shared<StorageMySQL>(
-            args.table_id,
-            std::move(pool),
-            configuration.database,
-            configuration.table,
-            configuration.replace_query,
-            configuration.on_duplicate_clause,
-            args.columns,
-            args.constraints,
-            args.comment,
-            args.getContext(),
-            mysql_settings);
+        mysqlxx::PoolWithFailoverPtr pool;
+        if (std::holds_alternative<StorageMySQL::Configuration>(configuration_or_collection_name))
+        {
+            auto configuration = std::get<StorageMySQL::Configuration>(configuration_or_collection_name);
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
+          return std::make_shared<StorageMySQL>(
+              args.table_id,
+              pool,
+              configuration.database,
+              configuration.table,
+              configuration.replace_query,
+              configuration.on_duplicate_clause,
+              args.columns,
+              args.constraints,
+              args.comment,
+              args.getContext(),
+              mysql_settings,
+              configuration.named_collection_name);
+        } else {
+            return std::make_shared<StorageMySQL>(
+                args.table_id,
+                pool,
+                "",
+                "",
+                false,
+                "",
+                args.columns,
+                args.constraints,
+                args.comment,
+                args.getContext(),
+                mysql_settings,
+                std::get<String>(configuration_or_collection_name));
+        }
     },
     {
         .supports_settings = true,
