@@ -84,6 +84,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
+            {"validate_enum_literals_in_opearators", false, false, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
