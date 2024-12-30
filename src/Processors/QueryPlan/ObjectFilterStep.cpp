@@ -21,7 +21,7 @@ ObjectFilterStep::ObjectFilterStep(
     : actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
 {
-    input_headers.emplace_back(std::move(input_header_));
+    input_headers.emplace_back(input_header_);
     output_header = input_headers.front();
 }
 
