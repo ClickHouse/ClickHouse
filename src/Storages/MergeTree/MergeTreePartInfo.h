@@ -5,6 +5,7 @@
 #include <tuple>
 #include <vector>
 #include <array>
+#include <boost/container/flat_set.hpp>
 #include <base/types.h>
 #include <base/DayNum.h>
 #include <IO/ReadBuffer.h>
@@ -201,5 +202,12 @@ private:
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;
+
+using PartitionIds = boost::container::flat_set<String>;
+
+inline bool containsInPartitionIdsOrEmpty(const PartitionIds & haystack, const String & needle)
+{
+    return haystack.empty() || haystack.contains(needle);
+}
 
 }
