@@ -55,6 +55,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/ContextAccess.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -1780,6 +1781,20 @@ BlockIO InterpreterCreateQuery::execute()
         auto on_cluster_version = getContext()->getSettingsRef().distributed_ddl_entry_format_version;
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
             return executeQueryOnCluster(create);
+    }
+
+    if (is_create_database && create.if_not_exists)
+    {
+        String database_name = create.getDatabase();
+        auto access = getContext()->getAccess();
+        if (access->isGranted(AccessType::SHOW_DATABASES, database_name))
+        {
+            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
+            if (DatabaseCatalog::instance().isDatabaseExist(database_name))
+            {
+                return {};
+            }
+        }
     }
 
     getContext()->checkAccess(getRequiredAccess());
