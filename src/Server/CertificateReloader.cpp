@@ -78,6 +78,10 @@ void CertificateReloader::init()
 
 void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & config)
 {
+    /// If we don't need certificates, do nothing
+    if (config.getString("tcp_secure_port", "").empty() && config.getString("https_port", "").empty())
+        return;
+
     /// If at least one of the files is modified - recreate
 
     std::string new_cert_path = config.getString("openSSL.server.certificateFile", "");
