@@ -129,7 +129,8 @@ public:
 
     enum class ApplicationType
     {
-        KEEPER
+        KEEPER,
+        SERVER,
     };
 
     void setApplicationType(ApplicationType) {}
