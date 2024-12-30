@@ -582,9 +582,12 @@ void PrettyBlockOutputFormat::stopThread()
 
 PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
 {
-    stopThread();
-    thread->join();
-    thread.reset();
+    if (thread)
+    {
+        stopThread();
+        thread->join();
+        thread.reset();
+    }
 }
 
 void PrettyBlockOutputFormat::writeSuffix()
