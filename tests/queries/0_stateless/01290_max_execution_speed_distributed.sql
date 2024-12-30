@@ -5,8 +5,8 @@ SET log_queries=1;
 CREATE TEMPORARY TABLE times (t DateTime);
 
 INSERT INTO times SELECT now();
-SELECT count('special query for 01290_max_execution_speed_distributed') FROM remote('127.0.0.{2,3}', numbers(1000000)) SETTINGS log_comment='01290_8ca5d52f-8582-4ee3-8674-351c76d67b8c';
-SETTINGS max_execution_speed = 100000, timeout_before_checking_execution_speed = 0, max_block_size = 100;
+SELECT count('special query for 01290_max_execution_speed_distributed') FROM remote('127.0.0.{2,3}', numbers(1000000))
+SETTINGS max_execution_speed = 100000, timeout_before_checking_execution_speed = 0, max_block_size = 100, log_comment='01290_8ca5d52f-8582-4ee3-8674-351c76d67b8c';
 INSERT INTO times SELECT now();
 
 SELECT max(t) - min(t) >= 1 FROM times;
