@@ -438,6 +438,8 @@ SettingsChanges StorageKafka::createSettingsAdjustments()
     if (!format_avro_schema_registry_url.empty())
         result.emplace_back("format_avro_schema_registry_url", format_avro_schema_registry_url);
 
+    result.emplace_back("date_time_input_format", kafka_settings->kafka_date_time_input_format.toString());
+
     for (const auto & setting : *kafka_settings)
     {
         const auto & name = setting.getName();
@@ -684,7 +686,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
     }
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
-    conf.set("auto.offset.reset", "earliest");     // If no offset stored for this group, read all messages from the start
+    conf.set("auto.offset.reset", toString(kafka_settings->kafka_auto_offset_reset.value));
 
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance

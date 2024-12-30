@@ -164,6 +164,14 @@ IMPLEMENT_SETTING_ENUM(KafkaSSLEndpointIdentificationAlgorithm,ErrorCodes::BAD_A
     {{"none",           KafkaSSLEndpointIdentificationAlgorithm::NONE},
      {"https",          KafkaSSLEndpointIdentificationAlgorithm::HTTPS}})
 
+IMPLEMENT_SETTING_ENUM(KafkaAutoOffsetReset, ErrorCodes::BAD_ARGUMENTS,
+    {{"smallest",  KafkaAutoOffsetReset::SMALLEST},
+     {"earliest",  KafkaAutoOffsetReset::EARLIEST},
+     {"beginning", KafkaAutoOffsetReset::BEGINNING},
+     {"largest",   KafkaAutoOffsetReset::LARGEST},
+     {"latest",    KafkaAutoOffsetReset::LATEST},
+     {"end",       KafkaAutoOffsetReset::END}})
+
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},

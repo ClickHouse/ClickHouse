@@ -312,6 +312,18 @@ enum class KafkaSSLEndpointIdentificationAlgorithm
 
 DECLARE_SETTING_ENUM(KafkaSSLEndpointIdentificationAlgorithm)
 
+enum class KafkaAutoOffsetReset
+{
+    SMALLEST = 0, // Automatically reset the offset to the smallest offset
+    EARLIEST,
+    BEGINNING,
+    LARGEST, // Automatically reset the offset to the largest offset
+    LATEST,
+    END,
+};
+
+DECLARE_SETTING_ENUM(KafkaAutoOffsetReset)
+
 enum class ShortCircuitFunctionEvaluation
 {
     ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.

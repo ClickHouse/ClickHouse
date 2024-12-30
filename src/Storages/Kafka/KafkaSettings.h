@@ -22,6 +22,7 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     /* those are mapped to format factory settings */ \
     M(String, kafka_format, "", "The message format for Kafka engine.", 0) \
     M(String, kafka_format_avro_schema_registry_url, "", "For AvroConfluent format: Kafka Schema Registry URL.", 0) \
+    M(DateTimeInputFormat, kafka_date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic', 'best_effort' and 'best_effort_us'.", 0) \
     M(String, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine", 0) \
     M(UInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.", 0) \
     /* default is = max_insert_block_size / kafka_num_consumers  */ \
@@ -37,6 +38,7 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     M(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
     M(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
     M(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after rabbitmq_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
+    M(KafkaAutoOffsetReset, kafka_auto_offset_reset, KafkaAutoOffsetReset::EARLIEST, "Action to take when there is no initial offset in offset store or the desired offset is out of range. Possible values: smallest, earliest (default), beginning, largest, latest, end.", 0) \
     M(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
     M(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
     /* Authentication settings */ \
