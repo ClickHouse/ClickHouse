@@ -265,7 +265,7 @@ APPLY_FOR_ONE_TYPE(FUNCTION##Nullable, ColumnNullable) \
 else \
 { \
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
-        "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", \
+        "The offset-based frames for '{}' ORDER BY column are not implemented", \
         demangle(typeid(*column).name())); \
 }
 
@@ -343,13 +343,14 @@ WindowTransform::WindowTransform(const Block & input_header_,
             input_header.getPositionByName(column.column_name));
     }
 
-    // Choose a row comparison function for RANGE OFFSET frame based on the
-    // type of the ORDER BY column.
-    if (window_description.frame.type == WindowFrame::FrameType::RANGE
+    // Choose a row comparison function for RANGE OFFSET or SESSION frame
+    // based on the type of the ORDER BY column.
+    if (window_description.frame.type == WindowFrame::FrameType::SESSION ||
+        (window_description.frame.type == WindowFrame::FrameType::RANGE
         && (window_description.frame.begin_type
                 == WindowFrame::BoundaryType::Offset
             || window_description.frame.end_type
-                == WindowFrame::BoundaryType::Offset))
+                == WindowFrame::BoundaryType::Offset)))
     {
         assert(order_by_indices.size() == 1);
         const auto & entry = input_header.getByPosition(order_by_indices[0]);
@@ -374,6 +375,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
                     window_description.frame.begin_offset);
             }
         }
+
         if (window_description.frame.end_type
             == WindowFrame::BoundaryType::Offset)
         {
@@ -388,6 +390,27 @@ WindowTransform::WindowTransform(const Block & input_header_,
                     "Window frame start offset must be nonnegative, {} given",
                     window_description.frame.end_offset);
             }
+        }
+
+        if (window_description.frame.type == WindowFrame::FrameType::SESSION)
+        {
+            const auto converted = convertFieldToTypeOrThrow(
+                window_description.frame.session_window_threshold,
+                *entry.type);
+
+            /*
+             * Note that the value can be NaN, and we don't have a visitor
+             * for "greater", so we have to write the condition in double negation style.
+             */
+            if (!applyVisitor(FieldVisitorAccurateLess{}, Field(0),
+                window_description.frame.session_window_threshold))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window frame start offset must be positive, instead have {} as specified in the query, {} as converted to the ORDER BY type {}",
+                                window_description.frame.session_window_threshold, converted, entry.type->getPrettyName());
+            }
+
+            window_description.frame.session_window_threshold = converted;
         }
     }
 
@@ -676,8 +699,21 @@ void WindowTransform::advanceFrameStart()
 
     const auto frame_start_before = frame_start;
 
-    switch (window_description.frame.begin_type)
+    if (window_description.frame.type == WindowFrame::FrameType::SESSION)
     {
+        // The SESSION frames are disjoint, so if the current row
+        // went out of the current frame, the next frame has to start
+        // with the current row. Otherwise, the frame doesn't change.
+        if (current_row >= prev_frame_end)
+        {
+            frame_start = current_row;
+        }
+        frame_started = true;
+    }
+    else
+    {
+        switch (window_description.frame.begin_type)
+        {
         case WindowFrame::BoundaryType::Unbounded:
             // UNBOUNDED PRECEDING, just mark it valid. It is initialized when
             // the new partition starts.
@@ -695,19 +731,20 @@ void WindowTransform::advanceFrameStart()
         case WindowFrame::BoundaryType::Offset:
             switch (window_description.frame.type)
             {
-                case WindowFrame::FrameType::ROWS:
-                    advanceFrameStartRowsOffset();
-                    break;
-                case WindowFrame::FrameType::RANGE:
-                    advanceFrameStartRangeOffset();
-                    break;
-                default:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Frame start type '{}' for frame '{}' is not implemented",
-                        window_description.frame.begin_type,
-                        window_description.frame.type);
+            case WindowFrame::FrameType::ROWS:
+                advanceFrameStartRowsOffset();
+                break;
+            case WindowFrame::FrameType::RANGE:
+                advanceFrameStartRangeOffset();
+                break;
+            default:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Frame start type '{}' for frame '{}' is not implemented",
+                                window_description.frame.begin_type,
+                                window_description.frame.type);
             }
             break;
+        }
     }
 
     assert(frame_start_before <= frame_start);
@@ -749,7 +786,8 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
     }
 
     // For RANGE and GROUPS frames, rows that compare equal w/ORDER BY are peers.
-    assert(window_description.frame.type == WindowFrame::FrameType::RANGE);
+    assert(window_description.frame.type == WindowFrame::FrameType::RANGE
+        || window_description.frame.type == WindowFrame::FrameType::SESSION);
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
@@ -904,6 +942,77 @@ void WindowTransform::advanceFrameEndRangeOffset()
     frame_ended = partition_ended;
 }
 
+void WindowTransform::advanceFrameEndSession()
+{
+    if (current_row < prev_frame_end)
+    {
+        // The SESSION frames are disjoint, so if we found a frame once, all
+        // rows that constitute the frame will also have it as their window
+        // function frame. Note that the prev_frame_end is a past-the-end
+        // pointer that is initialized to start of partition, and this initial
+        // value can't compare "greater" than any row in partition. So this
+        // comparison can only be true if we have already found a frame, no
+        // additional checks needed.
+        frame_ended = true;
+        // No reason for the frame end to advance in this case.
+        assert(prev_frame_end == frame_end);
+        return;
+    }
+
+    const int direction = window_description.order_by[0].direction;
+    for (;;)
+    {
+        RowNumber next = frame_end;
+
+        if (next == partition_end)
+        {
+            // This happens after the frame end advanced to the current end of input
+            // (given by partition_end pointer when partition_ended is false) on
+            // the previous invocation of the WindowTransform, and on this invocation
+            // we confirmed that it was the end of partition (partition_end unchanged,
+            // partition_ended becomes true). Otherwise the partition_end would
+            // have advanced further beyond `next`, hence the assertion. The
+            // most usual case when this sequence happens is the total end of input.
+            assert(partition_ended);
+            frame_ended = true;
+            return;
+        }
+        assert(next < partition_end);
+
+        advanceRowNumber(next);
+
+        if (next == partition_end)
+        {
+            // Got to the current partition end.
+            frame_end = partition_end;
+            frame_ended = partition_ended;
+            return;
+        }
+        assert(next < partition_end);
+
+        const auto * reference_column = inputAt(frame_end)[order_by_indices[0]].get();
+        const auto * compared_column = inputAt(next)[order_by_indices[0]].get();
+
+        // The condition to continue the frame is:
+        // current value + session window threshold <= next value.
+        // When the direction is DESC, the comparison result changes sign,
+        // and the window threshold changes sign (governed by "offset_is_preceding").
+        if (compare_values_with_offset(compared_column, next.row,
+            reference_column, frame_end.row,
+            window_description.frame.session_window_threshold,
+            /* offset_is_preceding = */ direction < 0) * direction > 0)
+        {
+            frame_end = next;
+            frame_ended = true;
+            return;
+        }
+
+        frame_end = next;
+    }
+
+    assert(false);
+}
+
 void WindowTransform::advanceFrameEnd()
 {
     // No reason for this function to be called again after it succeeded.
@@ -911,8 +1020,14 @@ void WindowTransform::advanceFrameEnd()
 
     const auto frame_end_before = frame_end;
 
-    switch (window_description.frame.end_type)
+    if (window_description.frame.type == WindowFrame::FrameType::SESSION)
     {
+        advanceFrameEndSession();
+    }
+    else
+    {
+        switch (window_description.frame.end_type)
+        {
         case WindowFrame::BoundaryType::Current:
             advanceFrameEndCurrentRow();
             break;
@@ -922,18 +1037,19 @@ void WindowTransform::advanceFrameEnd()
         case WindowFrame::BoundaryType::Offset:
             switch (window_description.frame.type)
             {
-                case WindowFrame::FrameType::ROWS:
-                    advanceFrameEndRowsOffset();
-                    break;
-                case WindowFrame::FrameType::RANGE:
-                    advanceFrameEndRangeOffset();
-                    break;
-                default:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "The frame end type '{}' is not implemented",
-                        window_description.frame.end_type);
+            case WindowFrame::FrameType::ROWS:
+                advanceFrameEndRowsOffset();
+                break;
+            case WindowFrame::FrameType::RANGE:
+                advanceFrameEndRangeOffset();
+                break;
+            default:
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "The frame end type '{}' is not implemented",
+                                window_description.frame.end_type);
             }
             break;
+        }
     }
 
     // We might not have advanced the frame end if we found out we reached the
