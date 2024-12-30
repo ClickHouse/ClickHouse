@@ -5,6 +5,7 @@ sidebar_label: Other
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Other Functions
 
@@ -2772,6 +2773,8 @@ Result:
 
 ## catboostEvaluate
 
+<CloudNotSupportedBadge/>
+
 :::note
 This function is not available in ClickHouse Cloud.
 :::
@@ -4190,6 +4193,7 @@ Result:
 ## transactionID
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Returns the ID of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 
@@ -4239,6 +4243,7 @@ Result:
 ## transactionLatestSnapshot
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Returns the newest snapshot (Commit Sequence Number) of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
 
@@ -4285,6 +4290,7 @@ Result:
 ## transactionOldestSnapshot
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 

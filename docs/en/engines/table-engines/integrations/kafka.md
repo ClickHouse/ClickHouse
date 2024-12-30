@@ -5,8 +5,11 @@ sidebar_label: Kafka
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Kafka
+
+<CloudNotSupportedBadge/>
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 

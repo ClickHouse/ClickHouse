@@ -4,10 +4,12 @@ sidebar_position: 130
 sidebar_label: MaterializedPostgreSQL
 ---
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # MaterializedPostgreSQL
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 

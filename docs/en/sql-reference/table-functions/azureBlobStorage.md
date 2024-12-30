@@ -6,6 +6,7 @@ keywords: [azure blob storage]
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # azureBlobStorage Table Function
 
@@ -85,6 +86,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 ## Hive-style partitioning {#hive-style-partitioning}
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
