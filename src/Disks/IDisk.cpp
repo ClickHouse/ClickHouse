@@ -38,7 +38,16 @@ void IDisk::copyFile( /// NOLINT
 
     auto in = readFile(from_file_path, read_settings);
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-    copyData(*in, *out, cancellation_hook);
+    try
+    {
+        copyData(*in, *out, cancellation_hook);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        out->finalize();
+        throw;
+    }
     out->finalize();
 }
 
