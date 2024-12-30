@@ -6,8 +6,6 @@
 #include <algorithm>
 #include <bit>
 
-#include <pcg-random/pcg_random.hpp>
-
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -1145,7 +1143,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros = false,
                bool fixed_fractional_length = false, UInt32 fractional_length = 0)
 {
     T part = DecimalUtils::getWholePart(x, scale);
@@ -1329,6 +1327,14 @@ inline String toString(const T & x)
     return buf.str();
 }
 
+template <is_decimal T>
+inline String toString(const T & x, UInt32 scale)
+{
+    WriteBufferFromOwnString buf;
+    writeText(x, scale, buf);
+    return buf.str();
+}
+
 inline String toString(const CityHash_v1_0_2::uint128 & hash)
 {
     WriteBufferFromOwnString buf;
@@ -1381,19 +1387,6 @@ inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
 {
     writeBinaryEndian<std::endian::big>(x, buf);
 }
-
-
-struct PcgSerializer
-{
-    static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
-    {
-        writeText(pcg32_fast::multiplier(), buf);
-        writeChar(' ', buf);
-        writeText(pcg32_fast::increment(), buf);
-        writeChar(' ', buf);
-        writeText(rng.state_, buf);
-    }
-};
 
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 

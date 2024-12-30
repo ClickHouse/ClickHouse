@@ -17,6 +17,8 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+import uuid
+from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
 from typing import Any, List, Sequence, Tuple, Union
@@ -48,6 +50,7 @@ except Exception as e:
 
 import docker
 from dict2xml import dict2xml
+from docker.models.containers import Container
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
@@ -151,13 +154,6 @@ def run_and_check(
                 f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
             )
     return out
-
-
-# Based on https://stackoverflow.com/a/1365284/3706827
-def get_free_port():
-    with socket.socket() as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
 
 
 def is_port_free(port: int) -> bool:
@@ -523,7 +519,7 @@ class ClickHouseCluster:
         self.base_jdbc_bridge_cmd = []
         self.base_redis_cmd = []
         self.pre_zookeeper_commands = []
-        self.instances = {}
+        self.instances: dict[str, ClickHouseInstance] = {}
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -569,6 +565,7 @@ class ClickHouseCluster:
         self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
 
         self.spark_session = None
+        self.with_iceberg_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -763,7 +760,7 @@ class ClickHouseCluster:
         self.prometheus_remote_read_handler_port = 9092
         self.prometheus_remote_read_handler_path = "/read"
 
-        self.docker_client = None
+        self.docker_client: docker.DockerClient = None
         self.is_up = False
         self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
@@ -846,7 +843,7 @@ class ClickHouseCluster:
     def mongo_secure_port(self):
         if self._mongo_secure_port:
             return self._mongo_secure_port
-        self._mongo_secure_port = get_free_port()
+        self._mongo_secure_port = self.port_pool.get_port()
         return self._mongo_secure_port
 
     @property
@@ -954,7 +951,7 @@ class ClickHouseCluster:
         except:
             pass
 
-    def get_docker_handle(self, docker_id):
+    def get_docker_handle(self, docker_id) -> Container:
         exception = None
         for i in range(20):
             try:
@@ -1465,6 +1462,26 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
+    def setup_iceberg_catalog_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"
+                ),
+            ]
+        )
+        self.base_iceberg_catalog_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
+        )
+        return self.base_iceberg_catalog_cmd
+        # return self.base_minio_cmd
+
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
         env_variables["AZURITE_PORT"] = str(self.azurite_port)
@@ -1631,6 +1648,7 @@ class ClickHouseCluster:
         with_hive=False,
         with_coredns=False,
         with_prometheus=False,
+        with_iceberg_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -1739,6 +1757,7 @@ class ClickHouseCluster:
             with_coredns=with_coredns,
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
+            with_iceberg_catalog=with_iceberg_catalog,
             use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
@@ -1927,6 +1946,13 @@ class ClickHouseCluster:
         if with_minio and not self.with_minio:
             cmds.append(
                 self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_iceberg_catalog and not self.with_iceberg_catalog:
+            cmds.append(
+                self.setup_iceberg_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         if with_azurite and not self.with_azurite:
@@ -3351,6 +3377,12 @@ class ClickHouseCluster:
             logging.info("Starting zookeeper node: %s", n)
             subprocess_check_call(self.base_zookeeper_cmd + ["start", n])
 
+    def query_all_nodes(self, sql, *args, **kwargs):
+        return {
+            name: instance.query(sql, ignore_error=True, *args, **kwargs)
+            for name, instance in self.instances.items()
+        }
+
 
 DOCKER_COMPOSE_TEMPLATE = """---
 services:
@@ -3434,6 +3466,7 @@ class ClickHouseInstance:
         with_coredns,
         with_cassandra,
         with_ldap,
+        with_iceberg_catalog,
         use_old_analyzer,
         server_bin_path,
         odbc_bridge_bin_path,
@@ -3626,6 +3659,7 @@ class ClickHouseInstance:
         host=None,
         ignore_error=False,
         query_id=None,
+        parse=False,
     ):
         sql_for_log = ""
         if len(sql) > 1000:
@@ -3644,6 +3678,7 @@ class ClickHouseInstance:
             ignore_error=ignore_error,
             query_id=query_id,
             host=host,
+            parse=parse,
         )
 
     def query_with_retry(
@@ -3660,6 +3695,7 @@ class ClickHouseInstance:
         retry_count=20,
         sleep_time=0.5,
         check_callback=lambda x: True,
+        parse=False,
     ):
         # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
@@ -3676,6 +3712,7 @@ class ClickHouseInstance:
                     database=database,
                     host=host,
                     ignore_error=ignore_error,
+                    parse=parse,
                 )
                 if check_callback(result):
                     return result
@@ -4408,7 +4445,7 @@ class ClickHouseInstance:
         else:
             self.wait_start(time_left)
 
-    def get_docker_handle(self):
+    def get_docker_handle(self) -> Container:
         return self.cluster.get_docker_handle(self.docker_id)
 
     def stop(self):
@@ -4541,6 +4578,24 @@ class ClickHouseInstance:
                 for key, value in list(driver_setup.items()):
                     if key != "DSN":
                         f.write(key + "=" + value + "\n")
+
+    @contextmanager
+    def with_replace_config(self, path, replacement):
+        """Create a copy of existing config (if exists) and revert on leaving the context"""
+        _directory, filename = os.path.split(path)
+        basename, extension = os.path.splitext(filename)
+        id = uuid.uuid4()
+        backup_path = f"/tmp/{basename}_{id}{extension}"
+        self.exec_in_container(
+            ["bash", "-c", f"test ! -f {path} || mv --no-clobber {path} {backup_path}"]
+        )
+        self.exec_in_container(
+            ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
+        )
+        yield
+        self.exec_in_container(
+            ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
+        )
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(

@@ -631,7 +631,8 @@ void executeQueryWithParallelReplicas(
             std::move(analyzed_read_from_merge_tree),
             local_replica_index.value());
 
-        if (!with_parallel_replicas)
+        /// If there's only one replica or the source is empty, just read locally.
+        if (!with_parallel_replicas || pools_to_use.size() == 1)
         {
             query_plan = std::move(*local_plan);
             return;
@@ -728,7 +729,7 @@ void executeQueryWithParallelReplicas(
         context, query_ast, storage_id.database_name, storage_id.table_name, /*remote_table_function_ptr*/ nullptr);
     auto header = InterpreterSelectQuery(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
-    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits);
+    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, nullptr);
 }
 
 void executeQueryWithParallelReplicasCustomKey(
@@ -755,7 +756,7 @@ void executeQueryWithParallelReplicasCustomKey(
     }
 
     ColumnsDescriptionByShardNum columns_object;
-    if (hasDynamicSubcolumns(columns))
+    if (hasDynamicSubcolumnsDeprecated(columns))
         columns_object = getExtendedObjectsOfRemoteTables(*query_info.cluster, storage_id, columns, context);
 
     ClusterProxy::SelectStreamFactory select_stream_factory

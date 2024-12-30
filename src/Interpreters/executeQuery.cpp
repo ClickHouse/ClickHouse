@@ -421,6 +421,10 @@ QueryLogElement logQueryStart(
 
     bool log_queries = settings[Setting::log_queries] && !internal;
 
+    auto query_log = context->getQueryLog();
+    if (!query_log)
+        return elem;
+
     /// Log into system table start of query execution, if need.
     if (log_queries)
     {
@@ -451,9 +455,38 @@ QueryLogElement logQueryStart(
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (auto query_log = context->getQueryLog())
-                query_log->add(elem);
+            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
+                    " (the setting was changed for the query).");
+
+            query_log->add(elem);
         }
+        else if (elem.type < settings[Setting::log_queries_min_type])
+        {
+            if (settings[Setting::log_queries_min_type].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query start record to 'system.query_log' because the query type is smaller than setting `log_queries_min_type`"
+                    " (the setting was changed for the query).");
+        }
+        else if (settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        {
+            if (settings[Setting::log_queries_min_query_duration_ms].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query start record to 'system.query_log' since setting `log_queries_min_query_duration_ms` > 0"
+                    " (the setting was changed for the query).");
+        }
+    }
+    else if (!internal && !settings[Setting::log_queries])
+    {
+        if (settings[Setting::log_queries].changed)
+            LOG_TRACE(
+                getLogger("executeQuery"),
+                "Not adding query to 'system.query_log' since setting `log_queries` is false"
+                " (the setting was changed for the query).");
     }
 
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
@@ -734,10 +767,44 @@ void logExceptionBeforeStart(
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
-        && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
-        if (auto query_log = context->getQueryLog())
+    if (auto query_log = context->getQueryLog())
+    {
+        if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
+            && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        {
+            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
+                    " (the setting was changed for the query).");
+
             query_log->add(elem);
+        }
+        else if (!settings[Setting::log_queries])
+        {
+            if (settings[Setting::log_queries].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query to 'system.query_log' since setting `log_queries` is false"
+                    " (the setting was changed for the query).");
+        }
+        else if (elem.type < settings[Setting::log_queries_min_type])
+        {
+            if (settings[Setting::log_queries_min_type].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query to 'system.query_log' since the query type is smaller than setting `log_queries_min_type`"
+                    " (the setting was changed for the query).");
+        }
+        else if (settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        {
+            if (settings[Setting::log_queries_min_query_duration_ms].changed)
+                LOG_TRACE(
+                    getLogger("executeQuery"),
+                    "Not adding query to 'system.query_log' since setting `log_queries_min_query_duration_ms` > 0 and the query failed before start"
+                    " (the setting was changed for the query).");
+        }
+    }
 
     if (query_span)
     {
@@ -1041,9 +1108,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (settings[Setting::enforce_strict_identifier_format])
         {
             WriteBufferFromOwnString buf;
-            IAST::FormatSettings enforce_strict_identifier_format_settings(buf, true);
+            IAST::FormatSettings enforce_strict_identifier_format_settings(true);
             enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-            ast->format(enforce_strict_identifier_format_settings);
+            ast->format(buf, enforce_strict_identifier_format_settings);
         }
 
         if (auto * insert_query = ast->as<ASTInsertQuery>())
@@ -1536,8 +1603,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        String format_name = ast_query_with_output->format
-                ? getIdentifierName(ast_query_with_output->format)
+        String format_name = ast_query_with_output->format_ast
+                ? getIdentifierName(ast_query_with_output->format_ast)
                 : context->getDefaultFormat();
 
         if (boost::iequals(format_name, "Null"))
@@ -1747,8 +1814,8 @@ void executeQuery(
                     /* zstd_window_log = */ static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
             }
 
-            format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                                    ? getIdentifierName(ast_query_with_output->format)
+            format_name = ast_query_with_output && (ast_query_with_output->format_ast != nullptr)
+                                    ? getIdentifierName(ast_query_with_output->format_ast)
                                     : context->getDefaultFormat();
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
