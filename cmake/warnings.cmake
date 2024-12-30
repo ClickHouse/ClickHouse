@@ -47,5 +47,7 @@ if (COMPILER_CLANG)
     no_warning(enum-constexpr-conversion) # breaks magic-enum library in clang-16
     no_warning(unsafe-buffer-usage) # too aggressive
     no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
+    no_warning(deprecated-declarations)
+    no_warning(shadow-uncaptured-local)
     # TODO Enable conversion, sign-conversion, double-promotion warnings.
 endif ()
