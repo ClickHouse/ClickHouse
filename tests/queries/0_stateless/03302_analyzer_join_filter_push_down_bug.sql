@@ -6,4 +6,4 @@ explain actions=1 select count() from
 (SELECT key from t1 CROSS JOIN t2
   where t1.value >= toDateTime(toString(t2.value))
 ) where key = 162601
-settings allow_experimental_analyzer=1;
+settings enable_analyzer=1;
