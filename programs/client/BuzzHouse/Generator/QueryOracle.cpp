@@ -629,23 +629,28 @@ void QueryOracle::findTablesWithPeersAndReplace(RandomGenerator & rg, google::pr
     {
         auto & tos = static_cast<TableOrSubquery &>(mes);
 
-        if (tos.has_joined_table() && tos.joined_table().est().table().table().at(0) == 't')
+        if (tos.has_joined_table())
         {
-            const uint32_t tname = static_cast<uint32_t>(std::stoul(tos.joined_table().est().table().table().substr(1)));
+            const ExprSchemaTable & est = tos.joined_table().est();
 
-            if (gen.tables.find(tname) != gen.tables.end())
+            if ((!est.has_database() || est.database().database() != "system") && est.table().table().at(0) == 't')
             {
-                const SQLTable & t = gen.tables.at(tname);
+                const uint32_t tname = static_cast<uint32_t>(std::stoul(tos.joined_table().est().table().table().substr(1)));
 
-                if (t.hasDatabasePeer())
+                if (gen.tables.find(tname) != gen.tables.end())
                 {
-                    buf.resize(0);
-                    buf += tos.joined_table().table_alias().table();
-                    tos.clear_joined_table();
-                    JoinedTableFunction * jtf = tos.mutable_joined_table_function();
-                    gen.setTableRemote<false>(rg, t, jtf->mutable_tfunc());
-                    jtf->mutable_table_alias()->set_table(buf);
-                    found_tables.insert(tname);
+                    const SQLTable & t = gen.tables.at(tname);
+
+                    if (t.hasDatabasePeer())
+                    {
+                        buf.resize(0);
+                        buf += tos.joined_table().table_alias().table();
+                        tos.clear_joined_table();
+                        JoinedTableFunction * jtf = tos.mutable_joined_table_function();
+                        gen.setTableRemote<false>(rg, t, jtf->mutable_tfunc());
+                        jtf->mutable_table_alias()->set_table(buf);
+                        found_tables.insert(tname);
+                    }
                 }
             }
         }
