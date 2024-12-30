@@ -506,7 +506,7 @@ private:
                 fractional_second /= 10;
             }
 
-            for (UInt32 i = scale, value = fractional_second; i > 0 && value > 0; --i)
+            for (UInt32 i = scale, value = static_cast<UInt32>(fractional_second); i > 0 && value > 0; --i)
             {
                 dest[i - 1] += value % 10;
                 value /= 10;
