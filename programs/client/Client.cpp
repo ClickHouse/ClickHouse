@@ -53,12 +53,13 @@ extern const SettingsBool use_client_time_zone;
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int UNKNOWN_PACKET_FROM_SERVER;
-extern const int NETWORK_ERROR;
-extern const int AUTHENTICATION_FAILED;
-extern const int NO_ELEMENTS_IN_CONFIG;
-extern const int USER_EXPIRED;
+    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int NETWORK_ERROR;
+    extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_PASSWORD;
+    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int USER_EXPIRED;
 }
 
 
@@ -365,8 +366,10 @@ try
     }
     catch (const Exception & e)
     {
-        if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED || config().has("password") || config().getBool("ask-password", false)
-            || !is_interactive)
+        if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
+            config().has("password") ||
+            config().getBool("ask-password", false) ||
+            !is_interactive)
             throw;
 
         config().setBool("ask-password", true);
@@ -489,7 +492,7 @@ void Client::connect()
         catch (const Exception & e)
         {
             /// This problem can't be fixed with reconnection so it is not attempted
-            if (e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::REQUIRED_PASSWORD)
                 throw;
 
             if (attempted_address_index == hosts_and_ports.size() - 1)

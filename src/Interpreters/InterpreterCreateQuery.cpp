@@ -110,7 +110,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_experimental_database_materialized_mysql;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool allow_experimental_full_text_index;
     extern const SettingsBool allow_experimental_inverted_index;
@@ -253,18 +252,21 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.attach_short_syntax = true;
         create.setDatabase(database_name);
     }
-    else if (!create.storage)
+    else if (!create.storage || !create.storage->engine)
     {
         /// For new-style databases engine is explicitly specified in .sql
         /// When attaching old-style database during server startup, we must always use Ordinary engine
         if (create.attach)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
+        if (!create.storage)
+        {
+            auto storage = std::make_shared<ASTStorage>();
+            create.set(create.storage, storage);
+        }
         auto engine = std::make_shared<ASTFunction>();
-        auto storage = std::make_shared<ASTStorage>();
         engine->name = "Atomic";
         engine->no_empty_args = true;
-        storage->set(storage->engine, engine);
-        create.set(create.storage, storage);
+        create.storage->set(create.storage->engine, engine);
     }
     else if ((create.columns_list
               && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
@@ -292,36 +294,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!create.attach && db_disk->existsDirectory(metadata_path) && !db_disk->isDirectoryEmpty(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
     }
-    else if (create.storage->engine->name == "MaterializeMySQL"
-        || create.storage->engine->name == "MaterializedMySQL")
-    {
-        /// It creates nested database with Ordinary or Atomic engine depending on UUID in query and default engine setting.
-        /// Do nothing if it's an internal ATTACH on server startup or short-syntax ATTACH query from user,
-        /// because we got correct query from the metadata file in this case.
-        /// If we got query from user, then normalize it first.
-        bool attach_from_user = create.attach && !internal && !create.attach_short_syntax;
-        bool create_from_user = !create.attach;
-
-        if (create_from_user)
-        {
-            if (create.uuid == UUIDHelpers::Nil)
-                create.uuid = UUIDHelpers::generateV4();    /// Will enable Atomic engine for nested database
-        }
-        else if (attach_from_user && create.uuid == UUIDHelpers::Nil)
-        {
-            /// Ambiguity is possible: should we attach nested database as Ordinary
-            /// or throw "UUID must be specified" for Atomic? So we suggest short syntax for Ordinary.
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Use short attach syntax ('ATTACH DATABASE name;' without engine) "
-                            "to attach existing database or specify UUID to attach new database with Atomic engine");
-        }
-
-        /// Set metadata path according to nested engine
-        if (create.uuid == UUIDHelpers::Nil)
-            metadata_path = metadata_dir_path / database_name_escaped;
-        else
-            metadata_path = store_dir_path / DatabaseCatalog::getPathForUUID(create.uuid);
-    }
     else
     {
         bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
@@ -343,14 +315,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (create.storage->engine->arguments->children.size() == 2)
             create.storage->engine->arguments->children.push_back(std::make_shared<ASTLiteral>("{replica}"));
-    }
-
-    if ((create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
-        && !getContext()->getSettingsRef()[Setting::allow_experimental_database_materialized_mysql] && !internal && !create.attach)
-    {
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
-                        "MaterializedMySQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_mysql to use it");
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
@@ -1544,7 +1508,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     DDLGuardPtr ddl_guard;
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && !create.storage && !create.columns_list)
+    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
         // In case of an ON CLUSTER query, the database may not be present on the initiator node
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
