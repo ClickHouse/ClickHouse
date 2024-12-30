@@ -14,6 +14,9 @@ right ---
 inner ---
 1	X	Y	Z	W	V1	1	X	P	Z	W	V1
 2	A	B	C	D	E1	2	B	Q	C	D	E1
+a	b	c	d	e	f	a	b	c	d	e	f
+a	b	c	d	e	f	a	b	c	d	e	f
+a	b	c	d	e	f	a	b	c	d	e	f
 join on OR/AND chain
 2	3	2	3
 6	4	0	0

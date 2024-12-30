@@ -526,7 +526,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (settings.optimize)
             {
-                auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
+                auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.logical_steps;
                 plan.optimize(optimization_settings);
             }
@@ -574,9 +574,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context),
-                    BuildQueryPipelineSettings::fromContext(context));
+                auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
                 if (settings.graph)
                 {
@@ -638,9 +636,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context),
-                BuildQueryPipelineSettings::fromContext(context));
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;

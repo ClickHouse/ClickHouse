@@ -66,7 +66,7 @@ size_t tryConvertOuterJoinToInnerJoinLegacy(QueryPlan::Node * parent_node, Query
     return 1;
 }
 
-size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (size_t legacy_result = tryConvertOuterJoinToInnerJoinLegacy(parent_node, nodes); legacy_result > 0)
         return legacy_result;

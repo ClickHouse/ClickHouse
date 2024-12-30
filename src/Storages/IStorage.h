@@ -378,7 +378,7 @@ public:
         size_t /*num_streams*/);
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
-    /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
+    /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
 private:

@@ -1915,7 +1915,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
             mixed_join_expression = std::make_shared<ExpressionActions>(
                 std::move(*join_clauses_and_actions.residual_join_expressions_actions),
-                ExpressionActionsSettings::fromContext(planner_context->getQueryContext()));
+                ExpressionActionsSettings(planner_context->getQueryContext()));
 
             appendSetsFromActionsDAG(mixed_join_expression->getActionsDAG(), left_join_tree_query_plan.useful_sets);
             join_clauses_and_actions.residual_join_expressions_actions.reset();

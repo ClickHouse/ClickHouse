@@ -127,6 +127,14 @@ bool forAllKeys(OnExpr & expressions, Func callback)
 
 }
 
+std::string TableJoin::formatClauses(const TableJoin::Clauses & clauses, bool short_format)
+{
+    std::vector<std::string> res;
+    for (const auto & clause : clauses)
+        res.push_back("[" + clause.formatDebug(short_format) + "]");
+    return fmt::format("{}", fmt::join(res, "; "));
+}
+
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
@@ -134,7 +142,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
-    , join_algorithm(settings[Setting::join_algorithm])
+    , join_algorithms(settings[Setting::join_algorithm])
     , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
     , max_files_to_merge(settings[Setting::join_on_disk_max_files_to_merge])
@@ -155,7 +163,7 @@ TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStric
     : size_limits(limits)
     , default_max_bytes(0)
     , join_use_nulls(use_nulls)
-    , join_algorithm({JoinAlgorithm::DEFAULT})
+    , join_algorithms({JoinAlgorithm::DEFAULT})
 {
     clauses.emplace_back().key_names_right = key_names_right;
     table_join.kind = kind;
@@ -1070,7 +1078,7 @@ void TableJoin::resetToCross()
 bool TableJoin::allowParallelHashJoin() const
 {
     if (std::ranges::none_of(
-            join_algorithm, [](auto algo) { return algo == JoinAlgorithm::DEFAULT || algo == JoinAlgorithm::PARALLEL_HASH; }))
+            join_algorithms, [](auto algo) { return algo == JoinAlgorithm::DEFAULT || algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
     if (!right_storage_name.empty())
         return false;

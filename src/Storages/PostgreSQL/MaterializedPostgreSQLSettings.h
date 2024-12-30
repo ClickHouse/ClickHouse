@@ -35,6 +35,8 @@ struct MaterializedPostgreSQLSettings
     bool has(std::string_view name) const;
     void loadFromQuery(ASTStorage & storage_def);
 
+    static bool hasBuiltin(std::string_view name);
+
 private:
     std::unique_ptr<MaterializedPostgreSQLSettingsImpl> impl;
 };
