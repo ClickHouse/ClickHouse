@@ -6,6 +6,7 @@
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -30,7 +31,7 @@ namespace DB::QueryPlanOptimizations
 ///
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
 ///     function, we don't care. That check is left to query runtime, ReadFromMergeTree specifically.
-size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/)
+size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -76,6 +77,10 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* n
 
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
+
+    /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
+    if (n > settings.max_limit_for_ann_queries)
+        return updated_layers;
 
     /// Not 100% sure but other sort types are likely not what we want
     SortingStep::Type sorting_step_type = sorting_step->getType();

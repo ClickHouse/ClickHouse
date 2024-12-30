@@ -3,6 +3,7 @@ slug: /en/sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: VIEW
 ---
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # CREATE VIEW
 
@@ -290,7 +291,9 @@ To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refresh
 Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 :::
 
-## Window View [Experimental]
+## Window View
+
+<ExperimentalBadge/>
 
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.
