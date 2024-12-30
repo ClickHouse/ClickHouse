@@ -496,11 +496,13 @@ public:
     virtual String getName() const = 0;
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
-    virtual ColumnPtr executeImpl(
+
+    virtual ColumnPtr executeImplWithProfile(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
         FunctionExecuteProfile * profile) const;
+
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         return executeImpl(arguments, result_type, input_rows_count);
