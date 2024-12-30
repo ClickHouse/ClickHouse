@@ -25,7 +25,7 @@ public:
 
     struct Configuration
     {
-        const std::string url;
+        const Poco::URI url;
         const std::string format;
         const std::string update_field;
         const UInt64 update_lag;

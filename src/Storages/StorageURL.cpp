@@ -1362,6 +1362,9 @@ StorageURL::StorageURL(
         partition_by_,
         distributed_processing_)
 {
+    if (Poco::URI(uri_).getScheme() != "https") {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "URL storage supports only HTTPS protocol");
+    }
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
