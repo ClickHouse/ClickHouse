@@ -512,7 +512,7 @@ def test_cluster_default_expression(started_cluster):
 
 def test_hive_partitioning(started_cluster):
     node = started_cluster.instances["s0_0_0"]
-    for i in range(1,5):
+    for i in range(1, 5):
         node.query(
             f"""
             INSERT
@@ -585,7 +585,8 @@ def test_hive_partitioning(started_cluster):
             FROM clusterAllReplicas(cluster_simple, system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id_full}'
             FORMAT TSV
-        """)
+        """
+    )
     full_traffic = int(full_traffic)
     assert full_traffic > 0  # 612*4
 
@@ -595,7 +596,8 @@ def test_hive_partitioning(started_cluster):
             FROM clusterAllReplicas(cluster_simple, system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id_optimized}'
             FORMAT TSV
-        """)
+        """
+    )
     optimized_traffic = int(optimized_traffic)
     assert optimized_traffic > 0  # 612*2
     assert full_traffic > optimized_traffic
@@ -606,7 +608,8 @@ def test_hive_partitioning(started_cluster):
             FROM clusterAllReplicas(cluster_simple, system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_full}'
             FORMAT TSV
-        """)
+        """
+    )
     cluster_full_traffic = int(cluster_full_traffic)
     assert cluster_full_traffic == full_traffic
 
@@ -616,6 +619,7 @@ def test_hive_partitioning(started_cluster):
             FROM clusterAllReplicas(cluster_simple, system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_optimized}'
             FORMAT TSV
-        """)
+        """
+    )
     cluster_optimized_traffic = int(cluster_optimized_traffic)
     assert cluster_optimized_traffic == optimized_traffic

@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 ObjectFilterStep::ObjectFilterStep(
     const Header & input_header_,
     ActionsDAG actions_dag_,
