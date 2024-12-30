@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/user_processes
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # user_processes
+
+<SystemTableCloud/>
 
 This system table can be used to get overview of memory usage and ProfileEvents of users.
 

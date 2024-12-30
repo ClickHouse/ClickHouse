@@ -171,7 +171,8 @@ private:
             }
             else
             {
-                size_t start = 0, end = size - 1;
+                size_t start = 0;
+                size_t end = size - 1;
                 while (start <= end)
                 {
                     size_t mid = start + (end - start) / 2;
@@ -191,8 +192,10 @@ private:
         size_t l = idx;
         size_t u = idx + 1 < size ? idx + 1 : idx;
 
-        Float64 xl = value_weight_pairs[l].second, xr = value_weight_pairs[u].second;
-        UnderlyingType yl = value_weight_pairs[l].first, yr = value_weight_pairs[u].first;
+        Float64 xl = value_weight_pairs[l].second;
+        Float64 xr = value_weight_pairs[u].second;
+        UnderlyingType yl = value_weight_pairs[l].first;
+        UnderlyingType yr = value_weight_pairs[u].first;
 
         if (level < xl)
             yr = yl;
@@ -268,7 +271,8 @@ private:
                 }
                 else
                 {
-                    size_t start = 0, end = size - 1;
+                    size_t start = 0;
+                    size_t end = size - 1;
                     while (start <= end)
                     {
                         size_t mid = start + (end - start) / 2;
@@ -288,8 +292,10 @@ private:
             size_t l = idx;
             size_t u = idx + 1 < size ? idx + 1 : idx;
 
-            Float64 xl = value_weight_pairs[l].second, xr = value_weight_pairs[u].second;
-            UnderlyingType yl = value_weight_pairs[l].first, yr = value_weight_pairs[u].first;
+            Float64 xl = value_weight_pairs[l].second;
+            Float64 xr = value_weight_pairs[u].second;
+            UnderlyingType yl = value_weight_pairs[l].first;
+            UnderlyingType yr = value_weight_pairs[u].first;
 
             if (level < xl)
                 yr = yl;

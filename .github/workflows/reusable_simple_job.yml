@@ -45,8 +45,11 @@ name: Simple job
         type: boolean
         default: false
     secrets:
-      secret_envs:
-        description: if given, it's passed to the environments
+      robot_git_token:
+        required: false
+      ci_db_url:
+        required: false
+      ci_db_password:
         required: false
 
 
@@ -77,7 +80,15 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           CHECK_NAME=${{ inputs.test_name }}
           ${{inputs.additional_envs}}
-          ${{secrets.secret_envs}}
+          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+          ${{secrets.robot_git_token}}
+          RCSK
+          CI_DB_URL<<CIDBU
+          ${{ secrets.ci_db_url }}
+          CIDBU
+          CI_DB_PASSWORD<<CIDBP
+          ${{ secrets.ci_db_password }}
+          CIDBP
           EOF
       - name: Common setup
         uses: ./.github/actions/common_setup

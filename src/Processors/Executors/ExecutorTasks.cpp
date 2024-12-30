@@ -40,6 +40,7 @@ void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & se
         else
             thread_to_wake = threads_queue.popAny();
 
+        idle_threads--;
         if (thread_to_wake >= use_threads)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
 
@@ -110,6 +111,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         /// Enqueue thread into stack of waiting threads.
         threads_queue.push(context.thread_number);
+        idle_threads++;
     }
 
     context.wait(finished);
@@ -158,6 +160,7 @@ void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_
 {
     num_threads = num_threads_;
     use_threads = use_threads_;
+    idle_threads = 0;
     threads_queue.init(num_threads);
     task_queue.init(num_threads);
 
@@ -228,6 +231,7 @@ void ExecutorTasks::processAsyncTasks()
             if (threads_queue.has(task.thread_num))
             {
                 threads_queue.pop(task.thread_num);
+                idle_threads--;
                 executor_contexts[task.thread_num]->wakeUp();
             }
         }

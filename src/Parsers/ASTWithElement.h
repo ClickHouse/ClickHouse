@@ -12,14 +12,14 @@ class ASTWithElement : public IAST
 public:
     String name;
     ASTPtr subquery;
+    ASTPtr aliases;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "WithElement"; }
 
     ASTPtr clone() const override;
 
-protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

@@ -38,7 +38,7 @@ public:
         const std::string invalidate_query;
         const std::string update_field;
         const UInt64 update_lag;
-        const bool dont_check_update_time;
+        const bool bg_reconnect;
     };
 
     MySQLDictionarySource(
@@ -77,8 +77,6 @@ private:
 
     static std::string quoteForLike(const std::string & value);
 
-    LocalDateTime getLastModification(mysqlxx::Pool::Entry & connection, bool allow_connection_closure) const;
-
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
@@ -91,7 +89,6 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    LocalDateTime last_modification;
     mutable std::string invalidate_query_response;
     const StreamSettings settings;
 };

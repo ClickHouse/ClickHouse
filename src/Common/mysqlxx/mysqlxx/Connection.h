@@ -9,12 +9,14 @@
 #include <mysqlxx/Query.h>
 #include <mysqlxx/Exception.h>
 
+/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_DEFAULT_TIMEOUT 60
 #define MYSQLXX_DEFAULT_RW_TIMEOUT 1800
 
 /// Disable LOAD DATA LOCAL INFILE because it is insecure
 #define MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE false
 /// See https://dev.mysql.com/doc/c-api/5.7/en/c-api-auto-reconnect.html
+/// NOLINTEND(modernize-macro-to-enum)
 #define MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT true
 
 

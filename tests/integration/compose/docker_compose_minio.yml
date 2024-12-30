@@ -14,6 +14,10 @@ services:
     depends_on:
       - proxy1
       - proxy2
+    networks:
+        default:
+            aliases:
+                - warehouse.minio
 
   # HTTP proxies for Minio.
   proxy1:
@@ -39,6 +43,10 @@ services:
     depends_on:
       - proxy1
       - proxy2
+    volumes:
+      - type: ${RESOLVER_LOGS_FS:-tmpfs}
+        source: ${RESOLVER_LOGS:-}
+        target: /var/log/resolver
 
 volumes:
   data1-1:

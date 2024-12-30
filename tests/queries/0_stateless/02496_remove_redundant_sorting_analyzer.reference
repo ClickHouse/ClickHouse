@@ -117,7 +117,7 @@ ORDER BY t1.number, t2.number
 -- explain
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + DROP unused columns after JOIN)))
+    Expression ((Before ORDER BY + Projection))
       Join (JOIN FillRightFirst)
         Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
           ReadFromSystemNumbers
@@ -161,7 +161,7 @@ ORDER BY t1.number, t2.number
 -- explain
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
-    Expression ((Before ORDER BY + (Projection + DROP unused columns after JOIN)))
+    Expression ((Before ORDER BY + Projection))
       Join (JOIN FillRightFirst)
         Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
           ReadFromSystemNumbers

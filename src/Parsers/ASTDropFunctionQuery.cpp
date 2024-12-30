@@ -10,16 +10,16 @@ ASTPtr ASTDropFunctionQuery::clone() const
     return std::make_shared<ASTDropFunctionQuery>(*this);
 }
 
-void ASTDropFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTDropFunctionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP FUNCTION ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "DROP FUNCTION ";
 
     if (if_exists)
-        settings.ostr << "IF EXISTS ";
+        ostr << "IF EXISTS ";
 
-    settings.ostr << (settings.hilite ? hilite_none : "");
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(function_name) << (settings.hilite ? hilite_none : "");
-    formatOnCluster(settings);
+    ostr << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(function_name) << (settings.hilite ? hilite_none : "");
+    formatOnCluster(ostr, settings);
 }
 
 }

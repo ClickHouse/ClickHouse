@@ -607,11 +607,11 @@ void SerializationArray::serializeTextJSONPretty(const IColumn & column, size_t 
     {
         if (i != offset)
             writeCString(",\n", ostr);
-        writeChar(' ', (indent + 1) * 4, ostr);
+        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
         nested->serializeTextJSONPretty(nested_column, i, ostr, settings, indent + 1);
     }
     writeChar('\n', ostr);
-    writeChar(' ', indent * 4, ostr);
+    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
     writeChar(']', ostr);
 }
 

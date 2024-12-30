@@ -259,7 +259,8 @@ public:
         }
 
         const auto columns = block.getColumns();
-        const size_t num_rows = block.rows(), num_cols = block.columns();
+        const size_t num_rows = block.rows();
+        const size_t num_cols = block.columns();
         const auto data_types = block.getDataTypes();
 
         /// std::optional lets libpqxx to know if value is NULL

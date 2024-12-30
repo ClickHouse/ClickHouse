@@ -17,11 +17,19 @@
 #include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB
 {
+
+namespace HiveSetting
+{
+    extern const HiveSettingsBool enable_orc_file_minmax_index;
+    extern const HiveSettingsBool enable_orc_stripe_minmax_index;
+    extern const HiveSettingsBool enable_parquet_rowgroup_minmax_index;
+}
 
 namespace ErrorCodes
 {
@@ -181,7 +189,7 @@ void HiveORCFile::prepareColumnMapping()
 
 bool HiveORCFile::useFileMinMaxIndex() const
 {
-    return storage_settings->enable_orc_file_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_orc_file_minmax_index];
 }
 
 
@@ -231,7 +239,7 @@ void HiveORCFile::loadFileMinMaxIndexImpl()
 
 bool HiveORCFile::useSplitMinMaxIndex() const
 {
-    return storage_settings->enable_orc_stripe_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_orc_stripe_minmax_index];
 }
 
 
@@ -272,7 +280,7 @@ std::optional<size_t> HiveORCFile::getRowsImpl()
 
 bool HiveParquetFile::useSplitMinMaxIndex() const
 {
-    return storage_settings->enable_parquet_rowgroup_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_parquet_rowgroup_minmax_index];
 }
 
 void HiveParquetFile::prepareReader()

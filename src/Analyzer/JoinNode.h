@@ -163,5 +163,67 @@ private:
     static constexpr size_t children_size = join_expression_child_index + 1;
 };
 
+class CrossJoinNode;
+using CrossJoinNodePtr = std::shared_ptr<CrossJoinNode>;
+
+/** CrossJoin node represents cross/comma join in query tree.
+  * Example: SELECT * FROM t1, t2, t3
+  */
+class CrossJoinNode final : public IQueryTreeNode
+{
+public:
+    struct JoinType
+    {
+        /// Only Comma or Cross Join allowed.
+        /// This is only needed to support cross_to_inner_join_rewrite.
+        bool is_comma = false;
+        JoinLocality locality = JoinLocality::Unspecified;
+    };
+
+    using JoinTypes = std::vector<JoinType>;
+
+    /// Construct a cross join node starting from the first table.
+    /// Other tables are added with appendTable method.
+    explicit CrossJoinNode(QueryTreeNodePtr table_expression);
+
+    /// Construct a cross join with a list of table expressions,
+    /// together with join types.
+    /// It's expected that join_types.size() + 1 == table_expressions.size()
+    CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_);
+
+    void appendTable(QueryTreeNodePtr table_expression, JoinType join_type);
+
+    const QueryTreeNodes & getTableExpressions() const
+    {
+        return children;
+    }
+
+    QueryTreeNodes & getTableExpressions()
+    {
+        return children;
+    }
+
+    /// The size is getTableExpressions.size() - 1
+    const JoinTypes & getJoinTypes() { return join_types; }
+
+    QueryTreeNodeType getNodeType() const override
+    {
+        return QueryTreeNodeType::CROSS_JOIN;
+    }
+
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
+
+    QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+    JoinTypes join_types;
+};
+
 }
 

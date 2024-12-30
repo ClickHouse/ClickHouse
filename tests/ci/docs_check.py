@@ -77,8 +77,8 @@ def main():
     test_output.mkdir(parents=True, exist_ok=True)
 
     cmd = (
-        f"docker run --cap-add=SYS_PTRACE --user={os.geteuid()}:{os.getegid()} "
-        f"-e GIT_DOCS_BRANCH={args.docs_branch} "
+        f"docker run --cap-add=SYS_PTRACE --memory=12g --user={os.geteuid()}:{os.getegid()} "
+        f"-e GIT_DOCS_BRANCH={args.docs_branch} -e NODE_OPTIONS='--max-old-space-size=6144' "
         f"--volume={repo_path}:/ClickHouse --volume={test_output}:/output_path "
         f"{docker_image}"
     )

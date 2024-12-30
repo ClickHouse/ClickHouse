@@ -29,7 +29,7 @@ DiskWithPath::DiskWithPath(DiskPtr disk_, std::optional<String> path_) : disk(di
     }
 
     String relative_path = normalizePathAndGetAsRelative(path);
-    if (disk->isDirectory(relative_path) || (relative_path.empty() && (disk->isDirectory("/"))))
+    if (disk->existsDirectory(relative_path) || (relative_path.empty() && (disk->existsDirectory("/"))))
     {
         return;
     }
@@ -100,7 +100,7 @@ void DiskWithPath::setPath(const String & any_path)
 String DiskWithPath::validatePathAndGetAsRelative(const String & path)
 {
     String lexically_normal_path = fs::path(path).lexically_normal();
-    if (lexically_normal_path.find("..") != std::string::npos)
+    if (lexically_normal_path.contains(".."))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} is not normalized", path);
 
     /// If path is absolute we should keep it as relative inside disk, so disk will look like

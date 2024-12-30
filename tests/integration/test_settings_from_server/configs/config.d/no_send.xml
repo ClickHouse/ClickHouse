@@ -1,0 +1,3 @@
+<clickhouse>
+    <send_settings_to_client>false</send_settings_to_client>
+</clickhouse>

@@ -5,6 +5,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <base/AlignedUnion.h>
 #include <base/StringRef.h>
 
 namespace DB
@@ -374,7 +375,7 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
 /// Helper to allocate enough memory to store any derived class
 struct SingleValueDataBaseMemoryBlock
 {
-    std::aligned_union_t<
+    AlignedUnionT<
         SingleValueDataBase::MAX_STORAGE_SIZE,
         SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromTypeIndex
         SingleValueDataString,

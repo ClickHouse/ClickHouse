@@ -93,13 +93,13 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
     , deduplication_map(deduplication_window)
     , disk(disk_)
 {
-    if (deduplication_window != 0 && !disk->exists(logs_dir))
+    if (deduplication_window != 0 && !disk->existsDirectory(logs_dir))
         disk->createDirectories(logs_dir);
 }
 
 void MergeTreeDeduplicationLog::load()
 {
-    if (!disk->exists(logs_dir))
+    if (!disk->existsDirectory(logs_dir))
         return;
 
     for (auto it = disk->iterateDirectory(logs_dir); it->isValid(); it->next())
@@ -320,7 +320,7 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     rotate_interval = deduplication_window * 2;
 
     /// If settings was set for the first time with ALTER MODIFY SETTING query
-    if (deduplication_window != 0 && !disk->exists(logs_dir))
+    if (deduplication_window != 0 && !disk->existsDirectory(logs_dir))
         disk->createDirectories(logs_dir);
 
     deduplication_map.setMaxSize(deduplication_window);

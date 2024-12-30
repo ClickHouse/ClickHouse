@@ -29,7 +29,6 @@ namespace DB
                                     ContextPtr global_context,
                                     const std::string & /* default_database */,
                                     bool /* created_from_ddl */) -> DictionarySourcePtr {
-
             auto redis_config_prefix = config_prefix + ".redis";
 
             auto host = config.getString(redis_config_prefix + ".host");

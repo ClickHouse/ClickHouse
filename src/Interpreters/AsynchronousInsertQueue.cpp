@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
@@ -381,17 +382,15 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         LimitReadBuffer limit_buf(
             *read_buf,
-            query_context->getSettingsRef()[Setting::async_insert_max_data_size],
-            /*throw_exception=*/false,
-            /*exact_limit=*/{});
+            {.read_no_more = query_context->getSettingsRef()[Setting::async_insert_max_data_size]});
 
-        WriteBufferFromString write_buf(bytes);
-        copyData(limit_buf, write_buf);
+        {
+            WriteBufferFromString write_buf(bytes);
+            copyData(limit_buf, write_buf);
+        }
 
         if (!read_buf->eof())
         {
-            write_buf.finalize();
-
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
             std::vector<std::unique_ptr<ReadBuffer>> buffers;
@@ -980,6 +979,7 @@ try
         if (chunk.getNumRows() == 0)
         {
             finish_entries(/*num_rows=*/ 0, /*num_bytes=*/ 0);
+            pipeline.cancel();
             return;
         }
 
@@ -1050,15 +1050,14 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(header, columns, *format, insert_context);
     }
 
-    auto on_error = [&](const MutableColumns & result_columns, Exception & e)
+    auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         current_exception = e.displayText();
         LOG_ERROR(logger, "Failed parsing for query '{}' with query id {}. {}",
             key.query_str, current_entry->query_id, current_exception);
 
-        for (const auto & column : result_columns)
-            if (column->size() > total_rows)
-                column->popBack(column->size() - total_rows);
+        for (size_t i = 0; i < result_columns.size(); ++i)
+            result_columns[i]->rollback(*checkpoints[i]);
 
         current_entry->finish(std::current_exception());
         return 0;
@@ -1121,6 +1120,13 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
                 "Expected entry with data kind Preprocessed. Got: {}", entry->chunk.getDataKind());
 
         Block block_to_insert = *block;
+        if (block_to_insert.rows() == 0)
+        {
+            add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
+            entry->resetChunk();
+            continue;
+        }
+
         if (!isCompatibleHeader(block_to_insert, header))
             convertBlockToHeader(block_to_insert, header);
 

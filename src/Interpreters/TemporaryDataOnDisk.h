@@ -4,15 +4,21 @@
 #include <mutex>
 #include <boost/noncopyable.hpp>
 
-#include <IO/ReadBufferFromFile.h>
+#include <Common/CurrentMetrics.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <Formats/NativeReader.h>
-#include <Core/Block.h>
+#include <Compression/CompressedWriteBuffer.h>
+
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Common/CurrentMetrics.h>
 
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+
+#include <Interpreters/Cache/FileSegment.h>
+
+#include <IO/ReadBufferFromFile.h>
+
+class FileCacheTest_TemporaryDataReadBufferSize_Test;
 
 namespace CurrentMetrics
 {
@@ -25,11 +31,10 @@ namespace DB
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
-class TemporaryDataOnDisk;
-using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
+class TemporaryDataBuffer;
+using TemporaryDataBufferPtr = std::unique_ptr<TemporaryDataBuffer>;
 
-class TemporaryFileStream;
-using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
+class TemporaryFileHolder;
 
 class FileCache;
 
@@ -40,7 +45,18 @@ struct TemporaryDataOnDiskSettings
 
     /// Compression codec for temporary data, if empty no compression will be used. LZ4 by default
     String compression_codec = "LZ4";
+
+    /// Read/Write internal buffer size
+    size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// Metrics counter to increment when temporary file in current scope are created
+    CurrentMetrics::Metric current_metric = CurrentMetrics::TemporaryFilesUnknown;
 };
+
+/// Creates temporary files located on specified resource (disk, fs_cache, etc.)
+using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(size_t)>;
+TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
+TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache);
 
 /*
  * Used to account amount of temporary data written to disk.
@@ -48,7 +64,7 @@ struct TemporaryDataOnDiskSettings
  * Data can be nested, so parent scope accounts all data written by children.
  * Scopes are: global -> per-user -> per-query -> per-purpose (sorting, aggregation, etc).
  */
-class TemporaryDataOnDiskScope : boost::noncopyable
+class TemporaryDataOnDiskScope : boost::noncopyable, public std::enable_shared_from_this<TemporaryDataOnDiskScope>
 {
 public:
     struct StatAtomic
@@ -57,164 +73,155 @@ public:
         std::atomic<size_t> uncompressed_size;
     };
 
-    explicit TemporaryDataOnDiskScope(VolumePtr volume_, TemporaryDataOnDiskSettings settings_)
-        : volume(std::move(volume_))
+    /// Root scope
+    template <typename T>
+    TemporaryDataOnDiskScope(T && storage, TemporaryDataOnDiskSettings settings_)
+        : file_provider(createTemporaryFileProvider(std::forward<T>(storage)))
         , settings(std::move(settings_))
     {}
 
-    explicit TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * file_cache_, TemporaryDataOnDiskSettings settings_)
-        : volume(std::move(volume_))
-        , file_cache(file_cache_)
-        , settings(std::move(settings_))
-    {}
 
-    explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, TemporaryDataOnDiskSettings settings_)
+    TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, TemporaryDataOnDiskSettings settings_)
         : parent(std::move(parent_))
-        , volume(parent->volume)
-        , file_cache(parent->file_cache)
+        , file_provider(parent->file_provider)
         , settings(std::move(settings_))
     {}
 
-    /// TODO: remove
-    /// Refactor all code that uses volume directly to use TemporaryDataOnDisk.
-    VolumePtr getVolume() const { return volume; }
+    TemporaryDataOnDiskScopePtr childScope(CurrentMetrics::Metric current_metric);
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
-
 protected:
+    friend class TemporaryDataBuffer;
+
     void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
 
     TemporaryDataOnDiskScopePtr parent = nullptr;
 
-    VolumePtr volume = nullptr;
-    FileCache * file_cache = nullptr;
+    TemporaryFileProvider file_provider;
 
     StatAtomic stat;
     const TemporaryDataOnDiskSettings settings;
 };
 
-/*
- * Holds the set of temporary files.
- * New file stream is created with `createStream`.
- * Streams are owned by this object and will be deleted when it is deleted.
- * It's a leaf node in temporary data scope tree.
- */
-class TemporaryDataOnDisk : private TemporaryDataOnDiskScope
+/** Used to hold the wrapper and wrapped object together.
+  * This class provides a convenient way to manage the lifetime of both the wrapper and the wrapped object.
+  * The wrapper class (Impl) stores a reference to the wrapped object (Holder), and both objects are owned by this class.
+  * The lifetime of the wrapper and the wrapped object should be the same.
+  * This pattern is commonly used when the caller only needs to interact with the wrapper and doesn't need to be aware of the wrapped object.
+  * Examples: CompressedWriteBuffer and WriteBuffer, and NativeReader and ReadBuffer.
+  */
+template <typename Impl, typename Holder>
+class WrapperGuard
 {
-    friend class TemporaryFileStream; /// to allow it to call `deltaAllocAndCheck` to account data
-
 public:
-    using TemporaryDataOnDiskScope::StatAtomic;
+    template <typename ... Args>
+    explicit WrapperGuard(std::unique_ptr<Holder> holder_, Args && ... args)
+        : holder(std::move(holder_))
+        , impl(std::make_unique<Impl>(*holder, std::forward<Args>(args)...))
+    {
+        chassert(holder);
+        chassert(impl);
+    }
 
-    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_);
+    Impl * operator->() { chassert(impl); chassert(holder); return impl.get(); }
+    const Impl * operator->() const { chassert(impl); chassert(holder); return impl.get(); }
+    Impl & operator*() { chassert(impl); chassert(holder); return *impl; }
+    const Impl & operator*() const { chassert(impl); chassert(holder); return *impl; }
+    operator bool() const { return impl != nullptr; } /// NOLINT
 
-    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Metric metric_scope);
+    Holder * getHolder() { return holder.get(); }
 
-    /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
-    TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
+    void reset()
+    {
+        impl.reset();
+        holder.reset();
+    }
 
-    /// Write raw data directly into buffer.
-    /// Differences from `createStream`:
-    ///   1) it doesn't account data in parent scope
-    ///   2) returned buffer owns resources (instead of TemporaryDataOnDisk itself)
-    /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
-    std::unique_ptr<WriteBufferFromFileBase> createRawStream(size_t max_file_size = 0);
-
-    std::vector<TemporaryFileStream *> getStreams() const;
-    bool empty() const;
-
-    const StatAtomic & getStat() const { return stat; }
-
-private:
-    FileSegmentsHolderPtr createCacheFile(size_t max_file_size);
-    TemporaryFileOnDiskHolder createRegularFile(size_t max_file_size);
-
-    mutable std::mutex mutex;
-    std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
-
-    typename CurrentMetrics::Metric current_metric_scope = CurrentMetrics::TemporaryFilesUnknown;
+protected:
+    std::unique_ptr<Holder> holder;
+    std::unique_ptr<Impl> impl;
 };
 
-/*
- * Data can be written into this stream and then read.
- * After finish writing, call `finishWriting` and then either call `read` or 'getReadStream'(only one of the two) to read the data.
- * Account amount of data written to disk in parent scope.
- */
-class TemporaryFileStream : boost::noncopyable
+/// Owns temporary file and provides access to it.
+/// On destruction, file is removed and all resources are freed.
+/// Lifetime of read/write buffers should be less than lifetime of TemporaryFileHolder.
+class TemporaryFileHolder
 {
 public:
-    struct Reader
-    {
-        Reader(const String & path, const Block & header_, size_t size = 0);
+    TemporaryFileHolder();
 
-        explicit Reader(const String & path, size_t size = 0);
+    virtual std::unique_ptr<WriteBuffer> write() = 0;
+    virtual std::unique_ptr<ReadBuffer> read(size_t buffer_size) const = 0;
 
-        Block read();
+    /// Get location for logging
+    virtual String describeFilePath() const = 0;
 
-        const std::string path;
-        const size_t size;
-        const std::optional<Block> header;
+    virtual ~TemporaryFileHolder() = default;
+};
 
-        std::unique_ptr<ReadBufferFromFileBase> in_file_buf;
-        std::unique_ptr<CompressedReadBuffer> in_compressed_buf;
-        std::unique_ptr<NativeReader> in_reader;
-    };
+/// Reads raw data from temporary file
+class TemporaryDataReadBuffer : public ReadBuffer
+{
+public:
+    explicit TemporaryDataReadBuffer(std::unique_ptr<ReadBuffer> in_);
 
+private:
+    friend class ::FileCacheTest_TemporaryDataReadBufferSize_Test;
+
+    bool nextImpl() override;
+
+    WrapperGuard<CompressedReadBuffer, ReadBuffer> compressed_buf;
+};
+
+/// Writes raw data to buffer provided by file_holder, and accounts amount of written data in parent scope.
+class TemporaryDataBuffer : public WriteBuffer
+{
+public:
     struct Stat
     {
-        /// Statistics for file
-        /// Non-atomic because we don't allow to `read` or `write` into single file from multiple threads
         size_t compressed_size = 0;
         size_t uncompressed_size = 0;
-        size_t num_rows = 0;
     };
 
-    TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
-    TemporaryFileStream(FileSegmentsHolderPtr segments_, const Block & header_, TemporaryDataOnDisk * parent_);
+    explicit TemporaryDataBuffer(TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
+    ~TemporaryDataBuffer() override;
 
-    size_t write(const Block & block);
-    void flush();
+    void nextImpl() override;
+    void finalizeImpl() override;
+    void cancelImpl() noexcept override;
 
+    std::unique_ptr<ReadBuffer> read();
     Stat finishWriting();
-    Stat finishWritingAsyncSafe();
-    bool isWriteFinished() const;
 
-    std::unique_ptr<Reader> getReadStream();
-
-    Block read();
-
-    String getPath() const;
-    size_t getSize() const;
-
-    Block getHeader() const { return header; }
-
-    /// Read finished and file released
-    bool isEof() const;
-
-    ~TemporaryFileStream();
+    String describeFilePath() const;
 
 private:
     void updateAllocAndCheck();
 
-    /// Release everything, close reader and writer, delete file
-    void release();
-
-    TemporaryDataOnDisk * parent;
-
-    Block header;
-
-    /// Data can be stored in file directly or in the cache
-    TemporaryFileOnDiskHolder file;
-    FileSegmentsHolderPtr segment_holder;
+    TemporaryDataOnDiskScope * parent;
+    std::unique_ptr<TemporaryFileHolder> file_holder;
+    WrapperGuard<CompressedWriteBuffer, WriteBuffer> out_compressed_buf;
+    std::once_flag write_finished;
 
     Stat stat;
+};
 
-    std::once_flag finish_writing;
 
-    struct OutputWriter;
-    std::unique_ptr<OutputWriter> out_writer;
+/// High level interfaces for reading and writing temporary data by blocks.
+using TemporaryBlockStreamReaderHolder = WrapperGuard<NativeReader, ReadBuffer>;
 
-    std::unique_ptr<Reader> in_reader;
+class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDataBuffer>
+{
+public:
+    TemporaryBlockStreamHolder(const Block & header_, TemporaryDataOnDiskScope * parent_, size_t reserve_size = 0);
+
+    TemporaryBlockStreamReaderHolder getReadStream() const;
+
+    TemporaryDataBuffer::Stat finishWriting() const;
+    const Block & getHeader() const { return header; }
+
+private:
+    Block header;
 };
 
 }

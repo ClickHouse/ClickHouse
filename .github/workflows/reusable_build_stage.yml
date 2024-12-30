@@ -18,8 +18,11 @@ name: BuildStageWF
         type: string
         required: true
     secrets:
-      secret_envs:
-        description: if given, it's passed to the environments
+      robot_git_token:
+        required: false
+      ci_db_url:
+        required: false
+      ci_db_password:
         required: false
 
 jobs:
@@ -39,4 +42,6 @@ jobs:
       checkout_depth: 0
       data: ${{ inputs.data }}
     secrets:
-      secret_envs: ${{ secrets.secret_envs }}
+      robot_git_token: ${{ secrets.robot_git_token }}
+      ci_db_url: ${{ secrets.ci_db_url }}
+      ci_db_password: ${{ secrets.ci_db_password }}

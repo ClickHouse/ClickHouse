@@ -22,7 +22,7 @@ struct AbsImpl
             return a < 0 ? static_cast<ResultType>(~a) + 1 : static_cast<ResultType>(a);
         else if constexpr (is_integer<A> && is_unsigned_v<A>)
             return static_cast<ResultType>(a);
-        else if constexpr (std::is_floating_point_v<A>)
+        else if constexpr (is_floating_point<A>)
             return static_cast<ResultType>(std::abs(a));
     }
 

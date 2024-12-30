@@ -95,7 +95,7 @@ sudo yum install -y clickhouse-server clickhouse-client
 sudo systemctl enable clickhouse-server
 sudo systemctl start clickhouse-server
 sudo systemctl status clickhouse-server
-clickhouse-client # илм "clickhouse-client --password" если установлен пароль
+clickhouse-client # или "clickhouse-client --password" если установлен пароль
 ```
 
 Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений). Также иногда доступен `prestable`.
@@ -154,7 +154,7 @@ sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 
 ### Из Docker образа {#from-docker-image}
 
-Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Внутри образов используются официальные `deb`-пакеты.
+Для запуска ClickHouse в Docker нужно следовать инструкции на [Docker Hub](https://hub.docker.com/_/clickhouse). Внутри образов используются официальные `deb`-пакеты.
 
 ### Из единого бинарного файла {#from-single-binary}
 

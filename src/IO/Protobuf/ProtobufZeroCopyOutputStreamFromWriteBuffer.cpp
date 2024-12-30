@@ -23,8 +23,6 @@ ProtobufZeroCopyOutputStreamFromWriteBuffer::ProtobufZeroCopyOutputStreamFromWri
     out_holder = std::move(out_);
 }
 
-ProtobufZeroCopyOutputStreamFromWriteBuffer::~ProtobufZeroCopyOutputStreamFromWriteBuffer() = default;
-
 bool ProtobufZeroCopyOutputStreamFromWriteBuffer::Next(void ** data, int * size)
 {
     *data = out->position();

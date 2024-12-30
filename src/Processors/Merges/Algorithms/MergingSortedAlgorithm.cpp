@@ -1,3 +1,4 @@
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
@@ -16,12 +17,14 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     SortingQueueStrategy sorting_queue_strategy_,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes)
+    bool use_average_block_sizes,
+    bool apply_virtual_row_conversions_)
     : header(std::move(header_))
     , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_)
     , description(description_)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
+    , apply_virtual_row_conversions(apply_virtual_row_conversions_)
     , current_inputs(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
@@ -49,6 +52,15 @@ void MergingSortedAlgorithm::addInput()
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
+    for (auto & input : inputs)
+    {
+        if (!isVirtualRow(input.chunk))
+            continue;
+
+        setVirtualRow(input.chunk, header, apply_virtual_row_conversions);
+        input.skip_last_row = true;
+    }
+
     removeConstAndSparse(inputs);
     merged_data.initialize(header, inputs);
     current_inputs = std::move(inputs);
@@ -59,7 +71,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         if (!chunk)
             continue;
 
-        cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
+        cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
     }
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
@@ -84,7 +96,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
-    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
+    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header, current_inputs[source_num].chunk.getNumRows());
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
     {

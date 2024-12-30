@@ -9,6 +9,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+
 #include <algorithm>
 
 namespace DB
@@ -177,14 +178,13 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
-
     WriteBufferFromOwnString buf;
-    FormatSettings settings(buf, one_line);
+    FormatSettings settings(one_line);
     settings.show_secrets = show_secrets;
     settings.print_pretty_type_names = print_pretty_type_names;
     settings.identifier_quoting_rule = identifier_quoting_rule;
     settings.identifier_quoting_style = identifier_quoting_style;
-    format(settings);
+    format(buf, settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
 
@@ -221,7 +221,7 @@ String IAST::getColumnNameWithoutAlias() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
+void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const
 {
     checkIdentifier(name);
     bool must_quote
@@ -287,7 +287,8 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
     writeChar('\n', ostr);
     for (const auto & child : children)
     {
-        if (!child) throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump nullptr child");
+        if (!child)
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST, "Can't dump a nullptr child");
         child->dumpTree(ostr, indent + 1);
     }
 }

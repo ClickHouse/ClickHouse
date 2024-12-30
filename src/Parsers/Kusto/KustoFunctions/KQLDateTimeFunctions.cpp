@@ -331,7 +331,7 @@ bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
             i = i + arg.size();
         }
     }
-    if (decimal > 0 && formatspecifier.find('.') != String::npos)
+    if (decimal > 0 && formatspecifier.contains('.'))
     {
         out = std::format(
             "concat("

@@ -152,20 +152,7 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputHeader(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
 
-    if (auto * transforming_step = dynamic_cast<ITransformingStep *>(child.get()))
-    {
-        transforming_step->updateInputHeader(node.step->getOutputHeader());
-    }
-    else
-    {
-        if (auto * join = typeid_cast<JoinStep *>(child.get()))
-        {
-            join->updateInputHeader(node.step->getOutputHeader(), child_idx);
-        }
-        else
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "We are trying to push down a filter through a step for which we cannot update input stream");
-    }
+    child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
     if (update_parent_filter)
     {
@@ -404,7 +391,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.size() != 1)
         return 0;

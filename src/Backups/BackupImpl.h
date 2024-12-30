@@ -86,7 +86,8 @@ public:
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
-    void tryRemoveAllFiles() override;
+    bool setIsCorrupted() noexcept override;
+    bool tryRemoveAllFiles() noexcept override;
 
 private:
     void open();
@@ -146,13 +147,14 @@ private:
     int version;
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
-    std::optional<UUID> base_backup_uuid;
+    mutable std::optional<UUID> base_backup_uuid;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
+    bool corrupted = false;
     bool deduplicate_files = true;
     bool use_same_s3_credentials_for_base_backup = false;
     bool use_same_password_for_base_backup = false;

@@ -60,7 +60,7 @@ function check_refcnt_for_table()
     # Kill the query gracefully.
     kill -INT $PID
     wait $PID
-    grep -F Exception "$log_file" | grep -v -F QUERY_WAS_CANCELLED
+    grep -F Exception "$log_file" | grep -v -F QUERY_WAS_CANCELLED_BY_CLIENT
     rm -f "${log_file:?}"
 }
 

@@ -59,7 +59,7 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
         case TypeIndex::DateTime:
             return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt32 &>()}};
         case TypeIndex::UUID:
-            return bsoncxx::types::b_string{static_cast<String>(formatUUID(field.safeGet<UUID &>()))};
+            return bsoncxx::types::b_string{String{formatUUID(field.safeGet<UUID &>()).data()}};
         case TypeIndex::Tuple: {
             auto arr = array();
             for (const auto & elem : field.safeGet<Tuple &>())

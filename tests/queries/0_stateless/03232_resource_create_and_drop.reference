@@ -1,0 +1,5 @@
+03232_resource_1	['03232_disk_1']	['03232_disk_1']	CREATE RESOURCE `03232_resource_1` (WRITE DISK `03232_disk_1`, READ DISK `03232_disk_1`)
+03232_resource_1	['03232_disk_1']	['03232_disk_1']	CREATE RESOURCE `03232_resource_1` (WRITE DISK `03232_disk_1`, READ DISK `03232_disk_1`)
+03232_resource_2	['03232_disk_2']	[]	CREATE RESOURCE `03232_resource_2` (READ DISK `03232_disk_2`)
+03232_resource_3	[]	['03232_disk_2']	CREATE RESOURCE `03232_resource_3` (WRITE DISK `03232_disk_2`)
+03232_resource_1	['03232_disk_1']	['03232_disk_1']	CREATE RESOURCE `03232_resource_1` (WRITE DISK `03232_disk_1`, READ DISK `03232_disk_1`)

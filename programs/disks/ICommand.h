@@ -90,7 +90,7 @@ protected:
 
     String getTargetLocation(const String & path_from, DiskWithPath & disk_to, const String & path_to)
     {
-        if (!disk_to.getDisk()->isDirectory(path_to))
+        if (!disk_to.getDisk()->existsDirectory(path_to))
         {
             return path_to;
         }
@@ -128,7 +128,7 @@ DB::CommandPtr makeCommandSwitchDisk();
 DB::CommandPtr makeCommandGetCurrentDiskAndPath();
 DB::CommandPtr makeCommandHelp(const DisksApp & disks_app);
 DB::CommandPtr makeCommandTouch();
-#ifdef CLICKHOUSE_CLOUD
+#if CLICKHOUSE_CLOUD
 DB::CommandPtr makeCommandPackedIO();
 #endif
 }

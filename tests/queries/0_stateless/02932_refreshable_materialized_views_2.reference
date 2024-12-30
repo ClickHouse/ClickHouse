@@ -7,9 +7,9 @@
 <25: rename during refresh>	f	Running
 <27: cancelled>	f	Scheduled	cancelled
 <28: drop during refresh>	0	0
-CREATE MATERIALIZED VIEW default.g\nREFRESH EVERY 1 WEEK OFFSET 3 DAY 4 HOUR RANDOMIZE FOR 4 DAY 1 HOUR\n(\n    `x` Int64\n)\nENGINE = Memory\nAS SELECT 42 AS x
+CREATE MATERIALIZED VIEW default.g\nREFRESH EVERY 1 WEEK OFFSET 3 DAY 4 HOUR RANDOMIZE FOR 4 DAY 1 HOUR\n(\n    `x` Int64\n)\nENGINE = Memory\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT 42 AS x
 <29: randomize>	1	1
-CREATE MATERIALIZED VIEW default.h\nREFRESH EVERY 1 SECOND TO default.dest\n(\n    `x` Int64\n)\nAS SELECT x * 10 AS x\nFROM default.src
+CREATE MATERIALIZED VIEW default.h\nREFRESH EVERY 1 SECOND TO default.dest\n(\n    `x` Int64\n)\nDEFINER = default SQL SECURITY DEFINER\nAS SELECT x * 10 AS x\nFROM default.src
 <30: to existing table>	10
 <31: to existing table>	10
 <31: to existing table>	20

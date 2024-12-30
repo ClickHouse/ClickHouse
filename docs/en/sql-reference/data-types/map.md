@@ -64,7 +64,7 @@ Result:
 
 ## Converting Tuple to Map
 
-Values of type `Tuple()` can be casted to values of type `Map()` using function [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast):
 
 **Example**
 

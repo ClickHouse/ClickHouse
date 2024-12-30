@@ -85,7 +85,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-`mapFromArrays` also accepts arguments of type [Map](../data-types/map.md). These are casted to array of tuples during execution.
+`mapFromArrays` also accepts arguments of type [Map](../data-types/map.md). These are cast to array of tuples during execution.
 
 ```sql
 SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))

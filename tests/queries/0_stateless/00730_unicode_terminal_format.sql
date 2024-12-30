@@ -1,3 +1,4 @@
+SET output_format_pretty_max_column_name_width_cut_to = 0;
 DROP TABLE IF EXISTS unicode;
 
 CREATE TABLE unicode(c1 String, c2 String) ENGINE = Memory;

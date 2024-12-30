@@ -2,6 +2,7 @@
 
 #include <string>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/WriteBuffer.h>
 #include <base/StringRef.h>
 
 
@@ -9,9 +10,9 @@ namespace DB
 {
 
 /** Writes the data to a string.
-  * Note: before using the resulting string, destroy this object.
+  * Note: before using the resulting string, destroy this object or call finalize.
   */
-using WriteBufferFromString = WriteBufferFromVector<std::string>;
+using WriteBufferFromString = AutoFinalizedWriteBuffer<WriteBufferFromVectorImpl<std::string>>;
 
 
 namespace detail
@@ -25,12 +26,13 @@ namespace detail
 }
 
 /// Creates the string by itself and allows to get it.
-class WriteBufferFromOwnString : public detail::StringHolder, public WriteBufferFromString
+class WriteBufferFromOwnStringImpl : public detail::StringHolder, public WriteBufferFromVectorImpl<std::string>
 {
+    using Base = WriteBufferFromVectorImpl<std::string>;
 public:
-    WriteBufferFromOwnString() : WriteBufferFromString(value) {}
+    WriteBufferFromOwnStringImpl() : Base(value) {}
 
-    std::string_view stringView() const { return isFinished() ? std::string_view(value) : std::string_view(value.data(), pos - value.data()); }
+    std::string_view stringView() const { return isFinalized() ? std::string_view(value) : std::string_view(value.data(), pos - value.data()); }
 
     std::string & str()
     {
@@ -38,5 +40,7 @@ public:
         return value;
     }
 };
+
+using WriteBufferFromOwnString = AutoFinalizedWriteBuffer<WriteBufferFromOwnStringImpl>;
 
 }

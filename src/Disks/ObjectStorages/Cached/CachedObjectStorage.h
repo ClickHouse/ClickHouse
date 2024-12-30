@@ -45,10 +45,6 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void removeObject(const StoredObject & object) override;
-
-    void removeObjects(const StoredObjects & objects) override;
-
     void removeObjectIfExists(const StoredObject & object) override;
 
     void removeObjectsIfExist(const StoredObjects & objects) override;
@@ -122,7 +118,7 @@ public:
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const override
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
     {
         return object_storage->getAzureBlobStorageClient();
     }

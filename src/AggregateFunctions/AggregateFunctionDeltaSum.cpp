@@ -27,9 +27,9 @@ namespace
 template <typename T>
 struct AggregationFunctionDeltaSumData
 {
-    T sum = 0;
-    T last = 0;
-    T first = 0;
+    T sum{};
+    T last{};
+    T first{};
     bool seen = false;
 };
 

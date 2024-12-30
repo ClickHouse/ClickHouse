@@ -370,10 +370,10 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
         if constexpr (!throw_exception)
             return ReturnType(false);
 
-        if (null_representation.find('\t') != std::string::npos || null_representation.find('\n') != std::string::npos)
+        if (null_representation.contains('\t') || null_representation.contains('\n'))
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
                 "containing '\\t' or '\\n' may not work correctly for large input.");
-        if (settings.tsv.crlf_end_of_line_input && null_representation.find('\r') != std::string::npos)
+        if (settings.tsv.crlf_end_of_line_input && null_representation.contains('\r'))
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
                 "containing '\\r' may not work correctly for large input.");
 
@@ -747,8 +747,7 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
         if constexpr (!throw_exception)
             return ReturnType(false);
 
-        if (null_representation.find(settings.csv.delimiter) != std::string::npos || null_representation.find('\r') != std::string::npos
-            || null_representation.find('\n') != std::string::npos)
+        if (null_representation.contains(settings.csv.delimiter) || null_representation.contains('\r') || null_representation.contains('\n'))
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
                                        "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
 

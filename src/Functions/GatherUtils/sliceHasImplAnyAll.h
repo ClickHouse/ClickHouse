@@ -84,7 +84,8 @@ bool sliceHasImplAnyAllImplInt64(
 
     size_t j = 0;
     int has_mask = 1;
-    static constexpr Int64 full = -1, none = 0;
+    static constexpr Int64 full = -1;
+    static constexpr Int64 none = 0;
     const __m256i ones = _mm256_set1_epi64x(full);
     const __m256i zeros = _mm256_setzero_si256();
 
@@ -174,7 +175,8 @@ bool sliceHasImplAnyAllImplInt32(
 
     size_t j = 0;
     int has_mask = 1;
-    static constexpr int full = -1, none = 0;
+    static constexpr int full = -1;
+    static constexpr int none = 0;
 
     const __m256i ones = _mm256_set1_epi32(full);
     const __m256i zeros = _mm256_setzero_si256();
@@ -287,7 +289,8 @@ bool sliceHasImplAnyAllImplInt16(
 
     size_t j = 0;
     int has_mask = 1;
-    static constexpr int16_t full = -1, none = 0;
+    static constexpr int16_t full = -1;
+    static constexpr int16_t none = 0;
     const __m256i ones = _mm256_set1_epi16(full);
     const __m256i zeros = _mm256_setzero_si256();
     if (second.size > 15 && first.size > 15)
@@ -436,7 +439,8 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt64(
 
     size_t j = 0;
     int has_mask = 1;
-    static constexpr Int64 full = -1, none = 0;
+    static constexpr Int64 full = -1;
+    static constexpr Int64 none = 0;
     const __m128i zeros = _mm_setzero_si128();
     if (second.size > 1 && first.size > 1)
     {
@@ -512,7 +516,8 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt32(
 
     size_t j = 0;
     int has_mask = 1;
-    static constexpr int full = -1, none = 0;
+    static constexpr int full = -1;
+    static constexpr int none = 0;
     const __m128i zeros = _mm_setzero_si128();
     if (second.size > 3 && first.size > 3)
     {
@@ -597,7 +602,8 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt16(
 
     size_t j = 0;
     int has_mask = 1;
-    static constexpr int16_t full = -1, none = 0;
+    static constexpr int16_t full = -1;
+    static constexpr int16_t none = 0;
     const __m128i zeros = _mm_setzero_si128();
     if (second.size > 6 && first.size > 6)
     {
@@ -699,7 +705,8 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAllImplInt8(
 
     size_t j = 0;
     int has_mask = 1;
-    static constexpr int8_t full = -1, none = 0;
+    static constexpr int8_t full = -1;
+    static constexpr int8_t none = 0;
     const __m128i zeros = _mm_setzero_si128();
 
     if (second.size > 15 && first.size > 15)

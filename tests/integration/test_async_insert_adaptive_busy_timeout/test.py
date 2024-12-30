@@ -349,6 +349,8 @@ def test_change_queries_frequency():
     settings["async_insert_busy_timeout_min_ms"] = min_ms
     settings["async_insert_busy_timeout_max_ms"] = max_ms
 
+    # When we do sequential queries, the timeout converges the minimum
+
     _insert_queries_sequentially(
         table_name,
         settings,
@@ -360,6 +362,8 @@ def test_change_queries_frequency():
     select_log_query = f"SELECT countIf(timeout_milliseconds - {min_ms} < 25) FROM (SELECT timeout_milliseconds FROM system.asynchronous_insert_log ORDER BY event_time DESC LIMIT 10)"
     res = node.query(select_log_query)
     assert int(res) >= 5
+
+    # When we do many parallel queries, the timeout converges the maximum
 
     _insert_queries_in_parallel(
         table_name,

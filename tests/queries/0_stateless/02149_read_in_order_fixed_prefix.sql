@@ -2,6 +2,7 @@ SET max_threads=0;
 SET optimize_read_in_order=1;
 SET optimize_trivial_insert_select = 1;
 SET read_in_order_two_level_merge_threshold=100;
+SET read_in_order_use_virtual_row = 1;
 
 DROP TABLE IF EXISTS t_read_in_order;
 

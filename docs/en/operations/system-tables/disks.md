@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/disks
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # disks
+
+<SystemTableCloud/>
 
 Contains information about disks defined in the [server configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 

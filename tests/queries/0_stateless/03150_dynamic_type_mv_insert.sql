@@ -1,4 +1,5 @@
 SET allow_experimental_dynamic_type=1;
+SET allow_suspicious_types_in_order_by=1;
 
 DROP TABLE IF EXISTS null_table;
 CREATE TABLE null_table

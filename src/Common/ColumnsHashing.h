@@ -5,6 +5,7 @@
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <base/unaligned.h>
 
@@ -25,6 +26,19 @@ namespace ErrorCodes
 
 namespace ColumnsHashing
 {
+
+/// Hash a set of keys into a UInt128 value.
+static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
+    size_t i,
+    size_t keys_size,
+    const ColumnRawPtrs & key_columns)
+{
+    SipHash hash;
+    for (size_t j = 0; j < keys_size; ++j)
+        key_columns[j]->updateHashWithValue(i, hash);
+
+    return hash.get128();
+}
 
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.

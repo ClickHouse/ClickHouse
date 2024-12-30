@@ -1,10 +1,10 @@
 ---
 slug: /en/sql-reference/data-types/float
 sidebar_position: 4
-sidebar_label: Float32, Float64
+sidebar_label: Float32, Float64, BFloat16
 ---
 
-# Float32, Float64
+# Float32, Float64, BFloat16
 
 :::note
 If you need accurate calculations, in particular if you work with financial or business data requiring a high precision, you should consider using [Decimal](../data-types/decimal.md) instead. 
@@ -117,3 +117,11 @@ SELECT 0 / 0
 ```
 
 See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-reference/statements/select/order-by.md).
+
+## BFloat16
+
+`BFloat16` is a 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa.
+
+It is useful for machine learning and AI applications.
+
+ClickHouse supports conversions between `Float32` and `BFloat16`. Most of other operations are not supported.

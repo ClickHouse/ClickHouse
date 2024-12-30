@@ -395,7 +395,7 @@ def test_secure_connection_uri(started_cluster):
     simple_mongo_table.insert_many(data)
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:clickhouse@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true', 'test_secure_connection_uri')"
+        "CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:clickhouse@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true&authSource=admin', 'test_secure_connection_uri')"
     )
 
     assert node.query("SELECT COUNT() FROM test_secure_connection_uri") == "100\n"

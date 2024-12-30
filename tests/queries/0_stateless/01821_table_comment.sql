@@ -53,30 +53,13 @@ CREATE TABLE t6
 ENGINE = Executable('script.py', TabSeparated)
 COMMENT 'this is a Executable table';
 
-SET allow_experimental_window_view = 1;
--- New analyzer doesn't support WindowView tables
-SET allow_experimental_analyzer = 0;
-
-CREATE WINDOW VIEW t7
-(
-    `n` Int8
-)
-ENGINE MergeTree
-ORDER BY n
-AS SELECT 1
-GROUP BY tumble(now(), toIntervalDay('1'))
-COMMENT 'this is a WindowView table';
-
-SET allow_experimental_analyzer = 1;
-
 SELECT
     name,
     comment
 FROM system.tables
-WHERE name IN ('t1', 't2', 't3', 't4', 't5', 't6', 't7')
+WHERE name IN ('t1', 't2', 't3', 't4', 't5', 't6')
     AND database = currentDatabase() order by name;
 
 SHOW CREATE TABLE t1;
 
 DROP TABLE t1, t2, t3, t4, t5, t6;
-DROP VIEW t7;

@@ -47,6 +47,9 @@ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 # ...alternatively, you can use https://github.com/ClickHouse/ClickHouse.git as the repo URL.
 ```
 
+Apple uses a case-insensitive file system by default. While this usually does not affect compilation (especially scratch makes will work), it can confuse file operations like `git mv`.
+For serious development on macOS, make sure that the source code is stored on a case-sensitive disk volume, e.g. see [these instructions](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
+
 ## Build ClickHouse {#build-clickhouse}
 
 To build using Homebrew's vanilla Clang compiler (the only **recommended** way):

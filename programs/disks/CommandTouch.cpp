@@ -20,7 +20,7 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        const auto & disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsThrow<String>(options, "path");
 
         disk.getDisk()->createFile(disk.getRelativeFromRoot(path));

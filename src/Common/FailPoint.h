@@ -15,6 +15,7 @@
 
 #include <unordered_map>
 
+
 namespace DB
 {
 
@@ -27,6 +28,7 @@ namespace DB
 /// 3. in test file, we can use system failpoint enable/disable 'failpoint_name'
 
 class FailPointChannel;
+
 class FailPointInjection
 {
 public:

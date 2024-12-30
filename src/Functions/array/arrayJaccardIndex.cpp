@@ -113,7 +113,7 @@ public:
 
         ColumnWithTypeAndName intersect_column;
         intersect_column.type = intersect_array->getResultType();
-        intersect_column.column = intersect_array->execute(arguments, intersect_column.type, input_rows_count);
+        intersect_column.column = intersect_array->execute(arguments, intersect_column.type, input_rows_count, /* dry_run = */ false);
 
         const auto * intersect_column_type = checkAndGetDataType<DataTypeArray>(intersect_column.type.get());
         if (!intersect_column_type)

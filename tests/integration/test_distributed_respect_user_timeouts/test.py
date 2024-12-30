@@ -80,6 +80,7 @@ def _check_exception(exception, expected_tries=3):
     for i, line in enumerate(lines[3 : 3 + expected_tries]):
         expected_lines = (
             "Code: 209. " + EXCEPTION_NETWORK + EXCEPTION_TIMEOUT,
+            "Code: 209. " + EXCEPTION_NETWORK + "Timeout: connect timed out",
             EXCEPTION_CONNECT_TIMEOUT,
             EXCEPTION_TIMEOUT,
         )

@@ -159,6 +159,7 @@ website/package-lock.json
 /programs/server/store
 /programs/server/uuid
 /programs/server/coordination
+/programs/server/workload
 
 # temporary test files
 tests/queries/0_stateless/test_*

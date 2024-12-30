@@ -1,0 +1,11 @@
+<test>
+    <create_query>CREATE TABLE test_reorder_columns_in_merge (id_0 LowCardinality(String), id_1 LowCardinality(String), id_2 LowCardinality(String), id_3 LowCardinality(String), id UInt32) ENGINE = ReplacingMergeTree ORDER BY (id_0, id_1, id_2, id_3, id)</create_query>
+    
+    <fill_query>SYSTEM STOP MERGES test_reorder_columns_in_merge</fill_query>
+    <fill_query>INSERT INTO test_reorder_columns_in_merge SELECT '4c27c787-bc30-427e-b90c-a8029a6b079c', '4c27c787-bc30-427e-b90c-a8029a6b079c', '4c27c787-bc30-427e-b90c-a8029a6b079c', '4c27c787-bc30-427e-b90c-a8029a6b079c', number * 2 FROM numbers_mt(30_000_000) SETTINGS min_insert_block_size_rows = 100_000_000</fill_query>
+    <fill_query>INSERT INTO test_reorder_columns_in_merge SELECT '4c27c787-bc30-427e-b90c-a8029a6b079c', '4c27c787-bc30-427e-b90c-a8029a6b079c', '4c27c787-bc30-427e-b90c-a8029a6b079c', '4c27c787-bc30-427e-b90c-a8029a6b079c', 1 + (number * 2) FROM numbers_mt(30_000_000) SETTINGS min_insert_block_size_rows = 100_000_000</fill_query>
+
+    <query short="1">SELECT count() FROM test_reorder_columns_in_merge FINAL</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_reorder_columns_in_merge</drop_query>
+</test>

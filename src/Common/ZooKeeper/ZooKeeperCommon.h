@@ -570,6 +570,9 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
+
+    using RequestValidator = std::function<void(const ZooKeeperRequest &)>;
+    void readImpl(ReadBuffer & in, RequestValidator request_validator);
     std::string toStringImpl(bool short_format) const override;
 
     ZooKeeperResponsePtr makeResponse() const override;

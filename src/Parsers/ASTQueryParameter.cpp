@@ -7,9 +7,9 @@
 namespace DB
 {
 
-void ASTQueryParameter::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTQueryParameter::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr
+    ostr
         << (settings.hilite ? hilite_substitution : "") << '{'
         << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(name)
         << (settings.hilite ? hilite_substitution : "") << ':'

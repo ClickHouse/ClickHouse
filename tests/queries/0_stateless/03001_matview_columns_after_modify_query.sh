@@ -59,8 +59,10 @@ echo $'\nTest 3. MODIFY QUERY can even fix wrong columns.' # We need that becaus
 mv_metadata_path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.tables WHERE table='mv' AND database=currentDatabase()")
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE mv"
 
+data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
+
 #cat $mv_metadata_path
-sed -i -e 's/`timestamp` DateTime,/`timestamp` DateTime64(9),/g' -e 's/`c12` Nullable(String)/`c12` String/g' "$mv_metadata_path"
+sed -i -e 's/`timestamp` DateTime,/`timestamp` DateTime64(9),/g' -e 's/`c12` Nullable(String)/`c12` String/g' "$data_path$mv_metadata_path"
 #cat $mv_metadata_path
 
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE mv"

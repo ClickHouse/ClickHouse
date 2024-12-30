@@ -1,5 +1,6 @@
 #include <Databases/DatabasesOverlay.h>
 
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>

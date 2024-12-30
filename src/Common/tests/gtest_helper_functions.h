@@ -26,6 +26,7 @@ inline std::unique_ptr<Poco::File> getFileWithContents(const char *fileName, con
     {
         WriteBufferFromFile out(config_file->path());
         writeString(fileContents, out);
+        out.finalize();
     }
 
     return config_file;

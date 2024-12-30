@@ -14,18 +14,17 @@
 
 #include <Common/Exception.h>
 #include <Poco/String.h>
-#include <algorithm>
 #include <base/sort.h>
 
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int UNSUPPORTED_COLLATION_LOCALE;
-        extern const int COLLATION_COMPARISON_FAILED;
-        extern const int SUPPORT_IS_DISABLED;
-    }
+namespace ErrorCodes
+{
+    extern const int UNSUPPORTED_COLLATION_LOCALE;
+    extern const int COLLATION_COMPARISON_FAILED;
+    extern const int SUPPORT_IS_DISABLED;
+}
 }
 
 
@@ -91,12 +90,21 @@ Collator::Collator(const std::string & locale_)
     : locale(Poco::toLower(locale_))
 {
 #if USE_ICU
+    /// ICU locales can have settings and keywords, e.g. 'tr-u-kn-true-ka-shifted' is 'Turkish' with keywords.
+    /// See https://peter.eisentraut.org/blog/2023/05/16/overview-of-icu-collation-settings for details.
+    /// Remove these as AvailableCollationLocales only knows the the base names.
+    static const size_t MAX_BASE_NAME_LENGTH = 128;
+    char base_name_buf[MAX_BASE_NAME_LENGTH];
+    UErrorCode status = U_ZERO_ERROR;
+    size_t base_name_length = uloc_getBaseName(locale.c_str(), base_name_buf, MAX_BASE_NAME_LENGTH, &status);
+    if (U_FAILURE(status))
+        throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE, "Failed to get base name for locale: {}. Error: {}", locale, u_errorName(status));
+    std::string base_locale = {base_name_buf, base_name_length};
+
     /// We check it here, because ucol_open will fallback to default locale for
     /// almost all random names.
-    if (!AvailableCollationLocales::instance().isCollationSupported(locale))
+    if (!AvailableCollationLocales::instance().isCollationSupported(base_locale))
         throw DB::Exception(DB::ErrorCodes::UNSUPPORTED_COLLATION_LOCALE, "Unsupported collation locale: {}", locale);
-
-    UErrorCode status = U_ZERO_ERROR;
 
     collator = ucol_open(locale.c_str(), &status);
     if (U_FAILURE(status))
@@ -121,7 +129,8 @@ Collator::~Collator() // NOLINT
 int Collator::compare(const char * str1, size_t length1, const char * str2, size_t length2) const
 {
 #if USE_ICU
-    UCharIterator iter1, iter2;
+    UCharIterator iter1;
+    UCharIterator iter2;
     uiter_setUTF8(&iter1, str1, length1);
     uiter_setUTF8(&iter2, str2, length2);
 

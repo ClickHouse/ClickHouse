@@ -91,7 +91,8 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires even number of arguments, but {} given", getName(), arguments.size());
 
-        DataTypes keys, values;
+        DataTypes keys;
+        DataTypes values;
         for (size_t i = 0; i < arguments.size(); i += 2)
         {
             keys.emplace_back(arguments[i]);
@@ -133,13 +134,13 @@ public:
         const DataTypePtr & value_array_type = std::make_shared<DataTypeArray>(value_type);
 
         /// key_array = array(args[0], args[2]...)
-        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count);
+        ColumnPtr key_array = function_array->build(key_args)->execute(key_args, key_array_type, input_rows_count, /* dry_run = */ false);
         /// value_array = array(args[1], args[3]...)
-        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count);
+        ColumnPtr value_array = function_array->build(value_args)->execute(value_args, value_array_type, input_rows_count, /* dry_run = */ false);
 
         /// result = mapFromArrays(key_array, value_array)
         ColumnsWithTypeAndName map_args{{key_array, key_array_type, ""}, {value_array, value_array_type, ""}};
-        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count);
+        return function_map_from_arrays->build(map_args)->execute(map_args, result_type, input_rows_count, /* dry_run = */ false);
     }
 
 private:

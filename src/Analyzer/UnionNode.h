@@ -163,6 +163,9 @@ public:
         return children[queries_child_index];
     }
 
+    /// Returns true if union node is resolved, false otherwise
+    bool isResolved() const;
+
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
 

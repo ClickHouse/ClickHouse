@@ -259,7 +259,7 @@ private:
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (limit <= static_cast<UInt64>(pcg32_fast::max()))
-            return rng() % limit;
+            return rng() % limit;  /// NOLINT(clang-analyzer-core.DivideZero)
         return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }
 
@@ -276,6 +276,6 @@ private:
     {
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");
-        return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+        return NanLikeValueConstructor<ResultType, is_floating_point<ResultType>>::getValue();
     }
 };

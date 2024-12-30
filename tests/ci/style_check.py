@@ -142,6 +142,11 @@ def is_shell(file: Union[Path, str]) -> bool:
     return _check_mime(file, "text/x-shellscript") or str(file).endswith(".sh")
 
 
+def is_style_image(file: Union[Path, str]) -> bool:
+    """returns if the changed file is related to an updated docker image for style check"""
+    return str(file).startswith("docker/test/style/")
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("git_helper").setLevel(logging.DEBUG)
@@ -167,10 +172,15 @@ def main():
     if IS_CI and pr_info.number > 0:
         pr_info.fetch_changed_files()
         run_cpp_check = any(
-            not (is_python(file) or is_shell(file)) for file in pr_info.changed_files
+            is_style_image(file) or not (is_python(file) or is_shell(file))
+            for file in pr_info.changed_files
         )
-        run_shell_check = any(is_shell(file) for file in pr_info.changed_files)
-        run_python_check = any(is_python(file) for file in pr_info.changed_files)
+        run_shell_check = any(
+            is_style_image(file) or is_shell(file) for file in pr_info.changed_files
+        )
+        run_python_check = any(
+            is_style_image(file) or is_python(file) for file in pr_info.changed_files
+        )
 
     IMAGE_NAME = "clickhouse/style-test"
     image = pull_image(get_docker_image(IMAGE_NAME))

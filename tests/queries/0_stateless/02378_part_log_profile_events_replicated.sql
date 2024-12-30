@@ -1,5 +1,5 @@
-
--- Tags: long, replica, no-replicated-database, no-parallel
+-- Tags: long, replica, no-replicated-database, no-parallel, no-shared-merge-tree
+-- no-shared-merge-tree: depend on events for replicatied merge tree
 
 DROP TABLE IF EXISTS part_log_profile_events_r1 SYNC;
 DROP TABLE IF EXISTS part_log_profile_events_r2 SYNC;

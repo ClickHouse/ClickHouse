@@ -131,7 +131,8 @@ void StorageSystemPartsColumns::processNextStorage(
         for (const auto & column : part->getColumns())
         {
             ++column_position;
-            size_t src_index = 0, res_index = 0;
+            size_t src_index = 0;
+            size_t res_index = 0;
 
             if (columns_mask[src_index++])
             {
@@ -203,9 +204,9 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
             if (columns_mask[src_index++])
             {
-                /// The full path changes at clean up thread, so do not read it if parts can be deleted, avoid the race.
+                /// The full path changes at clean up thread, so do not read it if parts can be deleted or renamed, avoid the race.
                 if (part->isStoredOnDisk()
-                    && part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary)
+                    && part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary && part_state != State::PreActive)
                 {
                     columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
                 }

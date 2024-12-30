@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <Core/Names.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <base/types.h>
@@ -9,7 +10,6 @@
 #include <cppkafka/cppkafka.h>
 #include <cppkafka/topic_partition.h>
 #include <fmt/ostream.h>
-#include <Core/SettingsEnums.h>
 #include <librdkafka/rdkafka.h>
 #include <Common/SettingsChanges.h>
 

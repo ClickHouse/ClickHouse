@@ -17,6 +17,7 @@
 #include <deque>
 #include <atomic>
 
+
 namespace CurrentMetrics
 {
     extern const Metric ParallelFormattingOutputFormatThreads;
@@ -114,7 +115,7 @@ public:
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
 
-    void flush() override
+    void flushImpl() override
     {
         need_flush = true;
     }
@@ -130,12 +131,6 @@ public:
         finishAndWait();
     }
 
-    void onProgress(const Progress & value) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.progress.incrementPiecewiseAtomically(value);
-    }
-
     void writeSuffix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
@@ -144,13 +139,13 @@ public:
 
     String getContentType() const override
     {
-        WriteBufferFromOwnString buffer;
+        NullWriteBuffer buffer;
         return internal_formatter_creator(buffer)->getContentType();
     }
 
     bool supportsWritingException() const override
     {
-        WriteBufferFromOwnString buffer;
+        NullWriteBuffer buffer;
         return internal_formatter_creator(buffer)->supportsWritingException();
     }
 

@@ -228,7 +228,8 @@ namespace
                 const auto conf_pref = ssh_keys_config + "." + entry + ".";
                 if (entry.starts_with("ssh_key"))
                 {
-                    String type, base64_key;
+                    String type;
+                    String base64_key;
                     if (config.has(conf_pref + "type"))
                     {
                         type = config.getString(conf_pref + "type");

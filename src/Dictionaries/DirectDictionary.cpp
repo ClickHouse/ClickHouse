@@ -334,6 +334,7 @@ public:
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
     {
+        pipeline.setConcurrencyControl(false);
     }
 
     std::string getName() const override
@@ -378,7 +379,6 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
             ids.emplace_back(key);
 
         auto pipeline = source_ptr->loadIds(ids);
-
         if (use_async_executor)
             pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(std::move(pipeline)));
         else

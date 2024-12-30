@@ -41,6 +41,7 @@ public:
     virtual bool printExecutionException() const { return true; }
 
     virtual void onCompleted() = 0;
+    virtual void cancel() noexcept = 0;
     virtual StorageID getStorageID() const = 0;
     virtual String getQueryId() const = 0;
     virtual Priority getPriority() const = 0;
@@ -71,6 +72,8 @@ public:
         job_to_execute = {};
         return false;
     }
+
+    void cancel() noexcept override { /* no op */ }
 
     void onCompleted() override { job_result_callback(!res); }
     StorageID getStorageID() const override { return id; }

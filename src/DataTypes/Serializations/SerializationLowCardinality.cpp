@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 #include <Core/Field.h>
 
 namespace DB
@@ -54,7 +55,7 @@ void SerializationLowCardinality::enumerateStreams(
         .withSerializationInfo(data.serialization_info);
 
     settings.path.back().data = dict_data;
-    dict_inner_serialization->enumerateStreams(settings, callback, dict_data);
+    callback(settings.path);
 
     settings.path.back() = Substream::DictionaryIndexes;
     settings.path.back().data = data;

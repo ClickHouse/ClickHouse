@@ -51,6 +51,10 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 A table object with the same columns as the original MySQL table.
 
 :::note
+Some data types of MySQL can be mapped to different ClickHouse types - this is addressed by query-level setting [mysql_datatypes_support_level](/docs/en/operations/settings/settings.md#mysql_datatypes_support_level)
+:::
+
+:::note
 In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 :::
 
@@ -141,3 +145,7 @@ WHERE id > (SELECT max(id) from mysql_copy);
 
 - [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
 - [Using MySQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
+- [mysql_datatypes_support_level](/docs/en/operations/settings/settings.md#mysql_datatypes_support_level)
+- [mysql_map_fixed_string_to_text_in_show_columns](/docs/en/operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
+- [mysql_map_string_to_text_in_show_columns](/docs/en/operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)
+- [mysql_max_rows_to_insert](/docs/en/operations/settings/settings.md#mysql_max_rows_to_insert)

@@ -9,7 +9,7 @@ sidebar_label: Prometheus protocols
 ## Exposing metrics {#expose}
 
 :::note
-ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+If you are using ClickHouse Cloud, you can expose metrics to Prometheus using the [Prometheus Integration](/en/integrations/prometheus).
 :::
 
 ClickHouse can expose its own metrics for scraping from Prometheus:

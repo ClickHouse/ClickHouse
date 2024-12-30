@@ -5,8 +5,8 @@
 #include <Common/checkStackSize.h>
 #include <Common/OptimizedRegularExpression.h>
 
-#define MIN_LENGTH_FOR_STRSTR 3
-#define MAX_SUBPATTERNS 1024
+constexpr size_t MIN_LENGTH_FOR_STRSTR = 3;
+constexpr size_t MAX_SUBPATTERNS = 1024;
 
 
 namespace DB

@@ -2,7 +2,7 @@
 #include <iostream>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
-#include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
 #include <Common/formatReadable.h>
 
 

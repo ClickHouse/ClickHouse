@@ -62,13 +62,13 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
 WHERE
   (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%';
+  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%';
 
 
 -- FIXME some of the following messages are not informative and it has to be fixed

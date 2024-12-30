@@ -62,6 +62,7 @@ public:
     /// Avoid loading nested table by returning nullptr/false for all table functions.
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool storesDataOnDisk() const override { return false; }
+    bool supportsReplication() const override { return false; }
 
     void startup() override { }
     void shutdown(bool is_drop) override

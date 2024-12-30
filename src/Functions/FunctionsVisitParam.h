@@ -57,7 +57,7 @@ struct ExtractNumericType
         ResultType x = 0;
         if (!in.eof())
         {
-            if constexpr (std::is_floating_point_v<NumericType>)
+            if constexpr (is_floating_point<NumericType>)
                 tryReadFloatText(x, in);
             else
                 tryReadIntText(x, in);

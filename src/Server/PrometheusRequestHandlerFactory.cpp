@@ -1,5 +1,6 @@
 #include <Server/PrometheusRequestHandlerFactory.h>
 
+#include <Core/Types_fwd.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandler.h>

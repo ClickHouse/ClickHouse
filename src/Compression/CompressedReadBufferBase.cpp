@@ -317,18 +317,6 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
 }
 
-void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
-{
-    if (codec)
-        codec->flushAsynchronousDecompressRequests();
-}
-
-void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode) const
-{
-    if (codec)
-        codec->setDecompressMode(mode);
-}
-
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
 CompressedReadBufferBase::CompressedReadBufferBase(ReadBuffer * in, bool allow_different_codecs_, bool external_data_)
     : compressed_in(in), own_compressed_buffer(0), allow_different_codecs(allow_different_codecs_), external_data(external_data_)

@@ -105,4 +105,9 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
     return result;
 }
 
+void ZooKeeperNodeCache::sync()
+{
+    get_zookeeper()->sync("/");
+}
+
 }

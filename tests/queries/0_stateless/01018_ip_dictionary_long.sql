@@ -35,7 +35,7 @@ CREATE DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict_ipv4_trie
   cca2 String
 )
 PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db currentDatabase() table 'table_ipv4_trie'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db currentDatabase() table 'table_ipv4_trie'))
 LAYOUT(IP_TRIE())
 LIFETIME(MIN 10 MAX 100)
 SETTINGS(dictionary_use_async_executor=1, max_threads=8)
@@ -139,7 +139,7 @@ CREATE DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict_ipv4_trie
   val UInt32
 )
 PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db currentDatabase() table 'table_ipv4_trie'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db currentDatabase() table 'table_ipv4_trie'))
 LAYOUT(IP_TRIE())
 LIFETIME(MIN 10 MAX 100);
 
@@ -209,7 +209,7 @@ INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.table_ipv4_trie VALUES ('127.255.25
 
 CREATE DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict_ipv4_trie ( prefix String, val UInt32 )
 PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db currentDatabase() table 'table_ipv4_trie'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db currentDatabase() table 'table_ipv4_trie'))
 LAYOUT(IP_TRIE(ACCESS_TO_KEY_FROM_ATTRIBUTES 1))
 LIFETIME(MIN 10 MAX 100);
 
@@ -287,7 +287,7 @@ CREATE DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict_ip_trie
   val String
 )
 PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db currentDatabase() table 'table_ip_trie'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db currentDatabase() table 'table_ip_trie'))
 LAYOUT(IP_TRIE(ACCESS_TO_KEY_FROM_ATTRIBUTES 1))
 LIFETIME(MIN 10 MAX 100);
 
@@ -493,7 +493,7 @@ CREATE DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict_ip_trie
   val String
 )
 PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db currentDatabase() table 'table_ip_trie'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db currentDatabase() table 'table_ip_trie'))
 LAYOUT(IP_TRIE())
 LIFETIME(MIN 10 MAX 100);
 

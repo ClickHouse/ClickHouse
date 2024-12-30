@@ -44,7 +44,7 @@ constexpr uint64_t counter_high_bits_mask = rand_a_bits_mask;
 uint64_t getTimestampMillisecond()
 {
     timespec tp;
-    clock_gettime(CLOCK_REALTIME, &tp);
+    clock_gettime(CLOCK_REALTIME, &tp); /// NOLINT(cert-err33-c)
     const uint64_t sec = tp.tv_sec;
     return sec * 1000 + tp.tv_nsec / 1000000;
 }

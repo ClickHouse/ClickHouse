@@ -16,7 +16,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#define AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE = 0xFFFFFF;
 
 
 namespace DB

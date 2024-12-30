@@ -12,7 +12,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 
-#define THREAD_NAME_SIZE 16
+constexpr size_t THREAD_NAME_SIZE = 16;
 
 
 namespace DB

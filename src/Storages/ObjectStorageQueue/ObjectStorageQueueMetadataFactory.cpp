@@ -16,7 +16,8 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
 
 ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFactory::getOrCreate(
     const std::string & zookeeper_path,
-    ObjectStorageQueueMetadataPtr metadata)
+    ObjectStorageQueueMetadataPtr metadata,
+    const StorageID & storage_id)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -30,13 +31,14 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         auto & metadata_from_keeper = it->second.metadata->getTableMetadata();
 
         metadata_from_table.checkEquals(metadata_from_keeper);
-
-        it->second.ref_count += 1;
     }
+
+    it->second.metadata->registerIfNot(storage_id);
+    it->second.ref_count += 1;
     return it->second.metadata;
 }
 
-void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path)
+void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_path, const StorageID & storage_id)
 {
     std::lock_guard lock(mutex);
     auto it = metadata_by_path.find(zookeeper_path);
@@ -44,28 +46,52 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
     if (it == metadata_by_path.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", zookeeper_path);
 
-    chassert(it->second.ref_count > 0);
-    if (--it->second.ref_count == 0)
+    it->second.ref_count -= 1;
+
+    size_t registry_size;
+    try
+    {
+        registry_size = it->second.metadata->unregister(storage_id);
+        LOG_TRACE(log, "Remaining registry size: {}", registry_size);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (!Coordination::isHardwareError(e.code))
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        /// Any non-zero value would do.
+        registry_size = 1;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// Any non-zero value would do.
+        registry_size = 1;
+    }
+
+    if (registry_size == 0)
     {
         try
         {
             auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-            zk_client->tryRemove(it->first);
+            zk_client->removeRecursive(it->first);
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            tryLogCurrentException(log);
         }
-
-        metadata_by_path.erase(it);
     }
+
+    if (!it->second.ref_count)
+        metadata_by_path.erase(it);
 }
 
 std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> ObjectStorageQueueMetadataFactory::getAll()
 {
     std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> result;
-    for (const auto & [zk_path, metadata_and_ref_count] : metadata_by_path)
-        result.emplace(zk_path, metadata_and_ref_count.metadata);
+    for (const auto & [zk_path, metadata] : metadata_by_path)
+        result.emplace(zk_path, metadata.metadata);
     return result;
 }
 

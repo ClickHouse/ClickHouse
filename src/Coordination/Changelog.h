@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <future>
+#include <vector>
 
 namespace nuraft
 {

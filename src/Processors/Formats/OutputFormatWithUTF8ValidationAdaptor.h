@@ -29,11 +29,11 @@ public:
             validating_ostr = std::make_unique<WriteBufferValidUTF8>(*Base::getWriteBufferPtr());
     }
 
-    void flush() override
+    void flushImpl() override
     {
         if (validating_ostr)
             validating_ostr->next();
-        Base::flush();
+        Base::flushImpl();
     }
 
     void finalizeBuffers() override
@@ -68,4 +68,3 @@ using OutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdap
 using RowOutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdaptorBase<IRowOutputFormat>;
 
 }
-

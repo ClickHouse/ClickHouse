@@ -44,6 +44,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool disable_insertion_and_mutation;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -94,7 +99,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     BlockIO res;
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr);
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
@@ -200,7 +205,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
     {
-        if (getContext()->getServerSettings().disable_insertion_and_mutation)
+        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
     }
 
@@ -462,11 +467,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
                     required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
                     break;
                 case DataDestinationType::TABLE:
-                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
                     required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
                     break;
                 case DataDestinationType::SHARD:
-                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
                     required_access.emplace_back(AccessType::MOVE_PARTITION_BETWEEN_SHARDS);
                     break;
                 case DataDestinationType::DELETE:

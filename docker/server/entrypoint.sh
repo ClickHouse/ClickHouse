@@ -4,17 +4,28 @@ set -eo pipefail
 shopt -s nullglob
 
 DO_CHOWN=1
-if [ "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]; then
+if [[ "${CLICKHOUSE_RUN_AS_ROOT:=0}" = "1" || "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = "1" ]]; then
     DO_CHOWN=0
 fi
 
-CLICKHOUSE_UID="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
-CLICKHOUSE_GID="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
+# CLICKHOUSE_UID and CLICKHOUSE_GID are kept for backward compatibility, but deprecated
+# One must use either "docker run --user" or CLICKHOUSE_RUN_AS_ROOT=1 to run the process as
+# FIXME: Remove ALL CLICKHOUSE_UID CLICKHOUSE_GID before 25.3
+if [[ "${CLICKHOUSE_UID:-}" || "${CLICKHOUSE_GID:-}" ]]; then
+    echo 'WARNING: Support for CLICKHOUSE_UID/CLICKHOUSE_GID will be removed in a couple of releases.' >&2
+    echo 'WARNING: Either use a proper "docker run --user=xxx:xxxx" argument instead of CLICKHOUSE_UID/CLICKHOUSE_GID' >&2
+    echo 'WARNING: or set "CLICKHOUSE_RUN_AS_ROOT=1" ENV to run the clickhouse-server as root:root' >&2
+fi
 
-# support --user
-if [ "$(id -u)" = "0" ]; then
-    USER=$CLICKHOUSE_UID
-    GROUP=$CLICKHOUSE_GID
+# support `docker run --user=xxx:xxxx`
+if [[ "$(id -u)" = "0" ]]; then
+    if [[ "$CLICKHOUSE_RUN_AS_ROOT" = 1 ]]; then
+        USER=0
+        GROUP=0
+    else
+        USER="${CLICKHOUSE_UID:-"$(id -u clickhouse)"}"
+        GROUP="${CLICKHOUSE_GID:-"$(id -g clickhouse)"}"
+    fi
 else
     USER="$(id -u)"
     GROUP="$(id -g)"
@@ -55,14 +66,14 @@ function create_directory_and_do_chown() {
     [ -z "$dir" ] && return
     # ensure directories exist
     if [ "$DO_CHOWN" = "1" ]; then
-        mkdir="mkdir"
+        mkdir=( mkdir )
     else
         # if DO_CHOWN=0 it means that the system does not map root user to "admin" permissions
         # it mainly happens on NFS mounts where root==nobody for security reasons
         # thus mkdir MUST run with user id/gid and not from nobody that has zero permissions
-        mkdir="/usr/bin/clickhouse su "${USER}:${GROUP}" mkdir"
+        mkdir=( clickhouse su "${USER}:${GROUP}" mkdir )
     fi
-    if ! $mkdir -p "$dir"; then
+    if ! "${mkdir[@]}" -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"
         exit 1
     fi
@@ -143,7 +154,7 @@ if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
         fi
 
         # Listen only on localhost until the initialization is done
-        /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
+        clickhouse su "${USER}:${GROUP}" clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
         pid="$!"
 
         # check if clickhouse is ready to accept connections
@@ -151,7 +162,7 @@ if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
         tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
         while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
             if [ "$tries" -le "0" ]; then
-                echo >&2 'ClickHouse init process failed.'
+                echo >&2 'ClickHouse init process timeout.'
                 exit 1
             fi
             tries=$(( tries-1 ))
@@ -203,18 +214,8 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
 
-    # An option for easy restarting and replacing clickhouse-server in a container, especially in Kubernetes.
-    # For example, you can replace the clickhouse-server binary to another and restart it while keeping the container running.
-    if [[ "${CLICKHOUSE_DOCKER_RESTART_ON_EXIT:-0}" -eq "1" ]]; then
-        while true; do
-            # This runs the server as a child process of the shell script:
-            /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@" ||:
-            echo >&2 'ClickHouse Server exited, and the environment variable CLICKHOUSE_DOCKER_RESTART_ON_EXIT is set to 1. Restarting the server.'
-        done
-    else
-        # This replaces the shell script with the server:
-        exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
-    fi
+    # This replaces the shell script with the server:
+    exec clickhouse su "${USER}:${GROUP}" clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

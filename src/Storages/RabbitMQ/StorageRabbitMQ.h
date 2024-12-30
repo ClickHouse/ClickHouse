@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
-#include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
@@ -16,7 +16,7 @@
 
 namespace DB
 {
-
+struct RabbitMQSettings;
 using RabbitMQConsumerPtr = std::shared_ptr<RabbitMQConsumer>;
 
 class StorageRabbitMQ final: public IStorage, WithContext
@@ -29,6 +29,8 @@ public:
             const String & comment,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
             LoadingStrictnessLevel mode);
+
+    ~StorageRabbitMQ() override;
 
     std::string getName() const override { return "RabbitMQ"; }
 

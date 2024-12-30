@@ -75,6 +75,7 @@ public:
 
         void cancel();
         void finalize();
+        void prewarmCaches();
     };
 
     /** All rows must correspond to same partition.

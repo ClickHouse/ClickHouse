@@ -63,6 +63,7 @@ extern template class DataTypeNumber<Int8>;
 extern template class DataTypeNumber<Int16>;
 extern template class DataTypeNumber<Int32>;
 extern template class DataTypeNumber<Int64>;
+extern template class DataTypeNumber<BFloat16>;
 extern template class DataTypeNumber<Float32>;
 extern template class DataTypeNumber<Float64>;
 
@@ -79,6 +80,7 @@ using DataTypeInt8 = DataTypeNumber<Int8>;
 using DataTypeInt16 = DataTypeNumber<Int16>;
 using DataTypeInt32 = DataTypeNumber<Int32>;
 using DataTypeInt64 = DataTypeNumber<Int64>;
+using DataTypeBFloat16 = DataTypeNumber<BFloat16>;
 using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
 

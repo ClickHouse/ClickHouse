@@ -91,37 +91,37 @@ void ASTSystemQuery::setTable(const String & name)
     }
 }
 
-void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
+        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
                       << (settings.hilite ? hilite_none : "");
-        return settings.ostr;
+        return ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
-        return settings.ostr;
+        ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
+        return ostr;
     };
 
     auto print_database_table = [&]() -> WriteBuffer &
     {
         if (database)
         {
-            database->formatImpl(settings, state, frame);
-            settings.ostr << '.';
+            database->format(ostr, settings, state, frame);
+            ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(settings, state, frame);
-        return settings.ostr;
+        table->format(ostr, settings, state, frame);
+        return ostr;
     };
 
     auto print_drop_replica = [&]
     {
-        settings.ostr << " " << quoteString(replica);
+        ostr << " " << quoteString(replica);
         if (!shard.empty())
             print_keyword(" FROM SHARD ") << quoteString(shard);
 
@@ -151,7 +151,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
     print_keyword("SYSTEM") << " ";
     print_keyword(typeToString(type));
     if (!cluster.empty())
-        formatOnCluster(settings);
+        formatOnCluster(ostr, settings);
 
     switch (type)
     {
@@ -173,11 +173,12 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::START_PULLING_REPLICATION_LOG:
         case Type::STOP_CLEANUP:
         case Type::START_CLEANUP:
+        case Type::LOAD_PRIMARY_KEY:
         case Type::UNLOAD_PRIMARY_KEY:
         {
             if (table)
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_database_table();
             }
             else if (!volume.empty())
@@ -191,40 +192,42 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
         case Type::FLUSH_DISTRIBUTED:
+        case Type::PREWARM_MARK_CACHE:
+        case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             if (table)
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_database_table();
             }
 
             if (sync_replica_mode != SyncReplicaMode::DEFAULT)
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_keyword(magic_enum::enum_name(sync_replica_mode));
 
                 // If the mode is LIGHTWEIGHT and specific source replicas are specified
                 if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
                 {
-                    settings.ostr << ' ';
+                    ostr << ' ';
                     print_keyword("FROM");
-                    settings.ostr << ' ';
+                    ostr << ' ';
 
                     bool first = true;
                     for (const auto & src : src_replicas)
                     {
                         if (!first)
-                            settings.ostr << ", ";
+                            ostr << ", ";
                         first = false;
-                        settings.ostr << quoteString(src);
+                        ostr << quoteString(src);
                     }
                 }
             }
 
             if (query_settings)
             {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
-                query_settings->formatImpl(settings, state, frame);
+                ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                query_settings->format(ostr, settings, state, frame);
             }
 
             break;
@@ -237,22 +240,22 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         {
             if (table)
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_database_table();
             }
             else if (!target_model.empty())
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_identifier(target_model);
             }
             else if (!target_function.empty())
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_identifier(target_function);
             }
             else if (!disk.empty())
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_identifier(disk);
             }
 
@@ -260,7 +263,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         }
         case Type::SYNC_DATABASE_REPLICA:
         {
-            settings.ostr << ' ';
+            ostr << ' ';
             print_identifier(database->as<ASTIdentifier>()->name());
             break;
         }
@@ -289,7 +292,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         {
             if (!filesystem_cache_name.empty())
             {
-                settings.ostr << ' ' << quoteString(filesystem_cache_name);
+                ostr << ' ' << quoteString(filesystem_cache_name);
                 if (!key_to_drop.empty())
                 {
                     print_keyword(" KEY ");
@@ -297,7 +300,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
                     if (offset_to_drop.has_value())
                     {
                         print_keyword(" OFFSET ");
-                        settings.ostr << offset_to_drop.value();
+                        ostr << offset_to_drop.value();
                     }
                 }
             }
@@ -315,17 +318,17 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::UNFREEZE:
         {
             print_keyword(" WITH NAME ");
-            settings.ostr << quoteString(backup_name);
+            ostr << quoteString(backup_name);
             break;
         }
         case Type::START_LISTEN:
         case Type::STOP_LISTEN:
         {
-            settings.ostr << ' ';
+            ostr << ' ';
             print_keyword(ServerType::serverTypeToString(server_type.type));
 
             if (server_type.type == ServerType::Type::CUSTOM)
-                settings.ostr << ' ' << quoteString(server_type.custom_name);
+                ostr << ' ' << quoteString(server_type.custom_name);
 
             bool comma = false;
 
@@ -339,11 +342,11 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
                         continue;
 
                     if (comma)
-                        settings.ostr << ',';
+                        ostr << ',';
                     else
                         comma = true;
 
-                    settings.ostr << ' ';
+                    ostr << ' ';
                     print_keyword(ServerType::serverTypeToString(cur_type));
                 }
 
@@ -352,13 +355,13 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
                     for (const auto & cur_name : server_type.exclude_custom_names)
                     {
                         if (comma)
-                            settings.ostr << ',';
+                            ostr << ',';
                         else
                             comma = true;
 
-                        settings.ostr << ' ';
+                        ostr << ' ';
                         print_keyword(ServerType::serverTypeToString(ServerType::Type::CUSTOM));
-                        settings.ostr << " " << quoteString(cur_name);
+                        ostr << " " << quoteString(cur_name);
                     }
                 }
             }
@@ -368,7 +371,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::DISABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         {
-            settings.ostr << ' ';
+            ostr << ' ';
             print_identifier(fail_point_name);
             break;
         }
@@ -378,25 +381,25 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {
-            settings.ostr << ' ';
+            ostr << ' ';
             print_database_table();
             break;
         }
         case Type::TEST_VIEW:
         {
-            settings.ostr << ' ';
+            ostr << ' ';
             print_database_table();
 
             if (!fake_time_for_view)
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_keyword("UNSET FAKE TIME");
             }
             else
             {
-                settings.ostr << ' ';
+                ostr << ' ';
                 print_keyword("SET FAKE TIME");
-                settings.ostr << " '" << LocalDateTime(*fake_time_for_view) << "'";
+                ostr << " '" << LocalDateTime(*fake_time_for_view) << "'";
             }
             break;
         }
@@ -407,6 +410,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & s
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_MARK_CACHE:
+        case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:

@@ -36,6 +36,11 @@ public:
                 const auto & array_join_node = node->as<const ArrayJoinNode &>();
                 return child.get() == array_join_node.getTableExpression().get();
             }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                /// All children of CROSS_JOIN are table expressions.
+                return true;
+            }
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = node->as<const JoinNode &>();

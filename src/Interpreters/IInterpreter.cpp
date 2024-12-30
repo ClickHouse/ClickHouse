@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Common/quoteString.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/Context.h>

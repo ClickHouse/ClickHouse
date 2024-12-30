@@ -3,7 +3,6 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Common/SipHash.h>
 
 /** Intended for implementation of "rollup" - aggregation (rounding) of older data
   *  for a table with Graphite data (Graphite is the system for time series monitoring).
@@ -90,6 +89,9 @@
   *     </default>
   * </graphite_rollup>
   */
+
+class SipHash;
+
 namespace DB::Graphite
 {
 
@@ -145,21 +147,7 @@ struct Params
     Graphite::Patterns patterns;
     Graphite::Patterns patterns_plain;
     Graphite::Patterns patterns_tagged;
-    void updateHash(SipHash & hash) const
-    {
-        hash.update(path_column_name);
-        hash.update(time_column_name);
-        hash.update(value_column_name);
-        hash.update(value_column_name);
-        hash.update(version_column_name);
-        hash.update(patterns_typed);
-        for (const auto & p : patterns)
-            p.updateHash(hash);
-        for (const auto & p : patterns_plain)
-            p.updateHash(hash);
-        for (const auto & p : patterns_tagged)
-            p.updateHash(hash);
-    }
+    void updateHash(SipHash & hash) const;
 };
 
 using RollupRule = std::pair<const RetentionPattern *, const AggregationPattern *>;

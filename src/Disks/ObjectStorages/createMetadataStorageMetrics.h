@@ -24,8 +24,14 @@ extern const Event DiskPlainRewritableS3DirectoryRemoved;
 namespace CurrentMetrics
 {
 extern const Metric DiskPlainRewritableAzureDirectoryMapSize;
+extern const Metric DiskPlainRewritableAzureUniqueFileNamesCount;
+extern const Metric DiskPlainRewritableAzureFileCount;
 extern const Metric DiskPlainRewritableLocalDirectoryMapSize;
+extern const Metric DiskPlainRewritableLocalUniqueFileNamesCount;
+extern const Metric DiskPlainRewritableLocalFileCount;
 extern const Metric DiskPlainRewritableS3DirectoryMapSize;
+extern const Metric DiskPlainRewritableS3UniqueFileNamesCount;
+extern const Metric DiskPlainRewritableS3FileCount;
 }
 
 namespace DB
@@ -38,7 +44,9 @@ inline MetadataStorageMetrics MetadataStorageMetrics::create<S3ObjectStorage, Me
     return MetadataStorageMetrics{
         .directory_created = ProfileEvents::DiskPlainRewritableS3DirectoryCreated,
         .directory_removed = ProfileEvents::DiskPlainRewritableS3DirectoryRemoved,
-        .directory_map_size = CurrentMetrics::DiskPlainRewritableS3DirectoryMapSize};
+        .directory_map_size = CurrentMetrics::DiskPlainRewritableS3DirectoryMapSize,
+        .unique_filenames_count = CurrentMetrics::DiskPlainRewritableS3UniqueFileNamesCount,
+        .file_count = CurrentMetrics::DiskPlainRewritableS3FileCount};
 }
 #endif
 
@@ -49,7 +57,9 @@ inline MetadataStorageMetrics MetadataStorageMetrics::create<AzureObjectStorage,
     return MetadataStorageMetrics{
         .directory_created = ProfileEvents::DiskPlainRewritableAzureDirectoryCreated,
         .directory_removed = ProfileEvents::DiskPlainRewritableAzureDirectoryRemoved,
-        .directory_map_size = CurrentMetrics::DiskPlainRewritableAzureDirectoryMapSize};
+        .directory_map_size = CurrentMetrics::DiskPlainRewritableAzureDirectoryMapSize,
+        .unique_filenames_count = CurrentMetrics::DiskPlainRewritableAzureUniqueFileNamesCount,
+        .file_count = CurrentMetrics::DiskPlainRewritableAzureFileCount};
 }
 #endif
 
@@ -59,7 +69,9 @@ inline MetadataStorageMetrics MetadataStorageMetrics::create<LocalObjectStorage,
     return MetadataStorageMetrics{
         .directory_created = ProfileEvents::DiskPlainRewritableLocalDirectoryCreated,
         .directory_removed = ProfileEvents::DiskPlainRewritableLocalDirectoryRemoved,
-        .directory_map_size = CurrentMetrics::DiskPlainRewritableLocalDirectoryMapSize};
+        .directory_map_size = CurrentMetrics::DiskPlainRewritableLocalDirectoryMapSize,
+        .unique_filenames_count = CurrentMetrics::DiskPlainRewritableLocalUniqueFileNamesCount,
+        .file_count = CurrentMetrics::DiskPlainRewritableLocalFileCount};
 }
 
 }

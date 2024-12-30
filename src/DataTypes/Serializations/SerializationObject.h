@@ -31,6 +31,8 @@ public:
             ///   - ObjectDynamicPath stream for each column in dynamic paths
             ///   - ObjectSharedData stream shared data column.
             V1 = 0,
+            /// V2 serialization: the same as V1 but without max_dynamic_paths parameter in ObjectStructure stream.
+            V2 = 2,
             /// String serialization:
             ///  - ObjectData stream with single String column containing serialized JSON.
             STRING = 1,
@@ -98,7 +100,6 @@ private:
     struct DeserializeBinaryBulkStateObjectStructure : public ISerialization::DeserializeBinaryBulkState
     {
         ObjectSerializationVersion serialization_version;
-        size_t max_dynamic_paths;
         std::vector<String> sorted_dynamic_paths;
         std::unordered_set<String> dynamic_paths;
         /// Paths statistics. Map (dynamic path) -> (number of non-null values in this path).
@@ -110,9 +111,6 @@ private:
     static DeserializeBinaryBulkStatePtr deserializeObjectStructureStatePrefix(
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
-
-    /// Shared data has type Array(Tuple(String, String)).
-    static const DataTypePtr & getTypeOfSharedData();
 
     struct TypedPathSubcolumnCreator : public ISubcolumnCreator
     {

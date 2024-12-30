@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <Common/MemoryTracker.h>
@@ -14,15 +15,13 @@
 
 using namespace DB;
 
-
 ContextMutablePtr context;
-
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {
     if (context)
         return true;
 
-    SharedContextHolder shared_context = Context::createShared();
+    static SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 

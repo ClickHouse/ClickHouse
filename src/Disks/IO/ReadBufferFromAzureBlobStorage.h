@@ -8,7 +8,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
-#include <azure/storage/blobs.hpp>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
 namespace DB
 {
@@ -16,9 +16,11 @@ namespace DB
 class ReadBufferFromAzureBlobStorage : public ReadBufferFromFileBase
 {
 public:
+    using ContainerClientPtr = std::shared_ptr<const AzureBlobStorage::ContainerClient>;
+    using BlobClientPtr = std::unique_ptr<const AzureBlobStorage::BlobClient>;
 
     ReadBufferFromAzureBlobStorage(
-        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+        ContainerClientPtr blob_container_client_,
         const String & path_,
         const ReadSettings & read_settings_,
         size_t max_single_read_retries_,
@@ -53,8 +55,8 @@ private:
     void initialize();
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
-    std::unique_ptr<Azure::Storage::Blobs::BlobClient> blob_client;
+    ContainerClientPtr blob_container_client;
+    BlobClientPtr blob_client;
 
     const String path;
     size_t max_single_read_retries;

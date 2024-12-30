@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 import os
+import sys
 from ast import literal_eval
 from dataclasses import asdict, dataclass
 from html import escape
@@ -22,6 +23,7 @@ from typing import (
 
 from build_download_helper import APIException, get_gh_api
 from ci_config import CI
+from ci_utils import Shell
 from env_helper import (
     GITHUB_JOB,
     GITHUB_REPOSITORY,
@@ -414,6 +416,47 @@ class JobReport:
     dummy: bool = False
     exit_code: int = -1
 
+    def to_praktika_result(self, job_name):
+        # ugly WA to exclude ci.py file form import
+        Shell.check("mkdir -p /tmp/praktika/")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        sys.path.append(current_dir + "/../../ci")
+        sys.path.append(current_dir + "/../../")
+        if current_dir in sys.path:
+            sys.path.remove(current_dir)
+        from praktika.result import (  # pylint: disable=import-error,import-outside-toplevel
+            Result,
+        )
+
+        if self.start_time:
+            dt = datetime.datetime.strptime(self.start_time, "%Y-%m-%d %H:%M:%S")
+            timestamp = dt.timestamp()
+        else:
+            timestamp = None
+
+        sub_results = []
+        for r in self.test_results:
+            sub_results.append(
+                Result(
+                    name=r.name,
+                    status=r.status,
+                    info=r.raw_logs,
+                    links=list(r.log_urls) if r.log_urls else [],
+                    duration=r.time,
+                )
+            )
+
+        return Result(
+            name=job_name,
+            status=self.status,
+            start_time=timestamp,
+            duration=self.duration,
+            results=sub_results,
+            files=(
+                [str(f) for f in self.additional_files] if self.additional_files else []
+            ),
+        )
+
     @staticmethod
     def get_start_time_from_current():
         return datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -474,6 +517,13 @@ class JobReport:
         to_file = to_file or JOB_REPORT_FILE
         with open(to_file, "w", encoding="utf-8") as json_file:
             json.dump(asdict(self), json_file, default=path_converter, indent=2)
+
+        # temporary WA to ease integration with praktika
+        check_name = os.getenv("JOB_NAME", "")
+        if check_name:
+            self.to_praktika_result(job_name=check_name).dump()
+
+        return self
 
 
 def read_test_results(results_path: Path, with_raw_logs: bool = True) -> TestResults:

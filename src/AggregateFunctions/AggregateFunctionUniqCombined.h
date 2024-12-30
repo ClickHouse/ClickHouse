@@ -111,7 +111,7 @@ public:
                 /// Initially UInt128 was introduced only for UUID, and then the other big-integer types were added.
                 hash = static_cast<HashValueType>(sipHash64(value));
             }
-            else if constexpr (std::is_floating_point_v<T>)
+            else if constexpr (is_floating_point<T>)
             {
                 hash = static_cast<HashValueType>(intHash64(bit_cast<UInt64>(value)));
             }

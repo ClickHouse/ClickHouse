@@ -384,7 +384,7 @@ public:
         auto * column = typeid_cast<ColumnFloat64 *>(&to);
         if (!column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cast of column of predictions is incorrect. "
-                            "getReturnTypeToPredict must return same value as it is casted to");
+                            "getReturnTypeToPredict must return same value as it is cast to");
 
         this->data(place).predict(column->getData(), arguments, offset, limit, context);
     }

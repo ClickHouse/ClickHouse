@@ -119,7 +119,7 @@ void ThreadGroup::unlinkThread()
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
 {
     auto group = std::make_shared<ThreadGroup>(query_context_, std::move(fatal_error_callback_));
-    group->memory_tracker.setDescription("(for query)");
+    group->memory_tracker.setDescription("Query");
     return group;
 }
 
@@ -127,7 +127,7 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
 {
     auto group = std::make_shared<ThreadGroup>(storage_context);
 
-    group->memory_tracker.setDescription("background process to apply mutate/merge in table");
+    group->memory_tracker.setDescription("Background process (mutate/merge)");
     /// However settings from storage context have to be applied
     const Settings & settings = storage_context->getSettingsRef();
     group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
@@ -384,7 +384,7 @@ void ThreadStatus::initPerformanceCounters()
     /// TODO: make separate query_thread_performance_counters and thread_performance_counters
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
-    memory_tracker.setDescription("(for thread)");
+    memory_tracker.setDescription("Thread");
 
     query_start_time.setUp();
 

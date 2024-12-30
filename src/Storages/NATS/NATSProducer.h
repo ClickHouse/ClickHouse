@@ -23,6 +23,7 @@ public:
         LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
+    void cancel() noexcept override;
 
 private:
     String getProducingTaskName() const override { return "NatsProducingTask"; }

@@ -28,7 +28,7 @@ namespace
 
 /// Returns tuple of (z-statistic, p-value, confidence-interval-low, confidence-interval-high)
 template <typename Data>
-class AggregateFunctionMeanZTest :
+class AggregateFunctionMeanZTest final:
     public IAggregateFunctionDataHelper<Data, AggregateFunctionMeanZTest<Data>>
 {
 private:

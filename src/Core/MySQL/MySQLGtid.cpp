@@ -1,6 +1,10 @@
 #include "MySQLGtid.h"
-#include <boost/algorithm/string.hpp>
+
+#include <Core/UUID.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -192,8 +196,10 @@ bool GTIDSet::contains(const GTIDSet & gtid_set) const
     //use the fact that intervals are sorted to make this linear instead of quadratic.
     if (uuid != gtid_set.uuid) { return false; }
 
-    auto mine = intervals.begin(), other = gtid_set.intervals.begin();
-    auto my_end = intervals.end(), other_end = gtid_set.intervals.end();
+    auto mine = intervals.begin();
+    auto other = gtid_set.intervals.begin();
+    auto my_end = intervals.end();
+    auto other_end = gtid_set.intervals.end();
     while (mine != my_end && other != other_end)
     {
         bool mine_contains_other = mine->start <= other->start && mine->end >= other->end;

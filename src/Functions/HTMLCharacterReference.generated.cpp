@@ -26,7 +26,7 @@
 #pragma GCC diagnostic ignored "-Wunused-macros"
 #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #pragma GCC diagnostic ignored "-Wshorten-64-to-32"
-// NOLINTBEGIN(google-runtime-int,hicpp-use-nullptr,modernize-use-nullptr)
+// NOLINTBEGIN(google-runtime-int,hicpp-use-nullptr,modernize-use-nullptr,modernize-macro-to-enum)
 #line 16 "HTMLCharacterReference.gperf"
 struct NameAndGlyph
 {
@@ -17874,4 +17874,4 @@ const struct NameAndGlyph * HTMLCharacterHash::Lookup(const char * str, size_t l
 }
 #line 2252 "HTMLCharacterReference.gperf"
 
-// NOLINTEND(google-runtime-int,hicpp-use-nullptr,modernize-use-nullptr)
+// NOLINTEND(google-runtime-int,hicpp-use-nullptr,modernize-use-nullptr,modernize-macro-to-enum)

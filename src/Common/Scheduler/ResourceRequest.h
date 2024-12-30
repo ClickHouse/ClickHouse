@@ -2,7 +2,9 @@
 
 #include <boost/intrusive/list.hpp>
 #include <base/types.h>
+#include <array>
 #include <limits>
+#include <exception>
 
 namespace DB
 {
@@ -14,6 +16,9 @@ class ISchedulerConstraint;
 /// Cost in terms of used resource (e.g. bytes for network IO)
 using ResourceCost = Int64;
 constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
+
+/// Max number of constraints for a request to pass though (depth of constraints chain)
+constexpr size_t ResourceMaxConstraints = 8;
 
 /*
  * Request for a resource consumption. The main moving part of the scheduling subsystem.
@@ -39,8 +44,7 @@ constexpr ResourceCost ResourceCostMax = std::numeric_limits<int>::max();
  *
  * Request can also be canceled before (3) using ISchedulerQueue::cancelRequest().
  * Returning false means it is too late for request to be canceled. It should be processed in a regular way.
- * Returning true means successful cancel and therefore steps (4) and (5) are not going to happen
- * and step (6) MUST be omitted.
+ * Returning true means successful cancel and therefore steps (4) and (5) are not going to happen.
  */
 class ResourceRequest : public boost::intrusive::list_base_hook<>
 {
@@ -49,9 +53,10 @@ public:
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
     ResourceCost cost;
 
-    /// Scheduler node to be notified on consumption finish
-    /// Auto-filled during request enqueue/dequeue
-    ISchedulerConstraint * constraint;
+    /// Scheduler nodes to be notified on consumption finish
+    /// Auto-filled during request dequeue
+    /// Vector is not used to avoid allocations in the scheduler thread
+    std::array<ISchedulerConstraint *, ResourceMaxConstraints> constraints;
 
     explicit ResourceRequest(ResourceCost cost_ = 1)
     {
@@ -62,7 +67,8 @@ public:
     void reset(ResourceCost cost_)
     {
         cost = cost_;
-        constraint = nullptr;
+        for (auto & constraint : constraints)
+            constraint = nullptr;
         // Note that list_base_hook should be reset independently (by intrusive list)
     }
 
@@ -74,11 +80,18 @@ public:
     /// (e.g. setting an std::promise or creating a job in a thread pool)
     virtual void execute() = 0;
 
+    /// Callback to trigger an error in case if resource is unavailable.
+    virtual void failed(const std::exception_ptr & ptr) = 0;
+
     /// Stop resource consumption and notify resource scheduler.
     /// Should be called when resource consumption is finished by consumer.
     /// ResourceRequest should not be destructed or reset before calling to `finish()`.
-    /// WARNING: this function MUST not be called if request was canceled.
+    /// It is okay to call finish() even for failed and canceled requests (it will be no-op)
     void finish();
+
+    /// Is called from the scheduler thread to fill `constraints` chain
+    /// Returns `true` iff constraint was added successfully
+    bool addConstraint(ISchedulerConstraint * new_constraint);
 };
 
 }

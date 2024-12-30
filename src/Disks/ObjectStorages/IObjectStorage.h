@@ -28,8 +28,7 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Common/MultiVersion.h>
-#include <azure/storage/blobs.hpp>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
 
 #if USE_AWS_S3
@@ -160,13 +159,6 @@ public:
 
     virtual bool isRemote() const = 0;
 
-    /// Remove object. Throws exception if object doesn't exists.
-    virtual void removeObject(const StoredObject & object) = 0;
-
-    /// Remove multiple objects. Some object storages can do batch remove in a more
-    /// optimal way.
-    virtual void removeObjects(const StoredObjects & objects) = 0;
-
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
 
@@ -256,7 +248,7 @@ public:
     virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
 
 #if USE_AZURE_BLOB_STORAGE
-    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const
+    virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }

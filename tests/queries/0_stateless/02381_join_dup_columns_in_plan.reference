@@ -148,7 +148,6 @@ Header: key String
         value String
   Join
   Header: __table1.key String
-          __table3.key String
           __table3.value String
     Sorting
     Header: __table1.key String

@@ -48,7 +48,7 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
             getContext()->getSettingsRef(),
-            getContext()->getServerSettings().keep_alive_timeout);
+            getContext()->getServerSettings());
 
         auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
                                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
@@ -250,16 +250,6 @@ std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLI
     std::optional<ObjectAttributes> /* attributes */,
     size_t /* buf_size */,
     const WriteSettings & /* write_settings */)
-{
-    throwNotAllowed();
-}
-
-void WebObjectStorage::removeObject(const StoredObject &)
-{
-    throwNotAllowed();
-}
-
-void WebObjectStorage::removeObjects(const StoredObjects &)
 {
     throwNotAllowed();
 }

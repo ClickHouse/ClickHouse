@@ -39,7 +39,7 @@ enum class SpanKind : uint8_t
 
 struct Span
 {
-    UUID trace_id;
+    UUID trace_id = {};
     UInt64 span_id = 0;
     UInt64 parent_span_id = 0;
     String operation_name;

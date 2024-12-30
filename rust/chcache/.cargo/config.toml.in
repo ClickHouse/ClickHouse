@@ -1,0 +1,6 @@
+[source.crates-io]
+registry = 'sparse+https://index.crates.io/'
+replace-with = 'local-registry'
+
+[source.local-registry]
+local-registry = "@RUST_VENDOR_DIR@"

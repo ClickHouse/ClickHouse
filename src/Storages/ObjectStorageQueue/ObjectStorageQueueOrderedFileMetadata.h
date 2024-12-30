@@ -4,6 +4,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
 
+#include <boost/noncopyable.hpp>
+
 namespace DB
 {
 
@@ -43,6 +45,8 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
+    static void migrateToBuckets(const std::string & zk_path, size_t value);
+
     void setProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) override;
@@ -60,7 +64,7 @@ private:
         Coordination::Stat * stat,
         const zkutil::ZooKeeperPtr & zk_client);
 
-    bool getMaxProcessedFile(
+    static bool getMaxProcessedFile(
         NodeMetadata & result,
         Coordination::Stat * stat,
         const std::string & processed_node_path_,

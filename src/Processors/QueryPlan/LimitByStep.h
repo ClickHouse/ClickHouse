@@ -10,7 +10,7 @@ class LimitByStep : public ITransformingStep
 public:
     explicit LimitByStep(
             const Header & input_header_,
-            size_t group_length_, size_t group_offset_, const Names & columns_);
+            size_t group_length_, size_t group_offset_, Names columns_);
 
     String getName() const override { return "LimitBy"; }
 
@@ -18,6 +18,10 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
+
+    void serialize(Serialization & ctx) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override

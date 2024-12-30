@@ -22,12 +22,16 @@ namespace DB
 /// DAG for PK does not contain aliases and ambiguous nodes.
 struct MatchedTrees
 {
+    struct Match;
+
     /// Monotonicity is calculated for monotonic functions chain.
     /// Chain is not strict if there is any non-strict monotonic function.
     struct Monotonicity
     {
         int direction = 1;
         bool strict = true;
+        const Match * child_match = nullptr;
+        const ActionsDAG::Node * child_node = nullptr;
     };
 
     struct Match

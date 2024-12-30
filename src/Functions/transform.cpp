@@ -6,12 +6,14 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/SipHash.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashMap.h>
@@ -158,9 +160,9 @@ namespace
                 }
             }
 
-            ColumnPtr in_casted = arguments[0].column;
+            ColumnPtr in_cast = arguments[0].column;
             if (arguments.size() == 3)
-                in_casted = castColumn(arguments[0], result_type);
+                in_cast = castColumn(arguments[0], result_type);
 
             auto column_result = result_type->createColumn();
             if (cache.is_empty)
@@ -171,18 +173,18 @@ namespace
             }
             if (cache.table_num_to_idx)
             {
-                if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<UInt32>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<UInt64>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<Int8>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<Int16>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<Int32>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<Int64>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<Float32>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnVector<Float64>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const, *in_casted, input_rows_count)
-                    && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const, *in_casted, input_rows_count))
+                if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<UInt32>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<UInt64>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<Int8>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<Int16>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<Int32>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<Int64>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<Float32>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnVector<Float64>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnDecimal<Decimal32>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
+                    && !executeNum<ColumnDecimal<Decimal64>>(in, *column_result, default_non_const, *in_cast, input_rows_count))
                 {
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
@@ -190,12 +192,12 @@ namespace
             }
             else if (cache.table_string_to_idx)
             {
-                if (!executeString(in, *column_result, default_non_const, *in_casted, input_rows_count))
-                    executeContiguous(in, *column_result, default_non_const, *in_casted, input_rows_count);
+                if (!executeString(in, *column_result, default_non_const, *in_cast, input_rows_count))
+                    executeContiguous(in, *column_result, default_non_const, *in_cast, input_rows_count);
             }
             else if (cache.table_anything_to_idx)
             {
-                executeAnything(in, *column_result, default_non_const, *in_casted, input_rows_count);
+                executeAnything(in, *column_result, default_non_const, *in_cast, input_rows_count);
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "State of the function `transform` is not initialized");
@@ -211,12 +213,12 @@ namespace
             ColumnsWithTypeAndName args = arguments;
             args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-            auto impl = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionTransform>()).build(args);
+            auto impl = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTransform>())->build(args);
 
-            return impl->execute(args, result_type, input_rows_count);
+            return impl->execute(args, result_type, input_rows_count, /* dry_run = */ false);
         }
 
-        void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted, size_t input_rows_count) const
+        void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_cast, size_t input_rows_count) const
         {
             const auto & table = *cache.table_anything_to_idx;
             column_result.reserve(input_rows_count);
@@ -233,11 +235,11 @@ namespace
                 else if (default_non_const)
                     column_result.insertFrom(*default_non_const, i);
                 else
-                    column_result.insertFrom(in_casted, i);
+                    column_result.insertFrom(in_cast, i);
             }
         }
 
-        void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted, size_t input_rows_count) const
+        void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_cast, size_t input_rows_count) const
         {
             const auto & table = *cache.table_string_to_idx;
             column_result.reserve(input_rows_count);
@@ -251,12 +253,12 @@ namespace
                 else if (default_non_const)
                     column_result.insertFrom(*default_non_const, i);
                 else
-                    column_result.insertFrom(in_casted, i);
+                    column_result.insertFrom(in_cast, i);
             }
         }
 
         template <typename T>
-        bool executeNum(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted, size_t input_rows_count) const
+        bool executeNum(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_cast, size_t input_rows_count) const
         {
             const auto * const in = checkAndGetColumn<T>(in_untyped);
             if (!in)
@@ -292,7 +294,7 @@ namespace
                     else if (default_non_const)
                         column_result.insertFrom(*default_non_const, i);
                     else
-                        column_result.insertFrom(in_casted, i);
+                        column_result.insertFrom(in_cast, i);
                 }
             }
             return true;
@@ -444,7 +446,7 @@ namespace
             }
         }
 
-        bool executeString(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_casted, size_t input_rows_count) const
+        bool executeString(const IColumn * in_untyped, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_cast, size_t input_rows_count) const
         {
             const auto * const in = checkAndGetColumn<ColumnString>(in_untyped);
             if (!in)
@@ -481,7 +483,7 @@ namespace
                     else if (default_non_const)
                         column_result.insertFrom(*default_non_const, i);
                     else
-                        column_result.insertFrom(in_casted, i);
+                        column_result.insertFrom(in_cast, i);
                 }
             }
             return true;
@@ -699,11 +701,11 @@ namespace
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays.", getName());
 
-            const ColumnPtr & from_column_uncasted = array_from->getDataPtr();
+            const ColumnPtr & from_column_uncast = array_from->getDataPtr();
 
             cache.from_column = castColumn(
                 {
-                    from_column_uncasted,
+                    from_column_uncast,
                     typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType(),
                     arguments[1].name
                 },
@@ -756,7 +758,7 @@ namespace
                 for (size_t i = 0; i < size; ++i)
                 {
                     if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
-                        || applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
+                        || applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         UInt64 key = 0;
                         auto * dst = reinterpret_cast<char *>(&key);
@@ -779,7 +781,7 @@ namespace
                 auto & table = *cache.table_string_to_idx;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
+                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         StringRef ref = cache.from_column->getDataAt(i);
                         table.insertIfNotPresent(ref, i);
@@ -792,7 +794,7 @@ namespace
                 auto & table = *cache.table_anything_to_idx;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncasted)[i]))
+                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         SipHash hash;
                         cache.from_column->updateHashWithValue(i, hash);

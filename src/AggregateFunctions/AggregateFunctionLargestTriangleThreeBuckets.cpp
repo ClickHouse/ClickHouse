@@ -329,7 +329,7 @@ public:
                 return [](IColumn & column, Float64 value)
                 {
                     auto & col = assert_cast<ColumnDateTime64 &>(column);
-                    col.getData().push_back(static_cast<UInt64>(value));
+                    col.getData().push_back(static_cast<Int64>(value));
                 };
             default:
                 return [](IColumn & column, Float64 value)

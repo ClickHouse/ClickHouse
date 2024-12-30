@@ -21,8 +21,8 @@ using VolumePtr = std::shared_ptr<IVolume>;
 class MergeTreeDataPartBuilder
 {
 public:
-    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, VolumePtr volume_, String root_path_, String part_dir_);
-    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, MutableDataPartStoragePtr part_storage_);
+    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, VolumePtr volume_, String root_path_, String part_dir_, const ReadSettings & read_settings_);
+    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, MutableDataPartStoragePtr part_storage_, const ReadSettings & read_settings_);
 
     std::shared_ptr<IMergeTreeDataPart> build();
 
@@ -42,7 +42,8 @@ public:
     static PartStorageAndMarkType getPartStorageAndMarkType(
         const VolumePtr & volume_,
         const String & root_path_,
-        const String & part_dir_);
+        const String & part_dir_,
+        const ReadSettings & read_settings);
 
 private:
     Self & withPartFormatFromVolume();
@@ -52,7 +53,8 @@ private:
         MergeTreeDataPartStorageType storage_type_,
         const VolumePtr & volume_,
         const String & root_path_,
-        const String & part_dir_);
+        const String & part_dir_,
+        const ReadSettings & read_settings);
 
     const MergeTreeData & data;
     const String name;
@@ -64,6 +66,8 @@ private:
     std::optional<MergeTreeDataPartType> part_type;
     MutableDataPartStoragePtr part_storage;
     const IMergeTreeDataPart * parent_part = nullptr;
+
+    const ReadSettings read_settings;
 };
 
 }

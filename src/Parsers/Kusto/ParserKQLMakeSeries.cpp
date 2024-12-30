@@ -155,8 +155,10 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     const uint64_t era_diff
         = 62135596800; // this magic number is the differicen is second form 0001-01-01 (Azure start time ) and 1970-01-01 (CH start time)
 
-    String start_str, end_str;
-    String sub_query, main_query;
+    String start_str;
+    String end_str;
+    String sub_query;
+    String main_query;
 
     auto & aggregation_columns = kql_make_series.aggregation_columns;
     auto & from_to_step = kql_make_series.from_to_step;
@@ -191,7 +193,9 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     start_str = date_type_cast(start_str);
     end_str = date_type_cast(end_str);
 
-    String bin_str, start, end;
+    String bin_str;
+    String start;
+    String end;
 
     uint64_t diff = 0;
     String axis_column_format;
@@ -250,7 +254,8 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     if (!end_str.empty())
         end = std::format("toUInt64({})", end_str);
 
-    String range, condition;
+    String range;
+    String condition;
 
     if (!start_str.empty() && !end_str.empty())
     {

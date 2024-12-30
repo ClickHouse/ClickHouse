@@ -475,7 +475,10 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        String project_clause, order_clause, where_clause, limit_clause;
+        String project_clause;
+        String order_clause;
+        String where_clause;
+        String limit_clause;
         auto last_pos = operation_pos.back().second;
         auto last_op = operation_pos.back().first;
 

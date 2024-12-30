@@ -555,13 +555,13 @@ void SerializationObjectDeprecated<Parser>::serializeTextJSONPretty(const IColum
         if (it != subcolumns.begin())
             writeCString(",\n", ostr);
 
-        writeChar(' ', (indent + 1) * 4, ostr);
+        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
         writeDoubleQuoted(entry->path.getPath(), ostr);
         writeCString(": ", ostr);
         serializeTextFromSubcolumn<true>(entry->data, row_num, ostr, settings, indent + 1);
     }
     writeChar('\n', ostr);
-    writeChar(' ', indent * 4, ostr);
+    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
     writeChar('}', ostr);
 }
 

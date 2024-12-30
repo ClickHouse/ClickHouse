@@ -2,7 +2,7 @@ DirectoryPath: /test
 IgnoreDirectoryMissingTrailingSlash: true
 CheckExternal: false
 CheckInternal: false
-CheckInternalHash: true
+CheckInternalHash: false
 CheckMailto: false
 IgnoreAltMissing: true
 IgnoreEmptyHref: true

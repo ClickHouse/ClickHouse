@@ -5,9 +5,9 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTQueryParameter.h>
+
 
 namespace DB
 {
@@ -61,7 +61,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 else
                     fields_count = 0;
             }
-            else if (const auto* literal_ast = value->as<ASTLiteral>(); literal_ast)
+            else if (const auto * literal_ast = value->as<ASTLiteral>(); literal_ast)
             {
                 if (literal_ast->value.getType() == Field::Types::Tuple)
                 {

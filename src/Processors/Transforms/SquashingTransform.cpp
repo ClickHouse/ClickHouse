@@ -78,7 +78,7 @@ Chunk SimpleSquashingChunksTransform::generate()
 
 bool SimpleSquashingChunksTransform::canGenerate()
 {
-    return !squashed_chunk.empty();
+    return squashed_chunk.hasRows();
 }
 
 Chunk SimpleSquashingChunksTransform::getRemaining()

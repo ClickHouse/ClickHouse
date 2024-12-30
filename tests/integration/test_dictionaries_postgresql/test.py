@@ -7,6 +7,7 @@ import pytest
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.postgres_utility import get_postgres_conn
 
 cluster = ClickHouseCluster(__file__)
@@ -16,6 +17,7 @@ node1 = cluster.add_instance(
         "configs/config.xml",
         "configs/dictionaries/postgres_dict.xml",
         "configs/named_collections.xml",
+        "configs/bg_reconnect.xml",
     ],
     with_postgres=True,
     with_postgres_cluster=True,
@@ -585,6 +587,91 @@ def test_named_collection_from_ddl(started_cluster):
     )
     assert "Unexpected key `dbbb`" in node1.query_and_get_error(
         "SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))"
+    )
+
+
+def test_background_dictionary_reconnect(started_cluster):
+    postgres_conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        database=True,
+        port=started_cluster.postgres_port,
+    )
+
+    postgres_conn.cursor().execute("DROP TABLE IF EXISTS dict")
+    postgres_conn.cursor().execute(
+        f"""
+    CREATE TABLE dict (
+    id integer NOT NULL, value text NOT NULL, PRIMARY KEY (id))
+    """
+    )
+
+    postgres_conn.cursor().execute("INSERT INTO dict VALUES (1, 'Value_1')")
+
+    query = node1.query
+    query(
+        f"""
+    DROP DICTIONARY IF EXISTS dict;
+    CREATE DICTIONARY dict
+    (
+        id UInt64,
+        value String
+    )
+    PRIMARY KEY id
+    LAYOUT(DIRECT())
+    SOURCE(POSTGRESQL(
+        USER 'postgres'
+        PASSWORD 'mysecretpassword'
+        DB 'postgres_database'
+        QUERY $doc$SELECT * FROM dict;$doc$
+        BACKGROUND_RECONNECT 'true'
+        REPLICA(HOST '{started_cluster.postgres_ip}' PORT {started_cluster.postgres_port} PRIORITY 1)))
+    """
+    )
+
+    result = query("SELECT value FROM dict WHERE id = 1")
+    assert result == "Value_1\n"
+
+    class PostgreSQL_Instance:
+        pass
+
+    postgres_instance = PostgreSQL_Instance()
+    postgres_instance.ip_address = started_cluster.postgres_ip
+
+    query("TRUNCATE TABLE IF EXISTS system.text_log")
+
+    with PartitionManager() as pm:
+        # Break connection to mysql server
+        pm.partition_instances(
+            node1, postgres_instance, action="REJECT --reject-with tcp-reset"
+        )
+
+        # Exhaust possible connection pool and initiate reconnection attempts
+        for _ in range(5):
+            try:
+                result = query("SELECT value FROM dict WHERE id = 1")
+            except Exception as e:
+                pass
+        time.sleep(5)
+
+    time.sleep(5)
+
+    query("SYSTEM FLUSH LOGS")
+
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has failed: %'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'"
+            )
+        )
+        > 0
     )
 
 

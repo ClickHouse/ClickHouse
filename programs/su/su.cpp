@@ -1,6 +1,8 @@
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
+
+#include <iostream>
 #include <vector>
 
 #include <sys/types.h>
@@ -40,7 +42,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-void setUserAndGroup(std::string arg_uid, std::string arg_gid)
+static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
 {
     static constexpr size_t buf_size = 16384; /// Linux man page says it is enough. Nevertheless, we will check if it's not enough and throw.
     std::unique_ptr<char[]> buf(new char[buf_size]);
@@ -59,7 +61,13 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid);
 
             if (!result)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group {} is not found in the system", arg_gid);
+            {
+                if (0 != getgrgid_r(gid, &entry, buf.get(), buf_size, &result))
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid);
+
+                if (!result)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group {} is not found in the system", arg_gid);
+            }
 
             gid = entry.gr_gid;
         }
@@ -84,7 +92,13 @@ void setUserAndGroup(std::string arg_uid, std::string arg_gid)
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid);
 
             if (!result)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "User {} is not found in the system", arg_uid);
+            {
+                if (0 != getpwuid_r(uid, &entry, buf.get(), buf_size, &result))
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwuid_r' to obtain uid from user name ({})", uid);
+
+                if (!result)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "User {} is not found in the system", arg_uid);
+            }
 
             uid = entry.pw_uid;
         }

@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/Context.h>
 

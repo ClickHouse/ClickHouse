@@ -10,7 +10,8 @@ namespace
 /// Code from https://arxiv.org/pdf/1406.2294.pdf
 inline int32_t JumpConsistentHash(uint64_t key, int32_t num_buckets)
 {
-    int64_t b = -1, j = 0;
+    int64_t b = -1;
+    int64_t j = 0;
     while (j < num_buckets)
     {
         b = j;

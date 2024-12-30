@@ -1,3 +1,4 @@
+#include <exception>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>

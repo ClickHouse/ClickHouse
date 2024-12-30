@@ -168,9 +168,12 @@ class CiSettings:
 
         to_deny = False
         if self.include_keywords:
-            # do not exclude builds
-            if job == CI.JobNames.STYLE_CHECK or CI.is_build_job(job):
-                # never exclude Style Check by include keywords
+            # never exclude builds, build report, style check
+            if (
+                job == CI.JobNames.STYLE_CHECK
+                or CI.is_build_job(job)
+                or job == CI.JobNames.BUILD_CHECK
+            ):
                 return True
             for keyword in self.include_keywords:
                 if keyword in CI.Utils.normalize_string(job):

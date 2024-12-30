@@ -6,7 +6,6 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 
-#include <base/safeExit.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
@@ -32,7 +31,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -59,6 +57,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
@@ -67,18 +66,20 @@
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
 
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/replace.hpp>
-#include <iostream>
 #include <filesystem>
+#include <iostream>
 #include <limits>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
+#include <base/ask.h>
 #include "config.h"
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -107,6 +108,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_pretty_max_value_width;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -269,7 +271,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 }
 
 /// To cancel the query on local format error.
-class LocalFormatError : public DB::Exception
+class LocalFormatError : public Exception
 {
 public:
     using Exception::Exception;
@@ -286,21 +288,21 @@ ClientBase::ClientBase(
     std::ostream & output_stream_,
     std::ostream & error_stream_
 )
-    : std_in(in_fd_)
-    , std_out(out_fd_)
+    : stdin_fd(in_fd_)
+    , stdout_fd(out_fd_)
+    , stderr_fd(err_fd_)
+    , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
+    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
     , progress_indication(output_stream_, in_fd_, err_fd_)
-    , progress_table(output_stream_, in_fd_, err_fd_)
-    , in_fd(in_fd_)
-    , out_fd(out_fd_)
-    , err_fd(err_fd_)
+    , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
     , output_stream(output_stream_)
     , error_stream(error_stream_)
 {
-    stdin_is_a_tty = isatty(in_fd);
-    stdout_is_a_tty = isatty(out_fd);
-    stderr_is_a_tty = isatty(err_fd);
-    terminal_width = getTerminalWidth(in_fd, err_fd);
+    stdin_is_a_tty = isatty(in_fd_);
+    stdout_is_a_tty = isatty(out_fd_);
+    stderr_is_a_tty = isatty(err_fd_);
+    terminal_width = getTerminalWidth(in_fd_, err_fd_);
 }
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
@@ -320,7 +322,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     else
-        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
     if (is_interactive || ignore_error)
     {
@@ -348,11 +350,11 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     {
         output_stream << std::endl;
         WriteBufferFromOStream res_buf(output_stream, 4096);
-        IAST::FormatSettings format_settings(res_buf, /* one_line */ false);
+        IAST::FormatSettings format_settings(/* one_line */ false);
         format_settings.hilite = true;
         format_settings.show_secrets = true;
         format_settings.print_pretty_type_names = true;
-        res->format(format_settings);
+        res->format(res_buf, format_settings);
         res_buf.finalize();
         output_stream << std::endl << std::endl;
     }
@@ -439,17 +441,32 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
     if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
-        progress_indication.clearProgressOutput(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_indication.clearProgressOutput(*tty_buf, lock);
+    }
     if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
-        progress_table.clearTableOutput(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_table.clearTableOutput(*tty_buf, lock);
+    }
 
     try
     {
         output_format->write(materializeBlock(block));
         written_first_block = true;
     }
+    catch (const NetException &)
+    {
+        throw;
+    }
+    catch (const ErrnoException &)
+    {
+        throw;
+    }
     catch (const Exception &)
     {
+        //this is a bad catch. It catches too much cases unrelated to LocalFormatError
         /// Catch client errors like NO_ROW_DELIMITER
         throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
     }
@@ -462,14 +479,15 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     {
         if (select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
-        progress_indication.writeProgress(*tty_buf);
+        std::unique_lock lock(tty_mutex);
+        progress_indication.writeProgress(*tty_buf, lock);
     }
     if (need_render_progress_table && tty_buf && !cancelled)
     {
         if (!need_render_progress && select_into_file && !select_into_file_and_stdout)
             error_stream << "\r";
-        bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
-        progress_table.writeTable(*tty_buf, progress_table_toggle_on.load(), toggle_enabled);
+        std::unique_lock lock(tty_mutex);
+        progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), progress_table_toggle_enabled, false);
     }
 }
 
@@ -478,9 +496,15 @@ void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
     if (need_render_progress && tty_buf)
-        progress_indication.clearProgressOutput(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_indication.clearProgressOutput(*tty_buf, lock);
+    }
     if (need_render_progress_table && tty_buf)
-        progress_table.clearTableOutput(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_table.clearTableOutput(*tty_buf, lock);
+    }
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
@@ -551,13 +575,12 @@ try
         }
         else
         {
-            out_buf = &std_out;
+            out_buf = std_out.get();
         }
-
-        String current_format = default_output_format;
 
         select_into_file = false;
         select_into_file_and_stdout = false;
+        String current_format = default_output_format;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -606,18 +629,18 @@ try
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
-                            std::make_shared<WriteBufferFromFileDescriptor>(STDOUT_FILENO)});
+                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
                 if (is_interactive && is_default_format)
                     current_format = "TabSeparated";
             }
-            if (query_with_output->format != nullptr)
+            if (query_with_output->format_ast != nullptr)
             {
                 if (has_vertical_output_suffix)
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
-                const auto & id = query_with_output->format->as<ASTIdentifier &>();
+                const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
                 current_format = id.name();
             }
             else if (query_with_output->out_file)
@@ -649,6 +672,23 @@ try
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->setAutoFlush();
+
+        if ((!select_into_file || select_into_file_and_stdout)
+            && stdout_is_a_tty
+            && stdin_is_a_tty
+            && !FormatFactory::instance().checkIfOutputFormatIsTTYFriendly(current_format))
+        {
+            stopKeystrokeInterceptorIfExists();
+            SCOPE_EXIT({ startKeystrokeInterceptorIfExists(); });
+
+            if (!ask(fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
+If you want to output it into a file, use the "INTO OUTFILE" modifier in the query or redirect the output of the shell command.
+Do you want to output it anyway? [y/N] )", current_format)))
+            {
+                output_format = std::make_shared<NullOutputFormat>(block);
+            }
+            *std_out << '\n';
+        }
     }
 }
 catch (...)
@@ -669,20 +709,20 @@ void ClientBase::initLogsOutputStream()
             if (server_logs_file.empty())
             {
                 /// Use stderr by default
-                out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
+                out_logs_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd);
                 wb = out_logs_buf.get();
                 color_logs = stderr_is_a_tty;
             }
             else if (server_logs_file == "-")
             {
                 /// Use stdout if --server_logs_file=- specified
-                wb = &std_out;
+                wb = std_out.get();
                 color_logs = stdout_is_a_tty;
             }
             else
             {
                 out_logs_buf
-                    = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                 wb = out_logs_buf.get();
             }
         }
@@ -748,15 +788,15 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
         default_output_format = "Vertical";
         is_default_format = false;
     }
-    else if (isRegularFile(STDOUT_FILENO))
+    else if (isRegularFile(stdout_fd))
     {
-        std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDOUT_FILENO);
+        std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdout_fd);
         if (format_from_file_name)
             default_output_format = *format_from_file_name;
         else
             default_output_format = "TSV";
 
-        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(STDOUT_FILENO);
+        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
         if (file_name)
             default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
@@ -788,11 +828,15 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     }
     else
     {
-        std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(STDIN_FILENO);
+        std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdin_fd);
         if (format_from_file_name)
             default_input_format = *format_from_file_name;
         else
             default_input_format = "TSV";
+
+        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
+        if (file_name)
+            default_input_compression_method = chooseCompressionMethod(*file_name, "");
     }
 
     format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size", global_context->getSettingsRef()[Setting::max_block_size]);
@@ -823,6 +867,9 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     if (!need_render_progress && !need_render_progress_table)
         return;
 
+    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle");
+    progress_table_toggle_on = !progress_table_toggle_enabled;
+
     /// If need_render_progress and need_render_progress_table are enabled,
     /// use ProgressOption that was set for the progress bar for progress table as well.
     ProgressOption progress = progress_option ? progress_option : progress_table_option;
@@ -843,7 +890,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
         {
             try
             {
-                tty_buf = std::make_unique<WriteBufferFromFile>(tty_file_name, buf_size);
+                tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
 
                 /// It is possible that the terminal file has writeable permissions
                 /// but we cannot write anything there. Check it with invisible character.
@@ -854,8 +901,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
             }
             catch (const Exception & e)
             {
-                if (tty_buf)
-                    tty_buf.reset();
+                tty_buf.reset();
 
                 if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
                     throw;
@@ -868,7 +914,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
     if (stderr_is_a_tty || progress == ProgressOption::ERR)
     {
-        tty_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO, buf_size);
+        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stderr_fd, buf_size);
     }
     else
     {
@@ -879,9 +925,9 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
 
 void ClientBase::initKeystrokeInterceptor()
 {
-    if (is_interactive && need_render_progress_table && getClientConfiguration().getBool("enable-progress-table-toggle", true))
+    if (is_interactive && need_render_progress_table && progress_table_toggle_enabled)
     {
-        keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(in_fd, error_stream);
+        keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(stdin_fd, error_stream);
         keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
     }
 }
@@ -1097,6 +1143,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                     &client_context->getSettingsRef(),
                     &client_context->getClientInfo(),
                     true,
+                    {},
                     [&](const Progress & progress) { onProgress(progress); });
 
                 if (send_external_tables)
@@ -1147,33 +1194,8 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
     std::exception_ptr local_format_error;
 
-    if (keystroke_interceptor)
-    {
-        try
-        {
-            keystroke_interceptor->startIntercept();
-        }
-        catch (const DB::Exception &)
-        {
-            error_stream << getCurrentExceptionMessage(false);
-            keystroke_interceptor.reset();
-        }
-    }
-
-    SCOPE_EXIT({
-        if (keystroke_interceptor)
-        {
-            try
-            {
-                keystroke_interceptor->stopIntercept();
-            }
-            catch (...)
-            {
-                error_stream << getCurrentExceptionMessage(false);
-                keystroke_interceptor.reset();
-            }
-        }
-    });
+    startKeystrokeInterceptorIfExists();
+    SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
 
     while (true)
     {
@@ -1313,7 +1335,10 @@ void ClientBase::onProgress(const Progress & value)
         output_format->onProgress(value);
 
     if (need_render_progress && tty_buf)
-        progress_indication.writeProgress(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_indication.writeProgress(*tty_buf, lock);
+    }
 }
 
 void ClientBase::onTimezoneUpdate(const String & tz)
@@ -1325,9 +1350,15 @@ void ClientBase::onTimezoneUpdate(const String & tz)
 void ClientBase::onEndOfStream()
 {
     if (need_render_progress && tty_buf)
-        progress_indication.clearProgressOutput(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_indication.clearProgressOutput(*tty_buf, lock);
+    }
     if (need_render_progress_table && tty_buf)
-        progress_table.clearTableOutput(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_table.clearTableOutput(*tty_buf, lock);
+    }
 
     if (output_format)
     {
@@ -1409,11 +1440,15 @@ void ClientBase::onProfileEvents(Block & block)
         progress_table.updateTable(block);
 
         if (need_render_progress && tty_buf)
-            progress_indication.writeProgress(*tty_buf);
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_indication.writeProgress(*tty_buf, lock);
+        }
         if (need_render_progress_table && tty_buf && !cancelled)
         {
             bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
-            progress_table.writeTable(*tty_buf, progress_table_toggle_on.load(), toggle_enabled);
+            std::unique_lock lock(tty_mutex);
+            progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled, false);
         }
 
         if (profile_events.print)
@@ -1424,9 +1459,15 @@ void ClientBase::onProfileEvents(Block & block)
                 profile_events.watch.restart();
                 initLogsOutputStream();
                 if (need_render_progress && tty_buf)
-                    progress_indication.clearProgressOutput(*tty_buf);
+                {
+                    std::unique_lock lock(tty_mutex);
+                    progress_indication.clearProgressOutput(*tty_buf, lock);
+                }
                 if (need_render_progress_table && tty_buf)
-                    progress_table.clearTableOutput(*tty_buf);
+                {
+                    std::unique_lock lock(tty_mutex);
+                    progress_table.clearTableOutput(*tty_buf, lock);
+                }
                 logs_out_stream->writeProfileEvents(block);
                 logs_out_stream->flush();
 
@@ -1444,19 +1485,39 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    if (need_render_progress_table && tty_buf)
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_table.clearTableOutput(*tty_buf, lock);
+    }
+
     /// Order is important: format, compression, file
 
-    if (output_format)
-        output_format->finalize();
+    try
+    {
+        if (output_format)
+            output_format->finalize();
+    }
+    catch (...)
+    {
+        /// We need to make sure we continue resetting output_format (will stop threads on parallel output)
+        /// as well as cleaning other output related setup
+        if (!have_error)
+        {
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            have_error = true;
+        }
+    }
     output_format.reset();
 
     logs_out_stream.reset();
 
     if (out_file_buf)
-    {
         out_file_buf->finalize();
-        out_file_buf.reset();
-    }
+    out_file_buf.reset();
+
+    out_logs_buf.reset();
 
     if (pager_cmd)
     {
@@ -1474,13 +1535,7 @@ void ClientBase::resetOutput()
     }
     pager_cmd = nullptr;
 
-    if (out_logs_buf)
-    {
-        out_logs_buf->finalize();
-        out_logs_buf.reset();
-    }
-
-    std_out.next();
+    std_out->next();
 }
 
 
@@ -1538,7 +1593,7 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 
 namespace
 {
-bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
+bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 {
     try
     {
@@ -1572,7 +1627,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
     /// Process the query that requires transferring data blocks to the server.
     const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(std_in))))
+    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(*std_in))))
     {
         const auto & settings = client_context->getSettingsRef();
         if (settings[Setting::throw_if_no_data_to_insert])
@@ -1592,10 +1647,14 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         &client_context->getSettingsRef(),
         &client_context->getClientInfo(),
         true,
+        {},
         [&](const Progress & progress) { onProgress(progress); });
 
     if (send_external_tables)
         sendExternalTables(parsed_query);
+
+    startKeystrokeInterceptorIfExists();
+    SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
 
     /// Receive description of table structure.
     Block sample;
@@ -1628,17 +1687,25 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
+    /// If it's clickhouse-local, and the input data reading is already baked into the query pipeline,
+    /// don't read the data again here. This happens in some cases (e.g. input() table function) but not others (e.g. INFILE).
+    if (!connection->isSendDataNeeded())
+        return;
+
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
 
     if (need_render_progress)
     {
-        /// Set total_bytes_to_read for current fd.
-        FileProgress file_progress(0, std_in.getFileSize());
-        progress_indication.updateProgress(Progress(file_progress));
+        if (auto * std_in_desc = typeid_cast<ReadBufferFromFileDescriptor *>(std_in.get()))
+        {
+            /// Set total_bytes_to_read for current fd.
+            FileProgress file_progress(0, std_in_desc->getFileSize());
+            progress_indication.updateProgress(Progress(file_progress));
 
-        /// Set callback to be called on file progress.
-        if (tty_buf)
-            progress_indication.setFileProgressCallback(client_context, *tty_buf);
+            /// Set callback to be called on file progress.
+            if (tty_buf)
+                progress_indication.setFileProgressCallback(client_context, *tty_buf, tty_mutex);
+        }
     }
 
     /// If data fetched from file (maybe compressed file)
@@ -1701,9 +1768,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                 client_context->getSettingsRef()[Setting::max_block_size],
                 getNumberOfCPUCoresToUse());
 
-            auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(client_context),
-                BuildQueryPipelineSettings::fromContext(client_context));
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(client_context), BuildQueryPipelineSettings(client_context));
 
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
@@ -1784,6 +1849,9 @@ try
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
+    /// Concurrency control in client is not required
+    pipeline.setConcurrencyControl(false);
+
     if (need_render_progress)
     {
         pipeline.setProgressCallback([this](const Progress & progress){ onProgress(progress); });
@@ -1836,7 +1904,9 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
     /// Send data read from stdin.
     try
     {
-        sendDataFrom(std_in, sample, columns_description, parsed_query);
+        if (default_input_compression_method != CompressionMethod::None)
+            std_in = wrapReadBufferWithCompressionMethod(std::move(std_in), default_input_compression_method);
+        sendDataFrom(*std_in, sample, columns_description, parsed_query);
     }
     catch (Exception & e)
     {
@@ -1906,20 +1976,18 @@ void ClientBase::cancelQuery()
 {
     connection->sendCancel();
 
-    if (keystroke_interceptor)
-        try
-        {
-            keystroke_interceptor->stopIntercept();
-        }
-        catch (const DB::Exception &)
-        {
-            error_stream << getCurrentExceptionMessage(false);
-        }
+    stopKeystrokeInterceptorIfExists();
 
     if (need_render_progress && tty_buf)
-        progress_indication.clearProgressOutput(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_indication.clearProgressOutput(*tty_buf, lock);
+    }
     if (need_render_progress_table && tty_buf)
-        progress_table.clearTableOutput(*tty_buf);
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_table.clearTableOutput(*tty_buf, lock);
+    }
 
     if (is_interactive)
         output_stream << "Cancelling query." << std::endl;
@@ -1939,9 +2007,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     if (echo_query_ && *echo_query_)
     {
-        writeString(full_query, std_out);
-        writeChar('\n', std_out);
-        std_out.next();
+        writeString(full_query, *std_out);
+        writeChar('\n', *std_out);
+        std_out->next();
     }
 
     if (is_interactive)
@@ -1950,10 +2018,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         // Generate a new query_id
         for (const auto & query_id_format : query_id_formats)
         {
-            writeString(query_id_format.first, std_out);
-            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", client_context->getCurrentQueryId())), std_out);
-            writeChar('\n', std_out);
-            std_out.next();
+            writeString(query_id_format.first, *std_out);
+            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", client_context->getCurrentQueryId())), *std_out);
+            writeChar('\n', *std_out);
+            std_out->next();
         }
     }
 
@@ -1991,7 +2059,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
     {
         /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
+        Settings old_settings = client_context->getSettingsRef();
         SCOPE_EXIT_SAFE({
             try
             {
@@ -2008,45 +2076,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                     have_error = true;
                 }
             }
-            if (old_settings)
-                client_context->setSettings(*old_settings);
+            client_context->setSettings(old_settings);
         });
-
-        auto apply_query_settings = [&](const IAST & settings_ast)
-        {
-            if (!old_settings)
-                old_settings.emplace(client_context->getSettingsRef());
-            client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-            client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
-        };
-
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
-            apply_query_settings(*select->settings());
-        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
-        {
-            const ASTs & children = select_with_union->list_of_selects->children;
-            if (!children.empty())
-            {
-                // On the client it is enough to apply settings only for the
-                // last SELECT, since the only thing that is important to apply
-                // on the client is format settings.
-                const auto * last_select = children.back()->as<ASTSelectQuery>();
-                if (last_select && last_select->settings())
-                {
-                    apply_query_settings(*last_select->settings());
-                }
-            }
-        }
-        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
-            apply_query_settings(*query_with_output->settings_ast);
-        else if (insert && insert->settings_ast)
-            apply_query_settings(*insert->settings_ast);
+        InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
         ASTPtr input_function;
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
@@ -2054,7 +2092,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
         if (is_async_insert_with_inlined_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
@@ -2112,9 +2150,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     {
         initLogsOutputStream();
         if (need_render_progress && tty_buf)
-            progress_indication.clearProgressOutput(*tty_buf);
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_indication.clearProgressOutput(*tty_buf, lock);
+        }
         if (need_render_progress_table && tty_buf)
-            progress_table.clearTableOutput(*tty_buf);
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.clearTableOutput(*tty_buf, lock);
+        }
         logs_out_stream->writeProfileEvents(profile_events.last_block);
         logs_out_stream->flush();
 
@@ -2131,7 +2175,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         bool toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
         bool show_progress_table = !toggle_enabled || progress_table_toggle_on;
         if (need_render_progress_table && show_progress_table)
-            progress_table.writeFinalTable();
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.writeFinalTable(*tty_buf, lock);
+        }
         output_stream << std::endl << std::endl;
     }
     else
@@ -2300,7 +2347,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
+        {
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+        }
     }
 
     /// Test tags are started with "--" so they are interpreted as comments anyway.
@@ -2418,6 +2467,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // (or their absence).
                 bool error_matches_hint = true;
                 bool need_retry = test_hint.needRetry(server_exception, &retries_count);
+
                 if (need_retry)
                 {
                     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -2584,7 +2634,7 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
         || !ast_create.storage
         || !ast_create.storage->isExtendedStorageDefinition()
         || !ast_create.storage->engine
-        || ast_create.storage->engine->name.find("MergeTree") == std::string::npos)
+        || !ast_create.storage->engine->name.contains("MergeTree"))
         return false;
 
     auto all_changed = cmd_merge_tree_settings.changes();
@@ -2611,6 +2661,39 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     }
 
     return added_new_setting;
+}
+
+void ClientBase::startKeystrokeInterceptorIfExists()
+{
+    if (keystroke_interceptor)
+    {
+        progress_table_toggle_on = false;
+        try
+        {
+            keystroke_interceptor->startIntercept();
+        }
+        catch (const Exception &)
+        {
+            error_stream << getCurrentExceptionMessage(false);
+            keystroke_interceptor.reset();
+        }
+    }
+}
+
+void ClientBase::stopKeystrokeInterceptorIfExists()
+{
+    if (keystroke_interceptor)
+    {
+        try
+        {
+            keystroke_interceptor->stopIntercept();
+        }
+        catch (...)
+        {
+            error_stream << getCurrentExceptionMessage(false);
+            keystroke_interceptor.reset();
+        }
+    }
 }
 
 void ClientBase::runInteractive()
@@ -2664,11 +2747,11 @@ void ClientBase::runInteractive()
         catch (const ErrnoException & e)
         {
             if (e.getErrno() != EEXIST)
-            {
                 error_stream << getCurrentExceptionMessage(false) << '\n';
-            }
         }
     }
+
+    history_max_entries = getClientConfiguration().getUInt("history_max_entries");
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
@@ -2677,11 +2760,15 @@ void ClientBase::runInteractive()
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
     if (getClientConfiguration().getBool("highlight", true))
-        highlight_callback = highlight;
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors)
+        {
+            highlight(query, colors, *client_context);
+        };
 
     ReplxxLineReader lr(
         *suggest,
         history_file,
+        history_max_entries,
         getClientConfiguration().has("multiline"),
         getClientConfiguration().getBool("ignore_shell_suspend", true),
         query_extenders,

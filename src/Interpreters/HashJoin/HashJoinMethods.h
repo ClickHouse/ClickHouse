@@ -9,9 +9,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 /// Inserting an element into a hash table of the form `key -> reference to a string`, which will then be used by JOIN.
@@ -19,7 +16,7 @@ template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
     static ALWAYS_INLINE bool
-    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
+    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, const Block * stored_block, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
@@ -31,7 +28,8 @@ struct Inserter
         return false;
     }
 
-    static ALWAYS_INLINE void insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
+    static ALWAYS_INLINE void
+    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, const Block * stored_block, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
@@ -45,7 +43,13 @@ struct Inserter
     }
 
     static ALWAYS_INLINE void insertAsof(
-        HashJoin & join, HashMap & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool, const IColumn & asof_column)
+        HashJoin & join,
+        HashMap & map,
+        KeyGetter & key_getter,
+        const Block * stored_block,
+        size_t i,
+        Arena & pool,
+        const IColumn & asof_column)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
         typename HashMap::mapped_type * time_series_map = &emplace_result.getMapped();
@@ -66,10 +70,10 @@ public:
         HashJoin & join,
         HashJoin::Type type,
         MapsTemplate & maps,
-        size_t rows,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        Block * stored_block,
+        const Block * stored_block,
+        const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
         UInt8ColumnDataPtr join_mask,
         Arena & pool,
@@ -83,14 +87,30 @@ public:
         const Block & block_with_columns_to_add,
         const MapsTemplateVector & maps_,
         bool is_join_get = false);
+
+    static ScatteredBlock joinBlockImpl(
+        const HashJoin & join,
+        ScatteredBlock & block,
+        const Block & block_with_columns_to_add,
+        const MapsTemplateVector & maps_,
+        bool is_join_get = false);
+
 private:
     template <typename KeyGetter, bool is_asof_join>
     static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
 
-    template <typename KeyGetter, typename HashMap>
+    template <typename KeyGetter, typename HashMap, typename Selector>
     static size_t insertFromBlockImplTypeCase(
-        HashJoin & join, HashMap & map, size_t rows, const ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, UInt8ColumnDataPtr join_mask, Arena & pool, bool & is_inserted);
+        HashJoin & join,
+        HashMap & map,
+        const ColumnRawPtrs & key_columns,
+        const Sizes & key_sizes,
+        const Block * stored_block,
+        const Selector & selector,
+        ConstNullMapPtr null_map,
+        UInt8ColumnDataPtr join_mask,
+        Arena & pool,
+        bool & is_inserted);
 
     template <typename AddedColumns>
     static size_t switchJoinRightColumns(
@@ -115,30 +135,33 @@ private:
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
-    template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns>
+    template <typename KeyGetter, typename Map, bool need_filter, bool flag_per_row, typename AddedColumns, typename Selector>
     static size_t joinRightColumns(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
-        JoinStuff::JoinUsedFlags & used_flags);
+        JoinStuff::JoinUsedFlags & used_flags,
+        const Selector & selector);
 
     template <bool need_filter>
     static void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]]);
 
-    template <typename AddedColumns>
+    template <typename AddedColumns, typename Selector>
     static ColumnPtr buildAdditionalFilter(
         size_t left_start_row,
+        const Selector & selector,
         const std::vector<const RowRef *> & selected_rows,
         const std::vector<size_t> & row_replicate_offset,
         AddedColumns & added_columns);
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    template <typename KeyGetter, typename Map, typename AddedColumns>
+    template <typename KeyGetter, typename Map, typename AddedColumns, typename Selector>
     static size_t joinRightColumnsWithAddtitionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
+        const Selector & selector,
         bool need_filter [[maybe_unused]],
         bool flag_per_row [[maybe_unused]]);
 

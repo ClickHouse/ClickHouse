@@ -21,6 +21,7 @@ This function encrypts data using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
+- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -221,6 +222,7 @@ This function decrypts ciphertext into a plaintext using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
+- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 

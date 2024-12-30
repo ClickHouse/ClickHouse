@@ -166,5 +166,5 @@ private:
 };
 
 String toString(ClientInfo::Interface interface);
-
+String toString(ClientInfo::HTTPMethod method);
 }

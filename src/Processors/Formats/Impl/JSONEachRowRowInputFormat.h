@@ -43,6 +43,7 @@ private:
 
     size_t countRows(size_t max_block_size) override;
     bool supportsCountRows() const override { return true; }
+    bool supportsCustomSerializations() const override { return true; }
 
     const String & columnName(size_t i) const;
     size_t columnIndex(StringRef name, size_t key_index);

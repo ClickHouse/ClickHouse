@@ -17,6 +17,7 @@ class DataTypeNumber;
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int DECIMAL_OVERFLOW;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -310,7 +311,14 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
     using DecimalNativeType = typename DecimalType::NativeType;
     static constexpr bool throw_exception = std::is_void_v<ReturnType>;
 
-    if constexpr (std::is_floating_point_v<To>)
+    if constexpr (std::is_same_v<To, BFloat16>)
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from Decimal to BFloat16 is not implemented");
+        else
+            return ReturnType(false);
+    }
+    else if constexpr (is_floating_point<To>)
     {
         result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<DecimalNativeType>(scale));
     }

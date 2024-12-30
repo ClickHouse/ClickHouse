@@ -49,4 +49,4 @@ LIMIT 2
 **See Also**
 
 - [DeltaLake engine](/docs/en/engines/table-engines/integrations/deltalake.md)
-
+- [DeltaLake cluster table function](/docs/en/sql-reference/table-functions/deltalakeCluster.md)

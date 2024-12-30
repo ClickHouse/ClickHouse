@@ -104,11 +104,27 @@ def test_flatten_nested(started_cluster):
         "CREATE MATERIALIZED VIEW create_replicated_table.mv ENGINE=ReplicatedMergeTree ORDER BY tuple() AS select d, cast([(k, toString(i32))] as Nested(a UInt64, b String)) from create_replicated_table.replicated_table"
     )
 
-    assert main_node.query(
-        "show create create_replicated_table.mv"
-    ) == dummy_node.query("show create create_replicated_table.mv")
+    main_node.query(
+        "CREATE TABLE create_replicated_table.no_flatten (n Nested(a UInt64, b String)) ENGINE=ReplicatedMergeTree ORDER BY tuple();",
+        settings={"flatten_nested": 0},
+    )
+
+    snapshot_recovering_node.query(
+        "CREATE DATABASE create_replicated_table ENGINE = Replicated('/test/create_replicated_table', 'shard1', 'replica3');"
+    )
+    snapshot_recovering_node.query(
+        "SYSTEM SYNC DATABASE REPLICA create_replicated_table"
+    )
+
+    for node in [dummy_node, snapshot_recovering_node]:
+        for table in ["replicated_table", "mv", "no_flatten"]:
+            assert main_node.query(
+                f"show create create_replicated_table.{table}"
+            ) == node.query(f"show create create_replicated_table.{table}")
+
     main_node.query("DROP DATABASE create_replicated_table SYNC")
     dummy_node.query("DROP DATABASE create_replicated_table SYNC")
+    snapshot_recovering_node.query("DROP DATABASE create_replicated_table SYNC")
 
 
 def test_create_replicated_table(started_cluster):

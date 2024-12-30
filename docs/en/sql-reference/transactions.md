@@ -1,6 +1,9 @@
 ---
 slug: /en/guides/developer/transactional
 ---
+
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
 # Transactional (ACID) support
 
 ## Case 1: INSERT into one partition, of one table, of the MergeTree* family
@@ -45,6 +48,8 @@ Same as Case 1 above, with this detail:
 - this explanation does not cover a new transactions feature that allow to have full-featured transactions over multiple tables, materialized views, for multiple SELECTs, etc. (see the next section on Transactions, Commit, and Rollback)
 
 ## Transactions, Commit, and Rollback
+
+<ExperimentalBadge/>
 
 In addition to the functionality described at the top of this document, ClickHouse has experimental support for transactions, commits, and rollback functionality.
 

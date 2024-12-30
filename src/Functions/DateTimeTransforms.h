@@ -64,6 +64,7 @@ constexpr time_t MAX_DATETIME_DAY_NUM =  49710;               // 2106-02-07
 /// This factor transformation will say that the function is monotone everywhere.
 struct ZeroTransform
 {
+    static constexpr auto name = "Zero";
     static UInt16 execute(Int64, const DateLUTImpl &) { return 0; }
     static UInt16 execute(UInt32, const DateLUTImpl &) { return 0; }
     static UInt16 execute(Int32, const DateLUTImpl &) { return 0; }

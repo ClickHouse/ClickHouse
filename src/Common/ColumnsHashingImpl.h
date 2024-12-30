@@ -161,7 +161,7 @@ public:
 
     FindResultImpl(Mapped * value_, bool found_, size_t off)
         : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off), value(value_) {}
-    Mapped & getMapped() const { return *value; }
+    Mapped & getMapped() const { return *value; }  /// NOLINT(clang-analyzer-core.uninitialized.UndefReturn)
 };
 
 template <bool need_offset>

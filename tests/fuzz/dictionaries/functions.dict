@@ -567,6 +567,7 @@
 "arrayPartialSort"
 "arrayPopBack"
 "arrayPopFront"
+"arrayPrAUC"
 "arrayProduct"
 "arrayPushBack"
 "arrayPushFront"

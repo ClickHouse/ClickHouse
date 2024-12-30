@@ -1,9 +1,11 @@
 #include <Parsers/ASTIdentifier.h>
 
+#include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <IO/Operators.h>
 
 
@@ -103,13 +105,21 @@ const String & ASTIdentifier::name() const
     return full_name;
 }
 
-void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto format_element = [&](const String & elem_name)
     {
-        settings.ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(elem_name, /*ambiguous=*/false);
-        settings.ostr << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_identifier : "");
+        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
+        {
+            ostr << special_delimiter_and_identifier->first;
+            settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+        }
+        else
+        {
+            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
+        }
+        ostr << (settings.hilite ? hilite_none : "");
     };
 
     if (compound())
@@ -117,14 +127,14 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
         for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
         {
             if (i != 0)
-                settings.ostr << '.';
+                ostr << '.';
 
             /// Some AST rewriting code, like IdentifierSemantic::setColumnLongName,
             /// does not respect children of identifier.
             /// Here we also ignore children if they are empty.
             if (name_parts[i].empty() && j < children.size())
             {
-                children[j]->formatImpl(settings, state, frame);
+                children[j]->format(ostr, settings, state, frame);
                 ++j;
             }
             else
@@ -135,7 +145,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     {
         const auto & name = shortName();
         if (name.empty() && !children.empty())
-            children.front()->formatImpl(settings, state, frame);
+            children.front()->format(ostr, settings, state, frame);
         else
             format_element(name);
     }

@@ -9,7 +9,7 @@ CREATE TABLE url_na_log
 ENGINE = MergeTree
 PRIMARY KEY SiteId
 ORDER BY (SiteId, DateVisit)
-SETTINGS index_granularity = 1000, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity_bytes = 1000000, index_granularity = 1000, min_bytes_for_wide_part = 0;
 
 CREATE ROW POLICY url_na_log_policy0 ON url_na_log FOR SELECT USING (DateVisit < '2022-08-11') OR (DateVisit > '2022-08-19') TO default;
 

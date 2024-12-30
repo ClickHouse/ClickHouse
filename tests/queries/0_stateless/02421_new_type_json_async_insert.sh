@@ -17,5 +17,5 @@ $CLICKHOUSE_CLIENT --async_insert=1 --wait_for_async_insert=1 -q 'INSERT INTO t_
 
 wait
 
-$CLICKHOUSE_CLIENT -q "SELECT data.k1 FROM t_json_async_insert ORDER BY data.k1"
+$CLICKHOUSE_CLIENT -q "SELECT data.k1 FROM t_json_async_insert ORDER BY data.k1" --allow_suspicious_types_in_order_by 1
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_json_async_insert"

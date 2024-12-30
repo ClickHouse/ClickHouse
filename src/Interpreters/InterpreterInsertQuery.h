@@ -43,6 +43,7 @@ public:
 
     Chain buildChain(
         const StoragePtr & table,
+        size_t view_level,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & columns,
         ThreadStatusesHolderPtr thread_status_holder = {},
@@ -79,13 +80,20 @@ private:
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
-    std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSinkChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block);
+    std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSinkChains(
+        size_t presink_streams,
+        size_t sink_streams,
+        StoragePtr table,
+        size_t view_level,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Block & query_sample_block);
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     Chain buildSink(
         const StoragePtr & table,
+        size_t view_level,
         const StorageMetadataPtr & metadata_snapshot,
         ThreadStatusesHolderPtr thread_status_holder,
         ThreadGroupPtr running_group,

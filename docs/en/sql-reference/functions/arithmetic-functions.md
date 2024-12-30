@@ -8,7 +8,7 @@ sidebar_label: Arithmetic
 
 Arithmetic functions work for any two operands of type `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64`.
 
-Before performing the operation, both operands are casted to the result type. The result type is determined as follows (unless specified
+Before performing the operation, both operands are cast to the result type. The result type is determined as follows (unless specified
 differently in the function documentation below):
 - If both operands are up to 32 bits wide, the size of the result type will be the size of the next bigger type following the bigger of the
   two operands (integer size promotion). For example, `UInt8 + UInt16 = UInt32` or `Float32 * Float32 = Float64`.

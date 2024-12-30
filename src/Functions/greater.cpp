@@ -7,6 +7,7 @@ namespace DB
 
 using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(Greater)
 {

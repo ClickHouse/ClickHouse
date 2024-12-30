@@ -63,14 +63,14 @@ $CLICKHOUSE_CLIENT -q "
     ) where y != 0 and s != 4 order by s, y
     settings enable_optimize_predicate_expression=0"
 
-echo "> one condition of filter should be pushed down after aggregating, other condition is casted"
+echo "> one condition of filter should be pushed down after aggregating, other condition is cast"
 $CLICKHOUSE_CLIENT --enable_analyzer=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 4
     settings enable_optimize_predicate_expression=0" |
     grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 4) :: 5, 1 :: 3) -> and(notEquals(y, 0), minus(s, 4))"
-echo "> (analyzer) one condition of filter should be pushed down after aggregating, other condition is casted"
+echo "> (analyzer) one condition of filter should be pushed down after aggregating, other condition is cast"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
@@ -89,14 +89,14 @@ $CLICKHOUSE_CLIENT --enable_analyzer=0 --convert_query_to_cnf=0 -q "
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 8 and s - 4
     settings enable_optimize_predicate_expression=0" |
-    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 8) :: 5, minus(s, 4) :: 2) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))"
+    grep -o "Aggregating\|Filter column\|Filter column: notEquals(y, 0)\|FUNCTION and(minus(s, 8) :: 3, minus(s, 4) :: 5) -> and(notEquals(y, 0), minus(s, 8), minus(s, 4))"
 echo "> (analyzer) one condition of filter should be pushed down after aggregating, other two conditions are ANDed"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 --convert_query_to_cnf=0 -q "
     explain actions = 1 select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
     ) where y != 0 and s - 8 and s - 4
     settings enable_optimize_predicate_expression=0" |
-        grep -o "Aggregating\|Filter column\|Filter column: notEquals(__table1.y, 0_UInt8)\|FUNCTION and(minus(__table1.s, 8_UInt8) :: 1, minus(__table1.s, 4_UInt8) :: 2) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 8_UInt8), minus(__table1.s, 4_UInt8))"
+        grep -o "Aggregating\|Filter column\|Filter column: notEquals(__table1.y, 0_UInt8)\|FUNCTION and(minus(__table1.s, 8_UInt8) :: 3, minus(__table1.s, 4_UInt8) :: 5) -> and(notEquals(__table1.y, 0_UInt8), minus(__table1.s, 8_UInt8), minus(__table1.s, 4_UInt8))"
 $CLICKHOUSE_CLIENT -q "
     select s, y from (
         select sum(x) as s, y from (select number as x, number + 1 as y from numbers(10)) group by y
@@ -134,7 +134,7 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1 select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
     ) array join x where y != 2 and x != 0" |
-    grep -o "Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__table1.x, 0_UInt8))\|ARRAY JOIN __table1.x\|Filter column: notEquals(__table2.y, 2_UInt8)"
+    grep -o "Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))\|ARRAY JOIN __array_join_exp_1\|Filter column: notEquals(__table2.y, 2_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)

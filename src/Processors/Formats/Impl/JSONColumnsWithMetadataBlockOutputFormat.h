@@ -49,7 +49,6 @@ public:
         statistics.rows_before_aggregation = rows_before_aggregation_;
         statistics.applied_aggregation = true;
     }
-    void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
 
 protected:
     void consumeTotals(Chunk chunk) override;

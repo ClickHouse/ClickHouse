@@ -31,10 +31,12 @@ bool SnappyReadBuffer::nextImpl()
 {
     if (compress_buffer.empty() && uncompress_buffer.empty())
     {
-        WriteBufferFromString wb(compress_buffer);
-        copyData(*in, wb);
+        {
+            WriteBufferFromString wb(compress_buffer);
+            copyData(*in, wb);
+        }
 
-        bool success = snappy::Uncompress(compress_buffer.data(), wb.count(), &uncompress_buffer);
+        bool success = snappy::Uncompress(compress_buffer.data(), compress_buffer.size(), &uncompress_buffer);
         if (!success)
         {
             throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "snappy uncomress failed: ");

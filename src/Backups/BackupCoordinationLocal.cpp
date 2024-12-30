@@ -1,34 +1,25 @@
 #include <Backups/BackupCoordinationLocal.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <fmt/format.h>
 
+#include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-BackupCoordinationLocal::BackupCoordinationLocal(bool plain_backup_)
-    : log(getLogger("BackupCoordinationLocal")), file_infos(plain_backup_)
+BackupCoordinationLocal::BackupCoordinationLocal(
+    bool is_plain_backup_,
+    bool allow_concurrent_backup_,
+    BackupConcurrencyCounters & concurrency_counters_)
+    : log(getLogger("BackupCoordinationLocal"))
+    , concurrency_check(/* is_restore = */ false, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_backup_, concurrency_counters_)
+    , file_infos(is_plain_backup_)
 {
 }
 
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::setStage(const String &, const String &)
-{
-}
-
-void BackupCoordinationLocal::setError(const Exception &)
-{
-}
-
-Strings BackupCoordinationLocal::waitForStage(const String &)
-{
-    return {};
-}
-
-Strings BackupCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
+ZooKeeperRetriesInfo BackupCoordinationLocal::getOnClusterInitializationKeeperRetriesInfo() const
 {
     return {};
 }
@@ -133,17 +124,6 @@ bool BackupCoordinationLocal::startWritingFile(size_t data_file_index)
     std::lock_guard lock{writing_files_mutex};
     /// Return false if this function was already called with this `data_file_index`.
     return writing_files.emplace(data_file_index).second;
-}
-
-
-bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
-{
-    if (num_active_backups > 1)
-    {
-        LOG_WARNING(log, "Found concurrent backups: num_active_backups={}", num_active_backups);
-        return true;
-    }
-    return false;
 }
 
 }

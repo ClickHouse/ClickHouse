@@ -300,7 +300,7 @@ private:
             /// This code is partial copy-paste from ExpressionAnalyzer.
             if (data.table_join)
             {
-                auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext());
+                auto joined_block_actions = data.table_join->createJoinedBlockActions(data.getContext(), data.prepared_sets);
                 NamesWithAliases required_columns_with_aliases = data.table_join->getRequiredColumns(
                     Block(joined_block_actions.getResultColumns()), joined_block_actions.getRequiredColumns().getNames());
 

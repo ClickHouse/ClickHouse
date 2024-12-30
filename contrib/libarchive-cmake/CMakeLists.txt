@@ -2,8 +2,8 @@ set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libarchive")
 
 set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_acl.c"
-    "${LIBRARY_DIR}/libarchive/archive_blake2sp_ref.c"
-    "${LIBRARY_DIR}/libarchive/archive_blake2s_ref.c"
+#    "${LIBRARY_DIR}/libarchive/archive_blake2sp_ref.c"
+#    "${LIBRARY_DIR}/libarchive/archive_blake2s_ref.c"
     "${LIBRARY_DIR}/libarchive/archive_check_magic.c"
     "${LIBRARY_DIR}/libarchive/archive_cmdline.c"
     "${LIBRARY_DIR}/libarchive/archive_cryptor.c"
@@ -37,7 +37,7 @@ set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_read_disk_entry_from_file.c"
     "${LIBRARY_DIR}/libarchive/archive_read_disk_posix.c"
     "${LIBRARY_DIR}/libarchive/archive_read_disk_set_standard_lookup.c"
-    "${LIBRARY_DIR}/libarchive/archive_read_disk_windows.c"
+#    "${LIBRARY_DIR}/libarchive/archive_read_disk_windows.c"
     "${LIBRARY_DIR}/libarchive/archive_read_extract2.c"
     "${LIBRARY_DIR}/libarchive/archive_read_extract.c"
     "${LIBRARY_DIR}/libarchive/archive_read_open_fd.c"

@@ -151,7 +151,8 @@ void ConnectionEstablisherAsync::Task::run(AsyncCallback async_callback, Suspend
 {
     connection_establisher_async.reset();
     connection_establisher_async.connection_establisher.setAsyncCallback(async_callback);
-    connection_establisher_async.connection_establisher.run(connection_establisher_async.result, connection_establisher_async.fail_message);
+    connection_establisher_async.connection_establisher.run(connection_establisher_async.result,
+        connection_establisher_async.fail_message, connection_establisher_async.force_connected);
     connection_establisher_async.is_finished = true;
 }
 

@@ -31,5 +31,7 @@ size_t serializeThriftStruct(const T & obj, WriteBuffer & out)
 template size_t serializeThriftStruct<parquet::format::PageHeader>(const parquet::format::PageHeader &, WriteBuffer & out);
 template size_t serializeThriftStruct<parquet::format::ColumnChunk>(const parquet::format::ColumnChunk &, WriteBuffer & out);
 template size_t serializeThriftStruct<parquet::format::FileMetaData>(const parquet::format::FileMetaData &, WriteBuffer & out);
+template size_t serializeThriftStruct<parquet::format::ColumnIndex>(const parquet::format::ColumnIndex &, WriteBuffer & out);
+template size_t serializeThriftStruct<parquet::format::OffsetIndex>(const parquet::format::OffsetIndex &, WriteBuffer & out);
 
 }

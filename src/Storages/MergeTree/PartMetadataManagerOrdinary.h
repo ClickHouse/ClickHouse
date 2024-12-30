@@ -13,6 +13,7 @@ public:
     ~PartMetadataManagerOrdinary() override = default;
 
     std::unique_ptr<ReadBuffer> read(const String & file_name) const override;
+    std::unique_ptr<ReadBuffer> readIfExists(const String & file_name) const override;
 
     bool exists(const String & file_name) const override;
 

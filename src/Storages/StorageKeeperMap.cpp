@@ -189,8 +189,8 @@ public:
             ZooKeeperRetriesInfo{
                 settings[Setting::insert_keeper_max_retries],
                 settings[Setting::insert_keeper_retry_initial_backoff_ms],
-                settings[Setting::insert_keeper_retry_max_backoff_ms]},
-            context->getProcessListElement()};
+                settings[Setting::insert_keeper_retry_max_backoff_ms],
+                context->getProcessListElement()}};
 
         zk_retry.retryLoop([&]()
         {
@@ -425,8 +425,10 @@ StorageKeeperMap::StorageKeeperMap(
         getName(),
         getLogger(getName()),
         ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-        context_->getProcessListElement()};
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            context_->getProcessListElement()}};
 
     zk_retry.retryLoop(
         [&]
@@ -670,8 +672,10 @@ Pipe StorageKeeperMap::read(
             getName(),
             getLogger(getName()),
             ZooKeeperRetriesInfo{
-                settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-            context_->getProcessListElement()};
+                settings[Setting::keeper_max_retries],
+                settings[Setting::keeper_retry_initial_backoff_ms],
+                settings[Setting::keeper_retry_max_backoff_ms],
+                context_->getProcessListElement()}};
 
         std::vector<std::string> children;
         zk_retry.retryLoop([&]
@@ -699,8 +703,10 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         getName(),
         getLogger(getName()),
         ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-        local_context->getProcessListElement()};
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            local_context->getProcessListElement()}};
 
     zk_retry.retryLoop([&]
     {
@@ -889,7 +895,7 @@ private:
             }
         };
 
-        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_keeper_multiread;
+        auto max_multiread_size = with_retries->getKeeperSettings().batch_size_for_multiread;
 
         auto keys_it = data_children.begin();
         while (keys_it != data_children.end())
@@ -941,9 +947,8 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
-            WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
-            backup_entries_collector.getContext()->getProcessListElement(),
-            [](WithRetries::FaultyKeeper &) {}
+            BackupKeeperSettings::fromContext(backup_entries_collector.getContext()),
+            backup_entries_collector.getContext()->getProcessListElement()
         );
 
         backup_entries_collector.addBackupEntries(
@@ -972,9 +977,8 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
     (
         getLogger(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
-        WithRetries::KeeperSettings::fromContext(restorer.getContext()),
-        restorer.getContext()->getProcessListElement(),
-        [](WithRetries::FaultyKeeper &) {}
+        BackupKeeperSettings::fromContext(restorer.getContext()),
+        restorer.getContext()->getProcessListElement()
     );
 
     bool allow_non_empty_tables = restorer.isNonEmptyTableAllowed();
@@ -1028,16 +1032,16 @@ void StorageKeeperMap::restoreDataImpl(
     if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
     {
         temp_data_file.emplace(temporary_disk);
-        auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
-        copyData(*in, *out);
-        out.reset();
+        auto out = WriteBufferFromFile(temp_data_file->getAbsolutePath());
+        copyData(*in, out);
+        out.finalize();
         in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
     }
     std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
     CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
     fs::path data_path_fs(zk_data_path);
 
-    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_keeper_multi;
+    auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;
 
     Coordination::Requests create_requests;
     const auto flush_create_requests = [&]
@@ -1138,8 +1142,10 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
                 getName(),
                 getLogger(getName()),
                 ZooKeeperRetriesInfo{
-                    settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-                local_context->getProcessListElement()};
+                    settings[Setting::keeper_max_retries],
+                    settings[Setting::keeper_retry_initial_backoff_ms],
+                    settings[Setting::keeper_retry_max_backoff_ms],
+                    local_context->getProcessListElement()}};
 
             zk_retry.retryLoop([&]
             {
@@ -1250,8 +1256,10 @@ Chunk StorageKeeperMap::getBySerializedKeys(
         getName(),
         getLogger(getName()),
         ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-        local_context->getProcessListElement()};
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            local_context->getProcessListElement()}};
 
     zkutil::ZooKeeper::MultiTryGetResponse values;
     zk_retry.retryLoop([&]{
@@ -1396,8 +1404,10 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 getName(),
                 getLogger(getName()),
                 ZooKeeperRetriesInfo{
-                    settings[Setting::keeper_max_retries], settings[Setting::keeper_retry_initial_backoff_ms], settings[Setting::keeper_retry_max_backoff_ms]},
-                local_context->getProcessListElement()};
+                    settings[Setting::keeper_max_retries],
+                    settings[Setting::keeper_retry_initial_backoff_ms],
+                    settings[Setting::keeper_retry_max_backoff_ms],
+                    local_context->getProcessListElement()}};
 
             Coordination::Error status;
             zk_retry.retryLoop([&]

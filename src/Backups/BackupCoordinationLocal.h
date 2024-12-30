@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
+#include <Backups/BackupConcurrencyCheck.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
@@ -21,13 +22,20 @@ namespace DB
 class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
-    explicit BackupCoordinationLocal(bool plain_backup_);
+    explicit BackupCoordinationLocal(
+        bool is_plain_backup_,
+        bool allow_concurrent_backup_,
+        BackupConcurrencyCounters & concurrency_counters_);
+
     ~BackupCoordinationLocal() override;
 
-    void setStage(const String & new_stage, const String & message) override;
-    void setError(const Exception & exception) override;
-    Strings waitForStage(const String & stage_to_wait) override;
-    Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;
+    void setBackupQueryIsSentToOtherHosts() override {}
+    bool isBackupQuerySentToOtherHosts() const override { return false; }
+    Strings setStage(const String &, const String &, bool) override { return {}; }
+    bool setError(std::exception_ptr, bool) override { return true; }
+    bool waitOtherHostsFinish(bool) const override { return true; }
+    bool finish(bool) override { return true; }
+    bool cleanup(bool) override { return true; }
 
     void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
                                 const std::vector<PartNameAndChecksum> & part_names_and_checksums) override;
@@ -54,17 +62,18 @@ public:
     BackupFileInfos getFileInfosForAllHosts() const override;
     bool startWritingFile(size_t data_file_index) override;
 
-    bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
+    ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const override;
 
 private:
     LoggerPtr const log;
+    BackupConcurrencyCheck concurrency_check;
 
-    BackupCoordinationReplicatedTables TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
-    BackupCoordinationReplicatedAccess TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
-    BackupCoordinationReplicatedSQLObjects TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
-    BackupCoordinationFileInfos TSA_GUARDED_BY(file_infos_mutex) file_infos;
+    BackupCoordinationReplicatedTables replicated_tables TSA_GUARDED_BY(replicated_tables_mutex);
+    BackupCoordinationReplicatedAccess replicated_access TSA_GUARDED_BY(replicated_access_mutex);
+    BackupCoordinationReplicatedSQLObjects replicated_sql_objects TSA_GUARDED_BY(replicated_sql_objects_mutex);
+    BackupCoordinationFileInfos file_infos TSA_GUARDED_BY(file_infos_mutex);
     BackupCoordinationKeeperMapTables keeper_map_tables TSA_GUARDED_BY(keeper_map_tables_mutex);
-    std::unordered_set<size_t> TSA_GUARDED_BY(writing_files_mutex) writing_files;
+    std::unordered_set<size_t> writing_files TSA_GUARDED_BY(writing_files_mutex);
 
     mutable std::mutex replicated_tables_mutex;
     mutable std::mutex replicated_access_mutex;

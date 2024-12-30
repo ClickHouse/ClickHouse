@@ -209,6 +209,9 @@ def main():
         # We check if docker works, because if it's down, it's infrastructure
         try:
             subprocess.check_call("docker info", shell=True)
+            logging.warning("Collecting 'dmesg -T' content")
+            with TeePopen("sudo dmesg -T", build_output_path / "dmesg.log") as process:
+                process.wait()
         except subprocess.CalledProcessError:
             logging.error(
                 "The dockerd looks down, won't upload anything and generate report"

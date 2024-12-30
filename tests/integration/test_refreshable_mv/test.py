@@ -20,6 +20,7 @@ node1 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "1"},
     stay_alive=True,
 )
@@ -28,6 +29,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "2"},
 )
 nodes = [node1, node2]
@@ -103,7 +105,9 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
             )
             node.query(f"system wait view re.{name}")
         # Check results.
-        rows_after = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
+        node = nodes[randint(0, 1)]
+        node.query(f"system sync replica re.{name}")
+        rows_after = int(node.query(f"select count() from re.{name}"))
         expected = 1 if coordinated else 2
         assert rows_after - rows_before == expected
 

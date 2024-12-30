@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-merge-tree-settings
+# Tags: long, no-random-merge-tree-settings, no-random-settings
+# no sanitizers -- bad idea to check memory usage with sanitizers
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

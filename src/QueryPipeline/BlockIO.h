@@ -32,7 +32,7 @@ struct BlockIO
     bool null_format = false;
 
     void onFinish();
-    void onException();
+    void onException(bool log_as_error=true);
     void onCancelOrConnectionLoss();
 
     /// Set is_all_data_sent in system.processes for this query.

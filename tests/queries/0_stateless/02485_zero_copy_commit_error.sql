@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-shared-merge-tree
 
 create table rmt1 (n int, m int, k int) engine=ReplicatedMergeTree('/test/02485/{database}/rmt', '1') order by n
     settings storage_policy='s3_cache', allow_remote_fs_zero_copy_replication=1, old_parts_lifetime=60, cleanup_delay_period=60, max_cleanup_delay_period=60, cleanup_delay_period_random_add=1, min_bytes_for_wide_part=0, simultaneous_parts_removal_limit=1;

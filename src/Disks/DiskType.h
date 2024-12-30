@@ -27,9 +27,11 @@ enum class MetadataStorageType : uint8_t
 {
     None,
     Local,
+    Keeper,
     Plain,
     PlainRewritable,
     StaticWeb,
+    Memory,
 };
 
 MetadataStorageType metadataTypeFromString(const String & type);

@@ -60,6 +60,7 @@ SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explai
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN SYNTAX SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a CROSS JOIN t3);
 
+-- {echoOn}
 --- EXPLAIN QUERY TREE
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 WHERE t1.a = t2.a) SETTINGS enable_analyzer = 1;
@@ -105,6 +106,8 @@ SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explai
 
 SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
     EXPLAIN QUERY TREE SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a CROSS JOIN t3) SETTINGS enable_analyzer = 1;
+
+-- {echoOff}
 
 INSERT INTO t1 values (1,1), (2,2), (3,3), (4,4);
 INSERT INTO t2 values (1,1), (1, Null);

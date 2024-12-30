@@ -256,7 +256,7 @@ uint64_t readOffset(std::string_view & sp, bool is64_bit)
 std::string_view readBytes(std::string_view & sp, uint64_t len)
 {
     SAFE_CHECK(len <= sp.size(), "invalid string length: {} vs. {}", len, sp.size());
-    std::string_view ret(sp.data(), len);
+    std::string_view ret(sp.data(), len);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     sp.remove_prefix(len);
     return ret;
 }
@@ -266,7 +266,7 @@ std::string_view readNullTerminated(std::string_view & sp)
 {
     const char * p = static_cast<const char *>(memchr(sp.data(), 0, sp.size()));
     SAFE_CHECK(p, "invalid null-terminated string");
-    std::string_view ret(sp.data(), p - sp.data());
+    std::string_view ret(sp.data(), p - sp.data());  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     sp = std::string_view(p + 1, sp.size());
     return ret;
 }
@@ -442,7 +442,7 @@ bool Dwarf::Section::next(std::string_view & chunk)
     is64_bit = (initial_length == uint32_t(-1));
     auto length = is64_bit ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(length <= chunk.size(), "invalid DWARF section");
-    chunk = std::string_view(chunk.data(), length);
+    chunk = std::string_view(chunk.data(), length);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     data = std::string_view(chunk.end(), data.end() - chunk.end());
     return true;
 }
@@ -937,7 +937,7 @@ bool Dwarf::findDebugInfoOffset(uintptr_t address, std::string_view aranges, uin
         // Padded to a multiple of 2 addresses.
         // Strangely enough, this is the only place in the DWARF spec that requires
         // padding.
-        skipPadding(chunk, aranges.data(), 2 * sizeof(uintptr_t));
+        skipPadding(chunk, aranges.data(), 2 * sizeof(uintptr_t));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
         for (;;)
         {
             auto start = read<uintptr_t>(chunk);
@@ -1681,7 +1681,7 @@ struct LineNumberAttribute
     std::variant<uint64_t, std::string_view> attr_value;
 };
 
-LineNumberAttribute readLineNumberAttribute(
+LineNumberAttribute static readLineNumberAttribute(
     bool is64_bit, std::string_view & format, std::string_view & entries, std::string_view debugStr, std::string_view debugLineStr)
 {
     uint64_t content_type_code = readULEB(format);
@@ -1817,7 +1817,7 @@ void Dwarf::LineNumberVM::init()
     }
     uint64_t header_length = readOffset(data_, is64Bit_);
     SAFE_CHECK(header_length <= data_.size(), "invalid line number VM header length");
-    std::string_view header(data_.data(), header_length);
+    std::string_view header(data_.data(), header_length);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     data_ = std::string_view(header.end(), data_.end() - header.end());
 
     minLength_ = read<uint8_t>(header);
@@ -1846,7 +1846,7 @@ void Dwarf::LineNumberVM::init()
         {
             ++v4_.includeDirectoryCount;
         }
-        v4_.includeDirectories = {tmp, header.data()};
+        v4_.includeDirectories = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
 
         tmp = header.data();
         FileName fn;
@@ -1855,7 +1855,7 @@ void Dwarf::LineNumberVM::init()
         {
             ++v4_.fileNameCount;
         }
-        v4_.fileNames = {tmp, header.data()};
+        v4_.fileNames = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
     else if (version_ == 5)
     {
@@ -1868,7 +1868,7 @@ void Dwarf::LineNumberVM::init()
             readULEB(header); // A content type code
             readULEB(header); // A form code using the attribute form codes
         }
-        v5_.directoryEntryFormat = {tmp, header.data()};
+        v5_.directoryEntryFormat = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
         v5_.directoriesCount = readULEB(header);
         tmp = header.data();
         for (uint64_t i = 0; i < v5_.directoriesCount; i++)
@@ -1879,7 +1879,7 @@ void Dwarf::LineNumberVM::init()
                 readLineNumberAttribute(is64Bit_, format, header, debugStr_, debugLineStr_);
             }
         }
-        v5_.directories = {tmp, header.data()};
+        v5_.directories = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
 
         v5_.fileNameEntryFormatCount = read<uint8_t>(header);
         tmp = header.data();
@@ -1890,7 +1890,7 @@ void Dwarf::LineNumberVM::init()
             readULEB(header); // A content type code
             readULEB(header); // A form code using the attribute form codes
         }
-        v5_.fileNameEntryFormat = {tmp, header.data()};
+        v5_.fileNameEntryFormat = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
         v5_.fileNamesCount = readULEB(header);
         tmp = header.data();
         for (uint64_t i = 0; i < v5_.fileNamesCount; i++)
@@ -1901,7 +1901,7 @@ void Dwarf::LineNumberVM::init()
                 readLineNumberAttribute(is64Bit_, format, header, debugStr_, debugLineStr_);
             }
         }
-        v5_.fileNames = {tmp, header.data()};
+        v5_.fileNames = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
 }
 

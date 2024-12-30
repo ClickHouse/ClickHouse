@@ -324,9 +324,9 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Enum8:    types(T::INT32, C::INT_8,   int_type(8,  true)); break; //  Int8
         case TypeIndex::Enum16:   types(T::INT32, C::INT_16,  int_type(16, true)); break; //  Int16
         case TypeIndex::IPv4:     types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
-        case TypeIndex::Date:     types(T::INT32, C::UINT_16, int_type(16, false)); break; // UInt16
-        case TypeIndex::DateTime: types(T::INT32, C::UINT_32, int_type(32, false)); break; // UInt32
 
+        /// Parquet doesn't have 16-bit date type, so we cast Date to 32 bits.
+        case TypeIndex::Date:
         case TypeIndex::Date32:
         {
             parq::LogicalType t;
@@ -334,6 +334,27 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             types(T::INT32, C::DATE, t);
             break;
         }
+
+        /// Parquet only has timestamps in milli-/micro-/nanoseconds, not seconds.
+        /// So we either write it as plain UInt32 or multiply by 1000 and write as milliseconds
+        /// (equivalent to DateTime64(3)).
+        case TypeIndex::DateTime:
+            if (options.output_datetime_as_uint32)
+                types(T::INT32, C::UINT_32, int_type(32, false)); // UInt32
+            else
+            {
+                /// DateTime64(3).
+                parq::TimeUnit unit;
+                unit.__set_MILLIS({});
+                parq::TimestampType tt;
+                tt.__set_isAdjustedToUTC(true);
+                tt.__set_unit(unit);
+                parq::LogicalType t;
+                t.__set_TIMESTAMP(tt);
+                types(T::INT64, parq::ConvertedType::TIMESTAMP_MILLIS, t);
+                state.datetime_multiplier = 1000;
+            }
+            break;
 
         case TypeIndex::DateTime64:
         {
@@ -372,7 +393,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::LogicalType t;
             t.__set_TIMESTAMP(tt);
             types(T::INT64, converted, t);
-            state.datetime64_multiplier = DataTypeDateTime64::getScaleMultiplier(converted_scale - scale);
+            state.datetime_multiplier = DataTypeDateTime64::getScaleMultiplier(converted_scale - scale);
             break;
         }
 

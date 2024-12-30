@@ -675,8 +675,10 @@ void TestKeeper::processingThread()
             if (requests_queue.tryPop(info, max_wait))
             {
                 if (expired)
+                {
+                    exprireRequest(std::move(info));
                     break;
-
+                }
 
                 ++zxid;
 
@@ -717,6 +719,37 @@ void TestKeeper::processingThread()
     }
 }
 
+void TestKeeper::exprireRequest(RequestInfo && request)
+{
+    if (request.callback)
+    {
+        ResponsePtr response = request.request->createResponse();
+        response->error = Error::ZSESSIONEXPIRED;
+        try
+        {
+            request.callback(*response);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+    if (request.watch)
+    {
+        WatchResponse response;
+        response.type = SESSION;
+        response.state = EXPIRED_SESSION;
+        response.error = Error::ZSESSIONEXPIRED;
+        try
+        {
+            (*request.watch)(response);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
 
 void TestKeeper::finalize(const String &)
 {
@@ -765,34 +798,7 @@ void TestKeeper::finalize(const String &)
         RequestInfo info;
         while (requests_queue.tryPop(info))
         {
-            if (info.callback)
-            {
-                ResponsePtr response = info.request->createResponse();
-                response->error = Error::ZSESSIONEXPIRED;
-                try
-                {
-                    info.callback(*response);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
-            }
-            if (info.watch)
-            {
-                WatchResponse response;
-                response.type = SESSION;
-                response.state = EXPIRED_SESSION;
-                response.error = Error::ZSESSIONEXPIRED;
-                try
-                {
-                    (*info.watch)(response);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                }
-            }
+            exprireRequest(std::move(info));
         }
     }
     catch (...)

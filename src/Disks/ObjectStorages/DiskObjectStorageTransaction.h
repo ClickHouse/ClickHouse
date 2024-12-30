@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
@@ -34,7 +35,7 @@ public:
     virtual std::string getInfoForLog() const = 0;
 };
 
-using DiskObjectStorageOperation = std::unique_ptr<IDiskObjectStorageOperation>;
+using DiskObjectStorageOperation = std::shared_ptr<IDiskObjectStorageOperation>;
 
 using DiskObjectStorageOperations = std::vector<DiskObjectStorageOperation>;
 

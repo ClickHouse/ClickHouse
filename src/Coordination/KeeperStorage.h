@@ -303,6 +303,7 @@ public:
         int64_t zxid{0};
         std::optional<Digest> digest;
         int64_t log_idx{0};
+        bool use_xid_64{false};
     };
     using RequestsForSessions = std::vector<RequestForSession>;
 
@@ -325,13 +326,7 @@ public:
 
     struct WatchInfoHash
     {
-        auto operator()(WatchInfo info) const
-        {
-            SipHash hash;
-            hash.update(info.path);
-            hash.update(info.is_list_watch);
-            return hash.get64();
-        }
+        UInt64 operator()(WatchInfo info) const;
     };
 
     using SessionAndWatcher = std::unordered_map<int64_t, std::unordered_set<WatchInfo, WatchInfoHash>>;

@@ -119,7 +119,7 @@ public:
 
             ColumnWithTypeAndName column;
             column.type = elem_compare->getResultType();
-            column.column = elem_compare->execute({left, right}, column.type, input_rows_count);
+            column.column = elem_compare->execute({left, right}, column.type, input_rows_count, /* dry_run = */ false);
 
             if (i == 0)
             {
@@ -129,7 +129,7 @@ public:
             {
                 auto plus_elem = plus->build({res, column});
                 auto res_type = plus_elem->getResultType();
-                res.column = plus_elem->execute({res, column}, res_type, input_rows_count);
+                res.column = plus_elem->execute({res, column}, res_type, input_rows_count, /* dry_run = */ false);
                 res.type = res_type;
             }
         }

@@ -7,7 +7,6 @@
 #include <optional>
 #include <variant>
 
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Core/Joins.h>

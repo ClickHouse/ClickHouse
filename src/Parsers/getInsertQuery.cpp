@@ -20,12 +20,11 @@ std::string getInsertQuery(const std::string & db_name, const std::string & tabl
 
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(
-        /*ostr_=*/buf,
         /*one_line=*/true,
         /*hilite=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/quoting);
-    query.IAST::format(settings);
+    query.IAST::format(buf, settings);
     return buf.str();
 }
 }

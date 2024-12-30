@@ -15,33 +15,33 @@ ASTPtr ASTCreateNamedCollectionQuery::clone() const
     return std::make_shared<ASTCreateNamedCollectionQuery>(*this);
 }
 
-void ASTCreateNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE NAMED COLLECTION ";
+    ostr << (settings.hilite ? hilite_keyword : "") << "CREATE NAMED COLLECTION ";
     if (if_not_exists)
-        settings.ostr << "IF NOT EXISTS ";
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
+        ostr << "IF NOT EXISTS ";
+    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(collection_name) << (settings.hilite ? hilite_none : "");
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
+    ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
     bool first = true;
     for (const auto & change : changes)
     {
         if (!first)
-            settings.ostr << ", ";
+            ostr << ", ";
         else
             first = false;
 
-        formatSettingName(change.name, settings.ostr);
+        formatSettingName(change.name, ostr);
 
         if (settings.show_secrets)
-            settings.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
         else
-            settings.ostr << " = '[HIDDEN]'";
+            ostr << " = '[HIDDEN]'";
         auto override_value = overridability.find(change.name);
         if (override_value != overridability.end())
-            settings.ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
+            ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
     }
 }
 

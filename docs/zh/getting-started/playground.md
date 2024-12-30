@@ -6,7 +6,7 @@ sidebar_label: 体验平台
 
 # ClickHouse Playground {#clickhouse-playground}
 
-无需搭建服务或集群，[ClickHouse Playground](https://play.clickhouse.com/play?user=play)允许人们通过执行查询语句立即体验ClickHouse，在Playground中我们提供了一些示例数据集。
+无需搭建服务或集群，[ClickHouse Playground](https://sql.clickhouse.com)允许人们通过执行查询语句立即体验ClickHouse，在Playground中我们提供了一些示例数据集。
 
 你可以使用任意HTTP客户端向Playground提交查询语句，比如[curl](https://curl.haxx.se)或者[wget](https://www.gnu.org/software/wget/)，也可以通过[JDBC](../interfaces/jdbc.md)或者[ODBC](../interfaces/odbc.md)驱动建立连接，更多信息详见[客户端](../interfaces/index.md)。
 

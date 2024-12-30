@@ -30,6 +30,7 @@
 #include <Coordination/KeeperStorage.h>
 
 #include <functional>
+#include <shared_mutex>
 #include <base/defines.h>
 
 namespace ProfileEvents
@@ -49,6 +50,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
+}
 
 namespace ErrorCodes
 {
@@ -533,7 +539,7 @@ struct Overloaded : Ts...
 // explicit deduction guide
 // https://en.cppreference.com/w/cpp/language/class_template_argument_deduction
 template <class... Ts>
-Overloaded(Ts...) -> Overloaded<Ts...>;
+Overloaded(Ts...) -> Overloaded<Ts...>;  /// NOLINT(misc-use-internal-linkage)
 
 template<typename Container>
 std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::tryGetNodeFromStorage(StringRef path, bool should_lock_storage) const
@@ -2926,7 +2932,7 @@ void KeeperStorage<Container>::preprocessRequest(
     Stopwatch watch;
     SCOPE_EXIT({
         auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3116,7 +3122,7 @@ KeeperStorage<Container>::ResponsesForSessions KeeperStorage<Container>::process
     Stopwatch watch;
     SCOPE_EXIT({
         auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()->log_slow_cpu_threshold_ms)
+        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3615,6 +3621,14 @@ bool KeeperStorageBase::checkDigest(const Digest & first, const Digest & second)
         return true;
 
     return first.value == second.value;
+}
+
+UInt64 KeeperStorageBase::WatchInfoHash::operator()(WatchInfo info) const
+{
+    SipHash hash;
+    hash.update(info.path);
+    hash.update(info.is_list_watch);
+    return hash.get64();
 }
 
 template<typename Container>

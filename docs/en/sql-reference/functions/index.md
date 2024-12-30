@@ -24,7 +24,7 @@ All expressions in a query that have the same AST (the same record or same resul
 
 ## Types of Results
 
-All functions return a single return as the result (not several values, and not zero values). The type of result is usually defined only by the types of arguments, not by the values. Exceptions are the tupleElement function (the a.N operator), and the toFixedString function.
+All functions return a single value as the result (not several values, and not zero values). The type of result is usually defined only by the types of arguments, not by the values. Exceptions are the tupleElement function (the a.N operator), and the toFixedString function.
 
 ## Constants
 

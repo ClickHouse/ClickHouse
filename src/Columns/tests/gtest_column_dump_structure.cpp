@@ -13,6 +13,7 @@ TEST(IColumn, dumpStructure)
     String expected_structure = "LowCardinality(size = 0, UInt8(size = 0), Unique(size = 1, String(size = 1)))";
 
     std::vector<std::thread> threads;
+    threads.reserve(6);
     for (size_t i = 0; i < 6; ++i)
     {
         threads.emplace_back([&]

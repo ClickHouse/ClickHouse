@@ -61,6 +61,8 @@ public:
 
     void checkIsCreated() const;
 
+    void processDateTime64Column(const ColumnWithTypeAndName & column_to_cast, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
+
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
@@ -237,6 +239,8 @@ public:
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
+
+    const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.

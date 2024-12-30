@@ -165,6 +165,9 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 
+    /// Table expression nodes that appear in the join tree of the corresponding query
+    std::unordered_set<QueryTreeNodePtr> registered_table_expression_nodes;
+
     QueryTreeNodePtrWithHashIgnoreTypesSet nullable_group_by_keys;
     /// Here we count the number of nullable GROUP BY keys we met resolving expression.
     /// E.g. for a query `SELECT tuple(tuple(number)) FROM numbers(10) GROUP BY (number, tuple(number)) with cube`
@@ -174,7 +177,7 @@ struct IdentifierResolveScope
     size_t found_nullable_group_by_key_in_scope = 0;
 
     /** It's possible that after a JOIN, a column in the projection has a type different from the column in the source table.
-      * (For example, after join_use_nulls or USING column casted to supertype)
+      * (For example, after join_use_nulls or USING column cast to supertype)
       * However, the column in the projection still refers to the table as its source.
       * This map is used to revert these columns back to their original columns in the source table.
       */

@@ -8,6 +8,7 @@
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
 #include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
@@ -37,6 +38,11 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCacheDownloadQueueElements;
+}
+
 namespace DB
 {
 
@@ -48,16 +54,6 @@ namespace ErrorCodes
 
 namespace
 {
-    size_t roundDownToMultiple(size_t num, size_t multiple)
-    {
-        return (num / multiple) * multiple;
-    }
-
-    size_t roundUpToMultiple(size_t num, size_t multiple)
-    {
-        return roundDownToMultiple(num + multiple - 1, multiple);
-    }
-
     std::string getCommonUserID()
     {
         auto user_from_context = DB::Context::getGlobalContextInstance()->getFilesystemCacheUser();
@@ -91,6 +87,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     : max_file_segment_size(settings.max_file_segment_size)
     , bypass_cache_threshold(settings.enable_bypass_cache_with_threshold ? settings.bypass_cache_threshold : 0)
     , boundary_alignment(settings.boundary_alignment)
+    , background_download_max_file_segment_size(settings.background_download_max_file_segment_size)
     , load_metadata_threads(settings.load_metadata_threads)
     , load_metadata_asynchronously(settings.load_metadata_asynchronously)
     , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
@@ -98,7 +95,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_current_elements_to_max_ratio(1 - settings.keep_free_space_elements_ratio)
     , keep_up_free_space_remove_batch(settings.keep_free_space_remove_batch)
     , log(getLogger("FileCache(" + cache_name + ")"))
-    , metadata(settings.base_path, settings.background_download_queue_size_limit, settings.background_download_threads, write_cache_per_user_directory)
+    , metadata(settings.base_path,
+               settings.background_download_queue_size_limit,
+               settings.background_download_threads,
+               write_cache_per_user_directory)
 {
     if (settings.cache_policy == "LRU")
     {
@@ -247,7 +247,15 @@ CachePriorityGuard::Lock FileCache::lockCache() const
 
 CachePriorityGuard::Lock FileCache::tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout) const
 {
-    return acquire_timeout.has_value() ? cache_guard.tryLockFor(acquire_timeout.value()) : cache_guard.tryLock();
+    if (acquire_timeout.has_value())
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockCacheMicroseconds);
+        return cache_guard.tryLockFor(acquire_timeout.value());
+    }
+    else
+    {
+        return cache_guard.tryLock();
+    }
 }
 
 FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment::Range & range, size_t file_segments_limit) const
@@ -584,7 +592,8 @@ FileCache::getOrSet(
     size_t file_size,
     const CreateFileSegmentSettings & create_settings,
     size_t file_segments_limit,
-    const UserInfo & user)
+    const UserInfo & user,
+    std::optional<size_t> boundary_alignment_)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
 
@@ -596,8 +605,9 @@ FileCache::getOrSet(
     /// 2. max_file_segments_limit
     FileSegment::Range result_range = initial_range;
 
-    const auto aligned_offset = roundDownToMultiple(initial_range.left, boundary_alignment);
-    auto aligned_end_offset = std::min(roundUpToMultiple(initial_range.right + 1, boundary_alignment), file_size) - 1;
+    const size_t alignment = boundary_alignment_.value_or(boundary_alignment);
+    const auto aligned_offset = FileCacheUtils::roundDownToMultiple(initial_range.left, alignment);
+    auto aligned_end_offset = std::min(FileCacheUtils::roundUpToMultiple(initial_range.right + 1, alignment), file_size) - 1;
 
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);
@@ -918,7 +928,13 @@ bool FileCache::tryReserve(
         if (!query_priority->collectCandidatesForEviction(
                 size, required_elements_num, reserve_stat, eviction_candidates, {}, user.user_id, cache_lock))
         {
-            failure_reason = "cannot evict enough space for query limit";
+            const auto & stat = reserve_stat.total_stat;
+            failure_reason = fmt::format(
+                "cannot evict enough space for query limit "
+                "(non-releasable count: {}, non-releasable size: {}, "
+                "releasable count: {}, releasable size: {}, background download elements: {})",
+                stat.non_releasable_count, stat.non_releasable_size, stat.releasable_count, stat.releasable_size,
+                CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
             return false;
         }
 
@@ -933,7 +949,13 @@ bool FileCache::tryReserve(
     if (!main_priority->collectCandidatesForEviction(
             size, required_elements_num, reserve_stat, eviction_candidates, queue_iterator, user.user_id, cache_lock))
     {
-        failure_reason = "cannot evict enough space";
+        const auto & stat = reserve_stat.total_stat;
+        failure_reason = fmt::format(
+            "cannot evict enough space "
+            "(non-releasable count: {}, non-releasable size: {}, "
+            "releasable count: {}, releasable size: {}, background download elements: {})",
+            stat.non_releasable_count, stat.non_releasable_size, stat.releasable_count, stat.releasable_size,
+            CurrentMetrics::get(CurrentMetrics::FilesystemCacheDownloadQueueElements));
         return false;
     }
 
@@ -1318,7 +1340,8 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
         user = getCommonUser();
     }
 
-    UInt64 offset = 0, size = 0;
+    UInt64 offset = 0;
+    UInt64 size = 0;
     for (; key_it != fs::directory_iterator(); key_it++)
     {
         const fs::path key_directory = key_it->path();
@@ -1581,6 +1604,17 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
             actual_settings.background_download_threads = new_settings.background_download_threads;
         }
+    }
+
+    if (new_settings.background_download_max_file_segment_size != actual_settings.background_download_max_file_segment_size)
+    {
+        background_download_max_file_segment_size = new_settings.background_download_max_file_segment_size;
+
+        LOG_INFO(log, "Changed background_download_max_file_segment_size from {} to {}",
+                actual_settings.background_download_max_file_segment_size,
+                new_settings.background_download_max_file_segment_size);
+
+        actual_settings.background_download_max_file_segment_size = new_settings.background_download_max_file_segment_size;
     }
 
     if (new_settings.max_size != actual_settings.max_size
