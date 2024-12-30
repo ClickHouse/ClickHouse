@@ -1015,7 +1015,7 @@ private:
                     /// Non-sense to have both sides as constant
                     if (constant && !left.first->as<ConstantNode>())
                     {
-                        auto compare_function_name = equal_transfer && left.second ? "lessOrEquals" : "less";
+                        const auto * compare_function_name = equal_transfer && left.second ? "lessOrEquals" : "less";
                         const auto and_node = std::make_shared<FunctionNode>(compare_function_name);
                         and_node->getArguments().getNodes().push_back(left.first->clone());
                         and_node->getArguments().getNodes().push_back(constant->clone());
