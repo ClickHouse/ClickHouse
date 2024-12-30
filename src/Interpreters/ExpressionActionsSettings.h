@@ -18,7 +18,8 @@ enum class CompileExpressions: uint8_t
 
 struct ExpressionActionsSettings
 {
-    ExpressionActionsSettings();
+    ExpressionActionsSettings(); /// TODO Remove this contructor. ExpressionActionsSettings should only be initializable from Settings or
+                                 /// ContextPtr (i.e. the other two contructors).
     explicit ExpressionActionsSettings(const Settings & from, CompileExpressions compile_expressions_ = CompileExpressions::no);
     explicit ExpressionActionsSettings(ContextPtr from, CompileExpressions compile_expressions_ = CompileExpressions::no);
 
