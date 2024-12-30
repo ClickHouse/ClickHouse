@@ -121,6 +121,11 @@ void validateNamedCollection(
             continue;
         }
 
+        if (key == "integration_id" || key == "integration_hash")
+        {
+            continue;
+        }
+
         if (required_keys.contains(key))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key {} in named collection", key);
 
