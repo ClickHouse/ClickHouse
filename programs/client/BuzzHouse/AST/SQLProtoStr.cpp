@@ -3590,9 +3590,11 @@ CONV_FN(SelectIntoFile, intofile)
     if (intofile.has_compression())
     {
         ret += " COMPRESSION '";
+        ret += FileCompression_Name(intofile.compression()).substr(4);
+        ret += "'";
         if (intofile.has_level())
         {
-            ret += "' LEVEL ";
+            ret += " LEVEL ";
             ret += std::to_string(intofile.level());
         }
     }
@@ -3610,11 +3612,6 @@ CONV_FN(TopSelect, top)
     {
         ret += " FORMAT ";
         ret += OutFormat_Name(top.format()).substr(4);
-    }
-    if (top.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, top.setting_values());
     }
 }
 

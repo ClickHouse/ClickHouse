@@ -1236,10 +1236,6 @@ int StatementGenerator::generateTopSelect(RandomGenerator & rg, const bool force
             sif->set_level((rg.nextRandomUInt32() % 22) + 1);
         }
     }
-    if (this->allow_not_deterministic && rg.nextSmallNumber() < 3)
-    {
-        generateSettingValues(rg, serverSettings, ts->mutable_setting_values());
-    }
     return res;
 }
 

@@ -3113,7 +3113,6 @@ message TopSelect {
     required Select sel = 1;
     optional SelectIntoFile intofile = 2;
     optional OutFormat format = 3;
-    optional SettingValues setting_values = 4;
 }
 
 message CheckTable {
