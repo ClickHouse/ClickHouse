@@ -59,7 +59,7 @@ public:
             if (static_cast<size_t>(stat.numChildren) > max_series)
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                     "Too many series created by {} function, maximum: {}. This is controlled by the `max_autoincrement_series` setting.",
-                    getName(), max_series);
+                    name, max_series);
 
             if (static_cast<size_t>(stat.numChildren) == max_series)
                 at_capacity = true;
@@ -124,7 +124,7 @@ public:
             if (!keeper->exists(serial_path))
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                     "Too many series created by {} function, maximum: {}. This is controlled by the `max_autoincrement_series` setting.",
-                    getName(), max_series);
+                    name, max_series);
         }
         else
             keeper->createIfNotExists(serial_path, "0");
