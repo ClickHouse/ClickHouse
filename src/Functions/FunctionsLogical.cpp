@@ -677,11 +677,11 @@ template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    return this->executeImpl(args, result_type, input_rows_count, nullptr);
+    return this->executeImplWithProfile(args, result_type, input_rows_count, nullptr);
 }
 
 template <typename Impl, typename Name>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const
 {
     ColumnsWithTypeAndName arguments = args;
