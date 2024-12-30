@@ -1,6 +1,7 @@
 #include <string>
 #include <SQLCatalog.h>
 #include <StatementGenerator.h>
+#include <SystemTables.h>
 
 namespace BuzzHouse
 {
@@ -126,7 +127,8 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
             [&](const SQLTable & tt)
             { return tt.isMySQLEngine() || tt.isPostgreSQLEngine() || tt.isSQLiteEngine() || tt.isAnyS3Engine(); }));
     const uint32_t tudf = 5;
-    const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf;
+    const uint32_t system_table = 5;
+    const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -210,7 +212,7 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
         addTableRelation(rg, true, name, t);
         jtf->mutable_table_alias()->set_table(name);
     }
-    else if (tudf)
+    else if (tudf && nopt < (derived_table + cte + table + view + engineudf + tudf + 1))
     {
         SQLRelation rel(name);
         std::map<uint32_t, QueryLevel> levels_backup;
@@ -296,6 +298,23 @@ int StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t
         rel.cols.push_back(SQLRelationCol(name, {cname}));
 
         jtf->mutable_table_alias()->set_table(name);
+        this->levels[this->current_level].rels.push_back(std::move(rel));
+    }
+    else if (system_table && nopt < (derived_table + cte + table + view + engineudf + tudf + system_table + 1))
+    {
+        SQLRelation rel(name);
+        JoinedTable * jt = tos->mutable_joined_table();
+        ExprSchemaTable * est = jt->mutable_est();
+        const auto & ntable = rg.pickKeyRandomlyFromMap(systemTables);
+        const auto & tentries = systemTables.at(ntable);
+
+        est->mutable_database()->set_database("system");
+        est->mutable_table()->set_table(ntable);
+        jt->mutable_table_alias()->set_table(name);
+        for (const auto & entry : tentries)
+        {
+            rel.cols.push_back(SQLRelationCol(name, {entry.first}));
+        }
         this->levels[this->current_level].rels.push_back(std::move(rel));
     }
     else

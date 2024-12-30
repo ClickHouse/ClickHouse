@@ -35,7 +35,15 @@
 namespace BuzzHouse
 {
 
-enum class IntegrationCall { MySQL = 1, PostgreSQL = 2, SQLite = 3, Redis = 4, MongoDB = 5, MinIO = 6 };
+enum class IntegrationCall
+{
+    MySQL = 1,
+    PostgreSQL = 2,
+    SQLite = 3,
+    Redis = 4,
+    MongoDB = 5,
+    MinIO = 6
+};
 
 class ClickHouseIntegration
 {

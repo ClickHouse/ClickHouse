@@ -14,9 +14,10 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #if USE_BUZZHOUSE
-#    include "QueryOracle.h"
-#    include "SQLProtoStr.h"
-#    include "StatementGenerator.h"
+#    include <QueryOracle.h>
+#    include <SQLProtoStr.h>
+#    include <StatementGenerator.h>
+#    include <SystemTables.h>
 #endif
 
 namespace DB
@@ -483,6 +484,7 @@ bool Client::buzzHouse()
         //Load server configurations for the fuzzer
         fc.loadServerConfigurations();
         loadFuzzerSettings(fc);
+        BuzzHouse::loadSystemTables(has_cloud_features);
 
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(fc, ei, has_cloud_features, replica_setup);

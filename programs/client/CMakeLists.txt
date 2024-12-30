@@ -30,6 +30,7 @@ if (ENABLE_BUZZHOUSE)
         BuzzHouse/Generator/SQLTypes.cpp
         BuzzHouse/Generator/StatementGenerator.cpp
         BuzzHouse/Generator/RandomSettings.cpp
+        BuzzHouse/Generator/SystemTables.cpp
         BuzzHouse/Generator/QueryOracle.cpp
         BuzzHouse/Generator/ExternalIntegrations.cpp
         BuzzHouse/Utils/Hugeint.cpp

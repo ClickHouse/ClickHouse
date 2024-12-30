@@ -7,11 +7,29 @@
 namespace BuzzHouse
 {
 
-enum class ColumnSpecial { NONE = 0, SIGN = 1, IS_DELETED = 2, VERSION = 3 };
+enum class ColumnSpecial
+{
+    NONE = 0,
+    SIGN = 1,
+    IS_DELETED = 2,
+    VERSION = 3
+};
 
-enum class DetachStatus { ATTACHED = 0, DETACHED = 1, PERM_DETACHED = 2 };
+enum class DetachStatus
+{
+    ATTACHED = 0,
+    DETACHED = 1,
+    PERM_DETACHED = 2
+};
 
-enum class PeerTableDatabase { None = 0, MySQL = 1, PostgreSQL = 2, SQLite = 3, ClickHouse = 4 };
+enum class PeerTableDatabase
+{
+    None = 0,
+    MySQL = 1,
+    PostgreSQL = 2,
+    SQLite = 3,
+    ClickHouse = 4
+};
 
 struct SQLColumn
 {
