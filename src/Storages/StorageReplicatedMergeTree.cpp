@@ -6139,7 +6139,8 @@ void StorageReplicatedMergeTree::alter(
         commands.apply(future_metadata, query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
-        if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
+        // Output sorting_key only if it should be set in ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata.
+        if (future_metadata.isPrimaryKeyDefined())
         {
             /// We serialize definition_ast as list, because code which apply ALTER (setTableStructure) expect serialized non empty expression
             /// list here and we cannot change this representation for compatibility. Also we have preparsed AST `sorting_key.expression_list_ast`
