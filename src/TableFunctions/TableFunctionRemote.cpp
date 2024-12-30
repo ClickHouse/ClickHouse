@@ -60,7 +60,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
             *named_collection,
             {"addresses_expr", "host", "hostname", "table"},
-            {"username", "user", "password", "sharding_key", "port", "database", "db"});
+            // "secure" is a no op required so we can use the same named collection for dictionary with CH source.
+            {"username", "user", "password", "sharding_key", "port", "database", "db", "secure"});
 
         if (!complex_args.empty())
         {
