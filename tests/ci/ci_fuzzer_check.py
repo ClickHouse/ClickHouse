@@ -45,6 +45,7 @@ def get_run_command(
         "--privileged "
         "--network=host "
         f"{ci_logs_args}"
+        "--tmpfs /tmp/clickhouse "
         f"--volume={workspace_path}:/workspace "
         f"{env_str} "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
