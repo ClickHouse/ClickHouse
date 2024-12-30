@@ -479,17 +479,23 @@ void StoragePostgreSQL::reload(ContextPtr context_, ASTs engine_args) {
 }
 
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table) {
+    return processNamedCollectionResult(named_collection, context_, {}, require_table);
+
+}
+
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> & additional_allowed_args, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
         required_arguments.insert("table");
 
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection,
-        required_arguments,
-        {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache", "ssl_root_cert", "ssl_mode"});
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_args = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache", "ssl_root_cert", "ssl_mode"};
+    for (const auto & arg : additional_allowed_args)
+        optional_args.insert(arg);
+
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_args);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())

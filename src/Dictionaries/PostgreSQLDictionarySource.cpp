@@ -1,8 +1,10 @@
 #include "PostgreSQLDictionarySource.h"
+#include <memory>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/QualifiedTableName.h>
 #include "DictionarySourceFactory.h"
+#include "Storages/NamedCollectionsHelpers.h"
 #include "registerDictionaries.h"
 
 #if USE_LIBPQXX
@@ -190,25 +192,25 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
     {
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
-        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key) || key.starts_with("replica"); };
-        auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context, has_config_key);
         const auto & settings = context->getSettingsRef();
+
+        auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, context) : nullptr;
+        if (!named_collection) {
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "PostgreSQL dictionary source configuration must use a named collection");
+        }
+
+        ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys_set;
+        for (const auto & key : dictionary_allowed_keys)
+            dictionary_allowed_keys_set.insert(key);
+
+        auto configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, context, dictionary_allowed_keys_set, true);
 
         if (created_from_ddl)
         {
-            for (const auto & replicas : configuration.replicas_configurations)
-                for (const auto & replica : replicas.second)
-                    context->getRemoteHostFilter().checkHostAndPort(replica.host, toString(replica.port));
+            for (const auto & address : configuration.addresses)
+                context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
-        auto pool = std::make_shared<postgres::PoolWithFailover>(
-            configuration.replicas_configurations,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_max_tries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_pool_connect_timeout,
-            settings.postgresql_connection_pool_ssl_mode,
-            settings.postgresql_connection_pool_ssl_root_cert);
+        auto pool = postgres::PoolWithFailover::create(configuration, settings);
 
         PostgreSQLDictionarySource::Configuration dictionary_configuration
         {

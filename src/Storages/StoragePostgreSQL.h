@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/SettingsEnums.h"
+#include "Storages/NamedCollectionsHelpers.h"
 #include "config.h"
 
 #if USE_LIBPQXX
@@ -72,6 +73,8 @@ public:
     static std::variant<StoragePostgreSQL::Configuration, String> getConfiguration(ASTs engine_args, ContextPtr context, bool allow_missing_named_collection);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
+
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> & additional_allowed_args, bool require_table = true);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,
