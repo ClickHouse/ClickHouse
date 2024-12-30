@@ -19,7 +19,7 @@ namespace ErrorCodes
  * Scheduler node that implements priority scheduling policy.
  * Requests are scheduled in order of priorities.
  */
-class PriorityPolicy final : public ISchedulerNode
+class PriorityPolicy : public ISchedulerNode
 {
     /// Scheduling state of a child
     struct Item
@@ -38,23 +38,6 @@ public:
     explicit PriorityPolicy(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
-
-    explicit PriorityPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & node_info)
-        : ISchedulerNode(event_queue_, node_info)
-    {}
-
-    ~PriorityPolicy() override
-    {
-        // We need to clear `parent` in all children to avoid dangling references
-        while (!children.empty())
-            removeChild(children.begin()->second.get());
-    }
-
-    const String & getTypeName() const override
-    {
-        static String type_name("priority");
-        return type_name;
-    }
 
     bool equals(ISchedulerNode * other) override
     {

@@ -38,7 +38,7 @@ namespace ErrorCodes
 /// Returns tuple of (t-statistic, p-value)
 /// https://cpb-us-w2.wpmucdn.com/voices.uchicago.edu/dist/9/1193/files/2016/01/05b-TandP.pdf
 template <typename Data>
-class AggregateFunctionTTest final:
+class AggregateFunctionTTest :
     public IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>
 {
 private:

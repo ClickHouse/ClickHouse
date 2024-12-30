@@ -328,9 +328,7 @@ bool HasAnyIndex::convertImpl(String & out, IParser::Pos & pos)
 
 bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
 {
-    int start_index = 0;
-    int length = -1;
-    int occurrence = 1;
+    int start_index = 0, length = -1, occurrence = 1;
 
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())

@@ -5,8 +5,6 @@ def randomize_settings():
     yield "max_joined_block_size_rows", random.randint(8000, 100000)
     if random.random() < 0.5:
         yield "max_block_size", random.randint(8000, 100000)
-    if random.random() < 0.5:
-        yield "query_plan_join_swap_table", random.choice(["auto", "true", "false"])
 
 
 def write_random_settings_config(destination):

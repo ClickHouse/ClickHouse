@@ -6,8 +6,6 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Common/re2.h>
 
-#include <base/scope_guard.h>
-
 #include "config.h"
 
 
@@ -80,15 +78,11 @@ public:
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false, {}); }
 
-    void removeRecursiveWithLimit(const String & path) override { removeSharedRecursiveWithLimit(path, false, {}); }
-
     void removeSharedFile(const String & path, bool delete_metadata_only) override;
 
     void removeSharedFileIfExists(const String & path, bool delete_metadata_only) override;
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
-
-    void removeSharedRecursiveWithLimit(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only);
 
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
@@ -234,8 +228,6 @@ private:
 
     String getReadResourceName() const;
     String getWriteResourceName() const;
-    String getReadResourceNameNoLock() const;
-    String getWriteResourceNameNoLock() const;
 
     const String object_key_prefix;
     LoggerPtr log;
@@ -254,17 +246,10 @@ private:
     const bool send_metadata;
 
     mutable std::mutex resource_mutex;
-    String read_resource_name_from_config; // specified in disk config.xml read_resource element
-    String write_resource_name_from_config; // specified in disk config.xml write_resource element
-    String read_resource_name_from_sql; // described by CREATE RESOURCE query with READ DISK clause
-    String write_resource_name_from_sql; // described by CREATE RESOURCE query with WRITE DISK clause
-    String read_resource_name_from_sql_any; // described by CREATE RESOURCE query with READ ANY DISK clause
-    String write_resource_name_from_sql_any; // described by CREATE RESOURCE query with WRITE ANY DISK clause
-    scope_guard resource_changes_subscription;
+    String read_resource_name;
+    String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
-
-    UInt64 remove_shared_recursive_file_limit;
 };
 
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;

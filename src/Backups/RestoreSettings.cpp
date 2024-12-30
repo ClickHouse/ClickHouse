@@ -9,7 +9,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 #include <Backups/SettingsFieldOptionalString.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
 
 
 namespace DB
@@ -171,8 +170,7 @@ namespace
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalString, storage_policy) \
-    M(OptionalUUID, restore_uuid) \
-    M(OptionalUInt64, max_backup_bandwidth)
+    M(OptionalUUID, restore_uuid)
 
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
