@@ -1666,11 +1666,9 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         loaded_metadata_version = metadata_snapshot->getMetadataVersion();
         old_part_with_no_metadata_version_on_disk = true;
-        if (storage.supportsReplication())
-            LOG_WARNING(storage.log, "Part {} doesn't have metadata version on disk, setting it to {}. "
-                    "It's okay if the part was created by an old version of ClickHouse", name, loaded_metadata_version);
     }
 
+    LOG_DEBUG(storage.log, "Loaded metadata version {}", loaded_metadata_version);
     setColumns(loaded_columns, infos, loaded_metadata_version);
 }
 
@@ -2427,10 +2425,10 @@ UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
     return hash.get128();
 }
 
-String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
+String IMergeTreeDataPart::getNewPartBlockID(std::string_view token) const
 {
-    if (info.level != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
+    if (info.min_block != info.max_block)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for part {} that contains more than one block", name);
 
     if (token.empty())
     {
