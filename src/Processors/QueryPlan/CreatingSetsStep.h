@@ -45,6 +45,9 @@ public:
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
+
+private:
+    void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 };
 
 /// This is a temporary step which is converted to CreatingSetStep after plan optimization.
@@ -61,9 +64,14 @@ public:
     static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(DelayedCreatingSetsStep && step);
 
     ContextPtr getContext() const { return context; }
+    const PreparedSets::Subqueries & getSets() const { return subqueries; }
     PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
 
+    void serialize(Serialization &) const override {}
+
 private:
+    void updateOutputHeader() override { output_header = getInputHeaders().front(); }
+
     PreparedSets::Subqueries subqueries;
     ContextPtr context;
 };

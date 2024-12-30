@@ -29,7 +29,7 @@ namespace
 void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UInt64 & total_size)
 {
     /// Files or directories of detached part may not exist. Only count the size of existing files.
-    if (disk->isFile(from))
+    if (disk->existsFile(from))
     {
         total_size += disk->getFileSize(from);
     }

@@ -271,13 +271,13 @@ bool SystemRemoteDataPathsSource::nextFile()
         {
             const auto & disk = disks[current_disk].second;
 
-            /// Files or directories can disappear due to concurrent operations
-            if (!disk->exists(current_path))
-                continue;
-
             /// Stop if current path is a file
-            if (disk->isFile(current_path))
+            if (disk->existsFile(current_path))
                 return true;
+
+            /// Files or directories can disappear due to concurrent operations
+            if (!disk->existsFileOrDirectory(current_path))
+                continue;
 
             /// If current path is a directory list its contents and step into it
             std::vector<std::string> children;

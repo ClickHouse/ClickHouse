@@ -6,8 +6,6 @@
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
 
-#include <IO/ReadSettings.h>
-
 #include <Common/callOnce.h>
 #include <Common/ThreadPool.h>
 #include <Common/StatusFile.h>
@@ -25,6 +23,7 @@
 
 namespace DB
 {
+struct ReadSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -114,7 +113,8 @@ public:
         size_t file_size,
         const CreateFileSegmentSettings & settings,
         size_t file_segments_limit,
-        const UserInfo & user);
+        const UserInfo & user,
+        std::optional<size_t> boundary_alignment_ = std::nullopt);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -162,6 +162,10 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
+    size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }
+
+    size_t getBoundaryAlignment() const { return boundary_alignment; }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -200,6 +204,7 @@ private:
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> background_download_max_file_segment_size;
     size_t load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;

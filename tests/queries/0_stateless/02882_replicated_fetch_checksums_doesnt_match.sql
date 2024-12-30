@@ -1,3 +1,5 @@
+-- Tags: no-shared-merge-tree
+
 DROP TABLE IF EXISTS checksums_r3;
 DROP TABLE IF EXISTS checksums_r2;
 DROP TABLE IF EXISTS checksums_r1;

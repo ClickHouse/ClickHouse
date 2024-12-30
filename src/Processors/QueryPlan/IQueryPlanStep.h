@@ -1,7 +1,12 @@
 #pragma once
+
+#include <Common/CurrentThread.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -16,13 +21,10 @@ using Processors = std::vector<ProcessorPtr>;
 
 namespace JSONBuilder { class JSONMap; }
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
+
+struct QueryPlanSerializationSettings;
 
 using Header = Block;
 using Headers = std::vector<Header>;
@@ -31,9 +33,12 @@ using Headers = std::vector<Header>;
 class IQueryPlanStep
 {
 public:
+    IQueryPlanStep();
+
     virtual ~IQueryPlanStep() = default;
 
     virtual String getName() const = 0;
+    virtual String getSerializationName() const { return getName(); }
 
     /// Add processors from current step to QueryPipeline.
     /// Calling this method, we assume and don't check that:
@@ -52,6 +57,11 @@ public:
     const std::string & getStepDescription() const { return step_description; }
     void setStepDescription(std::string description) { step_description = std::move(description); }
 
+    struct Serialization;
+    struct Deserialization;
+
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
+    virtual void serialize(Serialization & /*ctx*/) const;
     virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
@@ -82,27 +92,14 @@ public:
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    /// (e.g. you update data stream traits or correctly remove / add columns).
-    void updateInputHeaders(Headers input_headers_)
-    {
-        chassert(canUpdateInputHeader());
-        input_headers = std::move(input_headers_);
-        updateOutputHeader();
-    }
+    String getUniqID() const { return fmt::format("{}_{}", getName(), step_index); }
 
-    void updateInputHeader(Header input_header) { updateInputHeaders(Headers{input_header}); }
-
-    void updateInputHeader(Header input_header, size_t idx)
-    {
-        chassert(canUpdateInputHeader() && idx < input_headers.size());
-        input_headers[idx] = input_header;
-        updateOutputHeader();
-    }
-
-    virtual bool canUpdateInputHeader() const { return false; }
+    /// (e.g. you correctly remove / add columns).
+    void updateInputHeaders(Headers input_headers_);
+    void updateInputHeader(Header input_header, size_t idx = 0);
 
 protected:
-    virtual void updateOutputHeader() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+    virtual void updateOutputHeader() = 0;
 
     Headers input_headers;
     std::optional<Header> output_header;
@@ -115,6 +112,9 @@ protected:
     Processors processors;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
+
+private:
+    size_t step_index = 0;
 };
 
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;

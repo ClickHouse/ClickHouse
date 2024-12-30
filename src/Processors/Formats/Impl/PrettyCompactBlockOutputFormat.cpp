@@ -4,18 +4,12 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/PrettyFormatHelpers.h>
 #include <Processors/Formats/Impl/PrettyCompactBlockOutputFormat.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-
-
-}
-
 
 namespace
 {
@@ -32,11 +26,13 @@ struct GridSymbols
     const char * bottom_separator = "┴";
     const char * dash = "─";
     const char * bar = "│";
+    const char * vertical_cut = "─";
 };
 
 GridSymbols utf8_grid_symbols;
 
-GridSymbols ascii_grid_symbols {
+GridSymbols ascii_grid_symbols
+{
     "+",
     "+",
     "+",
@@ -44,7 +40,8 @@ GridSymbols ascii_grid_symbols {
     "+",
     "+",
     "-",
-    "|"
+    "|",
+    "-",
 };
 
 }
@@ -58,6 +55,7 @@ void PrettyCompactBlockOutputFormat::writeHeader(
     const Block & block,
     const Widths & max_widths,
     const Widths & name_widths,
+    const Strings & names,
     const bool write_footer)
 {
     if (format_settings.pretty.output_format_pretty_row_numbers)
@@ -97,7 +95,7 @@ void PrettyCompactBlockOutputFormat::writeHeader(
 
             if (color)
                 writeCString("\033[1m", out);
-            writeString(col.name, out);
+            writeString(names[i], out);
             if (color)
                 writeCString("\033[0m", out);
         }
@@ -105,7 +103,7 @@ void PrettyCompactBlockOutputFormat::writeHeader(
         {
             if (color)
                 writeCString("\033[1m", out);
-            writeString(col.name, out);
+            writeString(names[i], out);
             if (color)
                 writeCString("\033[0m", out);
 
@@ -147,6 +145,7 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 
 void PrettyCompactBlockOutputFormat::writeRow(
     size_t row_num,
+    size_t displayed_row,
     const Block & header,
     const Chunk & chunk,
     const WidthsPerColumn & widths,
@@ -176,20 +175,36 @@ void PrettyCompactBlockOutputFormat::writeRow(
     if (!format_settings.pretty.max_value_width_apply_for_single_value && chunk.getNumRows() == 1 && num_columns == 1 && total_rows == 0)
         cut_to_width = 0;
 
-    writeCString(grid_symbols.bar, out);
-
     for (size_t j = 0; j < num_columns; ++j)
     {
-        if (j != 0)
-            writeCString(grid_symbols.bar, out);
-
+        writeCString(grid_symbols.bar, out);
         const auto & type = *header.getByPosition(j).type;
-        const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
+        const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][displayed_row];
         writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], cut_to_width, type.shouldAlignRightInPrettyFormats(), isNumber(type));
     }
 
     writeCString(grid_symbols.bar, out);
-    writeReadableNumberTip(chunk);
+    if (readable_number_tip)
+        writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
+    writeCString("\n", out);
+}
+
+void PrettyCompactBlockOutputFormat::writeVerticalCut(const Chunk & chunk, const Widths & max_widths)
+{
+    const GridSymbols & grid_symbols = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ?
+                                       utf8_grid_symbols :
+                                       ascii_grid_symbols;
+
+    if (format_settings.pretty.output_format_pretty_row_numbers)
+        writeString(String(row_number_width, ' '), out);
+
+    size_t num_columns = chunk.getNumColumns();
+    for (size_t j = 0; j < num_columns; ++j)
+    {
+        writeCString(grid_symbols.vertical_cut, out);
+        writeString(String(2 + max_widths[j], ' '), out);
+    }
+    writeCString(grid_symbols.vertical_cut, out);
     writeCString("\n", out);
 }
 
@@ -203,16 +218,34 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(header, chunk, widths, max_widths, name_widths);
+    Strings names;
+    calculateWidths(header, chunk, widths, max_widths, name_widths, names);
 
-    writeHeader(header, max_widths, name_widths, false);
+    writeHeader(header, max_widths, name_widths, names, false);
 
-    for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
-        writeRow(i, header, chunk, widths, max_widths);
+    bool vertical_filler_written = false;
+    size_t displayed_row = 0;
+    for (size_t i = 0; i < num_rows && displayed_rows < max_rows; ++i)
+    {
+        if (cutInTheMiddle(i, num_rows, format_settings.pretty.max_rows))
+        {
+            if (!vertical_filler_written)
+            {
+                writeVerticalCut(chunk, max_widths);
+                vertical_filler_written = true;
+            }
+        }
+        else
+        {
+            writeRow(i, displayed_row, header, chunk, widths, max_widths);
+            ++displayed_row;
+            ++displayed_rows;
+        }
+    }
 
     if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
     {
-        writeHeader(header, max_widths, name_widths, true);
+        writeHeader(header, max_widths, name_widths, names, true);
     }
     else
     {

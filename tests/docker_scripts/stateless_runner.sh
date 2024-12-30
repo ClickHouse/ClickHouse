@@ -55,9 +55,9 @@ source /repo/tests/docker_scripts/utils.lib
 # install test configs
 /repo/tests/config/install.sh
 
-/repo/tests/docker_scripts/setup_minio.sh stateless
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence &
 
-/repo/tests/docker_scripts/setup_hdfs_minicluster.sh
+/repo/tests/docker_scripts/setup_minio.sh stateless
 
 config_logs_export_cluster /etc/clickhouse-server/config.d/system_logs_export.yaml
 
@@ -70,6 +70,7 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
     }
 
     remove_keeper_config "remove_recursive" "[[:digit:]]\+"
+    remove_keeper_config "use_xid_64" "[[:digit:]]\+"
 fi
 
 export IS_FLAKY_CHECK=0
@@ -351,7 +352,7 @@ logs_saver_client_options="--max_block_size 8192 --max_memory_usage 10G --max_th
 
 # Try to get logs while server is running
 failed_to_save_logs=0
-for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
+for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log
 do
     if ! clickhouse-client ${logs_saver_client_options} -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
         failed_to_save_logs=1
@@ -376,6 +377,9 @@ done
 # collect minio audit and server logs
 # wait for minio to flush its batch if it has any
 sleep 1
+# remove the webhook so it doesn't spam with errors once we stop ClickHouse
+./mc admin config reset clickminio logger_webhook:ch_server_webhook
+./mc admin config reset clickminio audit_webhook:ch_audit_webhook
 clickhouse-client -q "SYSTEM FLUSH ASYNC INSERT QUEUE" ||:
 clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_audit_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_audit_logs.jsonl.zst' FORMAT JSONEachRow" ||:
 clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_logs ORDER BY log.time INTO OUTFILE '/test_output/minio_server_logs.jsonl.zst' FORMAT JSONEachRow" ||:
@@ -383,7 +387,9 @@ clickhouse-client ${logs_saver_client_options} -q "SELECT log FROM minio_server_
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
 # Because it's the simplest way to read it when server has crashed.
-sudo clickhouse stop ||:
+# Increase timeout to 10 minutes (max-tries * 2 seconds) to give gdb time to collect stack traces
+# (if safeExit breakpoint is hit after the server's internal shutdown timeout is reached).
+sudo clickhouse stop --max-tries 300 ||:
 
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
@@ -418,7 +424,7 @@ if [ $failed_to_save_logs -ne 0 ]; then
     #   directly
     # - even though ci auto-compress some files (but not *.tsv) it does this only
     #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log
+    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log
     do
         clickhouse-local ${logs_saver_client_options} "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
 

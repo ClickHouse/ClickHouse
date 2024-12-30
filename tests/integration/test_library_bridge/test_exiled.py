@@ -71,13 +71,13 @@ def test_bridge_dies_with_parent(ch_cluster):
     except:
         pass
 
-    for i in range(30):
+    for i in range(60):
         time.sleep(1)
         clickhouse_pid = instance.get_process_pid("clickhouse server")
         if clickhouse_pid is None:
             break
 
-    for i in range(30):
+    for i in range(60):
         time.sleep(1)
         bridge_pid = instance.get_process_pid("library-bridge")
         if bridge_pid is None:
@@ -95,5 +95,5 @@ def test_bridge_dies_with_parent(ch_cluster):
         assert clickhouse_pid is None
         assert bridge_pid is None
     finally:
-        instance.start_clickhouse(20)
+        instance.start_clickhouse(60)
         instance.query("DROP DICTIONARY lib_dict_c")

@@ -41,6 +41,8 @@ public:
 
     ~CachedOnDiskReadBufferFromFile() override;
 
+    bool isCached() const override { return true; }
+
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;

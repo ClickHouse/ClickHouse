@@ -18,6 +18,8 @@
 #include <Formats/registerFormats.h>
 #include <Common/TerminalSize.h>
 
+#include "config.h"
+
 namespace DB
 {
 
@@ -129,7 +131,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     }
     if (arguments.size() == 1)
     {
-        String command_prefix = arguments[0];
+        const String & command_prefix = arguments[0];
         return getCommandsToComplete(command_prefix);
     }
 
@@ -236,6 +238,7 @@ void DisksApp::runInteractiveReplxx()
     ReplxxLineReader lr(
         suggest,
         history_file,
+        history_max_entries,
         /* multiline= */ false,
         /* ignore_shell_suspend= */ false,
         query_extenders,
@@ -288,7 +291,7 @@ void DisksApp::addOptions()
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
     command_descriptions.emplace("help", makeCommandHelp(*this));
-#ifdef CLICKHOUSE_CLOUD
+#if CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
 #endif
     for (const auto & [command_name, command_ptr] : command_descriptions)
@@ -398,6 +401,8 @@ void DisksApp::initializeHistoryFile()
                 throw;
         }
     }
+
+    history_max_entries = config().getUInt("history-max-entries", 1000000);
 }
 
 void DisksApp::init(const std::vector<String> & common_arguments)
@@ -543,16 +548,18 @@ int mainEntryClickHouseDisks(int argc, char ** argv)
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
-        return 0;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
     catch (const boost::program_options::error & e)
     {
         std::cerr << "Bad arguments: " << e.what() << std::endl;
-        return 0;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 0;
+        auto code = DB::getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }
