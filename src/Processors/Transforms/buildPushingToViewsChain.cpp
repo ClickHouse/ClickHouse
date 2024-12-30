@@ -41,6 +41,7 @@
 #include <chrono>
 #include <exception>
 #include <memory>
+#include <ranges>
 
 
 namespace ProfileEvents
@@ -195,7 +196,7 @@ private:
 
 class BeginingViewsTransform final : public ISimpleTransform
 {
- public:
+public:
     explicit BeginingViewsTransform(Block header)
         : ISimpleTransform(header, header, false)
     {}
@@ -204,17 +205,14 @@ class BeginingViewsTransform final : public ISimpleTransform
 
     void transform(Chunk &) override { /* no op*/ }
 
-    class ExternalException
+    struct ExternalException
     {
-    public:
         std::exception_ptr origin_exception;
-        IProcessor * finalizing_processor = nullptr;
-
     };
 
     void transform(std::exception_ptr & e) override
     {
-        e = std::make_exception_ptr(ExternalException{e, finalizing_processor});
+        e = std::make_exception_ptr(ExternalException{e});
     }
 
     void setUpFinalizingProcessor(IProcessor * ptr)
@@ -242,7 +240,7 @@ public:
     void work() override;
 
 private:
-    static std::pair<bool, std::exception_ptr> isExnernalException(std::exception_ptr & e)
+    static std::pair<bool, std::exception_ptr> unwrapExternalException(std::exception_ptr & e)
     {
         try
         {
@@ -876,7 +874,7 @@ void PushingToWindowViewSink::consume(Chunk & chunk)
 
 FinalizingViewsTransform::FinalizingViewsTransform(std::vector<Block> headers, ViewsDataPtr data)
     : IProcessor(initPorts(std::move(headers)), {Block()})
-    , materialized_views_ignore_errors(views_data->context->getSettingsRef()[Setting::materialized_views_ignore_errors])
+    , materialized_views_ignore_errors(data->context->getSettingsRef()[Setting::materialized_views_ignore_errors])
     , output(outputs.front())
     , views_data(std::move(data))
 {
@@ -901,11 +899,11 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         return Status::PortFull;
 
     size_t num_finished = 0;
-    size_t pos = 0;
+    size_t i = 0;
     for (auto & input : inputs)
     {
-        auto i = pos;
-        ++pos;
+        auto pos = i;
+        ++i;
 
         if (input.isFinished())
         {
@@ -924,7 +922,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
 
         ++num_finished;
 
-        auto [is_external, original_exception] = isExnernalException(data.exception);
+        auto [is_external, original_exception] = unwrapExternalException(data.exception);
 
         if (is_external || !materialized_views_ignore_errors)
         {
@@ -932,8 +930,8 @@ IProcessor::Status FinalizingViewsTransform::prepare()
             return Status::PortFull;
         }
 
-        if (!exceptions[i])
-            exceptions[i] = data.exception;
+        if (!exceptions[pos])
+            exceptions[pos] = data.exception;
     }
 
     if (num_finished == inputs.size())
