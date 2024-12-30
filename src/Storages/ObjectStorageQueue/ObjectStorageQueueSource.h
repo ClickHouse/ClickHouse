@@ -24,14 +24,15 @@ public:
     using Source = StorageObjectStorageSource;
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
+    using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
     struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
             const Source::ObjectInfo & object_info,
-            ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_);
+            FileMetadataPtr file_metadata_);
 
-        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata;
+        FileMetadataPtr file_metadata;
     };
 
     class FileIterator : public StorageObjectStorageSource::IIterator
@@ -143,9 +144,25 @@ public:
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
-    void commit(bool success, const std::string & exception_message = {});
+    void prepareCommitRequests(
+        Coordination::Requests & requests,
+        bool success,
+        const std::string & exception_message = {});
+
+    /// Do some work after Processed/Failed files were successfully committed to keeper.
+    void finalizeCommit(bool success, const std::string & exception_message = {});
 
 private:
+    Chunk generateImpl();
+    /// Log to system.s3(azure)_queue_log.
+    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    /// Apply after processing action, such as file removal.
+    void applyAfterProcessingAction();
+    /// Commit processed files.
+    /// This method is only used for SELECT query, not for streaming to materialized views.
+    /// Which is defined by passing a flag commit_once_processed.
+    void commit(bool success, const std::string & exception_message = {});
+
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
@@ -166,17 +183,19 @@ private:
 
     LoggerPtr log;
 
-    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> processed_files;
-    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> failed_during_read_files;
-
+    enum class FileState
+    {
+        Processing,
+        ErrorOnRead,
+        Processed,
+    };
+    struct ProcessedFile
+    {
+        FileState state;
+        FileMetadataPtr metadata;
+    };
+    std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
-
-    Chunk generateImpl();
-    void applyActionAfterProcessing(const String & path);
-    void appendLogElement(
-        const std::string & filename,
-        ObjectStorageQueueMetadata::FileStatus & file_status_,
-        bool processed);
 };
 
 }
