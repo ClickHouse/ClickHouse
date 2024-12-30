@@ -40,9 +40,13 @@ BackupKeeperSettings::BackupKeeperSettings(const ContextPtr & context)
 
     if (config.has("backups.sync_period_ms"))
         sync_period_ms = std::chrono::milliseconds{config.getUInt64("backups.sync_period_ms")};
+    else
+        sync_period_ms = std::chrono::milliseconds{5000};
 
     if (config.has("backups.max_attempts_after_bad_version"))
         max_attempts_after_bad_version = config.getUInt64("backups.max_attempts_after_bad_version");
+    else
+        max_attempts_after_bad_version = 10;
 
     value_max_size = settings[Setting::backup_restore_keeper_value_max_size];
     batch_size_for_multi = settings[Setting::backup_restore_batch_size_for_keeper_multi];
