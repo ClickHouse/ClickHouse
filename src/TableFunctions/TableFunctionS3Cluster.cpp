@@ -42,6 +42,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             ConstraintsDescription{},
             /* comment */String{},
             /* format_settings */std::nullopt, /// No format_settings for S3Cluster
+            /* named_collection_name_ */ std::nullopt,
             /*distributed_processing=*/true);
     }
     else

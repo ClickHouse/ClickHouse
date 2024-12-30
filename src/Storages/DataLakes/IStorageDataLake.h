@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <variant>
+#include "Interpreters/Context.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -23,13 +26,18 @@ public:
     using Configuration = typename Storage::Configuration;
 
     template <class ...Args>
-    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, LoadingStrictnessLevel mode, Args && ...args)
-        : Storage(getConfigurationForDataRead(configuration_, context_, {}, mode), context_, std::forward<Args>(args)...)
+    explicit IStorageDataLake(const std::optional<Configuration> & configuration_, ContextPtr context_, LoadingStrictnessLevel mode, Args && ...args)
+        : Storage(
+            configuration_.has_value() ? getConfigurationForDataRead(*configuration_, context_, {}, mode) : std::optional<Configuration>{},
+            context_,
+            std::forward<Args>(args)...)
         , base_configuration(configuration_)
-        , log(getLogger(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+        , log(getLogger(getName())) {
+            if (!base_configuration.has_value()) Storage::namedCollectionDeleted();
+        } // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
     template <class ...Args>
-    static StoragePtr create(const Configuration & configuration_, ContextPtr context_, LoadingStrictnessLevel mode, Args && ...args)
+    static StoragePtr create(const std::optional<Configuration> & configuration_, ContextPtr context_, LoadingStrictnessLevel mode, Args && ...args)
     {
         return std::make_shared<IStorageDataLake<Storage, Name, MetadataParser>>(configuration_, context_, mode, std::forward<Args>(args)...);
     }
@@ -38,21 +46,22 @@ public:
 
     static ColumnsDescription getTableStructureFromData(
         Configuration & base_configuration,
-        const std::optional<FormatSettings> & format_settings,
+        const std::optional<FormatSettings> & format_settings_,
         const ContextPtr & local_context)
     {
         auto configuration = getConfigurationForDataRead(base_configuration, local_context);
-        return Storage::getTableStructureFromData(configuration, format_settings, local_context);
+        return Storage::getTableStructureFromData(configuration, format_settings_, local_context);
     }
 
-    static Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context)
+    static std::variant<Configuration, String> getConfiguration(ASTs & engine_args, ContextPtr local_context, bool allow_missing_named_collection = false)
     {
-        return Storage::getConfiguration(engine_args, local_context, /* get_format_from_file */false);
+        return Storage::getConfiguration(engine_args, local_context, /* get_format_from_file */false, allow_missing_named_collection);
     }
 
     Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context) override
     {
         std::lock_guard lock(configuration_update_mutex);
+        Storage::assertNamedCollectionExists();
         updateConfigurationImpl(local_context);
         return Storage::getConfiguration();
     }
@@ -60,7 +69,26 @@ public:
     void updateConfiguration(const ContextPtr & local_context) override
     {
         std::lock_guard lock(configuration_update_mutex);
-        updateConfigurationImpl(local_context);
+        if (base_configuration.has_value()) {
+            updateConfigurationImpl(local_context);
+        }
+    }
+
+    void reload(ContextPtr context_, ASTs engine_args) override
+    {
+        std::lock_guard lock(configuration_update_mutex);
+        auto new_configuration = std::get<typename Storage::Configuration>(getConfiguration(engine_args, context_));
+        if (new_configuration.format == "auto")
+            new_configuration.format = "Parquet";
+        base_configuration = new_configuration;
+        Storage::namedCollectionRestored();
+    }
+
+    String getFormat() const override
+    {
+        std::lock_guard lock(configuration_update_mutex);
+        Storage::assertNamedCollectionExists();
+        return base_configuration->format;
     }
 
 private:
@@ -103,17 +131,18 @@ private:
 
     void updateConfigurationImpl(const ContextPtr & local_context)
     {
-        const bool updated = base_configuration.update(local_context);
-        auto new_keys = getDataFiles(base_configuration, local_context);
+        const bool updated = base_configuration->update(local_context);
+        auto new_keys = getDataFiles(*base_configuration, local_context);
 
         if (!updated && new_keys == Storage::getConfiguration().keys)
             return;
 
-        Storage::useConfiguration(getConfigurationForDataRead(base_configuration, local_context, new_keys));
+        Storage::useConfiguration(getConfigurationForDataRead(*base_configuration, local_context, new_keys));
     }
 
-    Configuration base_configuration;
-    std::mutex configuration_update_mutex;
+
+    std::optional<Configuration> base_configuration;
+    mutable std::mutex configuration_update_mutex;
     LoggerPtr log;
 };
 
@@ -121,14 +150,25 @@ private:
 template <typename DataLake>
 static StoragePtr createDataLakeStorage(const StorageFactory::Arguments & args)
 {
-    auto configuration = DataLake::getConfiguration(args.engine_args, args.getLocalContext());
+    ContextPtr context = args.getLocalContext();
+    auto configuration_or_named_collection_name = DataLake::getConfiguration(args.engine_args, context,
+        args.allow_missing_named_collection || context->getSettingsRef().allow_missing_named_collections);
 
-    /// Data lakes use parquet format, no need for schema inference.
-    if (configuration.format == "auto")
-        configuration.format = "Parquet";
-
-    return DataLake::create(configuration, args.getContext(), args.mode, args.table_id, args.columns, args.constraints,
-        args.comment, getFormatSettings(args.getContext()));
+    if (std::holds_alternative<typename  DataLake::Configuration>(configuration_or_named_collection_name)) {
+        auto configuration = std::get<typename DataLake::Configuration>(configuration_or_named_collection_name);
+        if (configuration.format == "auto")
+            configuration.format = "Parquet";
+        return DataLake::create(
+            configuration, args.getContext(), args.mode, args.table_id, args.columns, args.constraints,
+            args.comment, getFormatSettings(args.getContext()),
+            configuration.named_collection_name);
+    } else {
+        return DataLake::create(
+            std::optional<typename DataLake::Configuration>{},
+            args.getContext(), args.mode, args.table_id, args.columns, args.constraints,
+            args.comment, getFormatSettings(args.getContext()),
+            std::get<String>(configuration_or_named_collection_name));
+    }
 }
 
 }

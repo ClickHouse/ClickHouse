@@ -1,3 +1,5 @@
+#include <optional>
+#include <variant>
 #include "config.h"
 
 #if USE_AWS_S3
@@ -1037,44 +1039,56 @@ private:
 
 
 StorageS3::StorageS3(
-    const Configuration & configuration_,
+    const std::optional<Configuration> & configuration_,
     const ContextPtr & context_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
     std::optional<FormatSettings> format_settings_,
+    const std::optional<String> named_collection_name_,
     bool distributed_processing_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
-    , configuration(configuration_)
-    , name(configuration.url.storage_name)
-    , distributed_processing(distributed_processing_)
+    , named_collection_name(named_collection_name_)
     , format_settings(format_settings_)
+    , configuration(configuration_)
+    , name(configuration.has_value() ? configuration->url.storage_name : "S3")
+    , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
     updateConfiguration(context_); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
-    if (configuration.format != "auto")
-        FormatFactory::instance().checkFormatName(configuration.format);
-    context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration.url.uri);
-    context_->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(configuration.headers_from_ast);
+    if (configuration.has_value()) {
+        if (configuration->format != "auto")
+            FormatFactory::instance().checkFormatName(configuration->format);
+        context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration->url.uri);
+        context_->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(configuration->headers_from_ast);
+    } else {
+        namedCollectionDeleted();
+    }
+
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        ColumnsDescription columns;
-        if (configuration.format == "auto")
-            std::tie(columns, configuration.format) = getTableStructureAndFormatFromData(configuration, format_settings, context_);
-        else
-            columns = getTableStructureFromData(configuration, format_settings, context_);
+        if (configuration.has_value())
+        {
+            ColumnsDescription columns;
+            if (configuration->format == "auto")
+                std::tie(columns, configuration->format) = getTableStructureAndFormatFromData(*configuration, format_settings, context_);
+            else
+                columns = getTableStructureFromData(*configuration, format_settings, context_);
 
-        storage_metadata.setColumns(columns);
+            storage_metadata.setColumns(columns);
+        }
     }
     else
     {
-        if (configuration.format == "auto")
-            configuration.format = getTableStructureAndFormatFromData(configuration, format_settings, context_).second;
+        if (configuration.has_value() && configuration->format == "auto")
+        {
+            configuration->format = getTableStructureAndFormatFromData(*configuration, format_settings, context_).second;
+        }
 
         /// We don't allow special columns in S3 storage.
         if (!columns_.hasOnlyOrdinary())
@@ -1127,19 +1141,26 @@ static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
     }
 }
 
+String StorageS3::getFormat() const
+{
+    std::lock_guard lock(configuration_update_mutex);
+    assertNamedCollectionExists();
+    return configuration->format;
+}
+
 bool StorageS3::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getFormat(), context, format_settings);
 }
 
 bool StorageS3::prefersLargeBlocks() const
 {
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration.format);
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(getFormat());
 }
 
 bool StorageS3::parallelizeOutputAfterReading(ContextPtr context) const
 {
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(getFormat(), context);
 }
 
 void StorageS3::read(
@@ -1293,7 +1314,10 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
                 while (S3::objectExists(*query_configuration.client, query_configuration.url.bucket, new_key, query_configuration.url.version_id, query_configuration.request_settings));
 
                 query_configuration.keys.push_back(new_key);
-                configuration.keys.push_back(new_key);
+                std::lock_guard lock(configuration_update_mutex);
+                if (configuration.has_value()) {
+                    configuration->keys.push_back(new_key);
+                }
             }
             else
             {
@@ -1367,14 +1391,17 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 StorageS3::Configuration StorageS3::updateConfigurationAndGetCopy(const ContextPtr & local_context)
 {
     std::lock_guard lock(configuration_update_mutex);
-    configuration.update(local_context);
-    return configuration;
+    assertNamedCollectionExists();
+    configuration->update(local_context);
+    return *configuration;
 }
 
 void StorageS3::updateConfiguration(const ContextPtr & local_context)
 {
     std::lock_guard lock(configuration_update_mutex);
-    configuration.update(local_context);
+    if (configuration.has_value()) {
+        configuration->update(local_context);
+    }
 }
 
 void StorageS3::useConfiguration(const Configuration & new_configuration)
@@ -1383,10 +1410,24 @@ void StorageS3::useConfiguration(const Configuration & new_configuration)
     configuration = new_configuration;
 }
 
+void StorageS3::reload(ContextPtr context_, ASTs engine_args)
+{
+    auto new_configuration = StorageS3::getConfiguration(engine_args, context_);
+    if (new_configuration.format == "auto") {
+        new_configuration.format = getTableStructureAndFormatFromData(new_configuration, format_settings, context_).second;
+    }
+    FormatFactory::instance().checkFormatName(new_configuration.format);
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(new_configuration.url.uri);
+    context_->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(new_configuration.headers_from_ast);
+    useConfiguration(new_configuration);
+    namedCollectionRestored();
+}
+
 const StorageS3::Configuration & StorageS3::getConfiguration()
 {
     std::lock_guard lock(configuration_update_mutex);
-    return configuration;
+    assertNamedCollectionExists();
+    return *configuration;
 }
 
 bool StorageS3::Configuration::update(const ContextPtr & context)
@@ -1484,15 +1525,29 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 
     configuration.request_settings = S3Settings::RequestSettings(collection);
+
+    configuration.named_collection_name = collection.getName();
 }
 
-StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file)
+
+StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file) {
+    return std::get<StorageS3::Configuration>(getConfiguration(engine_args, local_context, get_format_from_file, false));
+}
+
+std::variant<StorageS3::Configuration, String> StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file, bool allow_missing_named_collection)
 {
     StorageS3::Configuration configuration;
+    std::optional<String> collection_name = getCollectionName(engine_args);
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
-    {
-        processNamedCollectionResult(configuration, *named_collection);
+    if (collection_name.has_value()) {
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(*collection_name, engine_args, local_context, false))
+        {
+            processNamedCollectionResult(configuration, *named_collection);
+        } else {
+            if (!allow_missing_named_collection)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection `{}` doesn't exist", *collection_name);
+            return *collection_name;
+        }
     }
     else
     {
@@ -1930,7 +1985,12 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
-        auto configuration = StorageS3::getConfiguration(engine_args, args.getLocalContext());
+        ContextPtr context = args.getLocalContext();
+        auto configuration_or_collection_name = StorageS3::getConfiguration(
+            engine_args,
+            context,
+            true,
+            args.allow_missing_named_collection || context->getSettingsRef().allow_missing_named_collections);
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
         // session and user are ignored.
@@ -1961,16 +2021,32 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        return std::make_shared<StorageS3>(
-            std::move(configuration),
-            args.getContext(),
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            format_settings,
-            /* distributed_processing_ */false,
-            partition_by);
+        if (std::holds_alternative<StorageS3::Configuration>(configuration_or_collection_name)) {
+            auto configuration = std::get<StorageS3::Configuration>(configuration_or_collection_name);
+            return std::make_shared<StorageS3>(
+                configuration,
+                args.getContext(),
+                args.table_id,
+                args.columns,
+                args.constraints,
+                args.comment,
+                format_settings,
+                configuration.named_collection_name,
+                /* distributed_processing_ */false,
+                partition_by);
+        } else {
+            return std::make_shared<StorageS3>(
+                std::optional<StorageS3::Configuration> {},
+                args.getContext(),
+                args.table_id,
+                args.columns,
+                args.constraints,
+                args.comment,
+                format_settings,
+                std::get<String>(configuration_or_collection_name),
+                /* distributed_processing_ */false,
+                partition_by);
+        }
     },
     {
         .supports_settings = true,

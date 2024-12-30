@@ -300,16 +300,18 @@ public:
 
         std::shared_ptr<const S3::Client> client;
         std::vector<String> keys;
+        std::optional<String> named_collection_name;
     };
 
     StorageS3(
-        const Configuration & configuration_,
+        const std::optional<Configuration> & configuration_,
         const ContextPtr & context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
         std::optional<FormatSettings> format_settings_,
+        std::optional<String> named_collection_name_ = {},
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
 
@@ -339,6 +341,7 @@ public:
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
     static StorageS3::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool get_format_from_file = true);
+    static std::variant<StorageS3::Configuration, String> getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file, bool allow_missing_named_collection);
 
     static ColumnsDescription getTableStructureFromData(
         const StorageS3::Configuration & configuration,
@@ -354,7 +357,13 @@ public:
 
     bool supportsTrivialCountOptimization() const override { return true; }
 
+    std::optional<String> getNamedCollectionName() const override { return named_collection_name; }
+
+    void reload(ContextPtr context_, ASTs engine_args) override;
+
 protected:
+    std::optional<String> named_collection_name;
+
     virtual Configuration updateConfigurationAndGetCopy(const ContextPtr & local_context);
 
     virtual void updateConfiguration(const ContextPtr & local_context);
@@ -363,18 +372,21 @@ protected:
 
     const Configuration & getConfiguration();
 
+    std::optional<FormatSettings> format_settings;
+
+    virtual String getFormat() const;
+
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
     friend class StorageS3Queue;
     friend class ReadFromStorageS3Step;
 
-    Configuration configuration;
-    std::mutex configuration_update_mutex;
+    std::optional<Configuration> configuration;
+    mutable std::mutex configuration_update_mutex;
 
     String name;
     const bool distributed_processing;
-    std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
