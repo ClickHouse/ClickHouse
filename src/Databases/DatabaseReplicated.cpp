@@ -41,6 +41,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/AlterCommands.h>
+#include "Storages/PartitionCommands.h"
 
 namespace DB
 {
@@ -1704,11 +1705,18 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         try
         {
             /// Metadata alter should go through database
-            for (const auto & child : alter->command_list->children)
-                if (AlterCommand::parse(child->as<ASTAlterCommand>()))
+            for (const auto & child : alter->command_list->children) {
+                auto * const child_command = child->as<ASTAlterCommand>();
+                if (AlterCommand::parse(child_command))
                     return true;
+                else {
+                    auto const partition_command = PartitionCommand::parse(child_command);
+                    if (partition_command && partition_command->type == PartitionCommand::MOVE_PARTITION)
+                        return true;
+                }
+            }
 
-            /// It's ALTER PARTITION or mutation, doesn't involve database
+            /// It's a non-moving ALTER PARTITION or mutation, doesn't involve database
             return false;
         }
         catch (...)
