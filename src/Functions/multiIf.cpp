@@ -164,10 +164,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return this->executeImpl(args, result_type, input_rows_count, nullptr);
+        return this->executeImplWithProfile(args, result_type, input_rows_count, nullptr);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const override
+    ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const override
     {
         /// Fast path when data is empty
         if (input_rows_count == 0)
