@@ -355,15 +355,13 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     }
     else
     {
-        /// Reading rest of HandshakeResponse.
+        /// Send error packet and close connection.
         packet_size = PACKET_HEADER_SIZE + payload_size;
-        WriteBufferFromOwnString buf_for_handshake_response;
-        buf_for_handshake_response.write(buf, pos);
-        copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
-        ReadBufferFromString payload(buf_for_handshake_response.str());
-        payload.ignore(PACKET_HEADER_SIZE);
-        packet.readPayloadWithUnpacked(payload);
+        packet_endpoint->in->ignore(packet_size - pos);
+        static constexpr const char * error_msg = "SSL support for MySQL TCP protocol is required.  If using the MySQL CLI client, please connect with --ssl-mode=REQUIRED.";
         packet_endpoint->sequence_id++;
+        packet_endpoint->sendPacket(ERRPacket(3159, "HY000", error_msg), true);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, error_msg);
     }
 }
 
