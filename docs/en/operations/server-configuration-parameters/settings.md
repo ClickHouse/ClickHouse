@@ -2736,6 +2736,7 @@ Parameters:
 | `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
 | `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
 | `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
+| `symbolize`                        | If the server should try to symbolize the results (optional, default: `false`)                                                                                                                                                      |                     |
 | `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
 
 The default server configuration file `config.xml` contains the following settings section:
@@ -2750,6 +2751,7 @@ The default server configuration file `config.xml` contains the following settin
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <symbolize>false</symbolize>
 </trace_log>
 ```
 

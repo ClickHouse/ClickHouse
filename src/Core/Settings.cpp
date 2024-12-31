@@ -5864,6 +5864,11 @@ Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
     \
+    DECLARE(UInt64, max_autoincrement_series, 1000, R"(
+The limit on the number of series created by the `generateSeriesID` function.
+
+As each series represents a node in Keeper, it is recommended to have no more than a couple of millions of them.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

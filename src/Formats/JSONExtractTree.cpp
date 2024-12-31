@@ -1639,7 +1639,7 @@ public:
         /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error))
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -1695,7 +1695,8 @@ private:
         const FormatSettings & format_settings,
         std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
         size_t current_size,
-        String & error) const
+        String & error,
+        bool is_root) const
     {
         if (shouldSkipPath(current_path))
             return true;
@@ -1705,10 +1706,10 @@ private:
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
-                if (!path.empty())
+                if (!is_root)
                     path.append(".");
                 path += key;
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error))
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
                     return false;
             }
 
