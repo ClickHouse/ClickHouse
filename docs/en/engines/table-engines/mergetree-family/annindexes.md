@@ -1,8 +1,7 @@
-
 ---
 slug: /en/engines/table-engines/mergetree-family/annindexes
 sidebar_label: Vector Similarity Indexes
-description:  Approximate Nearest Neighbor Search with Vector Similarity Indexes
+description: Approximate Nearest Neighbor Search with Vector Similarity Indexes
 keywords: [vector-similarity search, text search, ann, indices, index, nearest neighbour]
 ---
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
