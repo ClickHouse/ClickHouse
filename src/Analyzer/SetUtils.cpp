@@ -62,7 +62,7 @@ size_t getCompoundTypeDepth(const IDataType & type)
     return result;
 }
 
-static std::optional<Field> convertFieldToTypeCheckEnum(const Field & from_value, const IDataType & from_type, const IDataType & to_type, bool forbid_unknown_enum_values)
+std::optional<Field> convertFieldToTypeCheckEnum(const Field & from_value, const IDataType & from_type, const IDataType & to_type, bool forbid_unknown_enum_values)
 {
     try
     {
