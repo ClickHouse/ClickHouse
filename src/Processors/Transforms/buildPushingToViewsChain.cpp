@@ -243,7 +243,7 @@ public:
 
 private:
     struct ViewStatus
-    {  
+    {
         bool is_finished = false;
         std::exception_ptr exception;
     };
@@ -973,7 +973,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         {
             return Status::Ready;
         }
-        else 
+        else
         {
             ++num_finished;
         }
@@ -1032,7 +1032,7 @@ void FinalizingViewsTransform::work()
                 view.table_id.getNameForLogs(),
                 view.runtime_stats->elapsed_ms);
         }
-        else 
+        else
         {
             chassert(first_exception);
             chassert(!materialized_views_ignore_errors);
