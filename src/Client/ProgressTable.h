@@ -22,16 +22,16 @@ class Block;
 class ProgressTable
 {
 public:
-    explicit ProgressTable(std::ostream & output_stream_, int in_fd_ = STDIN_FILENO, int err_fd_ = STDERR_FILENO)
-        : output_stream(output_stream_), in_fd(in_fd_), err_fd(err_fd_)
+    explicit ProgressTable(int in_fd_ = STDIN_FILENO, int err_fd_ = STDERR_FILENO)
+        : in_fd(in_fd_), err_fd(err_fd_)
     {
     }
 
     /// Write progress table with metrics.
     void writeTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock,
-            bool show_table, bool toggle_enabled);
+            bool show_table, bool toggle_enabled, bool is_final);
     void clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
-    void writeFinalTable();
+    void writeFinalTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
 
     /// Update the metric values. They can be updated from:
     /// onProfileEvents in clickhouse-client;
@@ -47,9 +47,10 @@ private:
         explicit MetricInfo(ProfileEvents::Type t);
 
         void updateValue(Int64 new_value, double new_time);
-        double calculateProgress(double time_now) const;
+        double calculateRecentProgress(double time_now) const;
+        double calculateAverageProgress(double time_now) const;
         double getValue() const;
-        bool isFresh(double now) const;
+        double updateTime() const { return update_time; }
 
     private:
         const ProfileEvents::Type type;
@@ -78,18 +79,19 @@ private:
         using HostName = String;
 
         void updateHostValue(const HostName & host, ProfileEvents::Type type, Int64 new_value, double new_time);
-        double getSummaryValue();
-        double getSummaryProgress(double time_now);
+        double getSummaryValue() const;
+        double getSummaryRecentProgress(double time_now);
+        double getSummaryAverageProgress(double time_now) const;
         double getMaxProgress() const;
-        bool isFresh(double now) const;
+        double updateTime() const;
+        int getDisplayPriority() const { return display_priority; }
+        void increaseDisplayPriority() { ++display_priority; }
 
     private:
         std::unordered_map<HostName, MetricInfo> host_to_metric;
         double max_progress = 0;
+        int display_priority = 0;
     };
-
-    size_t tableSize() const;
-    size_t getFreshMetricsCount(double time_now) const;
 
     size_t getColumnDocumentationWidth(size_t terminal_width) const;
 
@@ -98,8 +100,8 @@ private:
 
     /// The server periodically sends Block with profile events.
     /// This information is stored here.
-    std::list<Metric> metrics;
-    std::map<MetricName, std::list<Metric>::iterator> metrics_iterators;
+    using Metrics = std::map<MetricName, MetricInfoPerHost>;
+    Metrics metrics;
 
     /// It is possible concurrent access to the metrics.
     std::mutex mutex;
@@ -117,7 +119,6 @@ private:
     static constexpr size_t COLUMN_PROGRESS_WIDTH = 20;
     static constexpr size_t COLUMN_DOCUMENTATION_MIN_WIDTH = COLUMN_DOCUMENTATION_NAME.size();
 
-    std::ostream & output_stream;
     int in_fd;
     int err_fd;
 };

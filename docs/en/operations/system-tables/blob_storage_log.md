@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/blob_storage_log
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # blob_storage_log
+
+<SystemTableCloud/>
 
 Contains logging entries with information about various blob storage operations such as uploads and deletes.
 
