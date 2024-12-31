@@ -283,16 +283,25 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
 
     ///    ─ ─ ─ ─
-    size_t vertical_filler_size = 0;
     String vertical_filler = left_blank;
-    WriteBufferFromString vertical_filler_out(vertical_filler, AppendModeTag{});
-    for (size_t i = 0; i < num_columns; ++i)
-        vertical_filler_size += max_widths[i] + (style == Style::Space ? 2 : 3);
-    if (style != Style::Space)
-        ++vertical_filler_size;
-    for (size_t i = 0; i < vertical_filler_size; ++i)
-        vertical_filler_out << (i % 2 ? " " : horizontal_bar);
-    vertical_filler_out << "\n";
+
+    {
+        size_t vertical_filler_size = 0;
+        WriteBufferFromString vertical_filler_out(vertical_filler, AppendModeTag{});
+
+        for (size_t i = 0; i < num_columns; ++i)
+            vertical_filler_size += max_widths[i] + 3;
+
+        if (style == Style::Space)
+            vertical_filler_size -= 2;
+        else
+            vertical_filler_size += 1;
+
+        for (size_t i = 0; i < vertical_filler_size; ++i)
+            vertical_filler_out << (i % 2 ? " " : horizontal_bar);
+
+        vertical_filler_out << "\n";
+    }
 
     ///    ┃ name ┃
     ///    ┌─name─┐
@@ -318,41 +327,41 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                 else if (style == Style::Compact)
                     out << horizontal_bar << grid[is_top ? 6 : 3][2] << horizontal_bar;
                 else if (style == Style::Space)
-                    out << "  ";
+                    out << "   ";
             }
 
             const auto & col = header.getByPosition(i);
 
-            if (color)
-                out << "\033[1m";
+            auto write_value = [&]
+            {
+                if (color)
+                    out << "\033[1m";
+                writeString(names[i], out);
+                if (color)
+                    out << "\033[0m";
+            };
+
+            auto write_padding = [&]
+            {
+                for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
+                {
+                    if (style == Style::Compact)
+                        out << horizontal_bar;
+                    else
+                        out << " ";
+                }
+            };
 
             if (col.type->shouldAlignRightInPrettyFormats())
             {
-                for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                {
-                    if (style == Style::Compact)
-                        out << horizontal_bar;
-                    else
-                        out << " ";
-                }
-
-                writeString(names[i], out);
+                write_padding();
+                write_value();
             }
             else
             {
-                writeString(names[i], out);
-
-                for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                {
-                    if (style == Style::Compact)
-                        out << horizontal_bar;
-                    else
-                        out << " ";
-                }
+                write_value();
+                write_padding();
             }
-
-            if (color)
-                out << "\033[0m";
         }
         if (style == Style::Full)
             out << " " << vertical_bold_bar;
@@ -402,6 +411,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             {
                 if (style != Style::Space)
                     out << vertical_bar;
+                else if (j != 0)
+                    out << " ";
 
                 const auto & type = *header.getByPosition(j).type;
                 writeValueWithPadding(
@@ -434,7 +445,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         write_names(false);
         writeString(footer_end, out);
     }
-    else if (style == Style::Full || style == Style::Compact)
+    else
     {
         ///    └──────┘
         writeString(rows_end, out);
