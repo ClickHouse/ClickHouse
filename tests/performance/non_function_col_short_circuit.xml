@@ -12,17 +12,17 @@
     </fill_query>
 
     <query>
-        select and(a, b, c, d == 1) from test_non_function_column_short_circuit
+        select and(a, b, c, d == 1) from test_non_function_column_short_circuit Format null
     </query>
     <query>
-        select and(a, b, c == 1, d) from test_non_function_column_short_circuit
+        select and(a, b, c == 1, d) from test_non_function_column_short_circuit Format null
     </query>
 
     <query>
-        select or(a, b, c, d == 1) from test_non_function_column_short_circuit
+        select or(a, b, c, d == 1) from test_non_function_column_short_circuit Format null
     </query>
     <query>
-        select or(a, b, c == 1, d) from test_non_function_column_short_circuit
+        select or(a, b, c == 1, d) from test_non_function_column_short_circuit Format null
     </query>
 
     <drop_query>

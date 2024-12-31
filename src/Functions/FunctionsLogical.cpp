@@ -671,6 +671,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
             partial_result = result_type->isNullable()
                 ? executeForTernaryLogicImpl<Impl>(std::move(solid_args), result_type, input_rows_count)
                 : basicExecuteImpl<Impl>(std::move(solid_args), input_rows_count);
+            if (not_solid_args_index.empty())
+                return partial_result;
             new_args.emplace_back(partial_result, result_type, "__partial_result");
             for (const auto & index : not_solid_args_index)
                 new_args.emplace_back(std::move(arguments[index]));
