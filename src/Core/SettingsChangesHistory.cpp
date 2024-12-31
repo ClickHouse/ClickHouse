@@ -68,7 +68,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
             {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
-            {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
             {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
