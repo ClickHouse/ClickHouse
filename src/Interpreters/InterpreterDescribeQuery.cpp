@@ -25,7 +25,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool describe_compact_output;
     extern const SettingsBool describe_extend_object_types;
     extern const SettingsBool describe_include_subcolumns;
@@ -137,7 +137,7 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
     auto select_query = table_expression.subquery->children.at(0);
     auto current_context = getContext();
 
-    if (settings[Setting::allow_experimental_analyzer])
+    if (settings[Setting::enable_analyzer])
     {
         SelectQueryOptions select_query_options;
         sample_block = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock();

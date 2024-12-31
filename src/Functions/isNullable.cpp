@@ -10,7 +10,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace
@@ -23,7 +23,7 @@ public:
     static constexpr auto name = "isNullable";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIsNullable>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+        return std::make_shared<FunctionIsNullable>(context->getSettingsRef()[Setting::enable_analyzer]);
     }
 
     explicit FunctionIsNullable(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
@@ -86,4 +86,3 @@ REGISTER_FUNCTION(IsNullable)
 }
 
 }
-

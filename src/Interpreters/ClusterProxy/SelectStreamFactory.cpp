@@ -38,7 +38,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
@@ -75,7 +75,7 @@ ASTPtr rewriteSelectQuery(
     // are written into the query context and will be sent by the query pipeline.
     select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
 
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (!context->getSettingsRef()[Setting::enable_analyzer])
     {
         if (table_function_ptr)
             select_query.addTableFunction(table_function_ptr);
@@ -172,7 +172,7 @@ void SelectStreamFactory::createForShardImpl(
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         Block shard_header;
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef()[Setting::enable_analyzer])
             shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         else
             shard_header = header;

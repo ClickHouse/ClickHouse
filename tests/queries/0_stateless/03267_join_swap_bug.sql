@@ -5,7 +5,7 @@ INSERT INTO TABLE t0 (c0) VALUES (1);
 SELECT 1 FROM t0 PASTE JOIN (SELECT 1 c0) tx PASTE JOIN t0 t1 GROUP BY tx.c0;
 SELECT count() FROM t0 PASTE JOIN (SELECT 1 c0) tx PASTE JOIN t0 t1 GROUP BY tx.c0;
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 SELECT *
 FROM

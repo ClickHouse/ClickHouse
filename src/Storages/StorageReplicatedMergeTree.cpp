@@ -146,7 +146,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool async_insert_deduplicate;
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
     extern const SettingsBool async_query_sending_for_remote;
@@ -5743,13 +5743,13 @@ void StorageReplicatedMergeTree::read(
         return;
     }
     /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
-    if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
+    if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::enable_analyzer])
     {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
         return;
     }
 
-    if (local_context->canUseParallelReplicasCustomKey() && !settings[Setting::allow_experimental_analyzer]
+    if (local_context->canUseParallelReplicasCustomKey() && !settings[Setting::enable_analyzer]
         && local_context->getClientInfo().distributed_depth == 0)
     {
         auto cluster = local_context->getClusterForParallelReplicas();

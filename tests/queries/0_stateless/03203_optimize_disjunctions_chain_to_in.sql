@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 CREATE TABLE foo (i Date) ENGINE MergeTree ORDER BY i;
 INSERT INTO foo VALUES ('2020-01-01');
 INSERT INTO foo VALUES ('2020-01-02');

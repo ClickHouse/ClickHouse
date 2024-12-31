@@ -49,7 +49,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsBool ignore_materialized_views_with_dropped_target_table;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -347,7 +347,7 @@ std::optional<Chain> generateViewChain(
         Block header;
 
         /// Get list of columns we get from select query.
-        if (select_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (select_context->getSettingsRef()[Setting::enable_analyzer])
             header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
         else
             header = InterpreterSelectQuery(query, select_context, SelectQueryOptions()).getSampleBlock();
@@ -660,7 +660,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
 
     QueryPipelineBuilder pipeline;
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (local_context->getSettingsRef()[Setting::enable_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(view.query, local_context, local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
         pipeline = interpreter.buildQueryPipeline();

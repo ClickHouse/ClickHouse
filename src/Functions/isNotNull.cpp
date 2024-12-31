@@ -15,7 +15,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
 }
 
 namespace
@@ -30,7 +30,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::enable_analyzer]);
     }
 
     explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}

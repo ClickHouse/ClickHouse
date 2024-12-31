@@ -42,7 +42,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
 }
@@ -431,9 +431,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (!getContext()->getSettingsRef()[Setting::enable_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
+                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set enable_analyzer = 1.");
 
             if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
@@ -499,7 +499,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (getContext()->getSettingsRef()[Setting::enable_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                 context = interpreter.getContext();
@@ -548,7 +548,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+                if (getContext()->getSettingsRef()[Setting::enable_analyzer])
                 {
                     InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                     context = interpreter.getContext();
@@ -607,7 +607,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             QueryPlan plan;
             ContextPtr context = getContext();
 
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (context->getSettingsRef()[Setting::enable_analyzer])
             {
                 InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
                 context = interpreter.getContext();

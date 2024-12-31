@@ -63,7 +63,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
@@ -1424,7 +1424,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
 
         PreparedSets::Hash set_key;
-        if (data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer] && !identifier)
+        if (data.getContext()->getSettingsRef()[Setting::enable_analyzer] && !identifier)
         {
             /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
             /// This is a hacky way to allow reusing cache for prepared sets.

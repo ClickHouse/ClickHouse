@@ -56,7 +56,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_analyzer;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -119,7 +119,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             Block header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
-            if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (current_context->getSettingsRef()[Setting::enable_analyzer])
             {
                 header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
             }
@@ -521,7 +521,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
-        if (settings[Setting::allow_experimental_analyzer])
+        if (settings[Setting::enable_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
             pipeline = interpreter_select_analyzer.buildQueryPipeline();
