@@ -276,7 +276,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     {
         header_end = "\n";
         footer_begin = "\n";
-        rows_end = "\n";
         footer_end = "\n";
     }
 
@@ -550,11 +549,10 @@ void PrettyBlockOutputFormat::writeSuffix()
 
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        writeCString("Showed ", out);
-        writeIntText(displayed_rows, out);
-        writeCString(" out of ", out);
-        writeIntText(total_rows, out);
-        writeCString(" rows.\n", out);
+        if (style == Style::Space)
+            out << "\n";
+
+        out << "Showed " << displayed_rows << " out of " << total_rows << " rows.\n";
     }
 }
 

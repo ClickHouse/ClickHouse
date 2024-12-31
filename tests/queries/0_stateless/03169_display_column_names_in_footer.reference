@@ -1964,7 +1964,6 @@
  98.      97   UInt64             
  99.      98   UInt64             
 100.      99   UInt64             
-
       number   toTypeName(number)
 
   1.       0   UInt64             
