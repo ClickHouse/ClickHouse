@@ -172,8 +172,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     String footer_begin;    /// ┢━━╈━━━┪
     String footer_end;      /// ┗━━┻━━━┛
 
-    String cut_in_the_middle;
-
     bool unicode = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
     using GridPart = std::array<std::string_view, 4>;
     using Grid = std::array<GridPart, 7>;
@@ -278,7 +276,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     {
         header_end = "\n";
         footer_begin = "\n";
-        rows_end = "\n";
         footer_end = "\n";
     }
 
@@ -620,11 +617,10 @@ void PrettyBlockOutputFormat::writeSuffix()
 
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        writeCString("Showed ", out);
-        writeIntText(displayed_rows, out);
-        writeCString(" out of ", out);
-        writeIntText(total_rows, out);
-        writeCString(" rows.\n", out);
+        if (style == Style::Space)
+            out << "\n";
+
+        out << "Showed " << displayed_rows << " out of " << total_rows << " rows.\n";
     }
 }
 

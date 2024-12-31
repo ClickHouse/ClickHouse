@@ -9,4 +9,3 @@
 [90m7. [0m       ExpressionTransform                                                
 [90m8. [0m         (ReadFromMergeTree)                                              
 [90m9. [0m         MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1 
-
