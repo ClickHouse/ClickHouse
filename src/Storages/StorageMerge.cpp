@@ -687,7 +687,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 child.plan.addStep(std::move(filter_step));
             }
 
-            child.plan.optimize(QueryPlanOptimizationSettings::fromContext(modified_context));
+            child.plan.optimize(QueryPlanOptimizationSettings(modified_context));
         }
 
         res.emplace_back(std::move(child));
@@ -1136,10 +1136,10 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!child.plan.isInitialized())
         return nullptr;
 
-    auto optimisation_settings = QueryPlanOptimizationSettings::fromContext(context);
+    QueryPlanOptimizationSettings optimization_settings(context);
     /// All optimisations will be done at plans creation
-    optimisation_settings.optimize_plan = false;
-    auto builder = child.plan.buildQueryPipeline(optimisation_settings, BuildQueryPipelineSettings::fromContext(context));
+    optimization_settings.optimize_plan = false;
+    auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
     if (!builder->initialized())
         return builder;
@@ -1175,7 +1175,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
-        /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.
+        /// However, it's needed for Materialized...SQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
     }
 
@@ -1260,8 +1260,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
-    filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(),
-        ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+    filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
     const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
     const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
 

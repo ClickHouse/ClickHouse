@@ -2748,7 +2748,9 @@ void StorageMergeTree::fillNewPartNameAndResetLevel(MutableDataPartPtr & part, D
 {
     part->info.min_block = part->info.max_block = increment.get();
     part->info.mutation = 0;
-    part->info.level = 0;
+
+    bool keep_non_zero_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+    part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
     part->setName(part->getNewName(part->info));
 }
 
