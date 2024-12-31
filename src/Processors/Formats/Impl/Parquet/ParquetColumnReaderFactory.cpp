@@ -1,16 +1,17 @@
 #include "ParquetColumnReaderFactory.h"
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Processors/Formats/Impl/Parquet/SelectiveColumnReader.h>
-#include <Processors/Formats/Impl/Parquet/RowGroupChunkReader.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
+#include <Processors/Formats/Impl/Parquet/RowGroupChunkReader.h>
+#include <Processors/Formats/Impl/Parquet/SelectiveColumnReader.h>
 #include <parquet/column_reader.h>
 #include <Common/ProfileEvents.h>
 
@@ -20,8 +21,8 @@ extern const Event ParquetFetchWaitTimeMicroseconds;
 }
 
 namespace DB
-{ 
- 
+{
+
 namespace
 {
 /// Create a column reader for a specific physical type and target type.
@@ -35,7 +36,10 @@ namespace
 /// return
 template <parquet::Type::type physical_type, TypeIndex target_type, bool dict>
 SelectiveColumnReaderPtr createColumnReader(
-    PageReaderCreator page_reader_creator [[maybe_unused]], const ScanSpec & scan_spec [[maybe_unused]], const parquet::LogicalType & logical_type [[maybe_unused]], const DataTypePtr type_hint [[maybe_unused]])
+    PageReaderCreator page_reader_creator [[maybe_unused]],
+    const ScanSpec & scan_spec [[maybe_unused]],
+    const parquet::LogicalType & logical_type [[maybe_unused]],
+    const DataTypePtr type_hint [[maybe_unused]])
 {
     throw DB::Exception(
         ErrorCodes::NOT_IMPLEMENTED,
@@ -46,7 +50,10 @@ SelectiveColumnReaderPtr createColumnReader(
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::UInt64, true>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & /*logical_type*/, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & /*logical_type*/,
+    const DataTypePtr /*type_hint*/)
 {
     return std::make_shared<NumberDictionaryReader<DataTypeUInt64, Int64>>(
         std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt64>());
@@ -54,7 +61,10 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::UIn
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::UInt64, false>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & /*logical_type*/, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & /*logical_type*/,
+    const DataTypePtr /*type_hint*/)
 {
     return std::make_shared<NumberColumnDirectReader<DataTypeUInt64, Int64>>(
         std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeUInt64>());
@@ -62,7 +72,10 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::UIn
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Int64, true>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & /*logical_type*/, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & /*logical_type*/,
+    const DataTypePtr /*type_hint*/)
 {
     return std::make_shared<NumberDictionaryReader<DataTypeInt64, Int64>>(
         std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt64>());
@@ -70,7 +83,10 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Int
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Int64, false>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & /*logical_type*/, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & /*logical_type*/,
+    const DataTypePtr /*type_hint*/)
 {
     return std::make_shared<NumberColumnDirectReader<DataTypeInt64, Int64>>(
         std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt64>());
@@ -78,7 +94,10 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Int
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT96, TypeIndex::Int64, true>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & /*logical_type*/, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & /*logical_type*/,
+    const DataTypePtr /*type_hint*/)
 {
     return std::make_shared<FixedLengthColumnDictionaryReader<DataTypeInt64, Int64>>(
         std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt64>());
@@ -86,7 +105,10 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT96, TypeIndex::Int
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT96, TypeIndex::Int64, false>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & /*logical_type*/, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & /*logical_type*/,
+    const DataTypePtr /*type_hint*/)
 {
     return std::make_shared<FixedLengthColumnDirectReader<DataTypeInt64>>(
         std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeInt64>());
@@ -109,7 +131,10 @@ UInt32 getScaleFromLogicalTimestamp(parquet::LogicalType::TimeUnit::unit tm_unit
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::DateTime64, false>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & logical_type, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & logical_type,
+    const DataTypePtr /*type_hint*/)
 {
     DataTypePtr type_datetime64;
     if (logical_type.is_timestamp())
@@ -125,7 +150,10 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Dat
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::DateTime64, true>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & logical_type, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & logical_type,
+    const DataTypePtr /*type_hint*/)
 {
     DataTypePtr type_datetime64;
     if (logical_type.is_timestamp())
@@ -135,13 +163,15 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Dat
     }
     else
         type_datetime64 = std::make_shared<DataTypeDateTime64>(0);
-    return std::make_shared<NumberDictionaryReader<DataTypeDateTime64, Int64>>(
-        std::move(page_reader_creator), scan_spec, type_datetime64);
+    return std::make_shared<NumberDictionaryReader<DataTypeDateTime64, Int64>>(std::move(page_reader_creator), scan_spec, type_datetime64);
 }
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT96, TypeIndex::DateTime64, false>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & logical_type, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & logical_type,
+    const DataTypePtr /*type_hint*/)
 {
     DataTypePtr type_datetime64;
     if (logical_type.is_timestamp())
@@ -151,13 +181,15 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT96, TypeIndex::Dat
     }
     else
         type_datetime64 = std::make_shared<DataTypeDateTime64>(9);
-    return std::make_shared<FixedLengthColumnDirectReader<DataTypeDateTime64>>(
-        std::move(page_reader_creator), scan_spec, type_datetime64);
+    return std::make_shared<FixedLengthColumnDirectReader<DataTypeDateTime64>>(std::move(page_reader_creator), scan_spec, type_datetime64);
 }
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT96, TypeIndex::DateTime64, true>(
-    PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType & logical_type, const DataTypePtr /*type_hint*/)
+    PageReaderCreator page_reader_creator,
+    const ScanSpec & scan_spec,
+    const parquet::LogicalType & logical_type,
+    const DataTypePtr /*type_hint*/)
 {
     DataTypePtr type_datetime64;
     if (logical_type.is_timestamp())
@@ -375,16 +407,14 @@ template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::BYTE_ARRAY, TypeIndex::String, false>(
     PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType &, const DataTypePtr /*type_hint*/)
 {
-    return std::make_shared<StringDirectReader>(
-        std::move(page_reader_creator), scan_spec);
+    return std::make_shared<StringDirectReader>(std::move(page_reader_creator), scan_spec);
 }
 
 template <>
 SelectiveColumnReaderPtr createColumnReader<parquet::Type::BYTE_ARRAY, TypeIndex::String, true>(
     PageReaderCreator page_reader_creator, const ScanSpec & scan_spec, const parquet::LogicalType &, const DataTypePtr /*type_hint*/)
 {
-    return std::make_shared<StringDictionaryReader>(
-        std::move(page_reader_creator), scan_spec);
+    return std::make_shared<StringDictionaryReader>(std::move(page_reader_creator), scan_spec);
 }
 
 template <>
@@ -425,7 +455,8 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY,
         return std::make_shared<FixedLengthColumnDirectReader<DataTypeDecimal256>>(
             std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal256>(precision, scale));
     else
-        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "ParquetColumnReaderFactory: unsupported precision {} type length {}", precision, type_length);
+        throw DB::Exception(
+            ErrorCodes::PARQUET_EXCEPTION, "ParquetColumnReaderFactory: unsupported precision {} type length {}", precision, type_length);
 }
 
 template <>
@@ -448,7 +479,8 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY,
         return std::make_shared<FixedLengthColumnDictionaryReader<DataTypeDecimal256, Decimal256>>(
             std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal256>(precision, scale));
     else
-        throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "ParquetColumnReaderFactory: unsupported precision {} type length {}", precision, type_length);
+        throw DB::Exception(
+            ErrorCodes::PARQUET_EXCEPTION, "ParquetColumnReaderFactory: unsupported precision {} type length {}", precision, type_length);
 }
 
 template <>
@@ -457,7 +489,8 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::Dec
 {
     auto precision = scan_spec.column_desc->type_precision();
     auto scale = scan_spec.column_desc->type_scale();
-    return std::make_shared<NumberColumnDirectReader<DataTypeDecimal32, Int32>>(std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal32>(precision, scale));
+    return std::make_shared<NumberColumnDirectReader<DataTypeDecimal32, Int32>>(
+        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal32>(precision, scale));
 }
 
 template <>
@@ -466,7 +499,8 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT32, TypeIndex::Dec
 {
     auto precision = scan_spec.column_desc->type_precision();
     auto scale = scan_spec.column_desc->type_scale();
-    return std::make_shared<NumberDictionaryReader<DataTypeDecimal32, Int32>>(std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal32>(precision, scale));
+    return std::make_shared<NumberDictionaryReader<DataTypeDecimal32, Int32>>(
+        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal32>(precision, scale));
 }
 
 template <>
@@ -475,7 +509,8 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Dec
 {
     auto precision = scan_spec.column_desc->type_precision();
     auto scale = scan_spec.column_desc->type_scale();
-    return std::make_shared<NumberColumnDirectReader<DataTypeDecimal64, Int64>>(std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal64>(precision, scale));
+    return std::make_shared<NumberColumnDirectReader<DataTypeDecimal64, Int64>>(
+        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal64>(precision, scale));
 }
 
 template <>
@@ -484,7 +519,8 @@ SelectiveColumnReaderPtr createColumnReader<parquet::Type::INT64, TypeIndex::Dec
 {
     auto precision = scan_spec.column_desc->type_precision();
     auto scale = scan_spec.column_desc->type_scale();
-    return std::make_shared<NumberDictionaryReader<DataTypeDecimal64, Int64>>(std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal64>(precision, scale));
+    return std::make_shared<NumberDictionaryReader<DataTypeDecimal64, Int64>>(
+        std::move(page_reader_creator), scan_spec, std::make_shared<DataTypeDecimal64>(precision, scale));
 }
 }
 
@@ -530,58 +566,67 @@ ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::pageR
 }
 
 
-
 SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
 {
     if (!column_descriptor_ || !page_reader_creator || !target_type_)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "ParquetColumnReaderFactory::Builder: column descriptor, page reader and target type must be set");
+        throw DB::Exception(
+            ErrorCodes::LOGICAL_ERROR, "ParquetColumnReaderFactory::Builder: column descriptor, page reader and target type must be set");
     ScanSpec scan_spec{.column_name = column_descriptor_->name(), .column_desc = column_descriptor_, .filter = filter_};
     parquet::Type::type physical_type = column_descriptor_->physical_type();
     auto converted_type = column_descriptor_->converted_type();
     TypeIndex target_type = target_type_->getTypeId();
-    const auto& logical_type = *column_descriptor_->logical_type();
+    const auto & logical_type = *column_descriptor_->logical_type();
     SelectiveColumnReaderPtr leaf_reader = nullptr;
     if (physical_type == parquet::Type::INT64)
     {
         // for clickbench test
-        if (isDateTime(target_type))
+        if (isDateTime(target_type) && converted_type == parquet::ConvertedType::NONE)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
-        else if (converted_type == parquet::ConvertedType::TIMESTAMP_MILLIS
-                 || converted_type == parquet::ConvertedType::TIMESTAMP_MICROS
-                 || converted_type == parquet::ConvertedType::TIME_MILLIS
-                 || converted_type == parquet::ConvertedType::TIME_MICROS
-                 || logical_type.is_timestamp())
+        else if (
+            converted_type == parquet::ConvertedType::TIMESTAMP_MILLIS || converted_type == parquet::ConvertedType::TIMESTAMP_MICROS
+            || converted_type == parquet::ConvertedType::TIME_MILLIS || converted_type == parquet::ConvertedType::TIME_MICROS
+            || logical_type.is_timestamp())
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime64, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime64, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime64, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::DateTime64, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::UINT_64)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::UInt64, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::UInt64, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::UInt64, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::UInt64, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::INT_64 || converted_type == parquet::ConvertedType::NONE)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Int64, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::DECIMAL)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Decimal64, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Decimal64, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Decimal64, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT64, TypeIndex::Decimal64, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
     }
     else if (physical_type == parquet::Type::INT32)
@@ -590,91 +635,116 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
         if (isDateTime(target_type))
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::DateTime, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::INT_8)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int8, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int8, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int8, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int8, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::INT_16)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int16, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int16, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int16, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int16, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::INT_32 || converted_type == parquet::ConvertedType::NONE)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int32, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int32, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int32, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Int32, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::UINT_8)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt8, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt8, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt8, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt8, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::UINT_16)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt16, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt16, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt16, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt16, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::UINT_32)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt32, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt32, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt32, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::UInt32, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (isDate(target_type))
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::DATE)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Date32, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::DECIMAL)
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Decimal32, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Decimal32, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Decimal32, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT32, TypeIndex::Decimal32, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
     }
     else if (physical_type == parquet::Type::BOOLEAN)
     {
-            leaf_reader = createColumnReader<parquet::Type::BOOLEAN, TypeIndex::UInt8, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+        leaf_reader = createColumnReader<parquet::Type::BOOLEAN, TypeIndex::UInt8, false>(
+            std::move(page_reader_creator), scan_spec, logical_type, target_type_);
     }
     else if (physical_type == parquet::Type::FLOAT)
     {
         if (dictionary_)
-            leaf_reader = createColumnReader<parquet::Type::FLOAT, TypeIndex::Float32, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+            leaf_reader = createColumnReader<parquet::Type::FLOAT, TypeIndex::Float32, true>(
+                std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         else
-            leaf_reader = createColumnReader<parquet::Type::FLOAT, TypeIndex::Float32, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+            leaf_reader = createColumnReader<parquet::Type::FLOAT, TypeIndex::Float32, false>(
+                std::move(page_reader_creator), scan_spec, logical_type, target_type_);
     }
     else if (physical_type == parquet::Type::DOUBLE)
     {
         if (dictionary_)
-            leaf_reader = createColumnReader<parquet::Type::DOUBLE, TypeIndex::Float64, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+            leaf_reader = createColumnReader<parquet::Type::DOUBLE, TypeIndex::Float64, true>(
+                std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         else
-            leaf_reader = createColumnReader<parquet::Type::DOUBLE, TypeIndex::Float64, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+            leaf_reader = createColumnReader<parquet::Type::DOUBLE, TypeIndex::Float64, false>(
+                std::move(page_reader_creator), scan_spec, logical_type, target_type_);
     }
     else if (physical_type == parquet::Type::BYTE_ARRAY)
     {
@@ -694,38 +764,43 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
         {
             // datatype will choose by type precision and scale, current support decimal128 and decimal256
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY, TypeIndex::Decimal128, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY, TypeIndex::Decimal128, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY, TypeIndex::Decimal128, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY, TypeIndex::Decimal128, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY, TypeIndex::FixedString, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY, TypeIndex::FixedString, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY, TypeIndex::FixedString, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::FIXED_LEN_BYTE_ARRAY, TypeIndex::FixedString, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
     }
     else if (physical_type == parquet::Type::INT96)
     {
-        if (converted_type == parquet::ConvertedType::TIMESTAMP_MILLIS
-            || converted_type == parquet::ConvertedType::TIMESTAMP_MICROS
-            || converted_type == parquet::ConvertedType::TIME_MILLIS
-            || converted_type == parquet::ConvertedType::TIME_MICROS
-            || logical_type.is_timestamp()
-            || (converted_type == parquet::ConvertedType::NONE && isDateTime64(target_type)))
+        if (converted_type == parquet::ConvertedType::TIMESTAMP_MILLIS || converted_type == parquet::ConvertedType::TIMESTAMP_MICROS
+            || converted_type == parquet::ConvertedType::TIME_MILLIS || converted_type == parquet::ConvertedType::TIME_MICROS
+            || logical_type.is_timestamp() || (converted_type == parquet::ConvertedType::NONE && isDateTime64(target_type)))
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT96, TypeIndex::DateTime64, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT96, TypeIndex::DateTime64, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT96, TypeIndex::DateTime64, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT96, TypeIndex::DateTime64, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
         else if (converted_type == parquet::ConvertedType::NONE && isInt64(target_type))
         {
             if (dictionary_)
-                leaf_reader = createColumnReader<parquet::Type::INT96, TypeIndex::Int64, true>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT96, TypeIndex::Int64, true>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
             else
-                leaf_reader = createColumnReader<parquet::Type::INT96, TypeIndex::Int64, false>(std::move(page_reader_creator), scan_spec, logical_type, target_type_);
+                leaf_reader = createColumnReader<parquet::Type::INT96, TypeIndex::Int64, false>(
+                    std::move(page_reader_creator), scan_spec, logical_type, target_type_);
         }
     }
     if (!leaf_reader)
@@ -754,14 +829,14 @@ ParquetColumnReaderFactory::Builder ParquetColumnReaderFactory::builder()
 ///   #backward-compatibility-rules
 bool isListElement(parquet::schema::Node & node)
 {
-        // For legacy 2-level list types with primitive element type, e.g.:
-        //
-        //    // ARRAY<INT> (nullable list, non-null elements)
-        //    optional group my_list (LIST) {
-        //      repeated int32 element;
-        //    }
-        //
-        return node.is_primitive() ||
+    // For legacy 2-level list types with primitive element type, e.g.:
+    //
+    //    // ARRAY<INT> (nullable list, non-null elements)
+    //    optional group my_list (LIST) {
+    //      repeated int32 element;
+    //    }
+    //
+    return node.is_primitive() ||
         // For legacy 2-level list types whose element type is a group type with 2 or more
         // fields, e.g.:
         //
@@ -773,7 +848,7 @@ bool isListElement(parquet::schema::Node & node)
         //      };
         //    }
         //
-        (node.is_group() && static_cast<parquet::schema::GroupNode&>(node).field_count() > 1) ||
+        (node.is_group() && static_cast<parquet::schema::GroupNode &>(node).field_count() > 1) ||
         // For legacy 2-level list types generated by parquet-avro (Parquet version < 1.6.0),
         // e.g.:
         //
@@ -806,7 +881,8 @@ static std::shared_ptr<parquet::schema::GroupNode> checkAndGetGroupNode(parquet:
     return std::static_pointer_cast<parquet::schema::GroupNode>(node);
 }
 
-SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePtr & target_type, int def_level, int rep_level, bool is_key)
+SelectiveColumnReaderPtr
+ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePtr & target_type, int def_level, int rep_level, bool is_key)
 {
     if (node->repetition() == parquet::Repetition::UNDEFINED)
         throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Undefined repetition level");
@@ -826,7 +902,7 @@ SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodeP
             row_group_prefetch = context.prefetch;
         auto column_range = getColumnRange(*context.row_group_meta->ColumnChunk(column_idx));
         row_group_prefetch->prefetchRange(column_range);
-        PageReaderCreator creator = [&, conditions , column_idx, column_range]
+        PageReaderCreator creator = [&, conditions, column_idx, column_range]
         {
             Stopwatch time;
             ColumnChunkData data;
@@ -858,15 +934,16 @@ SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodeP
             if (encoding == parquet::Encoding::PLAIN_DICTIONARY || encoding == parquet::Encoding::RLE_DICTIONARY)
                 dictionary = true;
         }
-        auto leaf_reader = ParquetColumnReaderFactory::builder()
-            .nullable(!is_key && (target_type->isNullable() || node->is_optional() || column_desc->max_definition_level() > 0))
-            .isOptional(node->is_optional())
-            .dictionary(dictionary)
-            .columnDescriptor(column_desc)
-            .pageReader(creator)
-            .targetType(target_type)
-            .filter(inplace_filter_mapping.contains(full_name) ? inplace_filter_mapping.at(full_name) : nullptr)
-            .build();
+        auto leaf_reader
+            = ParquetColumnReaderFactory::builder()
+                  .nullable(!is_key && (target_type->isNullable() || node->is_optional() || column_desc->max_definition_level() > 0))
+                  .isOptional(node->is_optional())
+                  .dictionary(dictionary)
+                  .columnDescriptor(column_desc)
+                  .pageReader(creator)
+                  .targetType(target_type)
+                  .filter(inplace_filter_mapping.contains(full_name) ? inplace_filter_mapping.at(full_name) : nullptr)
+                  .build();
         return leaf_reader;
     }
     else if (node->converted_type() == parquet::ConvertedType::LIST)
@@ -900,23 +977,25 @@ SelectiveColumnReaderPtr ColumnReaderBuilder::buildReader(parquet::schema::NodeP
         if (!key_value_node->field(0)->is_primitive())
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Map key field must be primitive");
 
-        const auto& map_type = checkAndGetDataType<DataTypeMap>(*target_type);
-        auto key_value_types = checkAndGetDataType<DataTypeTuple>(*checkAndGetDataType<DataTypeArray>(*map_type.getNestedType()).getNestedType()).getElements();
-        auto key_reader = buildReader(key_value_node->field(0), key_value_types.front(), def_level+1, rep_level+1, true);
-        auto value_reader = buildReader(key_value_node->field(1), key_value_types.back(), def_level+1, rep_level+1);
+        const auto & map_type = checkAndGetDataType<DataTypeMap>(*target_type);
+        auto key_value_types
+            = checkAndGetDataType<DataTypeTuple>(*checkAndGetDataType<DataTypeArray>(*map_type.getNestedType()).getNestedType())
+                  .getElements();
+        auto key_reader = buildReader(key_value_node->field(0), key_value_types.front(), def_level + 1, rep_level + 1, true);
+        auto value_reader = buildReader(key_value_node->field(1), key_value_types.back(), def_level + 1, rep_level + 1);
         return std::make_shared<MapColumnReader>(rep_level, def_level, key_reader, value_reader);
     }
     // Structure type
     else
     {
         auto struct_node = checkAndGetGroupNode(node);
-        const auto *struct_type = checkAndGetDataType<DataTypeTuple>(target_type.get());
+        const auto * struct_type = checkAndGetDataType<DataTypeTuple>(target_type.get());
         if (!struct_type)
             throw Exception(ErrorCodes::PARQUET_EXCEPTION, "Target type for node {} must be DataTypeTuple", struct_node->name());
         auto names = struct_type->getElementNames();
         int child_num = struct_node->field_count();
         std::unordered_map<String, SelectiveColumnReaderPtr> readers;
-        for (const auto& name : names)
+        for (const auto & name : names)
         {
             for (int i = 0; i < child_num; ++i)
             {

@@ -2,6 +2,8 @@
 #include <format>
 #include <Columns/ColumnSet.h>
 #include <Columns/FilterDescription.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Set.h>
 #include <Processors/Formats/Impl/Parquet/xsimd_wrapper.h>
 #include <base/Decimal.h>
@@ -543,7 +545,7 @@ ColumnFilterPtr createBigIntValuesFilter(const std::vector<Int64> & values, bool
     return createBigIntValuesFilter(values, null_allowed, false);
 }
 
-ColumnFilterPtr createNegatedBigIntValues(const std::vector<int64_t> & values, bool nullAllowed)
+ColumnFilterPtr createNegatedBigIntValues(const std::vector<Int64> & values, bool nullAllowed)
 {
     return createBigIntValuesFilter(values, nullAllowed, true);
 }
@@ -564,15 +566,15 @@ ColumnFilterPtr combineBigIntRanges(std::vector<std::shared_ptr<BigIntRangeFilte
 }
 
 ColumnFilterPtr combineRangesAndNegatedValues(
-    const std::vector<std::shared_ptr<BigIntRangeFilter>> & ranges, std::vector<int64_t> & rejects, bool nullAllowed)
+    const std::vector<std::shared_ptr<BigIntRangeFilter>> & ranges, std::vector<Int64> & rejects, bool nullAllowed)
 {
     std::vector<std::shared_ptr<BigIntRangeFilter>> outRanges;
 
     for (const auto & range : ranges)
     {
         auto it = std::lower_bound(rejects.begin(), rejects.end(), range->getLower());
-        int64_t start = range->getLower();
-        int64_t end;
+        Int64 start = range->getLower();
+        Int64 end;
 
         while (it != rejects.end())
         {
@@ -601,9 +603,9 @@ ColumnFilterPtr combineRangesAndNegatedValues(
     return combineBigIntRanges(std::move(outRanges), nullAllowed);
 }
 
-ColumnFilterPtr combineNegatedBigIntLists(const std::vector<int64_t> & first, const std::vector<int64_t> & second, bool nullAllowed)
+ColumnFilterPtr combineNegatedBigIntLists(const std::vector<Int64> & first, const std::vector<Int64> & second, bool nullAllowed)
 {
-    std::vector<int64_t> allRejected;
+    std::vector<Int64> allRejected;
     allRejected.reserve(first.size() + second.size());
 
     auto it1 = first.begin();
@@ -612,7 +614,7 @@ ColumnFilterPtr combineNegatedBigIntLists(const std::vector<int64_t> & first, co
     // merge first and second lists
     while (it1 != first.end() && it2 != second.end())
     {
-        int64_t lo = std::min(*it1, *it2);
+        Int64 lo = std::min(*it1, *it2);
         allRejected.emplace_back(lo);
         // remove duplicates
         if (lo == *it1)
@@ -639,7 +641,7 @@ ColumnFilterPtr combineNegatedBigIntLists(const std::vector<int64_t> & first, co
 }
 
 ColumnFilterPtr combineNegatedRangeOnIntRanges(
-    int64_t negatedLower, int64_t negatedUpper, const std::vector<std::shared_ptr<BigIntRangeFilter>> & ranges, bool nullAllowed)
+    Int64 negatedLower, Int64 negatedUpper, const std::vector<std::shared_ptr<BigIntRangeFilter>> & ranges, bool nullAllowed)
 {
     std::vector<std::shared_ptr<BigIntRangeFilter>> outRanges;
     // for a sensible set of ranges, at most one creates 2 output ranges
@@ -666,16 +668,16 @@ ColumnFilterPtr combineNegatedRangeOnIntRanges(
     return combineBigIntRanges(std::move(outRanges), nullAllowed);
 }
 
-std::vector<std::shared_ptr<BigIntRangeFilter>> negatedValuesToRanges(std::vector<int64_t> & values)
+std::vector<std::shared_ptr<BigIntRangeFilter>> negatedValuesToRanges(std::vector<Int64> & values)
 {
     chassert(std::is_sorted(values.begin(), values.end()));
     auto front = ++(values.begin());
     auto back = values.begin();
     std::vector<std::shared_ptr<BigIntRangeFilter>> res;
     res.reserve(values.size() + 1);
-    if (*back > std::numeric_limits<int64_t>::min())
+    if (*back > std::numeric_limits<Int64>::min())
     {
-        res.emplace_back(std::make_shared<BigIntRangeFilter>(std::numeric_limits<int64_t>::min(), *back - 1, false));
+        res.emplace_back(std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), *back - 1, false));
     }
     while (front != values.end())
     {
@@ -686,11 +688,16 @@ std::vector<std::shared_ptr<BigIntRangeFilter>> negatedValuesToRanges(std::vecto
         ++front;
         ++back;
     }
-    if (*back < std::numeric_limits<int64_t>::max())
+    if (*back < std::numeric_limits<Int64>::max())
     {
-        res.emplace_back(std::make_shared<BigIntRangeFilter>(*back + 1, std::numeric_limits<int64_t>::max(), false));
+        res.emplace_back(std::make_shared<BigIntRangeFilter>(*back + 1, std::numeric_limits<Int64>::max(), false));
     }
     return res;
+}
+
+std::shared_ptr<BigIntRangeFilter> toBigIntRange(ColumnFilterPtr filter)
+{
+    return std::shared_ptr<BigIntRangeFilter>(dynamic_cast<BigIntRangeFilter *>(filter.get()));
 }
 }
 
@@ -721,7 +728,7 @@ ColumnFilterPtr BigIntRangeFilter::merge(const ColumnFilter * other) const
         case ColumnFilterKind::BigIntMultiRange: {
             auto otherMultiRange = dynamic_cast<const BigIntMultiRangeFilter *>(other);
             std::vector<std::shared_ptr<BigIntRangeFilter>> newRanges;
-            for (const auto & range : otherMultiRange->ranges())
+            for (const auto & range : otherMultiRange->getRanges())
             {
                 auto merged = this->merge(range.get());
                 if (merged->kind() == ColumnFilterKind::BigIntRange)
@@ -744,7 +751,7 @@ ColumnFilterPtr BigIntRangeFilter::merge(const ColumnFilter * other) const
             {
                 return nullOrFalse(bothNullAllowed);
             }
-            std::vector<int64_t> vals;
+            std::vector<Int64> vals;
             if (other->kind() == ColumnFilterKind::NegatedBigIntValuesUsingBitmask)
             {
                 const auto * otherNegated = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);
@@ -931,13 +938,13 @@ namespace
 {
 int compareRanges(const char * lhs, size_t length, const std::string & rhs)
 {
-    int size = std::min(length, rhs.length());
+    size_t size = std::min(length, rhs.length());
     int compare = memcmp(lhs, rhs.data(), size);
     if (compare)
     {
         return compare;
     }
-    return length - rhs.size();
+    return static_cast<int>(length - rhs.size());
 }
 }
 
@@ -971,7 +978,7 @@ bool BytesValuesFilter::testStringRange(std::optional<std::string_view> min, std
 }
 BytesValuesFilter::~BytesValuesFilter() = default;
 
-template <is_floating_point T>
+template <is_float T>
 ColumnFilterPtr FloatRangeFilter<T>::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
@@ -1083,30 +1090,30 @@ ColumnFilterPtr NegatedBigIntRangeFilter::merge(const ColumnFilter * other) cons
             {
                 return other->merge(this);
             }
-            assert(this->lower() <= otherNegatedRange->lower());
+            chassert(this->getLower() <= otherNegatedRange->getLower());
             if (this->getUpper() + 1 < otherNegatedRange->getLower())
             {
                 std::vector<std::shared_ptr<BigIntRangeFilter>> outRanges;
-                int64_t smallLower = this->getLower();
-                int64_t smallUpper = this->getUpper();
-                int64_t bigLower = otherNegatedRange->getLower();
-                int64_t bigUpper = otherNegatedRange->getLower();
-                if (smallLower > std::numeric_limits<int64_t>::min())
+                Int64 smallLower = this->getLower();
+                Int64 smallUpper = this->getUpper();
+                Int64 bigLower = otherNegatedRange->getLower();
+                Int64 bigUpper = otherNegatedRange->getLower();
+                if (smallLower > std::numeric_limits<Int64>::min())
                 {
-                    outRanges.emplace_back(std::make_shared<BigIntRangeFilter>(std::numeric_limits<int64_t>::min(), smallLower - 1, false));
+                    outRanges.emplace_back(std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), smallLower - 1, false));
                 }
-                if (smallUpper < std::numeric_limits<int64_t>::max() && bigLower > std::numeric_limits<int64_t>::min())
+                if (smallUpper < std::numeric_limits<Int64>::max() && bigLower > std::numeric_limits<Int64>::min())
                 {
                     outRanges.emplace_back(std::make_shared<BigIntRangeFilter>(smallUpper + 1, bigLower - 1, false));
                 }
-                if (bigUpper < std::numeric_limits<int64_t>::max())
+                if (bigUpper < std::numeric_limits<Int64>::max())
                 {
-                    outRanges.emplace_back(std::make_shared<BigIntRangeFilter>(bigUpper + 1, std::numeric_limits<int64_t>::max(), false));
+                    outRanges.emplace_back(std::make_shared<BigIntRangeFilter>(bigUpper + 1, std::numeric_limits<Int64>::max(), false));
                 }
                 return combineBigIntRanges(std::move(outRanges), bothNullAllowed);
             }
             return std::make_shared<NegatedBigIntRangeFilter>(
-                this->getLower(), std::max<int64_t>(this->getUpper(), otherNegatedRange->getUpper()), bothNullAllowed);
+                this->getLower(), std::max<Int64>(this->getUpper(), otherNegatedRange->getUpper()), bothNullAllowed);
         }
         case ColumnFilterKind::BigIntMultiRange: {
             bool bothNullAllowed = null_allowed && other->testNull();
@@ -1119,7 +1126,7 @@ ColumnFilterPtr NegatedBigIntRangeFilter::merge(const ColumnFilter * other) cons
         case ColumnFilterKind::NegatedBigIntValuesUsingHashTable:
         case ColumnFilterKind::NegatedBigIntValuesUsingBitmask: {
             bool bothNullAllowed = null_allowed && other->testNull();
-            std::vector<int64_t> rejectedValues;
+            std::vector<Int64> rejectedValues;
             if (other->kind() == ColumnFilterKind::NegatedBigIntValuesUsingHashTable)
             {
                 const auto * otherHashTable = static_cast<const NegatedBigIntValuesUsingHashTableFilter *>(other);
@@ -1276,7 +1283,9 @@ NameSet ExpressionFilter::getInputs()
 }
 ExpressionFilter::ExpressionFilter(ActionsDAG && dag_)
 {
-    ExpressionActionsSettings settings{.can_compile_expressions = true, .min_count_to_compile_expression = 0};
+    ExpressionActionsSettings settings;
+    settings.can_compile_expressions = true;
+    settings.min_count_to_compile_expression = 0;
     actions = std::make_shared<ExpressionActions>(std::move(dag_), settings, true);
     filter_name = actions->getActionsDAG().getOutputs().front()->result_name;
     if (!isUInt8(removeNullable(actions->getActionsDAG().getOutputs().front()->result_type)))
@@ -1331,7 +1340,7 @@ ColumnFilterPtr BoolValueFilter::merge(const ColumnFilter * other) const
     }
 }
 BigIntValuesUsingHashTableFilter::BigIntValuesUsingHashTableFilter(
-    int64_t min_, int64_t max_, const std::vector<int64_t> & values_, bool nullAllowed)
+    Int64 min_, Int64 max_, const std::vector<Int64> & values_, bool nullAllowed)
     : ColumnFilter(ColumnFilterKind::BigIntValuesUsingHashTable, nullAllowed), min(min_), max(max_), values(values_)
 {
     constexpr int32_t kPaddingElements = 4;
@@ -1389,7 +1398,7 @@ bool BigIntValuesUsingHashTableFilter::testInt64(Int64 value) const
     for (auto i = pos; i <= pos + sizeMask; i++)
     {
         int32_t idx = i & sizeMask;
-        int64_t l = hashTable[idx];
+        Int64 l = hashTable[idx];
         if (l == kEmptyMarker)
         {
             return false;
@@ -1479,7 +1488,7 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
             auto min_ = std::max(min, otherRange->getLower());
             auto max_ = std::min(max, otherRange->getUpper());
 
-            return merge(min, max, other);
+            return merge(min_, max_, other);
         }
         case ColumnFilterKind::BigIntValuesUsingHashTable: {
             const auto * otherValues = dynamic_cast<const BigIntValuesUsingHashTableFilter *>(other);
@@ -1487,7 +1496,7 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
             auto min_ = std::max(min, otherValues->getMin());
             auto max_ = std::min(max, otherValues->getMax());
 
-            return merge(min, max, other);
+            return merge(min_, max_, other);
         }
         case ColumnFilterKind::BigIntValuesUsingBitmask: {
             const auto * otherValues = dynamic_cast<const BigIntValuesUsingBitmaskFilter *>(other);
@@ -1495,19 +1504,19 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
             auto min_ = std::max(min, otherValues->min);
             auto max_ = std::min(max, otherValues->max);
 
-            return merge(min, max, other);
+            return merge(min_, max_, other);
         }
         case ColumnFilterKind::BigIntMultiRange: {
             const auto * otherMultiRange = dynamic_cast<const BigIntMultiRangeFilter *>(other);
 
-            std::vector<int64_t> valuesToKeep;
+            std::vector<Int64> valuesToKeep;
             for (const auto & range : otherMultiRange->getRanges())
             {
                 auto min_ = std::max(min, range->getLower());
                 auto max_ = std::min(max, range->getUpper());
-                for (auto i = min; i <= max; ++i)
+                for (auto i = min_; i <= max_; ++i)
                 {
-                    if (bitmask[i - min_] && range->testInt64(i))
+                    if (bitmask[i - min] && range->testInt64(i))
                     {
                         valuesToKeep.push_back(i);
                     }
@@ -1526,7 +1535,7 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
             UNREACHABLE();
     }
 }
-ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(int64_t min_, int64_t max_, const ColumnFilter * other) const
+ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(Int64 min_, Int64 max_, const ColumnFilter * other) const
 {
     bool both_null_allowed = null_allowed && other->testNull();
     std::vector<Int64> value_to_keep;
@@ -1539,7 +1548,7 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(int64_t min_, int64_t max_
     }
     return createBigIntValuesFilter(value_to_keep, both_null_allowed);
 }
-bool NegatedBigIntValuesUsingHashTableFilter::testInt64Range(int64_t min, int64_t max, bool has_null) const
+bool NegatedBigIntValuesUsingHashTableFilter::testInt64Range(Int64 min, Int64 max, bool has_null) const
 {
     if (has_null && null_allowed)
     {
@@ -1649,7 +1658,7 @@ ColumnFilterPtr NegatedBigIntValuesUsingBitmaskFilter::merge(const ColumnFilter 
     }
 }
 
-bool NegatedBigIntValuesUsingBitmaskFilter::testInt64Range(int64_t min_, int64_t max_, bool has_null) const
+bool NegatedBigIntValuesUsingBitmaskFilter::testInt64Range(Int64 min_, Int64 max_, bool has_null) const
 {
     if (has_null && null_allowed)
     {
@@ -1863,20 +1872,20 @@ ColumnFilterPtr BigIntMultiRangeFilter::clone(std::optional<bool> null_allowed_)
 }
 namespace
 {
-int32_t binarySearch(const std::vector<int64_t> & values, int64_t value)
+Int32 binarySearch(const std::vector<Int64> & values, Int64 value)
 {
     auto it = std::lower_bound(values.begin(), values.end(), value);
     if (it == values.end() || *it != value)
     {
-        return -std::distance(values.begin(), it) - 1;
+        return static_cast<Int32>(-std::distance(values.begin(), it) - 1);
     }
     else
     {
-        return std::distance(values.begin(), it);
+        return static_cast<Int32>(std::distance(values.begin(), it));
     }
 }
 } // namespace
-bool BigIntMultiRangeFilter::testInt64(int64_t value) const
+bool BigIntMultiRangeFilter::testInt64(Int64 value) const
 {
     int32_t i = binarySearch(lower_bounds, value);
     if (i >= 0)
@@ -1894,7 +1903,7 @@ bool BigIntMultiRangeFilter::testInt64(int64_t value) const
     return ranges[place - 1]->testInt64(value);
 }
 
-bool BigIntMultiRangeFilter::testInt64Range(int64_t min, int64_t max, bool hasNull) const
+bool BigIntMultiRangeFilter::testInt64Range(Int64 min, Int64 max, bool hasNull) const
 {
     if (hasNull && null_allowed)
     {
@@ -1908,11 +1917,6 @@ bool BigIntMultiRangeFilter::testInt64Range(int64_t min, int64_t max, bool hasNu
         }
     }
     return false;
-}
-
-std::shared_ptr<BigIntRangeFilter> toBigintRange(ColumnFilterPtr filter)
-{
-    return std::shared_ptr<BigIntRangeFilter>(dynamic_cast<BigIntRangeFilter *>(filter.get()));
 }
 
 ColumnFilterPtr BigIntMultiRangeFilter::merge(const ColumnFilter * other) const
@@ -1945,14 +1949,14 @@ ColumnFilterPtr BigIntMultiRangeFilter::merge(const ColumnFilter * other) const
                 auto merged = range->merge(other);
                 if (merged->kind() == ColumnFilterKind::BigIntRange)
                 {
-                    newRanges.push_back(toBigintRange(std::move(merged)));
+                    newRanges.push_back(toBigIntRange(std::move(merged)));
                 }
                 else if (merged->kind() == ColumnFilterKind::BigIntMultiRange)
                 {
                     auto mergedMultiRange = dynamic_cast<BigIntMultiRangeFilter *>(merged.get());
                     for (const auto & newRange : mergedMultiRange->ranges)
                     {
-                        newRanges.push_back(toBigintRange(newRange));
+                        newRanges.push_back(toBigIntRange(newRange));
                     }
                 }
                 else
@@ -1980,7 +1984,7 @@ ColumnFilterPtr BigIntMultiRangeFilter::merge(const ColumnFilter * other) const
         case ColumnFilterKind::NegatedBigIntValuesUsingHashTable:
         case ColumnFilterKind::NegatedBigIntValuesUsingBitmask: {
             std::vector<std::unique_ptr<BigIntRangeFilter>> newRanges;
-            std::vector<int64_t> rejects;
+            std::vector<Int64> rejects;
             if (other->kind() == ColumnFilterKind::NegatedBigIntValuesUsingBitmask)
             {
                 auto otherNegated = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);

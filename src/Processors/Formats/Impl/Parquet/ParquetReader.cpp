@@ -1,8 +1,9 @@
 #include "ParquetReader.h"
-#include <IO/SharedThreadPools.h>
-#include <Common/ThreadPool.h>
 #include <DataTypes/NestedUtils.h>
+#include <IO/SharedThreadPools.h>
 #include <arrow/io/util_internal.h>
+#include <Poco/String.h>
+#include <Common/ThreadPool.h>
 
 namespace CurrentMetrics
 {
@@ -46,7 +47,7 @@ static std::unique_ptr<parquet::ParquetFileReader> createFileReader(
 
 ParquetReader::ParquetReader(
     Block header_,
-    SeekableReadBuffer& file_,
+    SeekableReadBuffer & file_,
     parquet::ArrowReaderProperties arrow_properties_,
     parquet::ReaderProperties reader_properties_,
     std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file_,
@@ -76,30 +77,36 @@ ParquetReader::ParquetReader(
         parquet_columns.emplace(name, node);
     }
     chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
-//    if (!io_pool)
-//    {
-    io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, 24*4);
-//    }
+    //    if (!io_pool)
+    //    {
+    io_pool = std::make_shared<ThreadPool>(
+        CurrentMetrics::ParquetDecoderIOThreads,
+        CurrentMetrics::ParquetDecoderIOThreadsActive,
+        CurrentMetrics::ParquetDecoderIOThreadsScheduled,
+        24 * 4);
+    //    }
 }
 
 Block ParquetReader::read()
 {
     Chunk chunk = chunk_reader->read(max_block_size);
-    if (!chunk) return header.cloneEmpty();
+    if (!chunk)
+        return header.cloneEmpty();
     return header.cloneWithColumns(chunk.detachColumns());
 }
 void ParquetReader::addFilter(const String & column_name, const ColumnFilterPtr filter)
 {
-//    std::cerr << "add filter to column " << column_name << ": " << filter->toString() << std::endl;
+    //    std::cerr << "add filter to column " << column_name << ": " << filter->toString() << std::endl;
     condition_columns.insert(column_name);
     if (!filters.contains(column_name))
         filters[column_name] = filter;
     else
         filters[column_name] = filters[column_name]->merge(filter.get());
-//    std::cerr << "filter on column " << column_name << ": " << filters[column_name]->toString() << std::endl;
+    //    std::cerr << "filter on column " << column_name << ": " << filters[column_name]->toString() << std::endl;
 }
 
-std::unique_ptr<RowGroupChunkReader> ParquetReader::getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr conditions_prefetch, RowGroupPrefetchPtr prefetch)
+std::unique_ptr<RowGroupChunkReader>
+ParquetReader::getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr conditions_prefetch, RowGroupPrefetchPtr prefetch)
 {
     return std::make_unique<RowGroupChunkReader>(this, row_group_idx, std::move(conditions_prefetch), std::move(prefetch), filters);
 }
@@ -116,30 +123,32 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
         RowGroupPrefetchPtr prefetch = std::make_shared<RowGroupPrefetch>(file, file_mutex, arrow_properties, *io_pool);
         RowGroupPrefetchPtr condition_prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties, *io_pool);
         auto row_group_meta = meta_data->RowGroup(row_group_idx);
-//        for (const auto & name : header.getNames())
-//        {
-//            if (!parquet_columns.contains(name))
-//                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", name);
-//            auto idx = meta_data->schema()->ColumnIndex(*parquet_columns[name]);
-//            auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
-//            if (condition_columns.contains(name))
-//                condition_prefetch->prefetchRange(range);
-//            else
-//                prefetch->prefetchRange(range);
-//        }
+        //        for (const auto & name : header.getNames())
+        //        {
+        //            if (!parquet_columns.contains(name))
+        //                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", name);
+        //            auto idx = meta_data->schema()->ColumnIndex(*parquet_columns[name]);
+        //            auto range = getColumnRange(*row_group_meta->ColumnChunk(idx));
+        //            if (condition_columns.contains(name))
+        //                condition_prefetch->prefetchRange(range);
+        //            else
+        //                prefetch->prefetchRange(range);
+        //        }
         row_group_prefetches.push_back(std::move(prefetch));
-//        if (!condition_prefetch->isEmpty())
+        //        if (!condition_prefetch->isEmpty())
         row_group_condition_prefetches.push_back(std::move(condition_prefetch));
     }
     return std::make_unique<SubRowGroupRangeReader>(
         row_group_indices_,
         std::move(row_group_condition_prefetches),
         std::move(row_group_prefetches),
-        [&](const size_t idx, RowGroupPrefetchPtr condition_prefetch, RowGroupPrefetchPtr prefetch) { return getRowGroupChunkReader(idx, std::move(condition_prefetch), std::move(prefetch)); });
+        [&](const size_t idx, RowGroupPrefetchPtr condition_prefetch, RowGroupPrefetchPtr prefetch)
+        { return getRowGroupChunkReader(idx, std::move(condition_prefetch), std::move(prefetch)); });
 }
 void ParquetReader::addExpressionFilter(std::shared_ptr<ExpressionFilter> filter)
 {
-    if (!filter) return;
+    if (!filter)
+        return;
     for (const auto & item : filter->getInputs())
     {
         condition_columns.insert(item);
@@ -148,47 +157,54 @@ void ParquetReader::addExpressionFilter(std::shared_ptr<ExpressionFilter> filter
 }
 parquet::schema::NodePtr ParquetReader::getParquetColumn(const String & column_name)
 {
-    auto normalized_name = case_insensitive? Poco::toLower(column_name) : column_name;
+    auto normalized_name = case_insensitive ? Poco::toLower(column_name) : column_name;
     if (parquet_columns.contains(normalized_name))
         return parquet_columns[normalized_name];
-//    auto parts = Nested::splitName(normalized_name);
-//    // not nested column
-//    if (parts.second.empty())
-//    {
-//        if (!parquet_columns.contains(normalized_name))
-//            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", column_name);
-//        return parquet_columns[normalized_name];
-//    }
-//    auto node = parquet_columns[parts.first];
-//    while (!parts.second.empty())
-//    {
-//        auto child = parts.second;
-//        parts = Nested::splitName(child);
-//        chassert(node->is_group());
-//        auto group = std::static_pointer_cast<parquet::schema::GroupNode>(node);
-//        auto first_name = case_insensitive ? Poco::toLower(child) : child;
-//        bool found = false;
-//        for (int i = 0; i < group->field_count(); ++i)
-//        {
-//            auto child_node = group->field(i);
-//            auto child_name = case_insensitive? Poco::toLower(child_node->name()) : child_node->name();
-//            if (child_name == first_name)
-//            {
-//                node = child_node;
-//                found = true;
-//                break;
-//            }
-//        }
-//        if (!found) break;
-//        if (parts.second.empty())
-//            return node;
-//    }
+    //    auto parts = Nested::splitName(normalized_name);
+    //    // not nested column
+    //    if (parts.second.empty())
+    //    {
+    //        if (!parquet_columns.contains(normalized_name))
+    //            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", column_name);
+    //        return parquet_columns[normalized_name];
+    //    }
+    //    auto node = parquet_columns[parts.first];
+    //    while (!parts.second.empty())
+    //    {
+    //        auto child = parts.second;
+    //        parts = Nested::splitName(child);
+    //        chassert(node->is_group());
+    //        auto group = std::static_pointer_cast<parquet::schema::GroupNode>(node);
+    //        auto first_name = case_insensitive ? Poco::toLower(child) : child;
+    //        bool found = false;
+    //        for (int i = 0; i < group->field_count(); ++i)
+    //        {
+    //            auto child_node = group->field(i);
+    //            auto child_name = case_insensitive? Poco::toLower(child_node->name()) : child_node->name();
+    //            if (child_name == first_name)
+    //            {
+    //                node = child_node;
+    //                found = true;
+    //                break;
+    //            }
+    //        }
+    //        if (!found) break;
+    //        if (parts.second.empty())
+    //            return node;
+    //    }
     throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", column_name);
 }
 
 
-SubRowGroupRangeReader::SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, std::vector<RowGroupPrefetchPtr> && row_group_condition_prefetches_, std::vector<RowGroupPrefetchPtr>&& row_group_prefetches_, RowGroupReaderCreator && creator)
-    : row_group_indices(rowGroupIndices), row_group_condition_prefetches(std::move(row_group_condition_prefetches_)), row_group_prefetches(std::move(row_group_prefetches_)), row_group_reader_creator(creator)
+SubRowGroupRangeReader::SubRowGroupRangeReader(
+    const std::vector<Int32> & rowGroupIndices,
+    std::vector<RowGroupPrefetchPtr> && row_group_condition_prefetches_,
+    std::vector<RowGroupPrefetchPtr> && row_group_prefetches_,
+    RowGroupReaderCreator && creator)
+    : row_group_indices(rowGroupIndices)
+    , row_group_condition_prefetches(std::move(row_group_condition_prefetches_))
+    , row_group_prefetches(std::move(row_group_prefetches_))
+    , row_group_reader_creator(creator)
 {
     if (row_group_indices.size() != row_group_prefetches.size())
         throw Exception(ErrorCodes::PARQUET_EXCEPTION, "row group indices and prefetches size mismatch");
@@ -198,7 +214,8 @@ DB::Chunk SubRowGroupRangeReader::read(size_t rows)
     Chunk chunk;
     while (chunk.getNumRows() == 0)
     {
-        if (!loadRowGroupChunkReaderIfNeeded()) break;
+        if (!loadRowGroupChunkReaderIfNeeded())
+            break;
         chunk = row_group_chunk_reader->readChunk(rows);
     }
     return chunk;
@@ -209,22 +226,25 @@ bool SubRowGroupRangeReader::loadRowGroupChunkReaderIfNeeded()
         return false;
     if ((!row_group_chunk_reader || !row_group_chunk_reader->hasMoreRows()) && next_row_group_idx < row_group_indices.size())
     {
-//        if (next_row_group_idx == 0)
-//        {
-//            if (row_group_condition_prefetches.empty())
-//                row_group_prefetches.front()->startPrefetch();
-//            else
-//                row_group_condition_prefetches.front()->startPrefetch();
-//        }
-        row_group_chunk_reader = row_group_reader_creator(row_group_indices[next_row_group_idx], row_group_condition_prefetches.empty()? nullptr : std::move(row_group_condition_prefetches[next_row_group_idx]), std::move(row_group_prefetches[next_row_group_idx]));
+        //        if (next_row_group_idx == 0)
+        //        {
+        //            if (row_group_condition_prefetches.empty())
+        //                row_group_prefetches.front()->startPrefetch();
+        //            else
+        //                row_group_condition_prefetches.front()->startPrefetch();
+        //        }
+        row_group_chunk_reader = row_group_reader_creator(
+            row_group_indices[next_row_group_idx],
+            row_group_condition_prefetches.empty() ? nullptr : std::move(row_group_condition_prefetches[next_row_group_idx]),
+            std::move(row_group_prefetches[next_row_group_idx]));
         next_row_group_idx++;
-//        if (next_row_group_idx < row_group_indices.size())
-//        {
-//            if (row_group_condition_prefetches.empty())
-//                row_group_prefetches[next_row_group_idx]->startPrefetch();
-//            else
-//                row_group_condition_prefetches[next_row_group_idx]->startPrefetch();
-//        }
+        //        if (next_row_group_idx < row_group_indices.size())
+        //        {
+        //            if (row_group_condition_prefetches.empty())
+        //                row_group_prefetches[next_row_group_idx]->startPrefetch();
+        //            else
+        //                row_group_condition_prefetches[next_row_group_idx]->startPrefetch();
+        //        }
     }
     return true;
 }

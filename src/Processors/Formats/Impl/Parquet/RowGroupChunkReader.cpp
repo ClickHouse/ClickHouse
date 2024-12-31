@@ -1,5 +1,6 @@
 #include "RowGroupChunkReader.h"
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/SharedThreadPools.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
@@ -163,7 +164,7 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         {
             ColumnWithTypeAndName src_col = ColumnWithTypeAndName{std::move(columns[i]), reader_data_types.at(i), types.at(i).name};
             // intermediate column is already casted
-            if (src_col.column->getDataType() == types.at(i).type->getColumnType())
+            if (removeNullableOrLowCardinalityNullable(src_col.column)->getDataType() == removeNullableOrLowCardinalityNullable(types.at(i).type)->getColumnType())
             {
                 casted_columns.emplace_back(std::move(src_col.column));
             }

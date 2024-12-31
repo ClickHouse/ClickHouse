@@ -1,4 +1,5 @@
 #include "ColumnFilterHelper.h"
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -34,8 +35,8 @@ FilterSplitResult ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & 
                         auto col_name = result.value().first;
                         if (case_insensitive)
                             col_name = Poco::toLower(col_name);
-                        if (split_result.filters.contains(col_name))
-                            split_result.filters[col_name] = result.value().second;
+                        if (!split_result.filters.contains(col_name))
+                            split_result.filters.emplace(col_name, result.value().second);
                         else
                         {
                             auto merged = split_result.filters[col_name]->merge(result.value().second.get());
@@ -68,10 +69,7 @@ void pushFilterToParquetReader(const ActionsDAG & filter_expression, ParquetRead
     auto split_result = ColumnFilterHelper::splitFilterForPushDown(std::move(filter_expression));
     for (const auto & item : split_result.filters)
     {
-        for (const auto & filter : item.second)
-        {
-            reader.addFilter(item.first, filter);
-        }
+        reader.addFilter(item.first, item.second);
     }
     for (auto & expression_filter : split_result.expression_filters)
     {

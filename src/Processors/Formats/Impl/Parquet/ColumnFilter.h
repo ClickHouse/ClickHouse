@@ -736,9 +736,9 @@ protected:
 };
 
 template <class T>
-concept is_floating_point = std::is_same_v<T, double> || std::is_same_v<T, float>;
+concept is_float = std::is_same_v<T, double> || std::is_same_v<T, float>;
 
-template <is_floating_point T>
+template <is_float T>
 class FloatRangeFilter : public AbstractRange
 {
 public:
@@ -816,7 +816,7 @@ private:
     const T min;
     const T max;
 };
-template <is_floating_point T>
+template <is_float T>
 OptionalFilter FloatRangeFilter<T>::create(const ActionsDAG::Node & node)
 {
     if (!isCompareColumnWithConst(node))

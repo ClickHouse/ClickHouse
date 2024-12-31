@@ -44,7 +44,7 @@ public:
         const parquet::ColumnDescriptor * column_descriptor_ = nullptr;
         DataTypePtr target_type_ = nullptr;
         PageReaderCreator page_reader_creator = nullptr;
-        std::unique_ptr<LazyPageReader> page_reader_ = nullptr;
+        std::unique_ptr<LazyPageReader> page_reader_;
         ColumnFilterPtr filter_ = nullptr;
     };
 
