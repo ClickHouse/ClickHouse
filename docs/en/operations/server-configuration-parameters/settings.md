@@ -2459,9 +2459,43 @@ The trailing slash is mandatory.
 <path>/var/lib/clickhouse/</path>
 ```
 
-Type:
+## Prometheus {#prometheus}
 
-Default:
+Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
+
+Settings:
+
+- `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
+- `port` – Port for `endpoint`.
+- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
+
+**Example**
+
+``` xml
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <!-- highlight-start -->
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
+    </prometheus>
+    <!-- highlight-end -->
+</clickhouse>
+```
+
+Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
+```bash
+curl 127.0.0.1:9363/metrics
+```
 
 ## query_log {#query-log}
 
@@ -2503,10 +2537,6 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_log>
 ```
 
-Type:
-
-Default:
-
 # query_metric_log
 
 It is disabled by default.
@@ -2540,10 +2570,6 @@ To disable `query_metric_log` setting, you should create the following file `/et
 </clickhouse>
 ```
 
-Type:
-
-Default:
-
 ## query_cache
 
 [Query cache](../query-cache.md) configuration.
@@ -2572,10 +2598,6 @@ The following settings are available:
     <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
 </query_cache>
 ```
-
-Type:
-
-Default:
 
 ## query_thread_log
 
@@ -2617,10 +2639,6 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_thread_log>
 ```
 
-Type:
-
-Default:
-
 ## query_views_log
 
 Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#log-query-views) setting.
@@ -2659,10 +2677,6 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <flush_on_crash>false</flush_on_crash>
 </query_views_log>
 ```
-
-Type:
-
-Default:
 
 ## text_log
 
@@ -2704,10 +2718,6 @@ Parameters:
 </clickhouse>
 ```
 
-Type:
-
-Default:
-
 ## trace_log
 
 Settings for the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
@@ -2726,6 +2736,7 @@ Parameters:
 | `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
 | `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
 | `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
+| `symbolize`                        | If the server should try to symbolize the results (optional, default: `false`)                                                                                                                                                      |                     |
 | `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
 
 The default server configuration file `config.xml` contains the following settings section:
@@ -2740,12 +2751,9 @@ The default server configuration file `config.xml` contains the following settin
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <symbolize>false</symbolize>
 </trace_log>
 ```
-
-Type:
-
-Default:
 
 ## asynchronous_insert_log
 
@@ -2784,10 +2792,6 @@ Parameters:
 </clickhouse>
 ```
 
-Type:
-
-Default:
-
 ## crash_log
 
 Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
@@ -2823,10 +2827,6 @@ The default server configuration file `config.xml` contains the following settin
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
 ```
-
-Type:
-
-Default:
 
 ## backup_log
 
@@ -2868,10 +2868,6 @@ Parameters:
 </clickhouse>
 ```
 
-Type:
-
-Default:
-
 ## query_masking_rules
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
@@ -2908,10 +2904,6 @@ The [`system.events`](/docs/en/operations/system-tables/events) table has counte
 
 For distributed queries each server has to be configured separately, otherwise, subqueries passed to other
 nodes will be stored without masking.
-
-Type:
-
-Default:
 
 ## remote_servers
 
