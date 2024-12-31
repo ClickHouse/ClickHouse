@@ -32,6 +32,7 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
+#include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
@@ -622,7 +623,7 @@ try
         auto write_buffers = used_output.out_delayed_and_compressed_holder->getResultBuffers();
         /// cancel the rest unused buffers
         for (auto & wb : write_buffers)
-            if (wb.unique())
+            if (isSharedPtrUnique(wb))
                 wb->cancel();
 
         used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
@@ -717,6 +718,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+        thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
+        thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
+        thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);

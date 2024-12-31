@@ -7,8 +7,8 @@
 #include <boost/noncopyable.hpp>
 
 #include <llvm/Analysis/CGSCCPassManager.h>
-#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -21,12 +21,11 @@
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/TargetParser/SubtargetFeature.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/DynamicLibrary.h>
-#include <llvm/Support/Host.h>
+#include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
@@ -491,7 +490,10 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
-    llvm::PassBuilder pb;
+    llvm::PipelineTuningOptions pto;
+    pto.SLPVectorization = true;
+
+    llvm::PassBuilder pb(nullptr, pto);
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
@@ -535,7 +537,7 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         options,
         std::nullopt,
         std::nullopt,
-        llvm::CodeGenOpt::Aggressive,
+        llvm::CodeGenOptLevel::Aggressive,
         jit);
 
     if (!target_machine)
