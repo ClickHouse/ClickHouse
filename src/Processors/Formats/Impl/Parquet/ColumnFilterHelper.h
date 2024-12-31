@@ -10,7 +10,7 @@ using ColumnFilterCreators = std::vector<ColumnFilterCreator>;
 
 struct FilterSplitResult
 {
-    std::unordered_map<String, std::vector<ColumnFilterPtr>> filters;
+    std::unordered_map<String, ColumnFilterPtr> filters;
     std::vector<std::shared_ptr<ExpressionFilter>> expression_filters;
 };
 
@@ -18,7 +18,7 @@ class ColumnFilterHelper
 {
 public:
 
-    static FilterSplitResult splitFilterForPushDown(const ActionsDAG& filter_expression);
+    static FilterSplitResult splitFilterForPushDown(const ActionsDAG& filter_expression, bool case_insensitive = false);
 
 private:
     static ColumnFilterCreators creators;

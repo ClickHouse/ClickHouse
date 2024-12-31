@@ -3,13 +3,15 @@
 namespace DB
 {
 
+// TODO: support more expressions
 ColumnFilterCreators ColumnFilterHelper::creators
     = {BigIntRangeFilter::create,
        NegatedBigIntRangeFilter::create,
        createFloatRangeFilter,
-       ByteValuesFilter::create,
+       BytesValuesFilter::create,
        NegatedByteValuesFilter::create};
-FilterSplitResult ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & filter_expression)
+
+FilterSplitResult ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & filter_expression, bool case_insensitive)
 {
     if (filter_expression.getOutputs().empty())
         return {};
@@ -20,12 +22,32 @@ FilterSplitResult ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & 
     FilterSplitResult split_result;
     for (const auto * condition : conditions)
     {
-        if (std::none_of(creators.begin(), creators.end(), [&](ColumnFilterCreator & creator) {
-            auto result = creator(*condition);
-            if (result.has_value())
-                split_result.filters[result.value().first].emplace_back(result.value().second);
-            return result.has_value();
-        }))
+        // convert expr to column filter, and try to merge with existing filter on same column
+        if (std::none_of(
+                creators.begin(),
+                creators.end(),
+                [&](ColumnFilterCreator & creator)
+                {
+                    auto result = creator(*condition);
+                    if (result.has_value())
+                    {
+                        auto col_name = result.value().first;
+                        if (case_insensitive)
+                            col_name = Poco::toLower(col_name);
+                        if (split_result.filters.contains(col_name))
+                            split_result.filters[col_name] = result.value().second;
+                        else
+                        {
+                            auto merged = split_result.filters[col_name]->merge(result.value().second.get());
+                            if (merged)
+                                split_result.filters[col_name] = merged;
+                            else
+                                // doesn't support merge, use common expression push down
+                                return false;
+                        }
+                    }
+                    return result.has_value();
+                }))
             unsupported_conditions.push_back(condition);
     }
     for (auto & condition : unsupported_conditions)
@@ -39,13 +61,14 @@ FilterSplitResult ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & 
     return split_result;
 }
 
-void pushFilterToParquetReader(const ActionsDAG& filter_expression, ParquetReader & reader)
+void pushFilterToParquetReader(const ActionsDAG & filter_expression, ParquetReader & reader)
 {
-    if (filter_expression.getOutputs().empty()) return ;
+    if (filter_expression.getOutputs().empty())
+        return;
     auto split_result = ColumnFilterHelper::splitFilterForPushDown(std::move(filter_expression));
     for (const auto & item : split_result.filters)
     {
-        for (const auto& filter: item.second)
+        for (const auto & filter : item.second)
         {
             reader.addFilter(item.first, filter);
         }
