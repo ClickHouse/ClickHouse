@@ -17,8 +17,15 @@ class Context;
 class PrettyBlockOutputFormat : public IOutputFormat
 {
 public:
+    enum class Style
+    {
+        Full,    /// Table borders are displayed between every row.
+        Compact, /// Table borders only for outline, but not between rows.
+        Space,   /// Blank spaces instead of table borders.
+    };
+
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
-    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_);
+    PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_);
     String getName() const override { return "PrettyBlockOutputFormat"; }
 protected:
     void consume(Chunk) override;
@@ -59,34 +66,14 @@ protected:
 
     static bool cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows);
 
-    bool color;
     bool readable_number_tip = false;
 
 private:
+    Style style;
     bool mono_block;
+    bool color;
     /// For mono_block == true only
     Chunk mono_chunk;
 };
-
-template <class OutputFormat>
-void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, const String & base_name)
-{
-    auto creator = [&](FormatFactory & fact, const String & name, bool no_escapes, bool mono_block)
-    {
-        fact.registerOutputFormat(name, [no_escapes, mono_block](
-            WriteBuffer & buf,
-            const Block & sample,
-            const FormatSettings & format_settings)
-        {
-            bool color = !no_escapes
-                    && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
-            return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
-        });
-    };
-    creator(factory, base_name, false, false);
-    creator(factory, base_name + "NoEscapes", true, false);
-    creator(factory, base_name + "MonoBlock", false, true);
-    creator(factory, base_name + "NoEscapesMonoBlock", true, true);
-}
 
 }

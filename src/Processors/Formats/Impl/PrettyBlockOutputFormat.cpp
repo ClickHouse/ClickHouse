@@ -18,8 +18,8 @@ namespace DB
 {
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_)
-     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), color(color_), mono_block(mono_block_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_)
+     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), style(style_), mono_block(mono_block_), color(color_)
 {
     /// Decide whether we should print a tip near the single number value in the result.
     if (header_.getColumns().size() == 1)
@@ -117,63 +117,6 @@ void PrettyBlockOutputFormat::calculateWidths(
     }
 }
 
-namespace
-{
-
-/// Grid symbols are used for printing grid borders in a terminal.
-/// Defaults values are UTF-8.
-struct GridSymbols
-{
-    const char * bold_left_top_corner = "┏";
-    const char * bold_right_top_corner = "┓";
-    const char * left_bottom_corner = "└";
-    const char * right_bottom_corner = "┘";
-    const char * bold_left_separator = "┡";
-    const char * left_separator = "├";
-    const char * bold_right_separator = "┩";
-    const char * right_separator = "┤";
-    const char * bold_top_separator = "┳";
-    const char * bold_middle_separator = "╇";
-    const char * middle_separator = "┼";
-    const char * bottom_separator = "┴";
-    const char * bold_dash = "━";
-    const char * dash = "─";
-    const char * bold_bar = "┃";
-    const char * bar = "│";
-    const char * bold_right_separator_footer = "┫";
-    const char * bold_left_separator_footer = "┣";
-    const char * bold_middle_separator_footer = "╋";
-    const char * bold_left_bottom_corner = "┗";
-    const char * bold_right_bottom_corner = "┛";
-    const char * bold_bottom_separator = "┻";
-    const char * vertical_cut = "─";
-};
-
-GridSymbols utf8_grid_symbols;
-
-GridSymbols ascii_grid_symbols
-{
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "+",
-    "-",
-    "-",
-    "|",
-    "|",
-    "-",
-};
-
-}
-
 void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
     if (total_rows >= format_settings.pretty.max_rows)
@@ -216,122 +159,221 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     Strings names;
     calculateWidths(header, chunk, widths, max_widths, name_widths, names);
 
-    const GridSymbols & grid_symbols
-        = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? utf8_grid_symbols : ascii_grid_symbols;
-
     /// Create separators
-    WriteBufferFromOwnString top_separator;
-    WriteBufferFromOwnString middle_names_separator;
-    WriteBufferFromOwnString middle_values_separator;
-    WriteBufferFromOwnString bottom_separator;
-    WriteBufferFromOwnString footer_top_separator;
-    WriteBufferFromOwnString footer_bottom_separator;
 
-    top_separator << grid_symbols.bold_left_top_corner;
-    middle_names_separator << grid_symbols.bold_left_separator;
-    middle_values_separator << grid_symbols.left_separator;
-    bottom_separator << grid_symbols.left_bottom_corner;
-    footer_top_separator << grid_symbols.bold_left_separator_footer;
-    footer_bottom_separator << grid_symbols.bold_left_bottom_corner;
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        if (i != 0)
-        {
-            top_separator << grid_symbols.bold_top_separator;
-            middle_names_separator << grid_symbols.bold_middle_separator;
-            middle_values_separator << grid_symbols.middle_separator;
-            bottom_separator << grid_symbols.bottom_separator;
-            footer_top_separator << grid_symbols.bold_middle_separator_footer;
-            footer_bottom_separator << grid_symbols.bold_bottom_separator;
-        }
-
-        for (size_t j = 0; j < max_widths[i] + 2; ++j)
-        {
-            top_separator << grid_symbols.bold_dash;
-            middle_names_separator << grid_symbols.bold_dash;
-            middle_values_separator << grid_symbols.dash;
-            bottom_separator << grid_symbols.dash;
-            footer_top_separator << grid_symbols.bold_dash;
-            footer_bottom_separator << grid_symbols.bold_dash;
-        }
-    }
-    top_separator << grid_symbols.bold_right_top_corner << "\n";
-    middle_names_separator << grid_symbols.bold_right_separator << "\n";
-    middle_values_separator << grid_symbols.right_separator << "\n";
-    bottom_separator << grid_symbols.right_bottom_corner << "\n";
-    footer_top_separator << grid_symbols.bold_right_separator_footer << "\n";
-    footer_bottom_separator << grid_symbols.bold_right_bottom_corner << "\n";
-
-    std::string top_separator_s = top_separator.str();
-    std::string middle_names_separator_s = middle_names_separator.str();
-    std::string middle_values_separator_s = middle_values_separator.str();
-    std::string bottom_separator_s = bottom_separator.str();
-    std::string footer_top_separator_s = footer_top_separator.str();
-    std::string footer_bottom_separator_s = footer_bottom_separator.str();
-
+    String left_blank;
     if (format_settings.pretty.output_format_pretty_row_numbers)
-    {
-        /// Write left blank
-        writeString(String(row_number_width, ' '), out);
-    }
-    /// Output the block
-    writeString(top_separator_s, out);
+        left_blank.assign(row_number_width, ' ');
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
-    {
-        /// Write left blank
-        writeString(String(row_number_width, ' '), out);
-    }
+    String header_begin;    /// ┏━━┳━━━┓
+    String header_end;      /// ┡━━╇━━━┩
+    String rows_separator;  /// ├──┼───┤
+    String rows_end;        /// └──┴───┘
+    String footer_begin;    /// ┢━━╈━━━┪
+    String footer_end;      /// ┗━━┻━━━┛
 
-    /// Names
-    auto write_names = [&]() -> void
+    String cut_in_the_middle;
+
+    bool unicode = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
+    using GridPart = std::array<std::string_view, 4>;
+    using Grid = std::array<GridPart, 7>;
+
+    constexpr Grid utf8_grid
     {
-        writeCString(grid_symbols.bold_bar, out);
-        writeCString(" ", out);
+        GridPart{"┏", "━", "┳", "┓"},
+        GridPart{"┡", "━", "╇", "┩"},
+        GridPart{"├", "─", "┼", "┤"},
+        GridPart{"└", "─", "┴", "┘"},
+        GridPart{"┢", "━", "╈", "┪"},
+        GridPart{"┗", "━", "┻", "┛"},
+        GridPart{"┌", "─", "┬", "┐"},
+    };
+
+    constexpr Grid ascii_grid
+    {
+        GridPart{"+", "-", "+", "+"},
+        GridPart{"+", "-", "+", "+"},
+        GridPart{"+", "-", "+", "+"},
+        GridPart{"+", "-", "+", "+"},
+        GridPart{"+", "-", "+", "+"},
+        GridPart{"+", "-", "+", "+"},
+        GridPart{"+", "-", "+", "+"},
+    };
+
+    Grid grid = unicode ? utf8_grid : ascii_grid;
+
+    std::string_view vertical_bold_bar   = unicode ? "┃" : "|";
+    std::string_view vertical_bar        = unicode ? "│" : "|";
+    std::string_view horizontal_bold_bar = unicode ? "━" : "-";
+    std::string_view horizontal_bar      = unicode ? "─" : "-";
+
+    if (style == Style::Full)
+    {
+        header_begin = left_blank;
+        header_end = left_blank;
+        rows_separator = left_blank;
+        rows_end = left_blank;
+        footer_begin = left_blank;
+        footer_end = left_blank;
+
+        WriteBufferFromString header_begin_out(header_begin, AppendModeTag{});
+        WriteBufferFromString header_end_out(header_end, AppendModeTag{});
+        WriteBufferFromString rows_separator_out(rows_separator, AppendModeTag{});
+        WriteBufferFromString rows_end_out(rows_end, AppendModeTag{});
+        WriteBufferFromString footer_begin_out(footer_begin, AppendModeTag{});
+        WriteBufferFromString footer_end_out(footer_end, AppendModeTag{});
+
+        header_begin_out    << grid[0][0];
+        header_end_out      << grid[1][0];
+        rows_separator_out  << grid[2][0];
+        rows_end_out        << grid[3][0];
+        footer_begin_out    << grid[4][0];
+        footer_end_out      << grid[5][0];
+
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (i != 0)
             {
-                writeCString(" ", out);
-                writeCString(grid_symbols.bold_bar, out);
-                writeCString(" ", out);
+                header_begin_out    << grid[0][2];
+                header_end_out      << grid[1][2];
+                rows_separator_out  << grid[2][2];
+                rows_end_out        << grid[3][2];
+                footer_begin_out    << grid[4][2];
+                footer_end_out      << grid[5][2];
+            }
+
+            for (size_t j = 0; j < max_widths[i] + 2; ++j)
+            {
+                header_begin_out    << grid[0][1];
+                header_end_out      << grid[1][1];
+                rows_separator_out  << grid[2][1];
+                rows_end_out        << grid[3][1];
+                footer_begin_out    << grid[4][1];
+                footer_end_out      << grid[5][1];
+            }
+        }
+
+        header_begin_out    << grid[0][3] << "\n";
+        header_end_out      << grid[1][3] << "\n";
+        rows_separator_out  << grid[2][3] << "\n";
+        rows_end_out        << grid[3][3] << "\n";
+        footer_begin_out    << grid[4][3] << "\n";
+        footer_end_out      << grid[5][3] << "\n";
+    }
+    else if (style == Style::Compact)
+    {
+        rows_end = left_blank;
+        WriteBufferFromString rows_end_out(rows_end, AppendModeTag{});
+        rows_end_out << grid[3][0];
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (i != 0)
+                rows_end_out        << grid[3][2];
+            for (size_t j = 0; j < max_widths[i] + 2; ++j)
+                rows_end_out        << grid[3][1];
+        }
+        rows_end_out        << grid[3][3] << "\n";
+    }
+    else if (style == Style::Space)
+    {
+        header_end = "\n";
+        footer_begin = "\n";
+        rows_end = "\n";
+        footer_end = "\n";
+    }
+
+    ///    ─ ─ ─ ─
+    String vertical_filler = left_blank;
+
+    {
+        size_t vertical_filler_size = 0;
+        WriteBufferFromString vertical_filler_out(vertical_filler, AppendModeTag{});
+
+        for (size_t i = 0; i < num_columns; ++i)
+            vertical_filler_size += max_widths[i] + 3;
+
+        if (style == Style::Space)
+            vertical_filler_size -= 2;
+        else
+            vertical_filler_size += 1;
+
+        for (size_t i = 0; i < vertical_filler_size; ++i)
+            vertical_filler_out << (i % 2 ? " " : horizontal_bar);
+
+        vertical_filler_out << "\n";
+    }
+
+    ///    ┃ name ┃
+    ///    ┌─name─┐
+    ///    └─name─┘
+    ///     name
+    auto write_names = [&](bool is_top) -> void
+    {
+        writeString(left_blank, out);
+
+        if (style == Style::Full)
+            out << vertical_bold_bar << " ";
+        else if (style == Style::Compact)
+            out << grid[is_top ? 6 : 3][0] << horizontal_bar;
+        else if (style == Style::Space)
+            out << " ";
+
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (i != 0)
+            {
+                if (style == Style::Full)
+                    out << " " << vertical_bold_bar << " ";
+                else if (style == Style::Compact)
+                    out << horizontal_bar << grid[is_top ? 6 : 3][2] << horizontal_bar;
+                else if (style == Style::Space)
+                    out << "   ";
             }
 
             const auto & col = header.getByPosition(i);
 
-            if (color)
-                writeCString("\033[1m", out);
+            auto write_value = [&]
+            {
+                if (color)
+                    out << "\033[1m";
+                writeString(names[i], out);
+                if (color)
+                    out << "\033[0m";
+            };
+
+            auto write_padding = [&]
+            {
+                for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
+                {
+                    if (style == Style::Compact)
+                        out << horizontal_bar;
+                    else
+                        out << " ";
+                }
+            };
 
             if (col.type->shouldAlignRightInPrettyFormats())
             {
-                for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                    writeChar(' ', out);
-
-                writeString(names[i], out);
+                write_padding();
+                write_value();
             }
             else
             {
-                writeString(names[i], out);
-
-                for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
-                    writeChar(' ', out);
+                write_value();
+                write_padding();
             }
-
-            if (color)
-                writeCString("\033[0m", out);
         }
-        writeCString(" ", out);
-        writeCString(grid_symbols.bold_bar, out);
-        writeCString("\n", out);
-    };
-    write_names();
+        if (style == Style::Full)
+            out << " " << vertical_bold_bar;
+        else if (style == Style::Compact)
+            out << horizontal_bar << grid[is_top ? 6 : 3][3];
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
-    {
-        /// Write left blank
-        writeString(String(row_number_width, ' '), out);
-    }
-    writeString(middle_names_separator_s, out);
+        out << "\n";
+    };
+
+    writeString(header_begin, out);
+    write_names(true);
+    writeString(header_end, out);
 
     bool vertical_filler_written = false;
     size_t displayed_row = 0;
@@ -345,36 +387,17 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         {
             if (!vertical_filler_written)
             {
-                if (format_settings.pretty.output_format_pretty_row_numbers)
-                    writeString(String(row_number_width, ' '), out);
-                writeString(middle_values_separator_s, out);
-
-                if (format_settings.pretty.output_format_pretty_row_numbers)
-                    writeString(String(row_number_width, ' '), out);
-                for (size_t j = 0; j < num_columns; ++j)
-                {
-                    writeCString(grid_symbols.vertical_cut, out);
-                    writeString(String(2 + max_widths[j], ' '), out);
-                }
-                writeCString(grid_symbols.vertical_cut, out);
-
-                writeCString("\n", out);
+                writeString(rows_separator, out);
+                writeString(vertical_filler, out);
                 vertical_filler_written = true;
             }
         }
         else
         {
             if (i != 0)
-            {
-                if (format_settings.pretty.output_format_pretty_row_numbers)
-                {
-                    /// Write left blank
-                    writeString(String(row_number_width, ' '), out);
-                }
-                writeString(middle_values_separator_s, out);
-            }
+                writeString(rows_separator, out);
 
-            /// A value can span multiple values, and we want to iterate over them.
+            /// A value can span multiple lines, and we want to iterate over them.
             for (size_t j = 0; j < num_columns; ++j)
             {
                 serialized_values[j].reset();
@@ -382,26 +405,38 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             }
 
             /// As long as there are lines in any of fields, output a line.
+            bool first_line = true;
             while (true)
             {
                 if (format_settings.pretty.output_format_pretty_row_numbers)
                 {
-                    // Write row number;
-                    auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
+                    if (first_line)
+                    {
+                        /// Write row number;
+                        auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
+                        for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
+                            writeChar(' ', out);
 
-                    for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
-                        writeChar(' ', out);
-                    if (color)
-                        writeCString("\033[90m", out);
-                    writeString(row_num_string, out);
-                    if (color)
-                        writeCString("\033[0m", out);
+                        if (color)
+                            out << "\033[90m";
+                        writeString(row_num_string, out);
+                        if (color)
+                            out << "\033[0m";
+
+                        first_line = false;
+                    }
+                    else
+                        out << left_blank;
                 }
 
                 bool all_lines_printed = true;
                 for (size_t j = 0; j < num_columns; ++j)
                 {
-                    writeCString(grid_symbols.bar, out);
+                    if (style != Style::Space)
+                        out << vertical_bar;
+                    else if (j != 0)
+                        out << " ";
+
                     const auto & type = *header.getByPosition(j).type;
                     writeValueWithPadding(
                         *columns[j],
@@ -418,12 +453,13 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                         all_lines_printed = false;
                 }
 
-                writeCString(grid_symbols.bar, out);
+                if (style != Style::Space)
+                    out << vertical_bar;
+
                 if (readable_number_tip)
                     writeReadableNumberTipIfSingleValue(out, chunk, format_settings, color);
 
-                writeCString("\n", out);
-
+                out << "\n";
                 if (all_lines_printed)
                     break;
             }
@@ -433,37 +469,17 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         }
     }
 
-    if (format_settings.pretty.output_format_pretty_row_numbers)
-    {
-        /// Write left blank
-        writeString(String(row_number_width, ' '), out);
-    }
-
     /// output column names in the footer
     if ((num_rows >= format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows) && format_settings.pretty.output_format_pretty_display_footer_column_names)
     {
-        writeString(footer_top_separator_s, out);
-
-        if (format_settings.pretty.output_format_pretty_row_numbers)
-        {
-            /// Write left blank
-            writeString(String(row_number_width, ' '), out);
-        }
-
-        /// output header names
-        write_names();
-
-        if (format_settings.pretty.output_format_pretty_row_numbers)
-        {
-            /// Write left blank
-            writeString(String(row_number_width, ' '), out);
-        }
-
-        writeString(footer_bottom_separator_s, out);
+        writeString(footer_begin, out);
+        write_names(false);
+        writeString(footer_end, out);
     }
     else
     {
-        writeString(bottom_separator_s, out);
+        ///    └──────┘
+        writeString(rows_end, out);
     }
     total_rows += num_rows;
 }
@@ -478,7 +494,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     {
         serialized_value = String();
         start_from_offset = 0;
-        WriteBufferFromString out_serialize(*serialized_value, AppendModeTag());
+        WriteBufferFromString out_serialize(*serialized_value);
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
@@ -494,10 +510,10 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     {
         const char * end = serialized_value->data() + serialized_value->size();
         const char * next_nl = find_first_symbols<'\n'>(serialized_value->data() + start_from_offset, end);
-        size_t next_offset = next_nl - serialized_value->data();
-        serialized_fragment = serialized_value->substr(start_from_offset, next_offset - start_from_offset);
+        size_t fragment_end_offset = next_nl - serialized_value->data();
+        serialized_fragment = serialized_value->substr(start_from_offset, fragment_end_offset - start_from_offset);
         value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), 0);
-        start_from_offset = next_offset;
+        start_from_offset = fragment_end_offset;
     }
     else
     {
@@ -514,6 +530,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialized_fragment = highlightTrailingSpaces(serialized_fragment);
 
     const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
+    const char * line_feed = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⮷" : "\\";
+    const char * line_continuation = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⮱" : ">";
 
     bool is_cut = false;
     if (cut_to_width && value_width > cut_to_width)
@@ -533,12 +551,6 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         value_width = format_settings.pretty.max_value_width;
     }
-    if (start_from_offset != serialized_value->size())
-    {
-        is_cut = true;
-
-        serialized_fragment += ellipsis;
-    }
 
     auto write_padding = [&]()
     {
@@ -548,7 +560,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     };
 
     if (is_continuation)
-        writeCString(ellipsis, out);
+        writeCString(line_continuation, out);
     else
         out.write(' ');
 
@@ -563,8 +575,13 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         write_padding();
     }
 
-    if (!is_cut)
+    if (start_from_offset != serialized_value->size())
+        writeCString(line_feed, out);
+    else if (!is_cut)
         out.write(' ');
+
+    if (start_from_offset < serialized_value->size())
+        ++start_from_offset;
 }
 
 
@@ -603,7 +620,7 @@ void PrettyBlockOutputFormat::writeSuffix()
 
     if (total_rows >= format_settings.pretty.max_rows)
     {
-        writeCString("  Showed ", out);
+        writeCString("Showed ", out);
         writeIntText(displayed_rows, out);
         writeCString(" out of ", out);
         writeIntText(total_rows, out);
@@ -613,7 +630,37 @@ void PrettyBlockOutputFormat::writeSuffix()
 
 void registerOutputFormatPretty(FormatFactory & factory)
 {
-    registerPrettyFormatWithNoEscapesAndMonoBlock<PrettyBlockOutputFormat>(factory, "Pretty");
+    /// Various combinations are available under their own names, e.g. PrettyCompactNoEscapesMonoBlock.
+    for (auto style : {PrettyBlockOutputFormat::Style::Full, PrettyBlockOutputFormat::Style::Compact, PrettyBlockOutputFormat::Style::Space})
+    {
+        for (bool no_escapes : {false, true})
+        {
+            for (bool mono_block : {false, true})
+            {
+                String name = "Pretty";
+
+                if (style == PrettyBlockOutputFormat::Style::Compact)
+                    name += "Compact";
+                else if (style == PrettyBlockOutputFormat::Style::Space)
+                    name += "Space";
+
+                if (no_escapes)
+                    name += "NoEscapes";
+                if (mono_block)
+                    name += "MonoBlock";
+
+                factory.registerOutputFormat(name, [style, no_escapes, mono_block](
+                    WriteBuffer & buf,
+                    const Block & sample,
+                    const FormatSettings & format_settings)
+                {
+                    bool color = !no_escapes
+                        && (format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal));
+                    return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings, style, mono_block, color);
+                });
+            }
+        }
+    }
 }
 
 }
