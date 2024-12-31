@@ -464,20 +464,21 @@ def test_cancel_backup():
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)}"
         )
 
-        # The timeout is 2 seconds here because a backup must be cancelled quickly.
+        time_before_kill_query = time.monotonic()
+
         kill_query(
-            node_to_cancel,
-            backup_id=backup_id,
-            is_initial_query=cancel_as_initiator,
-            timeout=3,
+            node_to_cancel, backup_id=backup_id, is_initial_query=cancel_as_initiator
         )
 
         if cancel_as_initiator:
             assert get_status(initiator, backup_id=backup_id) == "BACKUP_CANCELLED"
-        wait_status(initiator, "BACKUP_CANCELLED", backup_id=backup_id, timeout=3)
+        wait_status(initiator, "BACKUP_CANCELLED", backup_id=backup_id)
+
+        time_to_cancel = time.monotonic() - time_before_kill_query
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, backup_id=backup_id)
         assert get_num_system_processes(nodes, backup_id=backup_id) == 0
+        assert time_to_cancel <= 6  # A backup should be cancelled quite quickly.
         no_trash_checker.expect_errors = ["QUERY_WAS_CANCELLED"]
 
 
@@ -518,20 +519,21 @@ def test_cancel_restore():
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)}"
         )
 
-        # The timeout is 2 seconds here because a restore must be cancelled quickly.
+        time_before_kill_query = time.monotonic()
+
         kill_query(
-            node_to_cancel,
-            restore_id=restore_id,
-            is_initial_query=cancel_as_initiator,
-            timeout=3,
+            node_to_cancel, restore_id=restore_id, is_initial_query=cancel_as_initiator
         )
 
         if cancel_as_initiator:
             assert get_status(initiator, restore_id=restore_id) == "RESTORE_CANCELLED"
-        wait_status(initiator, "RESTORE_CANCELLED", restore_id=restore_id, timeout=3)
+        wait_status(initiator, "RESTORE_CANCELLED", restore_id=restore_id)
+
+        time_to_cancel = time.monotonic() - time_before_kill_query
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, restore_id=restore_id)
         assert get_num_system_processes(nodes, restore_id=restore_id) == 0
+        assert time_to_cancel <= 6  # A restore should be cancelled quite quickly.
         no_trash_checker.expect_errors = ["QUERY_WAS_CANCELLED"]
 
     # Restore successfully.
@@ -741,7 +743,7 @@ def test_short_disconnection_doesnt_stop_restore():
         restore_id = random_id()
         initiator.query(
             f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {get_backup_name(backup_id)} SETTINGS id='{restore_id}' ASYNC",
-            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 6},
+            settings={"backup_restore_failure_after_host_disconnected_for_seconds": 10},
         )
 
         assert get_status(initiator, restore_id=restore_id) == "RESTORING"

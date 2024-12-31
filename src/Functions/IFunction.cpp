@@ -216,30 +216,44 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
-        auto & result_null_map_data = result_null_map->getData();
         bool all_columns_constant = true;
-        for (const auto & arg : args)
+        bool all_numeric_types = true;
+        for (const auto & arg: args)
         {
             if (!isColumnConst(*arg.column))
                 all_columns_constant = false;
 
-            if (arg.type->isNullable())
+            if (arg.type->isNullable() && isColumnConst(*arg.column) && arg.column->onlyNull())
             {
-                if (isColumnConst(*arg.column))
-                {
-                    if (arg.column->onlyNull())
-                    {
-                        /// If any of input columns contains a null constant, the result is null constant.
-                        return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                    }
-                }
-                else
-                {
-                    const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-                    for (size_t i = 0; i < input_rows_count; ++i)
-                        result_null_map_data[i] |= null_map[i];
-                }
+                /// If any of input columns contains a null constant, the result is null constant.
+                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+            }
+
+            WhichDataType which(removeNullable(arg.type));
+            if (!which.isNumber() && !which.isEnum() && !which.isDateOrDate32OrDateTimeOrDateTime64() && !which.isInterval())
+                all_numeric_types = false;
+        }
+
+        if (all_columns_constant || all_numeric_types)
+        {
+            /// When all columns are constant or numeric, the cost of [[countBytesInFilter]] or [[ColumnUInt8::create]] should not be ignored.
+            /// That's why we add a fast path for this case.
+            ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
+            auto temporary_result_type = removeNullable(result_type);
+
+            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
+            return wrapInNullable(res, args, result_type, input_rows_count);
+        }
+
+        auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
+        auto & result_null_map_data = result_null_map->getData();
+        for (const auto & arg : args)
+        {
+            if (arg.type->isNullable() && !isColumnConst(*arg.column))
+            {
+                const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    result_null_map_data[i] |= null_map[i];
             }
         }
 
@@ -248,15 +262,15 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRows, input_rows_count);
         ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRowsWithNulls, rows_with_nulls);
 
-        if (rows_without_nulls == 0 && !all_columns_constant)
+        if (rows_without_nulls == 0)
         {
             /// Don't need to evaluate function if each row contains at least one null value and not all input columns are constant.
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         }
 
         double null_ratio = rows_with_nulls / static_cast<double>(result_null_map_data.size());
-        bool should_short_circuit = short_circuit_function_evaluation_for_nulls && !all_columns_constant
-            && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
+        bool should_short_circuit
+            = short_circuit_function_evaluation_for_nulls && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
         auto temporary_result_type = removeNullable(result_type);
@@ -484,6 +498,13 @@ ColumnPtr IExecutableFunction::execute(
         return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
     }
     return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+}
+
+ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, const DB::DataTypePtr& result_type,
+        size_t input_rows_count, bool dry_run) const
+{
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+    return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
 }
 
 void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_arguments) const

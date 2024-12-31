@@ -26,6 +26,7 @@
 #include <Functions/FunctionIfBase.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
@@ -948,8 +949,8 @@ private:
 
     ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        /// If result type is Variant, we don't need to remove Nullable.
-        if (isVariant(result_type))
+        /// If result type is Variant/Dynamic, we don't need to remove Nullable.
+        if (isVariant(result_type) || isDynamic(result_type))
             return nullptr;
 
         const ColumnWithTypeAndName & arg_cond = arguments[0];

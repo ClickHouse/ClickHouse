@@ -17,10 +17,9 @@
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
-#include "StringHelpers.h"
+#include <expected>
 
-/// TODO: Remove after we lifted the libc++ from 15 to 16 (where std::expected is supported).
-#include <tl/expected.hpp>
+#include "StringHelpers.h"
 
 namespace DB
 {
@@ -130,37 +129,36 @@ namespace
         {}
     };
 
-    /// TODO replace tl::expected by std::expected once libc++ was raised from 15 to 16
-    using VoidOrError  = tl::expected<void,  ErrorCodeAndMessage>;
-    using PosOrError   = tl::expected<Pos,   ErrorCodeAndMessage>;
-    using Int32OrError = tl::expected<Int32, ErrorCodeAndMessage>;
-    using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
+    using VoidOrError  = std::expected<void,  ErrorCodeAndMessage>;
+    using PosOrError   = std::expected<Pos,   ErrorCodeAndMessage>;
+    using Int32OrError = std::expected<Int32, ErrorCodeAndMessage>;
+    using Int64OrError = std::expected<Int64, ErrorCodeAndMessage>;
 
 
 /// Returns an error based on the error handling mode.
 /// As an optimization, for error_handling = Zero/Null, we only care that
 /// an error happened but not which one specifically. This removes the need
 /// to copy the error string.
-#define RETURN_ERROR(error_code, ...)                                        \
-{                                                                            \
-    if constexpr (error_handling == ErrorHandling::Exception)                \
-        return tl::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
-    else                                                                     \
-        return tl::unexpected(ErrorCodeAndMessage(error_code));              \
+#define RETURN_ERROR(error_code, ...)                                         \
+{                                                                             \
+    if constexpr (error_handling == ErrorHandling::Exception)                 \
+        return std::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
+    else                                                                      \
+        return std::unexpected(ErrorCodeAndMessage(error_code));              \
 }
 
 /// Run a function and return an error if the call failed.
 #define RETURN_ERROR_IF_FAILED(function_call)             \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
-        return tl::unexpected(result.error());            \
+        return std::unexpected(result.error());           \
 }
 
 /// Run a function and either assign the result (if successful) or return an error.
 #define ASSIGN_RESULT_OR_RETURN_ERROR(res, function_call) \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
-        return tl::unexpected(result.error());            \
+        return std::unexpected(result.error());           \
     else                                                  \
         (res) = *result;                                  \
 }
@@ -678,8 +676,8 @@ namespace
             }
             else
             {
-                const auto * result_type_without_nullable_casted = checkAndGetDataType<DataTypeDateTime64>(result_type_without_nullable.get());
-                MutableColumnPtr col_res = ColumnDateTime64::create(input_rows_count, result_type_without_nullable_casted->getScale());
+                const auto * result_type_without_nullable_cast = checkAndGetDataType<DataTypeDateTime64>(result_type_without_nullable.get());
+                MutableColumnPtr col_res = ColumnDateTime64::create(input_rows_count, result_type_without_nullable_cast->getScale());
                 ColumnDateTime64 * col_datetime64 = assert_cast<ColumnDateTime64 *>(col_res.get());
                 return executeImpl2<DataTypeDateTime64::FieldType>(arguments, result_type, input_rows_count, col_res, col_datetime64->getData());
             }
@@ -701,8 +699,8 @@ namespace
             UInt32 scale = 0;
             if constexpr (return_type == ReturnType::DateTime64)
             {
-                const DataTypeDateTime64 * result_type_without_nullable_casted = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
-                scale = result_type_without_nullable_casted->getScale();
+                const DataTypeDateTime64 * result_type_without_nullable_cast = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
+                scale = result_type_without_nullable_cast->getScale();
                 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
             }
 
@@ -762,7 +760,7 @@ namespace
                 /// Ensure all input was consumed
                 if (cur < end)
                 {
-                    result = tl::unexpected(ErrorCodeAndMessage(
+                    result = std::unexpected(ErrorCodeAndMessage(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Invalid format input {} is malformed at {}",
                         str_ref.toView(),

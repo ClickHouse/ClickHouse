@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 
 #include <Functions/grouping.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/Context.h>
 
