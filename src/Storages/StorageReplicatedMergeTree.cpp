@@ -6149,7 +6149,7 @@ bool StorageReplicatedMergeTree::optimize(
             }
             ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
 
-            const auto select_merge = [&]() -> tl::expected<MergeSelectorChoice, SelectMergeFailure>
+            const auto select_merge = [&]() -> std::expected<MergeSelectorChoice, SelectMergeFailure>
             {
                 auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, NO_TRANSACTION_PTR);
 
@@ -6177,11 +6177,11 @@ bool StorageReplicatedMergeTree::optimize(
                 }
             };
 
-            const auto construct_future_part = [&](MergeSelectorChoice choice) -> tl::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+            const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
             {
                 auto future_part = InMemoryPartsFinder(*this).constructFuturePart(choice);
                 if (!future_part)
-                    return tl::make_unexpected(SelectMergeFailure{
+                    return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                         .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
                     });

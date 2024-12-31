@@ -3,10 +3,9 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
-#include <tl/expected.hpp>
-
 #include <memory>
 #include <optional>
+#include <expected>
 
 namespace DB
 {
@@ -24,7 +23,7 @@ public:
         const time_t & current_time,
         const std::optional<PartitionIdsHint> & partitions_hint) const = 0;
 
-    virtual tl::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
+    virtual std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
         const StorageMetadataPtr & metadata_snapshot,
         const StoragePolicyPtr & storage_policy,
         const time_t & current_time,

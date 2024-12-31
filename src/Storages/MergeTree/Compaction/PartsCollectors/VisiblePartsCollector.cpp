@@ -164,13 +164,13 @@ std::vector<MergeTreeDataPartsVector> splitByInvisibleParts(MergeTreeDataPartsVe
     return ranges;
 }
 
-tl::expected<MergeTreeDataPartsVector, PreformattedMessage> checkAllPartsVisible(MergeTreeDataPartsVector && parts, const MergeTreeTransactionPtr & tx)
+std::expected<MergeTreeDataPartsVector, PreformattedMessage> checkAllPartsVisible(MergeTreeDataPartsVector && parts, const MergeTreeTransactionPtr & tx)
 {
     if (tx)
     {
         for (const auto & part : parts)
             if (!canUsePart(part, tx))
-                return tl::make_unexpected(PreformattedMessage::create("Part {} is not visible in transaction {}", part->name, tx->dumpDescription()));
+                return std::unexpected(PreformattedMessage::create("Part {} is not visible in transaction {}", part->name, tx->dumpDescription()));
     }
 
     return parts;
@@ -195,7 +195,7 @@ PartsRanges VisiblePartsCollector::grabAllPossibleRanges(
     return constructProperties(std::move(ranges), metadata_snapshot, storage_policy, current_time);
 }
 
-tl::expected<PartsRange, PreformattedMessage> VisiblePartsCollector::grabAllPartsInsidePartition(
+std::expected<PartsRange, PreformattedMessage> VisiblePartsCollector::grabAllPartsInsidePartition(
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
@@ -205,7 +205,7 @@ tl::expected<PartsRange, PreformattedMessage> VisiblePartsCollector::grabAllPart
     auto result = checkAllPartsVisible(std::move(parts), tx);
 
     if (!result)
-        return tl::make_unexpected(std::move(result.error()));
+        return std::unexpected(std::move(result.error()));
 
     auto ranges = constructProperties({std::move(result.value())}, metadata_snapshot, storage_policy, current_time);
     assert(ranges.size() == 1);

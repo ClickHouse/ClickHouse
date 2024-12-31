@@ -995,7 +995,7 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
-tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::selectPartsToMerge(
+std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::selectPartsToMerge(
     const StorageMetadataPtr & metadata_snapshot,
     bool aggressive,
     const String & partition_id,
@@ -1005,14 +1005,14 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions)
 {
-    const auto can_merge = [this, &lock](const PartProperties * left, const PartProperties * right) -> tl::expected<void, PreformattedMessage>
+    const auto can_merge = [this, &lock](const PartProperties * left, const PartProperties * right) -> std::expected<void, PreformattedMessage>
     {
         if (!left)
         {
             /// This predicate is checked for the first part of each range.
 
             if (currently_merging_mutating_parts.contains(right->part_info))
-                return tl::make_unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", right->name));
+                return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", right->name));
 
             return {};
         }
@@ -1020,55 +1020,55 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
         assert(left && right);
 
         if (left->part_info.partition_id != right->part_info.partition_id)
-            return tl::make_unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left->name, right->name));
+            return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left->name, right->name));
 
         for (const PartProperties * part : {left, right})
             if (currently_merging_mutating_parts.contains(part->part_info))
-                return tl::make_unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
+                return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
 
         if (getCurrentMutationVersion(left->part_info, lock) != getCurrentMutationVersion(right->part_info, lock))
-            return tl::make_unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left->name, right->name));
+            return std::unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left->name, right->name));
 
         uint32_t max_possible_level = getMaxLevelInBetween(*left, *right);
         if (max_possible_level > std::max(left->part_info.level, right->part_info.level))
-            return tl::make_unexpected(PreformattedMessage::create(
+            return std::unexpected(PreformattedMessage::create(
                     "There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have",
                     left->name, right->name, max_possible_level));
 
         if (left->projection_names != right->projection_names)
-            return tl::make_unexpected(PreformattedMessage::create(
+            return std::unexpected(PreformattedMessage::create(
                     "Parts have different projection sets: {{}} in {} and {{}} in {}",
                     fmt::join(left->projection_names, ", "), left->name, fmt::join(right->projection_names, ", "), right->name));
 
         return {};
     };
 
-    const auto is_background_memory_usage_ok = []() -> tl::expected<void, PreformattedMessage>
+    const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
     {
         if (canEnqueueBackgroundTask())
             return {};
 
-        return tl::make_unexpected(PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
+        return std::unexpected(PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 
-    const auto construct_future_part = [&](MergeSelectorChoice choice) -> tl::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
         if (auto future_part = InMemoryPartsFinder(*this).constructFuturePart(choice))
             return future_part;
 
         /// In some rare case when user drops part from the select_result we cannot construct future part.
-        return tl::make_unexpected(SelectMergeFailure{
+        return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
         });
     };
 
-    const auto select_without_hint = [&]() -> tl::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    const auto select_without_hint = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
         if (auto check_memory_result = is_background_memory_usage_ok(); !check_memory_result.has_value())
-            return tl::make_unexpected(SelectMergeFailure{
+            return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                 .explanation = std::move(std::move(check_memory_result.error())),
             });
@@ -1080,7 +1080,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
         /// TTL requirements is much more strict than for regular merge, so
         /// if regular not possible, than merge with ttl is also not possible.
         if (max_source_parts_size == 0)
-            return tl::make_unexpected(SelectMergeFailure{
+            return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                 .explanation = PreformattedMessage::create("Current value of max_source_parts_size is zero"),
             });
@@ -1094,7 +1094,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
         return select_result.and_then(construct_future_part);
     };
 
-    const auto select_in_partition = [&]() -> tl::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
         auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, txn);
 
@@ -1118,7 +1118,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
                     }
                 }
                 if (!ok)
-                    return tl::make_unexpected(SelectMergeFailure{
+                    return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                         .explanation = std::move(memory_check.error()),
                     });
@@ -1141,7 +1141,7 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
                         currently_merging_mutating_parts.size());
 
                     if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
-                        return tl::make_unexpected(SelectMergeFailure{
+                        return std::unexpected(SelectMergeFailure{
                             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
                             .explanation = PreformattedMessage::create("Timeout ({} ms) while waiting for already running merges before running OPTIMIZE with FINAL.", timeout_ms),
                         });
@@ -1149,14 +1149,14 @@ tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::
                     continue;
                 }
                 else
-                    return tl::make_unexpected(select_result.error());
+                    return std::unexpected(select_result.error());
             }
 
             return select_result.and_then(construct_future_part);
         }
     };
 
-    const auto construct_merge_select_entry = [&](FutureMergedMutatedPartPtr future_part) -> tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure>
+    const auto construct_merge_select_entry = [&](FutureMergedMutatedPartPtr future_part) -> std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure>
     {
         if ((*getSettings())[MergeTreeSetting::assign_part_uuids])
             future_part->uuid = UUIDHelpers::generateV4();

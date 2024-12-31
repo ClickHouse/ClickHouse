@@ -2489,7 +2489,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 }
 
 template<typename VirtualPartsT, typename MutationsStateT>
-tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, MutationsStateT>::operator()(const PartProperties * left, const PartProperties * right) const
+std::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, MutationsStateT>::operator()(const PartProperties * left, const PartProperties * right) const
 {
     if (left)
         return canMergeTwoParts(left, right);
@@ -2498,7 +2498,7 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
 }
 
 template<typename VirtualPartsT, typename MutationsStateT>
-tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(const PartProperties * left, const PartProperties * right) const
+std::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeTwoParts(const PartProperties * left, const PartProperties * right) const
 {
     /// A sketch of a proof of why this method actually works:
     ///
@@ -2536,18 +2536,18 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
     assert(left && right);
 
     if (left->part_info.partition_id != right->part_info.partition_id)
-        return tl::make_unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left->name, right->name));
+        return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left->name, right->name));
 
     for (const PartProperties * part : {left, right})
     {
         if (pinned_part_uuids_ && pinned_part_uuids_->part_uuids.contains(part->uuid))
-            return tl::make_unexpected(PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid));
+            return std::unexpected(PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid));
 
         if (inprogress_quorum_part_ && part->name == *inprogress_quorum_part_)
-            return tl::make_unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name));
+            return std::unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name));
 
         if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(part->part_info).empty())
-            return tl::make_unexpected(PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", part->name));
+            return std::unexpected(PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", part->name));
     }
 
     Int64 left_max_block = left->part_info.max_block;
@@ -2558,7 +2558,7 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
     if (committing_blocks_ && left_max_block + 1 < right_min_block)
     {
         if (partition_ids_hint && !partition_ids_hint->contains(left->part_info.partition_id))
-            return tl::make_unexpected(PreformattedMessage::create("Uncommitted block were not loaded for unexpected partition {}", left->part_info.partition_id));
+            return std::unexpected(PreformattedMessage::create("Uncommitted block were not loaded for unexpected partition {}", left->part_info.partition_id));
 
         auto committing_blocks_in_partition = committing_blocks_->find(left->part_info.partition_id);
         if (committing_blocks_in_partition != committing_blocks_->end())
@@ -2567,7 +2567,7 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
 
             auto block_it = block_numbers.upper_bound(left_max_block);
             if (block_it != block_numbers.end() && *block_it < right_min_block)
-                return tl::make_unexpected(PreformattedMessage::create("Block number {} is still being inserted between parts {} and {}", *block_it, left->name, right->name));
+                return std::unexpected(PreformattedMessage::create("Block number {} is still being inserted between parts {} and {}", *block_it, left->name, right->name));
         }
     }
 
@@ -2583,7 +2583,7 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
             /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
             String containing_part = virtual_parts_->getContainingPart(part->part_info);
             if (containing_part != part->name)
-                return tl::make_unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part));
+                return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", part->name, containing_part));
         }
 
         if (left_max_block + 1 < right_min_block)
@@ -2597,7 +2597,7 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
             /// processing replication log up to log_pointer.
             Strings covered = virtual_parts_->getPartsCoveredBy(gap_part_info);
             if (!covered.empty())
-                return tl::make_unexpected(PreformattedMessage::create("There are {} parts (from {} to {}) "
+                return std::unexpected(PreformattedMessage::create("There are {} parts (from {} to {}) "
                              "that are still not present or being processed by other background process "
                              "on this replica between {} and {}", covered.size(), covered.front(), covered.back(), left->name, right->name));
         }
@@ -2612,12 +2612,12 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
             left->part_info.partition_id, right->part_info.getDataVersion());
 
         if (left_mutation_ver != right_mutation_ver)
-            return tl::make_unexpected(PreformattedMessage::create("Current mutation versions of parts {} and {} differ: "
+            return std::unexpected(PreformattedMessage::create("Current mutation versions of parts {} and {} differ: "
                          "{} and {} respectively", left->name, right->name, left_mutation_ver, right_mutation_ver));
     }
 
     if (left->projection_names != right->projection_names)
-        return tl::make_unexpected(PreformattedMessage::create(
+        return std::unexpected(PreformattedMessage::create(
                 "Parts have different projection sets: {{}} in '{}' and {{}} in '{}'",
                 fmt::join(left->projection_names, ", "), left->name, fmt::join(right->projection_names, ", "), right->name));
 
@@ -2625,23 +2625,23 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
 }
 
 template<typename VirtualPartsT, typename MutationsStateT>
-tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(const PartProperties * part) const
+std::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(const PartProperties * part) const
 {
     return canMergeSinglePart(part->name, part->part_info, part->uuid);
 }
 
 template<typename VirtualPartsT, typename MutationsStateT>
-tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
+std::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, MutationsStateT>::canMergeSinglePart(
     const std::string & name, const MergeTreePartInfo & info, const UUID & uuid) const
 {
     if (pinned_part_uuids_ && pinned_part_uuids_->part_uuids.contains(uuid))
-        return tl::make_unexpected(PreformattedMessage::create("Part {} has uuid {} which is currently pinned", name, uuid));
+        return std::unexpected(PreformattedMessage::create("Part {} has uuid {} which is currently pinned", name, uuid));
 
     if (inprogress_quorum_part_ && name == *inprogress_quorum_part_)
-        return tl::make_unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", name));
+        return std::unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", name));
 
     if (prev_virtual_parts_ && prev_virtual_parts_->getContainingPart(info).empty())
-        return tl::make_unexpected(PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", name));
+        return std::unexpected(PreformattedMessage::create("Entry for part {} hasn't been read from the replication log yet", name));
 
     std::unique_lock<std::mutex> lock;
     if (virtual_parts_mutex)
@@ -2653,7 +2653,7 @@ tl::expected<void, PreformattedMessage> BaseMergePredicate<VirtualPartsT, Mutati
         /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
         String containing_part = virtual_parts_->getContainingPart(info);
         if (containing_part != name)
-            return tl::make_unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", name, containing_part));
+            return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", name, containing_part));
     }
 
     return {};

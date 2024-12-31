@@ -131,14 +131,14 @@ PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPre
     return mergeable_ranges;
 }
 
-tl::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const AllowedMergingPredicate & can_merge)
+std::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const AllowedMergingPredicate & can_merge)
 {
     const PartProperties * prev_part = nullptr;
 
     for (const auto & part : range)
     {
         if (auto can_merge_result = can_merge(prev_part, &part); !can_merge_result.has_value())
-            return tl::make_unexpected(std::move(can_merge_result.error()));
+            return std::unexpected(std::move(can_merge_result.error()));
 
         prev_part = &part;
     }
@@ -317,7 +317,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     return partitions_hint;
 }
 
-tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator::selectPartsToMerge(
+std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator::selectPartsToMerge(
     const PartsCollectorPtr & parts_collector,
     const AllowedMergingPredicate & can_merge,
     const MergeSelectorApplier & selector,
@@ -333,7 +333,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
     auto ranges = checkRanges(parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint));
     if (ranges.empty())
     {
-        return tl::make_unexpected(SelectMergeFailure{
+        return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = PreformattedMessage::create("There are no parts that can be merged. (Collector returned empty ranges set)"),
         });
@@ -342,7 +342,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
     ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge));
     if (ranges.empty())
     {
-        return tl::make_unexpected(SelectMergeFailure{
+        return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = PreformattedMessage::create("No parts satisfy preconditions for merge"),
         });
@@ -377,13 +377,13 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
             /*optimize_skip_merged_partitions=*/true);
     }
 
-    return tl::make_unexpected(SelectMergeFailure{
+    return std::unexpected(SelectMergeFailure{
         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
         .explanation = PreformattedMessage::create("There is no need to merge parts according to merge selector algorithm"),
     });
 }
 
-tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
+std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const PartsCollectorPtr & parts_collector,
     const AllowedMergingPredicate & can_merge,
@@ -398,7 +398,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
     auto collect_result = parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id);
     if (!collect_result)
     {
-        return tl::make_unexpected(SelectMergeFailure{
+        return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = std::move(collect_result.error()),
         });
@@ -408,7 +408,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
 
     if (parts.empty())
     {
-        return tl::make_unexpected(SelectMergeFailure{
+        return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = PreformattedMessage::create("There are no parts inside partition"),
         });
@@ -416,7 +416,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
 
     if (!final && parts.size() == 1)
     {
-        return tl::make_unexpected(SelectMergeFailure{
+        return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = PreformattedMessage::create("There is only one part inside partition"),
         });
@@ -431,7 +431,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
         /// FIXME? Probably we should check expired ttls here, not only calculated.
         if (part.part_info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
         {
-            return tl::make_unexpected(SelectMergeFailure{
+            return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
                 .explanation = PreformattedMessage::create("Partition skipped due to optimize_skip_merged_partitions"),
             });
@@ -440,7 +440,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
 
     if (auto result = canMergeAllParts(parts, can_merge); !result.has_value())
     {
-        return tl::make_unexpected(SelectMergeFailure{
+        return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = std::move(result.error()),
         });
@@ -460,7 +460,7 @@ tl::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutator
                 parts.front().name, parts.back().name, ReadableSize(available_disk_space), ReadableSize(required_disk_space));
         }
 
-        return tl::make_unexpected(SelectMergeFailure{
+        return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = PreformattedMessage::create("Insufficient available disk space, required {}", ReadableSize(required_disk_space)),
         });

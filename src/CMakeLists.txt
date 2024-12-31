@@ -457,8 +457,6 @@ dbms_target_link_libraries (
         boost::circular_buffer
         boost::heap)
 
-dbms_target_link_libraries (PUBLIC ch_contrib::expected)
-
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)

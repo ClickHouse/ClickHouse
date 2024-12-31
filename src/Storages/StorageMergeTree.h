@@ -202,7 +202,7 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
-    tl::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
+    std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
         const String & partition_id,
