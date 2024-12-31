@@ -520,12 +520,13 @@ public:
 
 TEST_P(CodecTest, TranscodingWithDataType)
 {
-    /// Gorilla can only be applied to floating point columns
+    /// Gorilla and Chimp can only be applied to floating point columns
     bool codec_is_gorilla = std::get<0>(GetParam()).codec_statement.contains("Gorilla");
+    bool codec_is_chimp = std::get<0>(GetParam()).codec_statement.contains("Chimp");
     WhichDataType which(std::get<1>(GetParam()).data_type.get());
     bool data_is_float = which.isFloat();
-    if (codec_is_gorilla && !data_is_float)
-        GTEST_SKIP() << "Skipping Gorilla-compressed non-float column";
+    if ((codec_is_gorilla || codec_is_chimp) && !data_is_float)
+        GTEST_SKIP() << "Skipping Gorilla/Chimp-compressed non-float column";
 
     const auto codec = makeCodec(CODEC_WITH_DATA_TYPE);
     testTranscoding(*codec);
@@ -808,7 +809,10 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("DoubleDelta, ZSTD"),
     Codec("Gorilla"),
     Codec("Gorilla, LZ4"),
-    Codec("Gorilla, ZSTD")
+    Codec("Gorilla, ZSTD"),
+    Codec("Chimp"),
+    Codec("Chimp, LZ4"),
+    Codec("Chimp, ZSTD")
 );
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
