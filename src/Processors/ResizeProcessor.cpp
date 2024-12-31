@@ -600,108 +600,192 @@ ResizeProcessor::Status MemoryDependentResizeProcessor::prepare()
 
 IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
+    /// 1. Initialize data structures.
     if (!initialized)
     {
         initialized = true;
 
-        for (auto & input : inputs)
-            input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
+        input_ports.reserve(inputs.size());
+        for (auto & in : inputs)
+            input_ports.push_back({.port = &in, .status = InputStatus::NotActive});
 
-        for (auto & output : outputs)
-            output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+        output_ports.reserve(outputs.size());
+        is_output_enabled.resize(outputs.size(), true);
+
+        for (auto & out : outputs)
+            output_ports.push_back({.port = &out, .status = OutputStatus::NotActive});
     }
 
-    for (const auto & output_number : updated_outputs)
-    {
-        auto & output = output_ports[output_number];
-        if (output.port->isFinished())
-        {
-            if (output.status != OutputStatus::Finished)
-            {
-                ++num_finished_outputs;
-                output.status = OutputStatus::Finished;
-            }
+    /// 2. Possibly check memory usage & disable or re-enable some outputs
+    size_t free_memory = getFreeMemory();
+    bool memory_is_low = (free_memory < LOW_MEMORY_THRESHOLD);
 
+    if (memory_is_low)
+    {
+        /// disable half of the outputs that are currently enabled.
+        size_t total_enabled = 0;
+        for (size_t i = 0; i < output_ports.size(); ++i)
+        {
+            if (is_output_enabled[i] && output_ports[i].status != OutputStatus::Finished)
+                ++total_enabled;
+        }
+
+        size_t disable_count = total_enabled / 2;
+        for (size_t i = 0; i < output_ports.size() && disable_count > 0; ++i)
+        {
+            auto & out_info = output_ports[i];
+            if (is_output_enabled[i] &&
+                out_info.status != OutputStatus::Finished &&
+                out_info.status != OutputStatus::Disabled)
+            {
+                out_info.status = OutputStatus::Disabled;
+                is_output_enabled[i] = false;
+                --disable_count;
+            }
+        }
+    }
+    else
+    {
+        // Memory is OK, so re-enable any previously disabled outputs (that are not finished).
+        for (size_t i = 0; i < output_ports.size(); ++i)
+        {
+            auto & out_info = output_ports[i];
+            if (!is_output_enabled[i] && out_info.status != OutputStatus::Finished)
+            {
+                out_info.status = OutputStatus::NeedData;
+                is_output_enabled[i] = true;
+                waiting_outputs.push(i);
+            }
+        }
+    }
+
+    /// 3. Process updated outputs
+    for (auto out_idx : updated_outputs)
+    {
+        auto & out_info = output_ports[out_idx];
+
+        if (out_info.port->isFinished())
+        {
+            if (out_info.status != OutputStatus::Finished)
+            {
+                out_info.status = OutputStatus::Finished;
+                ++num_finished_outputs;
+            }
             continue;
         }
 
-        if (output.port->canPush())
+        // If the output is still “enabled” and can accept data
+        if (is_output_enabled[out_idx] && out_info.port->canPush())
         {
-            if (output.status != OutputStatus::NeedData)
+            if (out_info.status != OutputStatus::NeedData)
             {
-                output.status = OutputStatus::NeedData;
-                waiting_outputs.push(output_number);
+                out_info.status = OutputStatus::NeedData;
+                waiting_outputs.push(out_idx);
             }
         }
-    }
-
-    if (!is_reading_started && !waiting_outputs.empty())
-    {
-        for (auto & input : inputs)
-            input.setNeeded();
-        is_reading_started = true;
     }
 
     if (num_finished_outputs == outputs.size())
     {
-        for (auto & input : inputs)
-            input.close();
-
+        for (auto & in : inputs)
+            in.close();
         return Status::Finished;
     }
 
-    for (const auto & input_number : updated_inputs)
+    /// 4. Process updated inputs
+    for (auto in_idx : updated_inputs)
     {
-        auto & input = input_ports[input_number];
-        if (input.port->isFinished())
+        auto & in_info = input_ports[in_idx];
+
+        if (in_info.port->isFinished())
         {
-            if (input.status != InputStatus::Finished)
+            if (in_info.status != InputStatus::Finished)
             {
-                input.status = InputStatus::Finished;
+                in_info.status = InputStatus::Finished;
                 ++num_finished_inputs;
             }
             continue;
         }
 
-        if (input.port->hasData())
+        if (in_info.port->hasData())
         {
-            if (input.status != InputStatus::HasData)
+            if (in_info.status != InputStatus::HasData)
             {
-                input.status = InputStatus::HasData;
-                inputs_with_data.push(input_number);
+                in_info.status = InputStatus::HasData;
+                inputs_with_data.push(in_idx);
             }
         }
     }
 
+    // If all inputs are finished, finish all outputs
+    if (num_finished_inputs == inputs.size())
+    {
+        for (auto & out_info : output_ports)
+            out_info.port->finish();
+        return Status::Finished;
+    }
+
+    /// 5. Match waiting outputs to inputs with data
     while (!waiting_outputs.empty() && !inputs_with_data.empty())
     {
-        auto & waiting_output = output_ports[waiting_outputs.front()];
+        auto out_idx = waiting_outputs.front();
         waiting_outputs.pop();
 
-        auto & input_with_data = input_ports[inputs_with_data.front()];
+        if (!is_output_enabled[out_idx] || output_ports[out_idx].status == OutputStatus::Finished)
+            continue; // skip any disabled/finished output
+
+        auto & out_info = output_ports[out_idx];
+        auto in_idx = inputs_with_data.front();
         inputs_with_data.pop();
 
-        waiting_output.port->pushData(input_with_data.port->pullData());
-        input_with_data.status = InputStatus::NotActive;
-        waiting_output.status = OutputStatus::NotActive;
+        auto & in_info = input_ports[in_idx];
 
-        if (input_with_data.port->isFinished())
+        out_info.port->pushData(in_info.port->pullData());
+        out_info.status = OutputStatus::NotActive;
+        in_info.status = InputStatus::NotActive;
+
+        // If the input was finished by pulling data, mark it
+        if (in_info.port->isFinished())
         {
-            input_with_data.status = InputStatus::Finished;
+            in_info.status = InputStatus::Finished;
             ++num_finished_inputs;
         }
     }
 
-    if (num_finished_inputs == inputs.size())
+    /// Still have data in queue, but no outputs can accept => we are "full"
+    if (!inputs_with_data.empty())
     {
-        for (auto & output : outputs)
-            output.finish();
-
-        return Status::Finished;
+        for (auto & in_info : input_ports)
+        {
+            if (in_info.status != InputStatus::Finished && !in_info.port->hasData())
+                in_info.port->setNotNeeded();
+        }
+        return Status::PortFull;
     }
 
+    /// We have waiting outputs, but no inputs with data => "NeedData"
+    /// So we should ensure we setNeeded() on at least one input that isn’t finished
     if (!waiting_outputs.empty())
+    {
+        for (auto & in_info : input_ports)
+        {
+            if (in_info.status != InputStatus::Finished && !in_info.port->hasData())
+                in_info.port->setNeeded();
+        }
         return Status::NeedData;
+    }
+
+    /// Otherwise, stable => no queued data or waiting outputs
+    /// We might still want to read from upstream, though, if we’re not done.
+
+    for (auto & in_info : input_ports)
+    {
+        if (in_info.status != InputStatus::Finished)
+        {
+            // We haven't read all data from this input
+            in_info.port->setNeeded(); 
+        }
+    }
 
     return Status::PortFull;
 }

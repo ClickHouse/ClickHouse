@@ -650,7 +650,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         presink_streams_size, sink_streams_size,
         table, /* view_level */ 0, metadata_snapshot, query_sample_block);
 
-    pipeline.resize(presink_chains.size());
+    pipeline.resize(presink_chains.size(), false, false, true);
 
     if (shouldAddSquashingFroStorage(table))
     {

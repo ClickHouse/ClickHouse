@@ -141,34 +141,27 @@ private:
     std::vector<Port::Data> abandoned_chunks;
 };
 
-/** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
-  * All of them have the same structure.
-  *
-  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever it is not full).
-  * Doesn't do any heavy calculations.
-  * Doesn't preserve an order of data.
-  *
-  * Examples:
-  * - union data from multiple inputs to single output - to serialize data that was processed in parallel.
-  * - split data from single input to multiple outputs - to allow further parallel processing.
-  */
+/// Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
+/// All of them have the same structure.
+/// When the amount of free memory is too low (free_memory < 4 * block_size), we push data to lower amount of inputs, trying to slow down the process.
 class MemoryDependentResizeProcessor final : public IProcessor
 {
 public:
-    /// TODO Check that there is non zero number of inputs and outputs.
-    MemoryDependentResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
-        : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
+    MemoryDependentResizeProcessor(const Block & header_, size_t num_inputs, size_t num_outputs)
+        : IProcessor(InputPorts(num_inputs, header_), OutputPorts(num_outputs, header_))
+        , header(header_)
         , current_input(inputs.begin())
         , current_output(outputs.begin())
     {
     }
 
-    String getName() const override { return "Resize"; }
+    String getName() const override { return "MemoryDependentResize"; }
 
     Status prepare() override;
     Status prepare(const PortNumbers &, const PortNumbers &) override;
 
 private:
+    Block header;
     InputPorts::iterator current_input;
     OutputPorts::iterator current_output;
 
@@ -177,7 +170,7 @@ private:
     std::queue<UInt64> waiting_outputs;
     std::queue<UInt64> inputs_with_data;
     bool initialized = false;
-    bool is_reading_started = false;
+    [[maybe_unused]] bool is_reading_started = false;
 
     enum class OutputStatus : uint8_t
     {
@@ -209,7 +202,8 @@ private:
     std::vector<InputPortWithStatus> input_ports;
     std::vector<OutputPortWithStatus> output_ports;
 
-    std::vector<OutputPortWithStatus> disabled_outputs;
+    std::vector<bool> is_output_enabled;
+    static constexpr size_t LOW_MEMORY_THRESHOLD = 4ULL * 1024 * 1024;
 };
 
 }
