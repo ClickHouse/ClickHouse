@@ -234,7 +234,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     std::string_view vertical_bold_bar   = unicode ? "┃" : "|";
     std::string_view vertical_bar        = unicode ? "│" : "|";
-    std::string_view horizontal_bold_bar = unicode ? "━" : "-";
     std::string_view horizontal_bar      = unicode ? "─" : "-";
 
     if (style == Style::Full)
