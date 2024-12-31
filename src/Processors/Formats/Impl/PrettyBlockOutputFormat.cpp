@@ -172,8 +172,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     String footer_begin;    /// ┢━━╈━━━┪
     String footer_end;      /// ┗━━┻━━━┛
 
-    String cut_in_the_middle;
-
     bool unicode = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
     using GridPart = std::array<std::string_view, 4>;
     using Grid = std::array<GridPart, 7>;
