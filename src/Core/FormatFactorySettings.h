@@ -849,6 +849,11 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_pretty_print, true, R"(
+When enabled, values in JSON output format will be printed in pretty format.
+
+Enabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md/#jsonobjecteachrow) format.
@@ -892,8 +897,17 @@ Rows limit for Pretty formats.
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(
 Maximum width to pad all values in a column in Pretty formats.
 )", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_cut_to, 24, R"(
+If the column name is too long, cut it to this length.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_min_chars_to_cut, 4, R"(
+Minimum characters to cut if the column name is too long.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width, 10000, R"(
 Maximum width of value to display in Pretty formats. If greater - it will be cut.
+The value 0 means - never cut.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width_apply_for_single_value, false, R"(
 Only cut values (see the `output_format_pretty_max_value_width` setting) when it is not a single value in a block. Otherwise output it entirely, which is useful for the `SHOW CREATE TABLE` query.
@@ -971,6 +985,9 @@ Check page size every this many rows. Consider decreasing if you have columns wi
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
 Add a possibility to write page index into parquet files.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
+Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
@@ -1079,12 +1096,6 @@ Field escaping rule (for Regexp format)
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
 Skip lines unmatched by regular expression (for Regexp format)
 )", 0) \
-    \
-    DECLARE(Bool, output_format_enable_streaming, false, R"(
-Enable streaming in output formats that support it.
-
-Disabled by default.
-)", 0) \
     DECLARE(Bool, output_format_write_statistics, true, R"(
 Write statistics about read rows, bytes, time elapsed in suitable output formats.
 
@@ -1098,6 +1109,9 @@ If enabled and if output is a terminal, highlight every digit corresponding to t
 )", 0) \
     DECLARE(UInt64, output_format_pretty_single_large_number_tip_threshold, 1'000'000, R"(
 Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)
+)", 0) \
+    DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
+If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
@@ -1150,6 +1164,9 @@ Target row index stride in ORC output format
 )", 0) \
     DECLARE(Double, output_format_orc_dictionary_key_size_threshold, 0.0, R"(
 For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled
+)", 0) \
+    DECLARE(String, output_format_orc_writer_time_zone_name, "GMT", R"(
+The time zone name for ORC writer, the default ORC writer's time zone is GMT.
 )", 0) \
     \
     DECLARE(CapnProtoEnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::CapnProtoEnumComparingMode::BY_VALUES, R"(
@@ -1251,9 +1268,6 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
-    DECLARE(String, composed_data_type_output_format_mode, "default", R"(
-Set composed data type output format mode, default or spark.
-)", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 
@@ -1261,11 +1275,11 @@ Set composed data type output format mode, default or spark.
     /** Obsolete format settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false)                                                                          \
+    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
+    MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
 
 #endif // __CLION_IDE__
 
 #define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
     FORMAT_FACTORY_SETTINGS(M, ALIAS) \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
-

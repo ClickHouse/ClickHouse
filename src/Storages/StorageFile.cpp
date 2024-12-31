@@ -1159,7 +1159,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
     {
@@ -2032,10 +2032,10 @@ SinkToStoragePtr StorageFile::write(
             else
                 throw Exception(
                     ErrorCodes::CANNOT_APPEND_TO_FILE,
-                    "Cannot append data in format {} to file, because this format doesn't support appends."
-                    " You can allow to create a new file "
-                    "on each insert by enabling setting engine_file_allow_create_multiple_files",
-                    format_name);
+                    "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
+                    " You can configure ClickHouse to create a new file "
+                    "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
+                    path, format_name);
         }
     }
 
@@ -2125,6 +2125,7 @@ void registerStorageFile(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::FILE,
+        .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
     factory.registerStorage(

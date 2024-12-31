@@ -17,7 +17,7 @@ Join_1_Value_0	String	Join_2_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 1
 1
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
@@ -41,7 +41,7 @@ Join_1_Value_1	String	Join_2_Value_1	String
 Join_1_Value_2	String		String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 1
 1
 1
@@ -66,7 +66,7 @@ Join_1_Value_0	String	Join_2_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 1
 1
 1
@@ -93,7 +93,7 @@ Join_1_Value_1	String	Join_2_Value_1	String
 Join_1_Value_2	String		String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 1
 1
 1
