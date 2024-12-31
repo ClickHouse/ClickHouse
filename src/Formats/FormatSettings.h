@@ -38,7 +38,6 @@ struct FormatSettings
     bool try_infer_variant = false;
 
     bool seekable_read = true;
-    String composed_data_type_output_format_mode = "default";
     UInt64 max_rows_to_read_for_schema_inference = 25000;
     UInt64 max_bytes_to_read_for_schema_inference = 32 * 1024 * 1024;
 
@@ -244,6 +243,9 @@ struct FormatSettings
         bool ignore_unnecessary_fields = true;
         bool empty_as_default = false;
         bool type_json_skip_duplicated_paths = false;
+        bool pretty_print = true;
+        char pretty_print_indent = ' ';
+        size_t pretty_print_indent_multiplier = 4;
     } json{};
 
     struct
@@ -302,9 +304,12 @@ struct FormatSettings
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
+        UInt64 max_column_name_width_cut_to = 24;
+        UInt64 max_column_name_width_min_chars_to_cut = 4;
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
+        bool highlight_trailing_spaces = true;
         /// Set to 2 for auto
         UInt64 color = 2;
 
