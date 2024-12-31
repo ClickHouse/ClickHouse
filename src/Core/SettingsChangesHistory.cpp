@@ -68,12 +68,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
             {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
+            {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
+            {"query_plan_try_use_vector_search", false, true, "New setting."},
             {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
             {"short_circuit_function_evaluation_for_nulls_threshold", 1.0, 1.0, "Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled."},
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
@@ -81,6 +83,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_bfloat16_type", false, true, "Add new BFloat16 type"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
+            {"max_autoincrement_series", 1000, 1000, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {

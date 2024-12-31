@@ -40,6 +40,8 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
@@ -58,8 +60,9 @@ private:
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
-    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
+    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
+    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
 };
 
 
@@ -86,11 +89,14 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
 private:
-    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info);
+    Pipes addPipes(ASTPtr ast, const Header & out_header);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
