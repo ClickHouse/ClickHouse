@@ -89,19 +89,23 @@ PrettySpace
 
 [90m1. [0m 0   1 
 [90m2. [0m 1   2 
+
     [1mx[0m   [1my[0m
 
 [90m3. [0m 2   3 
 [90m4. [0m 3   4 
+
 PrettySpaceNoEscapes
     x   y
 
 1.  0   1 
 2.  1   2 
+
     x   y
 
 3.  2   3 
 4.  3   4 
+
 PrettySpaceMonoBlock
     [1mx[0m   [1my[0m
 
@@ -109,6 +113,7 @@ PrettySpaceMonoBlock
 [90m2. [0m 1   2 
 [90m3. [0m 2   3 
 [90m4. [0m 3   4 
+
 PrettySpaceNoEscapesMonoBlock
     x   y
 
@@ -116,3 +121,4 @@ PrettySpaceNoEscapesMonoBlock
 2.  1   2 
 3.  2   3 
 4.  3   4 
+
