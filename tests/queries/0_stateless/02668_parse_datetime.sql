@@ -218,6 +218,25 @@ select parseDateTime64OrZero('2021-01-04 23:12:34.118') = toDateTime64('1970-01-
 select parseDateTime64OrZero('2021-01-04 23:12:34.118', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1970-01-01 00:00:00', 6);
 select parseDateTime64OrZero('2021-01-04 23:12:34.118112', '%Y-%m-%d %H:%i:%s') = toDateTime64('1970-01-01 00:00:00', 6);
 select parseDateTime64OrZero('2021-01-04 23:12:34.11811235', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1970-01-01 00:00:00', 6);
+
+--  Test with random inputs between 1900 and 2299 using parseDateTime64
+select parseDateTime64('1924-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1924-02-28 23:22:33.123433', 6);
+select parseDateTime64('2023-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2023-02-28 23:22:33.123433', 6);
+select parseDateTime64('2299-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2299-02-28 23:22:33.123433', 6);
+select parseDateTime64('1900-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1900-02-28 23:22:33.123433', 6);
+
+--  Test with random inputs between 1900 and 2299 using parseDateTime64OrNull
+select parseDateTime64OrNull('1924-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1924-02-28 23:22:33.123433', 6);
+select parseDateTime64OrNull('2023-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2023-02-28 23:22:33.123433', 6);
+select parseDateTime64OrNull('2299-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2299-02-28 23:22:33.123433', 6);
+select parseDateTime64OrNull('1900-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1900-02-28 23:22:33.123433', 6);
+
+-- Test with random inputs between 1900 and 2299 using parseDateTime64OrZero
+select parseDateTime64OrZero('1924-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1924-02-28 23:22:33.123433', 6);
+select parseDateTime64OrZero('2023-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2023-02-28 23:22:33.123433', 6);
+select parseDateTime64OrZero('2299-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2299-02-28 23:22:33.123433', 6);
+select parseDateTime64OrZero('1900-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1900-02-28 23:22:33.123433', 6);
+
 -- -------------------------------------------------------------------------------------------------------------------------
 
 
