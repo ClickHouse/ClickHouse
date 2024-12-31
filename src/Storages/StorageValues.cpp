@@ -4,7 +4,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
-#include <Interpreters/getColumnFromBlock.h>
 
 
 namespace DB
