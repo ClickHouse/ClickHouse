@@ -42,7 +42,7 @@ bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, si
 /// Evaluate the visible width of the values and column names.
 /// Note that number of code points is just a rough approximation of visible string width.
 void PrettyBlockOutputFormat::calculateWidths(
-    const Block & header, const Chunk & chunk,
+    const Block & header, const Chunk & chunk, bool split_by_lines,
     WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names)
 {
     size_t num_rows = chunk.getNumRows();
@@ -67,7 +67,7 @@ void PrettyBlockOutputFormat::calculateWidths(
         const auto & elem = header.getByPosition(i);
         const auto & column = columns[i];
 
-        widths[i].resize(num_displayed_rows);
+        widths[i].resize_fill(num_displayed_rows);
 
         size_t displayed_row = 0;
         for (size_t j = 0; j < num_rows; ++j)
@@ -81,7 +81,7 @@ void PrettyBlockOutputFormat::calculateWidths(
                 serialization->serializeText(*column, j, out_serialize, format_settings);
             }
 
-            /// Avoid calculating width of too long strings by limiting the size in bytes.
+            /// Avoid calculating width of too long strings by limiting their size in bytes.
             /// Note that it is just an estimation. 4 is the maximum size of Unicode code point in bytes in UTF-8.
             /// But it's possible that the string is long in bytes but very short in visible size.
             /// (e.g. non-printable characters, diacritics, combining characters)
@@ -92,10 +92,30 @@ void PrettyBlockOutputFormat::calculateWidths(
                     serialized_value.resize(max_byte_size);
             }
 
-            widths[i][displayed_row] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix);
-            max_padded_widths[i] = std::max<UInt64>(
-                max_padded_widths[i],
-                std::min<UInt64>({format_settings.pretty.max_column_pad_width, format_settings.pretty.max_value_width, widths[i][displayed_row]}));
+            size_t start_from_offset = 0;
+            size_t next_offset = 0;
+            while (start_from_offset < serialized_value.size())
+            {
+                if (split_by_lines)
+                {
+                    const char * end = serialized_value.data() + serialized_value.size();
+                    const char * next_nl = find_first_symbols<'\n'>(serialized_value.data() + start_from_offset, end);
+                    size_t fragment_end_offset = next_nl - serialized_value.data();
+                    next_offset = fragment_end_offset;
+                }
+
+                widths[i][displayed_row] = std::max(
+                    widths[i][displayed_row],
+                    UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data() + start_from_offset), next_offset - start_from_offset, prefix));
+
+                max_padded_widths[i] = std::max<UInt64>(
+                    max_padded_widths[i],
+                    std::min<UInt64>({format_settings.pretty.max_column_pad_width, format_settings.pretty.max_value_width, widths[i][displayed_row]}));
+
+                start_from_offset = next_offset;
+                if (start_from_offset < serialized_value.size())
+                    ++start_from_offset;
+            }
 
             ++displayed_row;
         }
@@ -157,7 +177,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     Widths max_widths;
     Widths name_widths;
     Strings names;
-    calculateWidths(header, chunk, widths, max_widths, name_widths, names);
+    calculateWidths(header, chunk, format_settings.pretty.multiline_fields, widths, max_widths, name_widths, names);
 
     /// Create separators
 
@@ -439,7 +459,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                         *columns[j],
                         *serializations[j],
                         i,
-                        true /* TODO */, serialized_values[j], offsets_inside_serialized_values[j],
+                        format_settings.pretty.multiline_fields, serialized_values[j], offsets_inside_serialized_values[j],
                         widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
                         max_widths[j],
                         cut_to_width,
@@ -527,8 +547,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialized_fragment = highlightTrailingSpaces(serialized_fragment);
 
     const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
-    const char * line_feed = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⮷" : "\\";
-    const char * line_continuation = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⮱" : ">";
+    const char * line_feed = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "↴" : "\\";
+    const char * line_continuation = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "↳" : ">";
 
     bool is_cut = false;
     if (cut_to_width && value_width > cut_to_width)
@@ -557,7 +577,13 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     };
 
     if (is_continuation)
+    {
+        if (color)
+            out << "\033[90m";
         writeCString(line_continuation, out);
+        if (color)
+            out << "\033[0m";
+    }
     else
         out.write(' ');
 
@@ -573,7 +599,13 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     }
 
     if (start_from_offset != serialized_value->size())
+    {
+        if (color)
+            out << "\033[90m";
         writeCString(line_feed, out);
+        if (color)
+            out << "\033[0m";
+    }
     else if (!is_cut)
         out.write(' ');
 

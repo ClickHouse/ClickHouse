@@ -310,6 +310,7 @@ struct FormatSettings
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
         bool highlight_trailing_spaces = true;
+        bool multiline_fields = true;
         /// Set to 2 for auto
         UInt64 color = 2;
 

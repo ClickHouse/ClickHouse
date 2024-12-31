@@ -27,6 +27,7 @@ public:
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
     PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_);
     String getName() const override { return "PrettyBlockOutputFormat"; }
+
 protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
@@ -50,7 +51,7 @@ protected:
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
     void calculateWidths(
-        const Block & header, const Chunk & chunk,
+        const Block & header, const Chunk & chunk, bool split_by_lines,
         WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
 
     void writeValueWithPadding(
