@@ -61,9 +61,6 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
 **Example**
