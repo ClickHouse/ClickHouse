@@ -4127,7 +4127,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             }
             else
             {
-                LOG_DEBUG(log, "Failed to select merge: '{}'", select_merge_result.error().explanation.text);
+                LOG_DEBUG(LogFrequencyLimiter(log.load(), 10), "Failed to select merge: {}", select_merge_result.error().explanation.text);
             }
         }
 

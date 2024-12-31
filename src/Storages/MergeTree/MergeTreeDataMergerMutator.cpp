@@ -234,7 +234,8 @@ String getBestPartitionToOptimizeEntire(
 }
 
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
-    : data(data_), log(getLogger(data.getLogName() + " (MergerMutator)"))
+    : data(data_)
+    , log(getLogger(data.getLogName() + " (MergerMutator)"))
 {
 }
 
@@ -451,23 +452,15 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
     const auto available_disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     if (available_disk_space <= required_disk_space)
     {
-        if (time_t now = time(nullptr); now - disk_space_warning_time > 3600)
-        {
-            disk_space_warning_time = now;
-            LOG_WARNING(log,
-                "Won't merge parts from {} to {} because not enough free space: "
-                "{} free and unreserved, {} required now; suppressing similar warnings for the next hour",
-                parts.front().name, parts.back().name, ReadableSize(available_disk_space), ReadableSize(required_disk_space));
-        }
-
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-            .explanation = PreformattedMessage::create("Insufficient available disk space, required {}", ReadableSize(required_disk_space)),
+            .explanation = PreformattedMessage::create(
+                "Not enough free space to merge parts from {} to {}. Has {} free and unreserved, {} required now",
+                parts.front().name, parts.back().name, ReadableSize(available_disk_space), ReadableSize(required_disk_space)),
         });
     }
 
-    LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front().name, parts.back().name);
-
+    LOG_INFO(log, "Selected {} parts from {} to {}", parts.size(), parts.front().name, parts.back().name);
     return MergeSelectorChoice{std::move(parts), MergeType::Regular};
 }
 
@@ -606,7 +599,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
                     new_data_part->name, replaced_parts[i]->name, parts[i]->name);
     }
 
-    LOG_TRACE(log, "Merged {} parts: [{}, {}] -> {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
+    LOG_INFO(log, "Merged {} parts: [{}, {}] -> {}", parts.size(), parts.front()->name, parts.back()->name, new_data_part->name);
     return new_data_part;
 }
 

@@ -127,9 +127,6 @@ private:
 
     LoggerPtr log;
 
-    /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
-    time_t disk_space_warning_time = 0;
-
     /// Stores the next TTL delete merge due time for each partition (used only by TTLDeleteMergeSelector)
     PartitionIdToTTLs next_delete_ttl_merge_times_by_partition;
 
@@ -138,6 +135,5 @@ private:
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 };
-
 
 }

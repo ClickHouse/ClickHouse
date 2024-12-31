@@ -157,7 +157,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
 
     if (choice.has_value())
     {
-        LOG_DEBUG(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms",
+        LOG_INFO(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms",
             choice->range.size(), choice->range.front().name, choice->range.back().name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
 
         ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, choice->range.size());
@@ -165,7 +165,6 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
     }
     else
     {
-        LOG_DEBUG(log, "Did not find any parts to merge. Merge selecting phase took: {}ms", select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
         ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
     }
 

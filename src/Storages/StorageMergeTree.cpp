@@ -1070,7 +1070,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         if (auto check_memory_result = is_background_memory_usage_ok(); !check_memory_result.has_value())
             return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                .explanation = std::move(std::move(check_memory_result.error())),
+                .explanation = std::move(check_memory_result.error()),
             });
 
         auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, txn);
@@ -1456,12 +1456,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             return false;
 
         {
-            auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn);
-
-            if (merge_select_result.has_value())
+            if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
                 merge_entry = std::move(merge_select_result.value());
             else
-                LOG_DEBUG(log, "Failed to start merge. Explanation: '{}'", merge_select_result.error().explanation.text);
+                LOG_DEBUG(LogFrequencyLimiter(log.load(), 10), "Failed to start merge: {}", merge_select_result.error().explanation.text);
         }
 
         if (!merge_entry && !current_mutations_by_version.empty())
@@ -1470,13 +1468,13 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
 
             if (!mutate_entry)
-                LOG_DEBUG(log, "Failed to start mutation. Explanation: '{}'", out_reason.text);
+                LOG_DEBUG(LogFrequencyLimiter(log.load(), 10), "Failed to start mutation: {}", out_reason.text);
         }
 
         has_mutations = !current_mutations_by_version.empty();
     }
 
-    auto isCancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
+    auto is_cancelled = [&merges_blocker = merger_mutator.merges_blocker](const MergeMutateSelectedEntryPtr & entry)
     {
         if (entry->future_part)
             return merges_blocker.isCancelledForPartition(entry->future_part->part_info.partition_id);
@@ -1486,7 +1484,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
-        if (isCancelled(merge_entry))
+        if (is_cancelled(merge_entry))
             return false;
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, /* cleanup */ false, merge_entry, shared_lock, common_assignee_trigger);
@@ -1500,7 +1498,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (mutate_entry)
     {
-        if (isCancelled(mutate_entry))
+        if (is_cancelled(mutate_entry))
             return false;
 
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
@@ -1682,12 +1680,11 @@ bool StorageMergeTree::optimize(
                     local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
             {
                 constexpr auto message = "Cannot OPTIMIZE table: {}";
-                if (disable_reason.text.empty())
-                    disable_reason = PreformattedMessage::create("unknown reason");
                 LOG_INFO(log, message, disable_reason.text);
 
                 if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
                     throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason.text);
+
                 return false;
             }
         }
@@ -1710,12 +1707,11 @@ bool StorageMergeTree::optimize(
                 local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
         {
             constexpr auto message = "Cannot OPTIMIZE table: {}";
-            if (disable_reason.text.empty())
-                disable_reason = PreformattedMessage::create("unknown reason");
             LOG_INFO(log, message, disable_reason.text);
 
             if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
                 throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason.text);
+
             return false;
         }
     }
