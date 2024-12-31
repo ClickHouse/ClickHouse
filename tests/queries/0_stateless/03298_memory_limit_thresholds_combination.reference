@@ -1,0 +1,12 @@
+[Aggregation] -- Big Ratio
+[Aggregation] -- Big Bytes
+[Aggregation] -- Bytes Limit Only
+[Aggregation] -- Ratio Limit Only
+[Aggregation] -- Small Bytes Big Ratio
+[Aggregation] -- Big Bytes Small Ratio
+[Sort] -- Big Ratio
+[Sort] -- Big Bytes
+[Sort] -- Bytes Limit Only
+[Sort] -- Ratio Limit Only
+[Sort] -- Small Bytes Big Ratio
+[Sort] -- Big Bytes Small Ratio

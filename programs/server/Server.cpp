@@ -1715,17 +1715,8 @@ try
         config().getString("path", DBMS_DEFAULT_PATH),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&, config_file = config().getString("config-file", "config.xml")](ConfigurationPtr config, bool initial_loading)
+        [&](ConfigurationPtr config, bool initial_loading)
         {
-            if (!initial_loading)
-            {
-                /// Add back "config-file" key which is absent in the reloaded config.
-                config->setString("config-file", config_file);
-
-                /// Apply config updates in global context.
-                global_context->setConfig(config);
-            }
-
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
             ServerSettings new_server_settings;
@@ -2297,7 +2288,7 @@ try
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
+        /// Firstly remove partially dropped databases, to avoid race with Materialized...SyncThread,
         /// that may execute DROP before loadMarkedAsDroppedTables() in background,
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
