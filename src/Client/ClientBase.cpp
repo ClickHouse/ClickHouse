@@ -620,7 +620,7 @@ try
                     flags |= O_TRUNC;
                 else
                     flags |= O_CREAT;
-                
+
                 chassert(out_file_buf.get() == nullptr);
 
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
