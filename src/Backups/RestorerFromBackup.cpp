@@ -8,6 +8,7 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Access/AccessBackup.h>
 #include <Access/AccessRights.h>
+#include <Access/ContextAccess.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
@@ -505,7 +506,8 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
     std::unordered_set<String> table_names_in_backup;
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        fs::path try_metadata_path, try_tables_metadata_path;
+        fs::path try_metadata_path;
+        fs::path try_tables_metadata_path;
         if (database_name_in_backup == DatabaseCatalog::TEMPORARY_DATABASE)
         {
             try_tables_metadata_path = root_path_in_backup / "temporary_tables" / "metadata";
@@ -711,11 +713,16 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             insertAtEnd(required_access, access_restorer->getRequiredAccess());
     }
 
-    /// We convert to AccessRights and back to check access rights in a predictable way
-    /// (some elements could be duplicated or not sorted).
-    required_access = AccessRights{required_access}.getElements();
+    /// We convert to AccessRights to check if we have the rights contained in our current access.
+    /// This handles the situation when restoring partial revoked grants:
+    /// GRANT SELECT ON *.*
+    /// REVOKE SELECT FROM systems.*
+    const auto & required_access_rights = AccessRights{required_access};
+    const auto & current_user_access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    if (current_user_access_rights->contains(required_access_rights))
+        return;
 
-    context->checkAccess(required_access);
+    context->checkAccess(required_access_rights.getElements());
 }
 
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
@@ -878,7 +885,8 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 table_id);
         }
 
-        size_t num_dependencies, num_dependents;
+        size_t num_dependencies;
+        size_t num_dependents;
         tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
             throw Exception(

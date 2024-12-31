@@ -1,10 +1,9 @@
 #include <Common/logger_useful.h>
-#include "Interpreters/ProcessList.h"
-#include "QueryPipeline/SizeLimits.h"
+#include <Interpreters/ProcessList.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/CancellationChecker.h>
 
-#include <__chrono/duration.h>
-#include <condition_variable>
+#include <chrono>
 #include <mutex>
 
 
@@ -25,11 +24,11 @@ bool CompareEndTime::operator()(const QueryToTrack& a, const QueryToTrack& b) co
     return std::tie(a.endtime, a.query) < std::tie(b.endtime, b.query);
 }
 
-CancellationChecker::CancellationChecker() : stop_thread(false)
+CancellationChecker::CancellationChecker() : stop_thread(false), log(getLogger("CancellationChecker"))
 {
 }
 
-CancellationChecker& CancellationChecker::getInstance()
+CancellationChecker & CancellationChecker::getInstance()
 {
     static CancellationChecker instance;
     return instance;
@@ -38,7 +37,7 @@ CancellationChecker& CancellationChecker::getInstance()
 void CancellationChecker::terminateThread()
 {
     std::unique_lock<std::mutex> lock(m);
-    LOG_TRACE(getLogger("CancellationChecker"), "Stopping CancellationChecker");
+    LOG_TRACE(log, "Stopping CancellationChecker");
     stop_thread = true;
     cond_var.notify_all();
 }
@@ -63,7 +62,7 @@ bool CancellationChecker::removeQueryFromSet(std::shared_ptr<QueryStatus> query)
 
     if (it != querySet.end())
     {
-        LOG_TRACE(getLogger("CancellationChecker"), "Removing query {} from done tasks", query->getInfo().query);
+        LOG_TEST(log, "Removing query {} from done tasks", query->getInfo().query);
         querySet.erase(it);
         return true;
     }
@@ -75,11 +74,11 @@ void CancellationChecker::appendTask(const std::shared_ptr<QueryStatus> & query,
 {
     if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
     {
-        LOG_TRACE(getLogger("CancellationChecker"), "Did not add the task because the timeout is 0. Query: {}", query->getInfo().query);
+        LOG_TEST(log, "Did not add the task because the timeout is 0. Query: {}", query->getInfo().query);
         return;
     }
     std::unique_lock<std::mutex> lock(m);
-    LOG_TRACE(getLogger("CancellationChecker"), "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, timeout);
+    LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, timeout);
     const auto & now = std::chrono::steady_clock::now();
     const UInt64 & end_time = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() + timeout;
     querySet.emplace(query, timeout, end_time, overflow_mode);
@@ -95,7 +94,7 @@ void CancellationChecker::appendDoneTasks(const std::shared_ptr<QueryStatus> & q
 
 void CancellationChecker::workerFunction()
 {
-    LOG_TRACE(getLogger("CancellationChecker"), "Started worker function");
+    LOG_TRACE(log, "Started worker function");
     std::unique_lock<std::mutex> lock(m);
 
     while (!stop_thread)
@@ -123,7 +122,7 @@ void CancellationChecker::workerFunction()
 
             if ((end_time_ms <= now_ms && duration_milliseconds.count() != 0))
             {
-                LOG_TRACE(getLogger("CancellationChecker"), "Cancelling the task because of the timeout: {} ms, query: {}", duration, next_task.query->getInfo().query);
+                LOG_TRACE(log, "Cancelling the task because of the timeout: {} ms, query: {}", duration, next_task.query->getInfo().query);
                 cancelTask(next_task);
                 querySet.erase(next_task);
 

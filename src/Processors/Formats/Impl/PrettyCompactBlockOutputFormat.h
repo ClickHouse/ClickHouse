@@ -17,14 +17,16 @@ public:
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 
 private:
-    void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths, bool write_footer);
+    void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths, const Strings & names, bool write_footer);
     void writeBottom(const Widths & max_widths);
     void writeRow(
         size_t row_num,
+        size_t displayed_row,
         const Block & header,
         const Chunk & chunk,
         const WidthsPerColumn & widths,
         const Widths & max_widths);
+    void writeVerticalCut(const Chunk & chunk, const Widths & max_widths);
 
     void writeChunk(const Chunk & chunk, PortKind port_kind) override;
 };

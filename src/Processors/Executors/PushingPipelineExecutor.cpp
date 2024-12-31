@@ -127,7 +127,10 @@ void PushingPipelineExecutor::finish()
     finished = true;
 
     if (executor)
-        executor->executeStep();
+    {
+        auto res = executor->executeStep();
+        chassert(!res);
+    }
 }
 
 void PushingPipelineExecutor::cancel()

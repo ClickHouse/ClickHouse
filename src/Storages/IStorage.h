@@ -378,7 +378,7 @@ public:
         size_t /*num_streams*/);
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
-    /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
+    /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
 private:
@@ -730,15 +730,6 @@ public:
     ///
     /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
-
-    /// If it is possible to quickly determine exact number of bytes for the table on storage:
-    /// - disk (compressed)
-    ///
-    /// Used for:
-    /// - For total_bytes_with_inactive column in system.tables
-    //
-    /// Does not takes underlying Storage (if any) into account
-    virtual std::optional<UInt64> totalBytesWithInactive(const Settings &) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///

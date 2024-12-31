@@ -206,9 +206,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             auto plan = createLocalPlan(
                 query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
 
-            return std::move(*plan->buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(my_context),
-                BuildQueryPipelineSettings::fromContext(my_context)));
+            return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
         }
 
         std::vector<IConnectionPool::Entry> connections;

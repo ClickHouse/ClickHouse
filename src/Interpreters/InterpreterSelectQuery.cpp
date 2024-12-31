@@ -588,7 +588,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
             if (!maybe_storage)
                 continue;
-            checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
+            checkStorageSupportsTransactionsIfNeeded(maybe_storage, context, /* is_readonly_query */ true);
         }
     }
 
@@ -617,7 +617,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Check support for parallel replicas for non-replicated storage (plain MergeTree)
     bool is_plain_merge_tree = storage && storage->isMergeTree() && !storage->supportsReplication();
     if (is_plain_merge_tree && settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-        && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
+        && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
         {
@@ -1124,8 +1124,7 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
