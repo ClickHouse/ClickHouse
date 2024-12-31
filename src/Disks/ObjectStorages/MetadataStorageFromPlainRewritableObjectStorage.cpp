@@ -23,6 +23,10 @@
 #include <Common/setThreadName.h>
 #include "CommonPathPrefixKeyGenerator.h"
 
+#if USE_AZURE_BLOB_STORAGE
+#    include <azure/storage/common/storage_exception.hpp>
+#endif
+
 
 namespace DB
 {
@@ -158,7 +162,7 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
                         /// Assuming that local and the object storage clocks are synchronized.
                         last_modified = object_metadata->last_modified;
                     }
-    #if USE_AWS_S3
+#if USE_AWS_S3
                     catch (const S3Exception & e)
                     {
                         /// It is ok if a directory was removed just now.
@@ -166,7 +170,15 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
                             return;
                         throw;
                     }
-    #endif
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                    catch (const Azure::Storage::StorageException & e)
+                    {
+                        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                            return;
+                        throw;
+                    }
+#endif
                     catch (...)
                     {
                         throw;
