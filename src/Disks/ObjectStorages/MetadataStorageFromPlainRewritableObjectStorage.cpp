@@ -17,10 +17,12 @@
 #include <IO/SharedThreadPools.h>
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
 #include "CommonPathPrefixKeyGenerator.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -34,6 +36,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char plain_rewritable_object_storage_azure_not_found_on_init[];
 }
 
 namespace
@@ -161,6 +168,17 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
                             return;
                         /// Assuming that local and the object storage clocks are synchronized.
                         last_modified = object_metadata->last_modified;
+#if USE_AZURE_BLOB_STORAGE
+                        fiu_do_on(FailPoints::plain_rewritable_object_storage_azure_not_found_on_init, {
+                            std::bernoulli_distribution fault(0.25);
+                            if (fault(thread_local_rng))
+                            {
+                                LOG_TEST(log, "Fault injection");
+                                throw Azure::Storage::StorageException::CreateFromResponse(std::make_unique<Azure::Core::Http::RawResponse>(
+                                    1, 0, Azure::Core::Http::HttpStatusCode::NotFound, "Fault injected"));
+                            }
+                        });
+#endif
                     }
 #if USE_AWS_S3
                     catch (const S3Exception & e)
