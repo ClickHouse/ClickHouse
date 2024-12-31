@@ -188,13 +188,10 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
                     chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
                     auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
                     auto rel_path = std::filesystem::path(std::move(suffix));
-                    std::pair<Map::iterator, bool> res;
-                    {
-                        std::lock_guard lock(mutex);
-                        res = map.emplace(
-                            std::filesystem::path(local_path).parent_path(),
-                            InMemoryDirectoryPathMap::RemotePathInfo{rel_path.parent_path(), last_modified.epochTime(), {}});
-                    }
+                    std::lock_guard lock(mutex);
+                    std::pair<Map::iterator, bool> res = map.emplace(
+                        std::filesystem::path(local_path).parent_path(),
+                        InMemoryDirectoryPathMap::RemotePathInfo{rel_path.parent_path(), last_modified.epochTime(), {}});
 
                     /// This can happen if table replication is enabled, then the same local path is written
                     /// in `prefix.path` of each replica.
