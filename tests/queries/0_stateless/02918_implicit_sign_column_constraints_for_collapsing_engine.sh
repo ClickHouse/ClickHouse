@@ -31,7 +31,7 @@ $CLICKHOUSE_CLIENT --query="ALTER TABLE collapsing_merge_tree MODIFY SETTING add
 
 # Should succeed
 $CLICKHOUSE_CLIENT --query="INSERT INTO collapsing_merge_tree SETTINGS optimize_on_insert=0 VALUES (1, 2504, 5);"
-$CLICKHOUSE_CLIENT --query="SELECT * FROM collapsing_merge_tree;"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM collapsing_merge_tree ORDER BY ALL;"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE collapsing_merge_tree;"
 
@@ -61,7 +61,7 @@ $CLICKHOUSE_CLIENT --query="ALTER TABLE versioned_collapsing_merge_tree MODIFY S
 
 # Successful insert with invalid sign
 $CLICKHOUSE_CLIENT --query="INSERT INTO versioned_collapsing_merge_tree SETTINGS optimize_on_insert=0 VALUES (1, 2505, 5, 1);"
-$CLICKHOUSE_CLIENT --query="SELECT * FROM versioned_collapsing_merge_tree;"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM versioned_collapsing_merge_tree ORDER BY ALL;"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE versioned_collapsing_merge_tree;"
 
