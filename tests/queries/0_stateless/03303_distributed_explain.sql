@@ -1,5 +1,7 @@
 -- Tags: no-random-settings
 
+set enable_analyzer=1;
+
 explain  actions = 1, distributed=1 select sum(number) from remote('127.0.0.{1,2,3}', numbers(5)) group by bitAnd(number, 3);
 
 DROP TABLE IF EXISTS test_parallel_replicas;
