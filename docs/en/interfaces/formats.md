@@ -2449,6 +2449,8 @@ Unsupported Arrow data types: `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
 The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/docs/en/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
+Keep in mind that the HALF_FLOAT data type is converted to Float32 while reading. This is needed, because it represents the IEEE-754 16-bit floating point value, not the BFloat16 format (more popular in AI and ML applications) which ClickHouse supports. 
+
 ### Inserting Data {#inserting-data-arrow}
 
 You can insert Arrow data from a file into ClickHouse table by the following command:
