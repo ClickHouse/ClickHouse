@@ -276,7 +276,7 @@ SELECT * FROM UAct FINAL
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 :::note
-This way of selecting the data is less inefficient and is not recommended for use with large amounts of scanned data.
+This way of selecting the data is less inefficient and is not recommended for use with large amounts of scanned data (millions of rows).
 :::
 
 ### Example of Another Approach {#example-of-another-approach}
