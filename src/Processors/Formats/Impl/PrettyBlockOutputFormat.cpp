@@ -103,6 +103,10 @@ void PrettyBlockOutputFormat::calculateWidths(
                     size_t fragment_end_offset = next_nl - serialized_value.data();
                     next_offset = fragment_end_offset;
                 }
+                else
+                {
+                    next_offset = serialized_value.size();
+                }
 
                 widths[i][displayed_row] = std::max(
                     widths[i][displayed_row],
