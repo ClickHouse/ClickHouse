@@ -115,7 +115,7 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
     {
         ParserToken{TokenType::Whitespace}.ignore(pos);
-        if (ParserKeyword(Keyword::SEQUENTIAL).check(pos, expected))
+        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
             mode = zkutil::CreateMode::PersistentSequential;
         else
             mode = zkutil::CreateMode::Persistent;
