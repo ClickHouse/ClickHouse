@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 CREATE TABLE default.test
 (
     `id` UInt32,
