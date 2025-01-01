@@ -80,7 +80,7 @@ private:
     /// Implements squashing of chunks by time
     std::condition_variable mono_chunk_condvar;
     std::optional<ThreadFromGlobalPool> thread;
-    bool finish = false;
+    std::atomic_bool finish{false};
     void writingThread();
     void stopThread();
 };

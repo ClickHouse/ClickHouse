@@ -578,10 +578,8 @@ void PrettyBlockOutputFormat::stopThread()
 {
     if (thread)
     {
-        {
-            finish = true;
-            mono_chunk_condvar.notify_one();
-        }
+        finish = true;
+        mono_chunk_condvar.notify_one();
     }
 }
 
@@ -591,7 +589,6 @@ PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
     {
         stopThread();
         thread->join();
-        thread.reset();
     }
 }
 
