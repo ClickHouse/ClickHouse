@@ -18,7 +18,7 @@ namespace DB
 template <typename T>
 void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeText(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr, settings.approximate_numbers_with_period);
+    writeText(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr, settings.approximate_numbers_with_decimal_point);
 }
 
 template <typename T>
