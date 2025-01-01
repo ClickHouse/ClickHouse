@@ -12,6 +12,7 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -95,6 +96,21 @@ void registerStorageKafka(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
+
+        for (size_t i = 0; i < args_count; ++i)
+        {
+            /// If the user wrote e.g. ('kafka_broker_list' = '1'),
+            /// then engine_args[i] is an ASTFunction node, not a plain literal.
+            if (engine_args[i]->as<ASTFunction>())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Keyword arguments are not supported inside the parentheses for Kafka engine. "
+                    "Please use plain string literals or move them into the SETTINGS clause."
+                );
+            }
+        }
+
         const bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
