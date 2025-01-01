@@ -11,7 +11,7 @@
 /** This program tests merge-selecting algorithm.
   * Usage:
   * ./merge_selector <<< "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20"
-  * clickhouse-client --query="SELECT 100 + round(10 * rand() / 0xFFFFFFFF) FROM system.numbers LIMIT 105" | tr '\n' ' ' | ./merge_selector
+  * clickhouse-client --query="SELECT 100 + round(10 * rand() / 0xFFFFFFFF) FROM system.numbers LIMIT 105" | tr "\n" ' ' | ./merge_selector
   */
 
 int main(int, char **)
@@ -39,15 +39,14 @@ int main(int, char **)
         skipWhitespaceIfAny(in);
 
         auto part_info = MergeTreePartInfo::fromPartName(fmt::format("all_{}_{}_0", parts.size(), parts.size()), MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
-        PartProperties part
+        parts.emplace_back(PartProperties
         {
             .name = part_info.getPartNameV1(),
             .part_info = part_info,
             .size = size,
             .age = 0,
-        };
+        });
 
-        parts.emplace_back(part);
         sum_parts_size += size;
     }
 
@@ -101,7 +100,7 @@ int main(int, char **)
                 in_range = false;
                 max_block = part.part_info.max_block;
 
-                auto part_info = MergeTreePartInfo::fromPartName(fmt::format("all_{}_{}_{}", min_block, max_block, max_level), MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+                auto part_info = MergeTreePartInfo::fromPartName(fmt::format("all_{}_{}_{}", min_block, max_block, max_level + 1), MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
                 next_range.push_back(PartProperties
                 {
                     .name = part_info.getPartNameV1(),
@@ -115,7 +114,7 @@ int main(int, char **)
 
             std::cout << " ";
         }
-        std::cout << '\n';
+        std::cout << "\n";
 
         parts.swap(next_range);
 
@@ -123,7 +122,7 @@ int main(int, char **)
         ++num_merges;
     }
 
-    std::cout << '\n';
+    std::cout << "\n";
     std::cout << std::fixed << std::setprecision(2)
         << "Write amplification: " << static_cast<double>(sum_size_written) / sum_parts_size << "\n"
         << "Num merges: " << num_merges << "\n";
