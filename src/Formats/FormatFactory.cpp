@@ -224,6 +224,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.output_format_pretty_single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
     format_settings.pretty.output_format_pretty_display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
     format_settings.pretty.output_format_pretty_display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
+    format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
+    format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
+    format_settings.pretty.fallback_to_vertical_min_table_width = settings[Setting::output_format_pretty_fallback_to_vertical_min_table_width];
     format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
     format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];

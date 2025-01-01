@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
+#include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -42,7 +43,7 @@ bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, si
 /// Evaluate the visible width of the values and column names.
 /// Note that number of code points is just a rough approximation of visible string width.
 void PrettyBlockOutputFormat::calculateWidths(
-    const Block & header, const Chunk & chunk, bool split_by_lines,
+    const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,
     WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names)
 {
     size_t num_rows = chunk.getNumRows();
@@ -100,6 +101,8 @@ void PrettyBlockOutputFormat::calculateWidths(
                 {
                     const char * end = serialized_value.data() + serialized_value.size();
                     const char * next_nl = find_first_symbols<'\n'>(serialized_value.data() + start_from_offset, end);
+                    if (next_nl < end)
+                        out_has_newlines = true;
                     size_t fragment_end_offset = next_nl - serialized_value.data();
                     next_offset = fragment_end_offset;
                 }
@@ -181,7 +184,37 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     Widths max_widths;
     Widths name_widths;
     Strings names;
-    calculateWidths(header, chunk, format_settings.pretty.multiline_fields, widths, max_widths, name_widths, names);
+    bool has_newlines = false;
+    calculateWidths(header, chunk, format_settings.pretty.multiline_fields, has_newlines, widths, max_widths, name_widths, names);
+
+    size_t table_width = 0;
+    for (size_t width : max_widths)
+        table_width += width;
+
+    /// Fallback to Vertical format if:
+    /// enabled by the settings, this is the first chunk (or totals/extremes), the number of rows is small enough,
+    /// either the table width is larger than the max_value_width or any of the values contain a newline.
+    if (format_settings.pretty.fallback_to_vertical
+        && (displayed_rows == 0 || port_kind != PortKind::Main)
+        && num_rows <= format_settings.pretty.fallback_to_vertical_max_rows_per_chunk
+        && (table_width >= format_settings.pretty.fallback_to_vertical_min_table_width || has_newlines))
+    {
+        if (!vertical_format_fallback)
+        {
+            vertical_format_fallback = std::make_unique<VerticalRowOutputFormat>(out, header, format_settings);
+            vertical_format_fallback->writePrefixIfNeeded();
+        }
+
+        for (size_t i = 0; i < num_rows && displayed_rows < format_settings.pretty.max_rows; ++i)
+        {
+            if (i != 0)
+                vertical_format_fallback->writeRowBetweenDelimiter();
+            vertical_format_fallback->writeRow(columns, i);
+            ++displayed_rows;
+        }
+
+        return;
+    }
 
     /// Create separators
 
@@ -226,7 +259,6 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     std::string_view vertical_bold_bar   = unicode ? "┃" : "|";
     std::string_view vertical_bar        = unicode ? "│" : "|";
-    std::string_view horizontal_bold_bar = unicode ? "━" : "-";
     std::string_view horizontal_bar      = unicode ? "─" : "-";
 
     if (style == Style::Full)
@@ -290,11 +322,11 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (i != 0)
-                rows_end_out        << grid[3][2];
+                rows_end_out << grid[3][2];
             for (size_t j = 0; j < max_widths[i] + 2; ++j)
-                rows_end_out        << grid[3][1];
+                rows_end_out << grid[3][1];
         }
-        rows_end_out        << grid[3][3] << "\n";
+        rows_end_out << grid[3][3] << "\n";
     }
     else if (style == Style::Space)
     {

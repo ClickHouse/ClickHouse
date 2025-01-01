@@ -51,7 +51,7 @@ protected:
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
     void calculateWidths(
-        const Block & header, const Chunk & chunk, bool split_by_lines,
+        const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,
         WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
 
     void writeValueWithPadding(
@@ -73,8 +73,12 @@ private:
     Style style;
     bool mono_block;
     bool color;
+
     /// For mono_block == true only
     Chunk mono_chunk;
+
+    /// Fallback to Vertical format for wide but short tables.
+    std::unique_ptr<IRowOutputFormat> vertical_format_fallback;
 };
 
 }

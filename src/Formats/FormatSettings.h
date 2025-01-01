@@ -319,6 +319,10 @@ struct FormatSettings
         UInt64 output_format_pretty_display_footer_column_names = 1;
         UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
 
+        bool fallback_to_vertical = true;
+        UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
+        UInt64 fallback_to_vertical_min_table_width = 250;
+
         enum class Charset : uint8_t
         {
             UTF8,

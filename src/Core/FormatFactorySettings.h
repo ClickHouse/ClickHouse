@@ -1117,6 +1117,16 @@ If enabled and if output is a terminal, highlight trailing spaces with a gray co
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
 If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).
 )", 0) \
+    DECLARE(Bool, output_format_pretty_fallback_to_vertical, true, R"(
+If enabled, and the table is wide but short, the Pretty format will output it as the Vertical format does.
+See `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` and `output_format_pretty_fallback_to_vertical_min_table_width` for detailed tuning of this behavior.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 100, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of records in a chunk is not more than the specified value.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_table_width, 250, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the sum of lengths of columns in a table is at least the specified value, or if at least one value contains a newline character.
+)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
 
