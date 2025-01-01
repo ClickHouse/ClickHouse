@@ -30,6 +30,10 @@ def test_name(request):
     return request.node.name
 
 
+def generate_random_string(length=6):
+    return "".join(random.choice(string.ascii_lowercase) for i in range(length))
+
+
 @pytest.fixture(scope="function")
 def exclusive_database_name(test_name):
     normalized = (
@@ -38,7 +42,7 @@ def exclusive_database_name(test_name):
         .replace(" ", "_")
         .replace("-", "_")
     )
-    return "repl_db_" + normalized
+    return "repl_db_" + normalized + "_" + generate_random_string()
 
 
 def prepare_db(db_name: str):
