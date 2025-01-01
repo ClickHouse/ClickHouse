@@ -56,7 +56,7 @@ size_t calculatePartsCount(const PartsRanges & ranges)
     return count;
 }
 
-PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredicate & can_merge)
+PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredicate & can_merge, LogSeriesLimiter & log)
 {
     const auto & build_next_range = [&](PartsRange::iterator & current_it)
     {
@@ -71,10 +71,14 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
         {
             PartProperties & current_part = *current_it++;
 
-            if (can_merge(nullptr, &current_part))
+            if (auto result = can_merge(nullptr, &current_part))
             {
                 mergeable_range.push_back(std::move(current_part));
                 break;
+            }
+            else
+            {
+                LOG_TRACE(log, "Merge preconditions failed for part {}. Reason: {}", current_part.name, result.error().text);
             }
         }
 
@@ -88,8 +92,11 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
             PartProperties & current_part = *current_it;
 
             /// If we cannot merge with previous part we need to close this range.
-            if (!can_merge(&prev_part, &current_part))
+            if (auto result = can_merge(&prev_part, &current_part); !result.has_value())
+            {
+                LOG_TRACE(log, "Can't merge parts {} and {}. Reason: {}", prev_part.name, current_part.name, result.error().text);
                 return mergeable_range;
+            }
 
             /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
             if (current_part.part_info.contains(prev_part.part_info))
@@ -113,17 +120,19 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
     return mergeable_ranges;
 }
 
-PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPredicate & can_merge)
+PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPredicate & can_merge, const LoggerPtr & log)
 {
     Stopwatch ranges_for_merge_timer;
+    LogSeriesLimiter predicate_split_phase_log(log, 1, /*interval_s_=*/60 * 30);
 
     PartsRanges mergeable_ranges;
     for (auto && range : ranges)
     {
-        auto splitted_range_by_predicate = splitByMergePredicate(std::move(range), can_merge);
+        auto splitted_range_by_predicate = splitByMergePredicate(std::move(range), can_merge, predicate_split_phase_log);
         insertAtEnd(mergeable_ranges, std::move(splitted_range_by_predicate));
     }
 
+    LOG_TRACE(predicate_split_phase_log, "Splitted parts into {} mergeable ranges using merge predicate", mergeable_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, calculatePartsCount(mergeable_ranges));
     ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, mergeable_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
@@ -274,7 +283,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     if (ranges.empty())
         return {};
 
-    ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge));
+    ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge, log));
     if (ranges.empty())
         return {};
 
@@ -340,7 +349,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
         });
     }
 
-    ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge));
+    ranges = checkRanges(splitByMergePredicate(std::move(ranges), can_merge, log));
     if (ranges.empty())
     {
         return std::unexpected(SelectMergeFailure{
