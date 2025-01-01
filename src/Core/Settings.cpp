@@ -4600,7 +4600,7 @@ Possible values:
 - 0 - Disable all optimizations at the query plan level
 - 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
 )", 0) \
-    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10000, R"(
+    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10'000, R"(
 Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
 Useful to avoid long optimization times for complex queries.
 If the actual number of optimizations exceeds this setting, an exception is thrown.
@@ -5868,6 +5868,11 @@ When creating a `Merge` table without an explicit schema or when using the `merg
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
 )", 0) \
     \
+    DECLARE(UInt64, max_autoincrement_series, 1000, R"(
+The limit on the number of series created by the `generateSeriesID` function.
+
+As each series represents a node in Keeper, it is recommended to have no more than a couple of millions of them.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

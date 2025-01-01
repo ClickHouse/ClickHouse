@@ -75,6 +75,7 @@ def get_run_command(
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         f"{ci_logs_args}"
+        "--tmpfs /tmp/clickhouse "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}/..:/repo "
