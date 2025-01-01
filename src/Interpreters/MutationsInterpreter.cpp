@@ -794,7 +794,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             Names sort_columns = metadata_snapshot->getSortingKeyColumns();
             if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
             {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Failed to materialize column {} because it's in the sort key. Doing so would break sort order", command.column_name);
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
             }
 
             const auto & column = columns_desc.get(command.column_name);
