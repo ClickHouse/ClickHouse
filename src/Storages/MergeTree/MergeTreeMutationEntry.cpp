@@ -50,7 +50,7 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
                                                const TransactionID & tid_, const WriteSettings & settings)
     : create_time(time(nullptr))
-    , commands(std::move(commands_))
+    , commands(std::make_shared<MutationCommands>(std::move(commands_)))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
@@ -63,7 +63,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
         *out << "commands: ";
-        commands.writeText(*out, /* with_pure_metadata_commands = */ false);
+        commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
         if (tid.isPrehistoric())
         {
@@ -99,10 +99,10 @@ void MergeTreeMutationEntry::removeFile()
 {
     if (!file_name.empty())
     {
-        if (!disk->exists(path_prefix + file_name))
+        if (!disk->existsFile(path_prefix + file_name))
             return;
 
-        disk->removeFile(path_prefix + file_name);
+        disk->removeFileIfExists(path_prefix + file_name);
         file_name.clear();
     }
 }
@@ -116,13 +116,14 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_)
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
-    : disk(std::move(disk_))
+    : commands(std::make_shared<MutationCommands>())
+    , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name(file_name_)
     , is_temp(false)
 {
     block_number = parseFileName(file_name);
-    auto buf = disk->readFile(path_prefix + file_name);
+    auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
 
     *buf >> "format version: 1\n";
 
@@ -133,7 +134,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
     *buf >> "commands: ";
-    commands.readText(*buf);
+    commands->readText(*buf);
     *buf >> "\n";
 
     if (buf->eof())
@@ -177,7 +178,7 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
     out << "block number: " << block_number << "\n";
 
     out << "commands: ";
-    commands.writeText(out, /* with_pure_metadata_commands = */ false);
+    commands->writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
 
     return std::make_shared<BackupEntryFromMemory>(out.str());

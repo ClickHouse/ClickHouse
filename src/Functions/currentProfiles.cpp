@@ -15,7 +15,7 @@ namespace DB
 
 namespace
 {
-    enum class Kind
+    enum class Kind : uint8_t
     {
         currentProfiles,
         enabledProfiles,

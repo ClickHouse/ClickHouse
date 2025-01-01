@@ -11,16 +11,18 @@ sidebar_label: SELECT
 ## Syntax
 
 ``` sql
-[WITH expr_list|(subquery)]
+[WITH expr_list(subquery)]
 SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table [(alias1 [, alias2 ...])] (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
 [GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
+[WINDOW window_expr_list]
+[QUALIFY expr]
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
@@ -42,9 +44,11 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [JOIN clause](../../../sql-reference/statements/select/join.md)
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
+- [WINDOW clause](../../../sql-reference/window-functions/index.md)
 - [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
 - [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
+- [QUALIFY clause](../../../sql-reference/statements/select/qualify.md)
 - [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 - [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 - [UNION clause](../../../sql-reference/statements/select/union.md)
@@ -161,7 +165,9 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 - `max_rows_in_join`
 - `max_bytes_in_join`
 - `max_bytes_before_external_sort`
+- `max_bytes_ratio_before_external_sort`
 - `max_bytes_before_external_group_by`
+- `max_bytes_ratio_before_external_group_by`
 
 For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 

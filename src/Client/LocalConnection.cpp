@@ -16,10 +16,25 @@
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
-
+#include <Parsers/ParserQuery.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsDialect dialect;
+    extern const SettingsBool input_format_defaults_for_omitted_fields;
+    extern const SettingsUInt64 interactive_delay;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool implicit_select;
+}
 
 namespace ErrorCodes
 {
@@ -79,8 +94,7 @@ void LocalConnection::sendProfileEvents()
     Block profile_block;
     state->after_send_profile_events.restart();
     next_packet_type = Protocol::Server::ProfileEvents;
-    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, profile_block, last_sent_snapshots);
-    state->block.emplace(std::move(profile_block));
+    state->block.emplace(ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, last_sent_snapshots));
 }
 
 void LocalConnection::sendQuery(
@@ -92,6 +106,7 @@ void LocalConnection::sendQuery(
     const Settings *,
     const ClientInfo * client_info,
     bool,
+    const std::vector<String> & /*external_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
     /// Last query may not have been finished or cancelled due to exception on client side.
@@ -151,19 +166,50 @@ void LocalConnection::sendQuery(
         state->block = sample;
 
         String current_format = "Values";
+
+        const auto & settings = context->getSettingsRef();
         const char * begin = state->query.data();
-        auto parsed_query = ClientBase::parseQuery(begin, begin + state->query.size(),
-            context->getSettingsRef(),
-            /*allow_multi_statements=*/ false,
-            /*is_interactive=*/ false,
-            /*ignore_error=*/ false);
+        const char * end = begin + state->query.size();
+        const Dialect & dialect = settings[Setting::dialect];
+
+        std::unique_ptr<IParserBase> parser;
+        if (dialect == Dialect::kusto)
+            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        else if (dialect == Dialect::prql)
+            parser
+                = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        else
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+        ASTPtr parsed_query;
+        if (dialect == Dialect::kusto)
+            parsed_query = parseKQLQueryAndMovePosition(
+                *parser,
+                begin,
+                end,
+                "",
+                /*allow_multi_statements*/ false,
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+        else
+            parsed_query = parseQueryAndMovePosition(
+                *parser,
+                begin,
+                end,
+                "",
+                /*allow_multi_statements*/ false,
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
+
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {
             if (!insert->format.empty())
                 current_format = insert->format;
         }
 
-        auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef().max_insert_block_size);
+        auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef()[Setting::max_insert_block_size]);
         Pipe pipe(source);
 
         auto columns_description = metadata_snapshot->getColumns();
@@ -210,7 +256,7 @@ void LocalConnection::sendQuery(
             }
 
             const auto & table_id = query_context->getInsertionTable();
-            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+            if (query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
             {
                 if (!table_id.empty())
                 {
@@ -223,6 +269,7 @@ void LocalConnection::sendQuery(
         {
             state->block = state->io.pipeline.getHeader();
             state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+            state->io.pipeline.setConcurrencyControl(false);
         }
         else if (state->io.pipeline.completed())
         {
@@ -238,7 +285,7 @@ void LocalConnection::sendQuery(
                     return false;
                 };
 
-                executor.setCancelCallback(callback, query_context->getSettingsRef().interactive_delay / 1000);
+                executor.setCancelCallback(callback, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
             }
             executor.execute();
         }
@@ -281,6 +328,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
         sendProfileEvents();
 }
 
+bool LocalConnection::isSendDataNeeded() const
+{
+    return !state || state->input_pipeline == nullptr;
+}
+
 void LocalConnection::sendCancel()
 {
     state->is_cancelled = true;
@@ -295,7 +347,7 @@ void LocalConnection::sendCancel()
 bool LocalConnection::pullBlock(Block & block)
 {
     if (state->executor)
-        return state->executor->pull(block, query_context->getSettingsRef().interactive_delay / 1000);
+        return state->executor->pull(block, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
     return false;
 }
@@ -341,22 +393,18 @@ bool LocalConnection::poll(size_t)
 
     if (!state->is_finished)
     {
-        if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            state->after_send_progress.restart();
-            next_packet_type = Protocol::Server::Progress;
+        if (needSendProgressOrMetrics())
             return true;
-        }
-
-        if (send_profile_events && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))
-        {
-            sendProfileEvents();
-            return true;
-        }
 
         try
         {
-            pollImpl();
+            while (pollImpl())
+            {
+                LOG_TEST(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered, will retry");
+
+                if (needSendProgressOrMetrics())
+                    return true;
+            }
         }
         catch (const Exception & e)
         {
@@ -451,11 +499,34 @@ bool LocalConnection::poll(size_t)
     return false;
 }
 
+bool LocalConnection::needSendProgressOrMetrics()
+{
+    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay]))
+    {
+        state->after_send_progress.restart();
+        next_packet_type = Protocol::Server::Progress;
+        return true;
+    }
+
+    if (send_profile_events
+        && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay]))
+    {
+        sendProfileEvents();
+        return true;
+    }
+
+    return false;
+}
+
 bool LocalConnection::pollImpl()
 {
     Block block;
     auto next_read = pullBlock(block);
 
+    if (!block && next_read)
+    {
+        return true;
+    }
     if (block && !state->io.null_format)
     {
         state->block.emplace(block);
@@ -465,7 +536,7 @@ bool LocalConnection::pollImpl()
         state->is_finished = true;
     }
 
-    return true;
+    return false;
 }
 
 Packet LocalConnection::receivePacket()

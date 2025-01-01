@@ -1,3 +1,4 @@
-fuzzywuzzy
+thefuzz
 PyGitHub
-python-Levenshtein
+tqdm
+boto3

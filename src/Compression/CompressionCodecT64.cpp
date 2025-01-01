@@ -1,5 +1,6 @@
 #include <cstring>
 
+#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
@@ -27,7 +28,7 @@ public:
     /// There're 2 compression variants:
     /// Byte - transpose bit matrix by bytes (only the last not full byte is transposed by bits). It's default.
     /// Bits - full bit-transpose of the bit matrix. It uses more resources and leads to better compression with ZSTD (but worse with LZ4).
-    enum class Variant
+    enum class Variant : uint8_t
     {
         Byte,
         Bit
@@ -451,11 +452,9 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     {
         if (min + max >= 0)
             return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
-        else
-            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
+        return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
     }
-    else
-        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+    return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
 }
 
 
@@ -495,7 +494,8 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
 
-    T min, max;
+    T min;
+    T max;
     findMinMax<T>(src, bytes_size, min, max);
     MinMaxType min64 = min; // NOLINT
     MinMaxType max64 = max; // NOLINT
@@ -689,21 +689,29 @@ void CompressionCodecT64::doDecompressData(const char * src, UInt32 src_size, ch
     switch (baseType(saved_type_id))
     {
         case TypeIndex::Int8:
-            return decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int16:
-            return decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int32:
-            return decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::Int64:
-            return decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<Int64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt8:
-            return decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt8>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt16:
-            return decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt16>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt32:
-            return decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt32>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         case TypeIndex::UInt64:
-            return decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            decompressData<UInt64>(src, src_size, dst, uncompressed_size, saved_variant);
+            return;
         default:
             break;
     }

@@ -12,6 +12,8 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -88,26 +90,26 @@ std::string functionName(const ASTPtr & node)
     return node->as<ASTFunction &>().name;
 }
 
-const Field * tryGetConstantValue(const QueryTreeNodePtr & node)
+std::optional<Field> tryGetConstantValue(const QueryTreeNodePtr & node)
 {
     if (const auto * constant = node->as<ConstantNode>())
-        return &constant->getValue();
+        return constant->getValue();
 
-    return nullptr;
+    return {};
 }
 
-const Field * tryGetConstantValue(const ASTPtr & node)
+std::optional<Field> tryGetConstantValue(const ASTPtr & node)
 {
     if (const auto * constant = node->as<ASTLiteral>())
-        return &constant->value;
+        return constant->value;
 
-    return nullptr;
+    return {};
 }
 
 template <typename Node>
-const Field & getConstantValue(const Node & node)
+Field getConstantValue(const Node & node)
 {
-    const auto * constant = tryGetConstantValue(node);
+    const auto constant = tryGetConstantValue(node);
     assert(constant);
     return *constant;
 }
@@ -226,13 +228,11 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
 
                 return it->second;
             }
-            else
-            {
-                nodes_graph.node_hash_to_component[Graph::getHash(node)] = nodes_graph.vertices.size();
-                nodes_graph.vertices.push_back(EqualComponent{{node}, std::nullopt});
-                nodes_graph.edges.emplace_back();
-                return nodes_graph.vertices.size() - 1;
-            }
+
+            nodes_graph.node_hash_to_component[Graph::getHash(node)] = nodes_graph.vertices.size();
+            nodes_graph.vertices.push_back(EqualComponent{{node}, std::nullopt});
+            nodes_graph.edges.emplace_back();
+            return nodes_graph.vertices.size() - 1;
         };
 
         const auto * function_node = tryGetFunctionNode(atom);
@@ -309,7 +309,6 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::pathToCompareResult(Path pat
         case Path::GREATER: return inverse ? ComparisonGraphCompareResult::LESS : ComparisonGraphCompareResult::GREATER;
         case Path::GREATER_OR_EQUAL: return inverse ? ComparisonGraphCompareResult::LESS_OR_EQUAL : ComparisonGraphCompareResult::GREATER_OR_EQUAL;
     }
-    UNREACHABLE();
 }
 
 template <ComparisonGraphNodeType Node>
@@ -366,11 +365,10 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
 
         return result;
     }
-    else
-    {
-        start = it_left->second;
-        finish = it_right->second;
-    }
+
+    start = it_left->second;
+    finish = it_right->second;
+
 
     if (start == finish)
         return ComparisonGraphCompareResult::EQUAL;
@@ -456,8 +454,7 @@ typename ComparisonGraph<Node>::NodeContainer ComparisonGraph<Node>::getEqual(co
     const auto res = getComponentId(node);
     if (!res)
         return {};
-    else
-        return getComponent(res.value());
+    return getComponent(res.value());
 }
 
 template <ComparisonGraphNodeType Node>
@@ -482,10 +479,8 @@ std::optional<size_t> ComparisonGraph<Node>::getComponentId(const Node & node) c
     {
         return index;
     }
-    else
-    {
-        return {};
-    }
+
+    return {};
 }
 
 template <ComparisonGraphNodeType Node>
@@ -519,7 +514,7 @@ void ComparisonGraph<Node>::EqualComponent::buildConstants()
     constant_index.reset();
     for (size_t i = 0; i < nodes.size(); ++i)
     {
-        if (tryGetConstantValue(nodes[i]) != nullptr)
+        if (tryGetConstantValue(nodes[i]))
         {
             constant_index = i;
             return;
@@ -567,7 +562,7 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
 template <ComparisonGraphNodeType Node>
 std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstUpperBound(const Node & node) const
 {
-    if (const auto * constant = tryGetConstantValue(node))
+    if (const auto constant = tryGetConstantValue(node))
         return std::make_pair(*constant, false);
 
     const auto it = graph.node_hash_to_component.find(Graph::getHash(node));
@@ -585,7 +580,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstUpperBound(
 template <ComparisonGraphNodeType Node>
 std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstLowerBound(const Node & node) const
 {
-    if (const auto * constant = tryGetConstantValue(node))
+    if (const auto constant = tryGetConstantValue(node))
         return std::make_pair(*constant, false);
 
     const auto it = graph.node_hash_to_component.find(Graph::getHash(node));
@@ -749,7 +744,7 @@ std::map<std::pair<size_t, size_t>, typename ComparisonGraph<Node>::Path> Compar
         for (size_t v = 0; v < n; ++v)
             for (size_t u = 0; u < n; ++u)
                 if (results[v][k] != inf && results[k][u] != inf)
-                    results[v][u] = std::min(results[v][u], std::min(results[v][k], results[k][u]));
+                    results[v][u] = std::min({results[v][u], results[v][k], results[k][u]});
 
     std::map<std::pair<size_t, size_t>, Path> path;
     for (size_t v = 0; v < n; ++v)

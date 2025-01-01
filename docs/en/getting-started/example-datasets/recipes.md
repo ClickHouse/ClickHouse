@@ -10,7 +10,8 @@ The RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.
 
 1. Go to the download page [https://recipenlg.cs.put.poznan.pl/dataset](https://recipenlg.cs.put.poznan.pl/dataset).
 1. Accept Terms and Conditions and download zip file.
-1. Unpack the zip file with `unzip`. You will get the `full_dataset.csv` file.
+1. Option: Using the `md5sum dataset.zip` to validate the zip file and it should be equal to `3a168dfd0912bb034225619b3586ce76`.
+1. Unpack the zip file with `unzip dataset.zip`. You will get the `full_dataset.csv` file in the `dataset` directory.
 
 ## Create a Table
 
@@ -72,7 +73,7 @@ Result:
 
 ``` text
 ┌─count()─┐
-│ 2231141 │
+│ 2231142 │
 └─────────┘
 ```
 
@@ -115,7 +116,7 @@ Result:
 │ egg                  │ 160507 │
 │ baking powder        │ 148277 │
 │ lemon juice          │ 146414 │
-│ Salt                 │ 122557 │
+│ Salt                 │ 122558 │
 │ cinnamon             │ 117927 │
 │ sour cream           │ 116682 │
 │ cream cheese         │ 114423 │
@@ -334,4 +335,4 @@ Result:
 
 ### Online Playground
 
-The dataset is also available in the [Online Playground](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+The dataset is also available in the [Online Playground](https://sql.clickhouse.com?query_id=HQXNQZE26Z1QWYP9KC76ML).

@@ -1,0 +1,5 @@
+requests==2.32.3
+yamllint==1.26.3
+codespell==2.2.1
+#use praktika from CH repo
+#https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl

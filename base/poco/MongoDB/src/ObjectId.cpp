@@ -57,7 +57,7 @@ std::string ObjectId::toString(const std::string& fmt) const
 
 	for (int i = 0; i < 12; ++i)
 	{
-		s += format(fmt, (unsigned int) _id[i]);
+		s += Poco::format(fmt, (unsigned int) _id[i]);
 	}
 	return s;
 }

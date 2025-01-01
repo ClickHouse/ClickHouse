@@ -1,9 +1,9 @@
 #pragma once
 
 #include <string>
-#include <Processors/IProcessor.h>
-#include <Processors/RowsBeforeLimitCounter.h>
 #include <IO/Progress.h>
+#include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
 
 namespace DB
@@ -30,20 +30,24 @@ public:
     Status prepare() override;
     void work() override;
 
-    /// Flush output buffers if any.
-    virtual void flush();
-
+    void flush();
     void setAutoFlush() { auto_flush = true; }
 
     /// Value for rows_before_limit_at_least field.
-    virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
+    virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) { }
 
     /// Counter to calculate rows_before_limit_at_least in processors pipeline.
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_counter.swap(counter); }
+
+    /// Value for rows_before_aggregation field.
+    virtual void setRowsBeforeAggregation(size_t /*rows_before_aggregation*/) { }
+
+    /// Counter to calculate rows_before_aggregation in processors pipeline.
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation_counter.swap(counter); }
 
     /// Notify about progress. Method could be called from different threads.
-    /// Passed value are delta, that must be summarized.
-    virtual void onProgress(const Progress & /*progress*/) {}
+    /// Passed values are deltas, that must be summarized.
+    virtual void onProgress(const Progress & progress);
 
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
@@ -108,7 +112,6 @@ public:
 protected:
     friend class ParallelFormattingOutputFormat;
 
-
     void writeSuffixIfNeeded()
     {
         if (need_write_suffix)
@@ -118,6 +121,10 @@ protected:
         }
     }
 
+    void finalizeUnlocked();
+
+    virtual void flushImpl();
+
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
@@ -126,6 +133,16 @@ protected:
     virtual void writePrefix() {}
     virtual void writeSuffix() {}
     virtual void resetFormatterImpl() {}
+
+    /// If the method writeProgress is non-empty.
+    virtual bool writesProgressConcurrently() const
+    {
+        return false;
+    }
+
+    /// This method could be called from another thread,
+    /// but will be serialized with other writing methods using the writing_mutex.
+    virtual void writeProgress(const Progress &) {}
 
     /// Methods-helpers for parallel formatting.
 
@@ -151,6 +168,8 @@ protected:
         Progress progress;
         bool applied_limit = false;
         size_t rows_before_limit = 0;
+        bool applied_aggregation = false;
+        size_t rows_before_aggregation = 0;
         Chunk totals;
         Chunk extremes;
     };
@@ -184,8 +203,11 @@ protected:
     bool need_write_prefix  = true;
     bool need_write_suffix = true;
 
-    RowsBeforeLimitCounterPtr rows_before_limit_counter;
+    RowsBeforeStepCounterPtr rows_before_limit_counter;
+    RowsBeforeStepCounterPtr rows_before_aggregation_counter;
+
     Statistics statistics;
+    std::atomic_bool has_progress_update_to_write = false;
 
 private:
     size_t rows_read_before = 0;
@@ -194,5 +216,9 @@ private:
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;
     size_t result_bytes = 0;
+
+    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
+    std::mutex writing_mutex;
 };
+
 }

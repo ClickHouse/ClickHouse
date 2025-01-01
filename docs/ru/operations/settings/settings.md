@@ -1859,7 +1859,7 @@ SELECT * FROM test_table
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
-Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count).
+Задаёт, какая из функций `uniq*` используется при выполнении конструкции [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count).
 
 Возможные значения:
 
@@ -2077,7 +2077,7 @@ SELECT * FROM test_table
 -   0 — оптимизация отключена.
 -   1 — оптимизация включена.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `1`.
 
 ## optimize_trivial_count_query {#optimize-trivial-count-query}
 
@@ -3212,7 +3212,7 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md).
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized).
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
@@ -3446,17 +3446,6 @@ SELECT
     (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
 ```
-
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Позволяет создавать базы данных с движком [Replicated](../../engines/database-engines/replicated.md).
-
-Возможные значения:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Значение по умолчанию: `0`.
 
 ## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
 
@@ -4226,3 +4215,9 @@ SELECT toFloat64('1.7091'), toFloat64('1.5008753E7') SETTINGS precise_float_pars
 │              1.7091 │                 15008753 │
 └─────────────────────┴──────────────────────────┘
 ```
+
+## push_external_roles_in_interserver_queries
+
+Позволяет передавать роли пользователя от инициатора запроса другим нодам при выполнении запроса.
+
+Значение по умолчанию: `true`.

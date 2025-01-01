@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <unordered_map>
 
 #include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
@@ -13,10 +12,12 @@
 namespace DB
 {
 
+class CSVFormatReader;
+
 /** A stream for inputting data in csv format.
   * Does not conform with https://tools.ietf.org/html/rfc4180 because it skips spaces and tabs between values.
   */
-class CSVRowInputFormat : public RowInputFormatWithNamesAndTypes
+class CSVRowInputFormat : public RowInputFormatWithNamesAndTypes<CSVFormatReader>
 {
 public:
     /** with_names - in the first line the header with column names
@@ -32,7 +33,7 @@ public:
 
 protected:
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
-                               bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
+                               bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<CSVFormatReader> format_reader_);
 
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
                       bool with_names_, bool with_types_, const FormatSettings & format_settings_);

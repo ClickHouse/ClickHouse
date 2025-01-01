@@ -23,6 +23,9 @@ thread_local ThreadStatus constinit * current_thread = nullptr;
 namespace
 {
 
+/// For aarch64 16K is not enough (likely due to tons of registers)
+constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
+
 /// Alternative stack for signal handling.
 ///
 /// This stack should not be located in the TLS (thread local storage), since:
@@ -50,7 +53,7 @@ struct ThreadStack
         free(data);
     }
 
-    static size_t getSize() { return std::max<size_t>(16 << 10, MINSIGSTKSZ); }
+    static size_t getSize() { return std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ); }
     void * getData() const { return data; }
 
 private:
@@ -75,7 +78,7 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
 
     last_rusage = std::make_unique<RUsageCounters>();
 
-    memory_tracker.setDescription("(for thread)");
+    memory_tracker.setDescription("Thread");
     log = getLogger("ThreadStatus");
 
     current_thread = this;
@@ -120,26 +123,6 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
                 }
             }
         }
-    }
-#endif
-}
-
-void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
-{
-#if !defined(SANITIZER) && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD) && !defined(__APPLE__)
-    try
-    {
-        if (global_profiler_real_time_period > 0)
-            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period= */ static_cast<UInt32>(global_profiler_real_time_period));
-
-        if (global_profiler_cpu_time_period > 0)
-            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period= */ static_cast<UInt32>(global_profiler_cpu_time_period));
-    }
-    catch (...)
-    {
-        tryLogCurrentException("ThreadStatus", "Cannot initialize GlobalProfiler");
     }
 #endif
 }
@@ -221,10 +204,18 @@ bool ThreadStatus::isQueryCanceled() const
     return false;
 }
 
+size_t ThreadStatus::getNextPlanStepIndex() const
+{
+    return local_data.plan_step_index->fetch_add(1);
+}
+
+size_t ThreadStatus::getNextPipelineProcessorIndex() const
+{
+    return local_data.pipeline_processor_index->fetch_add(1);
+}
+
 ThreadStatus::~ThreadStatus()
 {
-    flushUntrackedMemory();
-
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
@@ -234,6 +225,9 @@ ThreadStatus::~ThreadStatus()
         deleter();
 
     chassert(!check_current_thread_on_destruction || current_thread == this);
+
+    /// Flush untracked_memory **right before** switching the current_thread to avoid losing untracked_memory in deleter (detachFromGroup)
+    flushUntrackedMemory();
 
     /// Only change current_thread if it's currently being used by this ThreadStatus
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread

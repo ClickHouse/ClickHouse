@@ -44,7 +44,12 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
         const ColumnPtr column_needle = arguments[1].column;
@@ -71,13 +76,11 @@ public:
 
             ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
-            vector(col->getChars(), col->getOffsets(), col_needle, col_needle_const_array, vec_res, offsets_res);
+            vector(col->getChars(), col->getOffsets(), col_needle, col_needle_const_array, vec_res, offsets_res, input_rows_count);
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 
     static void cutURL(ColumnString::Chars & data, String pattern, size_t prev_offset, size_t & cur_offset)
@@ -130,7 +133,8 @@ public:
         const ColumnString::Offsets & offsets,
         const ColumnConst * col_needle,
         const ColumnArray * col_needle_const_array,
-        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
         res_data.reserve(data.size());
         res_offsets.resize(offsets.size());
@@ -141,7 +145,7 @@ public:
         size_t res_offset = 0;
         size_t cur_res_offset;
 
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             cur_offset = offsets[i];
             cur_len = cur_offset - prev_offset;
@@ -155,7 +159,7 @@ public:
                 for (size_t j = 0; j < num_needles; ++j)
                 {
                     auto field = col_needle_const_array->getData()[j];
-                    cutURL(res_data, field.get<String>(), res_offset, cur_res_offset);
+                    cutURL(res_data, field.safeGet<String>(), res_offset, cur_res_offset);
                 }
             }
             else

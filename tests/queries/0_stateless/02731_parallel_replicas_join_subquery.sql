@@ -22,8 +22,8 @@ SELECT
 LIMIT 100;
 
 SET max_parallel_replicas = 3;
-SET prefer_localhost_replica = 1;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SET parallel_replicas_local_plan = 1;
 SET joined_subquery_requires_alias = 0;
 
 SELECT '=============== INNER QUERY (NO PARALLEL) ===============';
@@ -38,7 +38,7 @@ FROM join_inner_table
 GROUP BY key, value1, value2
 ORDER BY key, value1, value2
 LIMIT 10;
--- settings allow_experimental_analyzer=0;
+-- settings enable_analyzer=0;
 
 -- SELECT
 --     key,
@@ -49,7 +49,7 @@ LIMIT 10;
 --     PREWHERE (id = '833c9e22-c245-4eb5-8745-117a9a1f26b1') AND (number > toUInt64('1610517366120'))
 -- GROUP BY key, value1, value2
 -- ORDER BY key, value1, value2
--- LIMIT 10 settings allow_experimental_analyzer=1;
+-- LIMIT 10 settings enable_analyzer=1;
 
 SELECT '=============== INNER QUERY (PARALLEL) ===============';
 
@@ -64,7 +64,7 @@ PREWHERE (id = '833c9e22-c245-4eb5-8745-117a9a1f26b1') AND (number > toUInt64('1
 GROUP BY key, value1, value2
 ORDER BY key, value1, value2
 LIMIT 10
-SETTINGS allow_experimental_parallel_reading_from_replicas = 1, allow_experimental_analyzer=0;
+SETTINGS enable_parallel_replicas = 1, enable_analyzer=0;
 
 -- Parallel inner query alone
 SELECT
@@ -77,7 +77,7 @@ PREWHERE (id = '833c9e22-c245-4eb5-8745-117a9a1f26b1') AND (number > toUInt64('1
 GROUP BY key, value1, value2
 ORDER BY key, value1, value2
 LIMIT 10
-SETTINGS allow_experimental_parallel_reading_from_replicas = 1, allow_experimental_analyzer=1;
+SETTINGS enable_parallel_replicas = 1, enable_analyzer=1;
 
 SELECT '=============== QUERIES EXECUTED BY PARALLEL INNER QUERY ALONE ===============';
 
@@ -184,7 +184,7 @@ FROM
         )
 GROUP BY value1, value2
 ORDER BY value1, value2
-SETTINGS allow_experimental_parallel_reading_from_replicas = 1, allow_experimental_analyzer=0;
+SETTINGS enable_parallel_replicas = 1, enable_analyzer=0;
 
 -- Parallel full query
 SELECT
@@ -214,7 +214,7 @@ FROM
         )
 GROUP BY value1, value2
 ORDER BY value1, value2
-SETTINGS allow_experimental_parallel_reading_from_replicas = 1, allow_experimental_analyzer=1;
+SETTINGS enable_parallel_replicas = 1, enable_analyzer=1;
 
 SYSTEM FLUSH LOGS;
 

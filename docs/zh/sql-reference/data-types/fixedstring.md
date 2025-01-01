@@ -18,8 +18,8 @@ slug: /zh/sql-reference/data-types/fixedstring
 可以有效存储在`FixedString`类型的列中的值的示例：
 
 -   二进制表示的IP地址（IPv6使用`FixedString(16)`）
--   语言代码（ru_RU, en_US … ）
--   货币代码（USD, RUB … ）
+-   语言代码（ru_RU, en_US ... ）
+-   货币代码（USD, RUB ... ）
 -   二进制表示的哈希值（MD5使用`FixedString(16)`，SHA256使用`FixedString(32)`）
 
 请使用[UUID](uuid.md)数据类型来存储UUID值，。

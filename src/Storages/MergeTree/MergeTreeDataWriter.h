@@ -75,6 +75,7 @@ public:
 
         void cancel();
         void finalize();
+        void prewarmCaches();
     };
 
     /** All rows must correspond to same partition.
@@ -95,7 +96,8 @@ public:
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        IMergeTreeDataPart * parent_part);
+        IMergeTreeDataPart * parent_part,
+        bool merge_is_needed);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static TemporaryPart writeTempProjectionPart(
@@ -129,7 +131,8 @@ private:
         const MergeTreeData & data,
         LoggerPtr log,
         Block block,
-        const ProjectionDescription & projection);
+        const ProjectionDescription & projection,
+        bool merge_is_needed);
 
     MergeTreeData & data;
     LoggerPtr log;

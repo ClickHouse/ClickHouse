@@ -6,12 +6,13 @@
 #include <Common/logger_useful.h>
 #include "Interpreters/Cache/Guards.h"
 
+
 namespace DB
 {
 
 /// Based on the LRU algorithm implementation, the record with the lowest priority is stored at
 /// the head of the queue, and the record with the highest priority is stored at the tail.
-class LRUFileCachePriority final : public IFileCachePriority
+class LRUFileCachePriority : public IFileCachePriority
 {
 protected:
     struct State
@@ -62,7 +63,7 @@ public:
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
 
-    bool collectCandidatesForEviction(
+    CollectStatus collectCandidatesForEviction(
         size_t desired_size,
         size_t desired_elements_count,
         size_t max_candidates_to_evict,
@@ -80,9 +81,11 @@ public:
     };
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
 
-    void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); }
+    void pop(const CachePriorityGuard::Lock & lock) { remove(queue.begin(), lock); } // NOLINT
 
     bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
+
+    FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, state); }
 
 private:
     class LRUIterator;
@@ -108,7 +111,7 @@ private:
 
     LRUQueue::iterator remove(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
-    enum class IterationResult
+    enum class IterationResult : uint8_t
     {
         BREAK,
         CONTINUE,

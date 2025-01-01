@@ -17,6 +17,8 @@ JSONRowOutputFormat::JSONRowOutputFormat(
 {
     names = JSONUtils::makeNamesValidJSONStrings(header.getNames(), settings, true);
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
+    settings.json.pretty_print_indent = '\t';
+    settings.json.pretty_print_indent_multiplier = 1;
 }
 
 
@@ -31,7 +33,7 @@ void JSONRowOutputFormat::writePrefix()
 
 void JSONRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, names[field_number], 3);
+    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, names[field_number], 3, " ", settings.json.pretty_print);
     ++field_number;
 }
 
@@ -116,6 +118,8 @@ void JSONRowOutputFormat::finalizeImpl()
         row_count,
         statistics.rows_before_limit,
         statistics.applied_limit,
+        statistics.rows_before_aggregation,
+        statistics.applied_aggregation,
         statistics.watch,
         statistics.progress,
         settings.write_statistics && exception_message.empty(),
@@ -139,13 +143,6 @@ void JSONRowOutputFormat::resetFormatterImpl()
     row_count = 0;
     statistics = Statistics();
 }
-
-
-void JSONRowOutputFormat::onProgress(const Progress & value)
-{
-    statistics.progress.incrementPiecewiseAtomically(value);
-}
-
 
 void registerOutputFormatJSON(FormatFactory & factory)
 {

@@ -6,7 +6,10 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <llvm/Analysis/CGSCCPassManager.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/Passes/PassBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -18,12 +21,11 @@
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/TargetParser/SubtargetFeature.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/DynamicLibrary.h>
-#include <llvm/Support/Host.h>
+#include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
@@ -119,9 +121,9 @@ public:
         return result;
     }
 
-    inline size_t getAllocatedSize() const { return allocated_size; }
+    size_t getAllocatedSize() const { return allocated_size; }
 
-    inline size_t getPageSize() const { return page_size; }
+    size_t getPageSize() const { return page_size; }
 
     ~PageArena()
     {
@@ -177,10 +179,10 @@ private:
         {
         }
 
-        inline void * base() const { return pages_base; }
-        inline size_t pagesSize() const { return pages_size; }
-        inline size_t pageSize() const { return page_size; }
-        inline size_t blockSize() const { return pages_size * page_size; }
+        void * base() const { return pages_base; }
+        size_t pagesSize() const { return pages_size; }
+        size_t pageSize() const { return page_size; }
+        size_t blockSize() const { return pages_size * page_size; }
 
     private:
         void * pages_base;
@@ -217,10 +219,8 @@ private:
 
             return static_cast<char *>(result);
         }
-        else
-        {
-            return nullptr;
-        }
+
+        return nullptr;
     }
 
     void allocateNextPageBlock(size_t size)
@@ -287,8 +287,7 @@ public:
     {
         if (is_read_only)
             return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
-        else
-            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+        return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
     }
 
     bool finalizeMemory(std::string *) override
@@ -298,7 +297,7 @@ public:
         return true;
     }
 
-    inline size_t allocatedSize() const
+    size_t allocatedSize() const
     {
         size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
         size_t code_size = ex_page_arena.getAllocatedSize();
@@ -486,29 +485,24 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
 
 void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 {
-    llvm::PassManagerBuilder pass_manager_builder;
-    llvm::legacy::PassManager mpm;
-    llvm::legacy::FunctionPassManager fpm(&module);
-    pass_manager_builder.OptLevel = 3;
-    pass_manager_builder.SLPVectorize = true;
-    pass_manager_builder.LoopVectorize = true;
-    pass_manager_builder.RerollLoops = true;
-    pass_manager_builder.VerifyInput = true;
-    pass_manager_builder.VerifyOutput = true;
-    machine->adjustPassManager(pass_manager_builder);
+    llvm::LoopAnalysisManager lam;
+    llvm::FunctionAnalysisManager fam;
+    llvm::CGSCCAnalysisManager cgam;
+    llvm::ModuleAnalysisManager mam;
 
-    fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-    mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+    llvm::PipelineTuningOptions pto;
+    pto.SLPVectorization = true;
 
-    pass_manager_builder.populateFunctionPassManager(fpm);
-    pass_manager_builder.populateModulePassManager(mpm);
+    llvm::PassBuilder pb(nullptr, pto);
 
-    fpm.doInitialization();
-    for (auto & function : module)
-        fpm.run(function);
-    fpm.doFinalization();
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-    mpm.run(module);
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    mpm.run(module, mam);
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
@@ -541,9 +535,9 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         cpu,
         features.getString(),
         options,
-        llvm::None,
-        llvm::None,
-        llvm::CodeGenOpt::Aggressive,
+        std::nullopt,
+        std::nullopt,
+        llvm::CodeGenOptLevel::Aggressive,
         jit);
 
     if (!target_machine)

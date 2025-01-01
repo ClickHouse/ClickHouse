@@ -3,6 +3,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 
+
 namespace DB
 {
     void ParallelFormattingOutputFormat::finalizeImpl()
@@ -34,6 +35,9 @@ namespace DB
         /// So, in case of exception after finalize we could still not output prefix/suffix or finalize underlying format.
 
         if (collected_prefix && collected_suffix && collected_finalize)
+            return;
+
+        if (out.isCanceled())
             return;
 
         auto formatter = internal_formatter_creator(out);
@@ -96,7 +100,7 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::finishAndWait()
+    void ParallelFormattingOutputFormat::finishAndWait() noexcept
     {
         emergency_stop = true;
 
@@ -158,7 +162,7 @@ namespace DB
                 out.write(unit.segment.data(), unit.actual_memory_size);
 
                 if (need_flush.exchange(false) || auto_flush)
-                    IOutputFormat::flush();
+                    out.next();
 
                 ++collector_unit_number;
                 rows_collected += unit.rows_num;
@@ -260,7 +264,7 @@ namespace DB
                 }
             }
 
-            /// Flush all the data to handmade buffer.
+            /// Flush all the data to the handmade buffer.
             formatter->flush();
             formatter->finalizeBuffers();
             out_buffer.finalize();

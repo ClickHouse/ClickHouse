@@ -12,6 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
     extern const int PROJECTION_NOT_USED;
 }
@@ -19,9 +20,9 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    if (!settings.optimize_plan)
+    if (!optimization_settings.optimize_plan)
         return;
 
     const auto & optimizations = getOptimizations();
@@ -41,7 +42,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
     std::stack<Frame> stack;
     stack.push({.node = &root});
 
-    const size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
@@ -71,7 +72,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
         /// Apply all optimizations.
         for (const auto & optimization : optimizations)
         {
-            if (!(settings.*(optimization.is_enabled)))
+            if (!(optimization_settings.*(optimization.is_enabled)))
                 continue;
 
             /// Just in case, skip optimization if it is not initialized.
@@ -84,7 +85,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
                                 max_optimizations_to_apply);
 
             /// Try to apply optimization.
-            auto update_depth = optimization.apply(frame.node, nodes);
+            Optimization::ExtraSettings extra_settings= { optimization_settings.max_limit_for_ann_queries };
+            auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
             if (update_depth)
                 ++total_applied_optimizations;
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);
@@ -106,7 +108,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, Query
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
-    size_t num_applied_projection = 0;
+    std::unordered_set<String> applied_projection_names;
     bool has_reading_from_mt = false;
 
     Stack stack;
@@ -114,10 +116,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
-        optimizePrimaryKeyCondition(stack);
+        optimizePrimaryKeyConditionAndLimit(stack);
 
         /// NOTE: optimizePrewhere can modify the stack.
-        /// Prewhere optimization relies on PK optimization (getConditionEstimatorByPredicate)
+        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
             optimizePrewhere(stack, nodes);
 
@@ -125,12 +127,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (frame.next_child == 0)
         {
-
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 
             if (optimization_settings.distinct_in_order)
-                tryDistinctReadInOrder(frame.node);
+                optimizeDistinctInOrder(*frame.node, nodes);
         }
 
         /// Traverse all children first.
@@ -159,9 +160,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
-                    num_applied_projection
-                        += optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
-
+                {
+                    auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
+                    if (applied_projection)
+                        applied_projection_names.insert(*applied_projection);
+                }
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes);
@@ -180,11 +183,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         if (optimization_settings.optimize_projection)
         {
             /// Projection optimization relies on PK optimization
-            if (optimizeUseNormalProjections(stack, nodes))
+            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes))
             {
-                ++num_applied_projection;
+                applied_projection_names.insert(*applied_projection);
 
-                if (max_optimizations_to_apply && max_optimizations_to_apply < num_applied_projection)
+                if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
                     throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
                                     "Too many projection optimizations applied to query plan. Current limit {}",
                                     max_optimizations_to_apply);
@@ -196,18 +199,25 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             }
         }
 
-        enableMemoryBoundMerging(*stack.back().node, nodes);
-
         stack.pop_back();
     }
 
-    if (optimization_settings.force_use_projection && has_reading_from_mt && num_applied_projection == 0)
+    if (optimization_settings.force_use_projection && has_reading_from_mt && applied_projection_names.empty())
         throw Exception(
             ErrorCodes::PROJECTION_NOT_USED,
             "No projection is used when optimize_use_projections = 1 and force_optimize_projection = 1");
+
+    if (!optimization_settings.force_projection_name.empty() && has_reading_from_mt && !applied_projection_names.contains(optimization_settings.force_projection_name))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Projection {} is specified in setting force_optimize_projection_name but not used",
+             optimization_settings.force_projection_name);
+
+    /// Trying to reuse sorting property for other steps.
+    applyOrder(optimization_settings, root);
 }
 
-void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     Stack stack;
     stack.push_back({.node = &root});
@@ -216,6 +226,9 @@ void optimizeTreeThirdPass(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::
     {
         /// NOTE: frame cannot be safely used after stack was modified.
         auto & frame = stack.back();
+
+        if (frame.next_child == 0)
+            optimizeJoin(*frame.node, nodes);
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())

@@ -8,7 +8,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
-#include <Common/TimerDescriptor.h>
 #include <sys/types.h>
 
 
@@ -218,9 +217,12 @@ public:
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
+    bool needToSkipUnavailableShard() const;
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
+
+    /// return true if parallel replica packet was processed
+    bool processParallelReplicaPacketIfAny();
 
 private:
     RemoteQueryExecutor(
@@ -257,11 +259,6 @@ private:
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
-
-    /// This is needed only for parallel reading from replicas, because
-    /// we create a RemoteQueryExecutor per replica and have to store additional info
-    /// about the number of the current replica or the count of replicas at all.
-    IConnections::ReplicaInfo replica_info;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
@@ -302,6 +299,8 @@ private:
     /** Got duplicated uuids from replica
       */
     bool got_duplicated_part_uuids = false;
+
+    bool has_postponed_packet = false;
 
     /// Parts uuids, collected from remote replicas
     std::vector<UUID> duplicated_part_uuids;

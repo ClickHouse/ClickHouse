@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 #include <city.h>
 #include <base/types.h>
@@ -31,6 +32,9 @@ public:
 
     /// Read metadata content and return ReadBuffer object.
     virtual std::unique_ptr<ReadBuffer> read(const String & file_name) const = 0;
+
+    /// Read metadata content and return ReadBuffer object if it exists, otherwise return nullptr.
+    virtual std::unique_ptr<ReadBuffer> readIfExists(const String & file_name) const;
 
     /// Return true if metadata exists in part.
     virtual bool exists(const String & file_name) const = 0;

@@ -1,9 +1,9 @@
 -- Tags: no-fasttest
 
 set allow_experimental_object_type=0;
-select CAST('{"x" : 1}', 'JSON'); -- {serverError ILLEGAL_COLUMN}
+select CAST('{"x" : 1}', 'Object(''json'')'); -- {serverError ILLEGAL_COLUMN}
 desc file(nonexist.json, JSONAsObject); -- {serverError ILLEGAL_COLUMN}
-desc file(nonexist.json, JSONEachRow, 'x JSON'); -- {serverError ILLEGAL_COLUMN}
+desc file(nonexist.json, JSONEachRow, 'x Object(''json'')'); -- {serverError ILLEGAL_COLUMN}
 
 set allow_suspicious_low_cardinality_types=0;
 select CAST(1000000, 'LowCardinality(UInt64)'); -- {serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY}

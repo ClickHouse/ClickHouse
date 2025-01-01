@@ -4,8 +4,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Storages/StorageAzureBlobCluster.h>
-#include <Storages/StorageAzureBlob.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <base/types.h>
 #include <functional>
@@ -21,18 +20,17 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// Copies a file from AzureBlobStorage to AzureBlobStorage.
 /// The parameters `src_offset` and `src_size` specify a part in the source to copy.
 void copyAzureBlobStorageFile(
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> src_client,
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> dest_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> src_client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
     size_t src_offset,
     size_t src_size,
     const String & dest_container_for_logging,
     const String & dest_blob,
-    std::shared_ptr<const AzureObjectStorageSettings> settings,
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
-    ThreadPoolCallbackRunner<void> schedule_ = {},
-    bool for_disk_azure_blob_storage = false);
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
 
 /// Copies data from any seekable source to AzureBlobStorage.
@@ -44,12 +42,11 @@ void copyDataToAzureBlobStorageFile(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
-    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client,
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client,
     const String & dest_container_for_logging,
     const String & dest_blob,
-    std::shared_ptr<const AzureObjectStorageSettings> settings,
-    ThreadPoolCallbackRunner<void> schedule_ = {},
-    bool for_disk_azure_blob_storage = false);
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
+    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
 }
 

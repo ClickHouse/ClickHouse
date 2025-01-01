@@ -12,6 +12,8 @@
 namespace DB
 {
 
+struct SelectQueryInfo;
+
 /** Join clause represent single JOIN ON section clause.
   * Join clause consists of JOIN keys and conditions.
   *
@@ -52,6 +54,12 @@ struct ASOFCondition
 class JoinClause
 {
 public:
+    JoinClause() = default;
+    JoinClause(JoinClause &&) = default;
+    JoinClause(const JoinClause &) = delete;
+    JoinClause & operator=(JoinClause &&) = default;
+    JoinClause & operator=(const JoinClause &) = delete;
+
     /// Add keys
     void addKey(const ActionsDAG::Node * left_key_node, const ActionsDAG::Node * right_key_node, bool null_safe_comparison = false)
     {
@@ -140,11 +148,42 @@ public:
         return right_filter_condition_nodes;
     }
 
+    ActionsDAG::NodeRawConstPtrs & getResidualFilterConditionNodes()
+    {
+        return residual_filter_condition_nodes;
+    }
+
+    void addResidualCondition(const ActionsDAG::Node * condition_node)
+    {
+        residual_filter_condition_nodes.push_back(condition_node);
+    }
+
+    const ActionsDAG::NodeRawConstPtrs & getResidualFilterConditionNodes() const
+    {
+        return residual_filter_condition_nodes;
+    }
+
     /// Dump clause into buffer
     void dump(WriteBuffer & buffer) const;
 
     /// Dump clause
     String dump() const;
+
+    /// Combines two join clauses into a single join clause with `AND` logic.
+    /// Example:
+    /// Expression `t1.a = t2.a AND t1.b = t2.b AND t1.x > 1` corresponds to clause:
+    ///   - keys: (a, b) = (a, b)
+    ///   - filter conditions: [greater(t1.x, 1)]
+    ///   - residual conditions: []
+    /// Expression `t1.a = t2.a AND t1.c = t2.c AND t1.y < 2 AND t1.z + t2.z == 2` corresponds to clause:
+    ///   - keys: (a, c) = (a, c)
+    ///   - filter conditions: [less(t1.y, 2)]
+    ///   - residual conditions: [equals(plus(t1.z, t2.z), 2)]
+    /// Concatenated:
+    ///   - keys: (a, b, a, c) = (a, b, a, c)
+    ///   - filter conditions: [greater(t1.x, 1), less(t1.y, 2)]
+    ///   - residual conditions: [equals(plus(t1.z, t2.z), 2)]
+    static JoinClause concatClauses(const JoinClause& lhs, const JoinClause& rhs);
 
 private:
     ActionsDAG::NodeRawConstPtrs left_key_nodes;
@@ -154,6 +193,8 @@ private:
 
     ActionsDAG::NodeRawConstPtrs left_filter_condition_nodes;
     ActionsDAG::NodeRawConstPtrs right_filter_condition_nodes;
+    /// conditions which involve both left and right tables
+    ActionsDAG::NodeRawConstPtrs residual_filter_condition_nodes;
 
     std::unordered_set<size_t> nullsafe_compare_key_indexes;
 };
@@ -165,12 +206,15 @@ struct JoinClausesAndActions
     /// Join clauses. Actions dag nodes point into join_expression_actions.
     JoinClauses join_clauses;
     /// Whole JOIN ON section expressions
-    ActionsDAGPtr left_join_tmp_expression_actions;
-    ActionsDAGPtr right_join_tmp_expression_actions;
+    ActionsDAG left_join_tmp_expression_actions;
+    ActionsDAG right_join_tmp_expression_actions;
     /// Left join expressions actions
-    ActionsDAGPtr left_join_expressions_actions;
+    ActionsDAG left_join_expressions_actions;
     /// Right join expressions actions
-    ActionsDAGPtr right_join_expressions_actions;
+    ActionsDAG right_join_expressions_actions;
+    /// Originally used for inequal join. it's the total join expression.
+    /// If there is no inequal join conditions, it's null.
+    std::optional<ActionsDAG> residual_join_expressions_actions;
 };
 
 /** Calculate join clauses and actions for JOIN ON section.
@@ -198,10 +242,11 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
   * For example JOIN with Dictionary engine, or JOIN with JOIN engine.
   */
-std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
+std::shared_ptr<IJoin> chooseJoinAlgorithm(
+    std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context);
-
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info);
 }

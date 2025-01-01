@@ -34,9 +34,6 @@ struct BackupLogElement
 class BackupLog : public SystemLog<BackupLogElement>
 {
     using SystemLog<BackupLogElement>::SystemLog;
-
-public:
-    static const char * getDefaultOrderBy() { return "event_date, event_time_microseconds"; }
 };
 
 }

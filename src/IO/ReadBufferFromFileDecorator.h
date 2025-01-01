@@ -27,7 +27,7 @@ public:
 
     ReadBuffer & getWrappedReadBuffer() { return *impl; }
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
 protected:
     std::unique_ptr<SeekableReadBuffer> impl;

@@ -7,6 +7,7 @@
 #include <random>
 #include <string_view>
 #include <pcg_random.hpp>
+#include <Poco/UUIDGenerator.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -17,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/clearPasswordFromCommandLine.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -34,7 +36,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
-#include <Core/BaseSettingsProgramOptions.h>
+#include "IO/WriteBuffer.h"
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -56,8 +58,9 @@ static constexpr std::string_view DEFAULT_CLIENT_NAME = "benchmark";
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_BLOCK_SIGNAL;
-    extern const int EMPTY_DATA_PASSED;
+extern const int BAD_ARGUMENTS;
+extern const int CANNOT_BLOCK_SIGNAL;
+extern const int EMPTY_DATA_PASSED;
 }
 
 class Benchmark : public Poco::Util::Application
@@ -73,6 +76,8 @@ public:
             const String & default_database_,
             const String & user_,
             const String & password_,
+            const String & proto_send_chunked_,
+            const String & proto_recv_chunked_,
             const String & quota_key_,
             const String & stage,
             bool randomize_,
@@ -80,6 +85,7 @@ public:
             double max_time_,
             size_t confidence_,
             const String & query_id_,
+            const String & query_id_prefix_,
             const String & query_to_execute_,
             size_t max_consecutive_errors_,
             bool continue_on_errors_,
@@ -98,6 +104,7 @@ public:
         max_time(max_time_),
         confidence(confidence_),
         query_id(query_id_),
+        query_id_prefix(query_id_prefix_),
         query_to_execute(query_to_execute_),
         continue_on_errors(continue_on_errors_),
         max_consecutive_errors(max_consecutive_errors_),
@@ -124,7 +131,9 @@ public:
             connections.emplace_back(std::make_unique<ConnectionPool>(
                 concurrency,
                 cur_host, cur_port,
-                default_database_, user_, password_, quota_key_,
+                default_database_, user_, password_,
+                proto_send_chunked_, proto_recv_chunked_,
+                quota_key_,
                 /* cluster_= */ "",
                 /* cluster_secret_= */ "",
                 /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
@@ -142,8 +151,6 @@ public:
         global_context->setSettings(settings);
         global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
         global_context->setQueryKindInitial();
-
-        std::cerr << std::fixed << std::setprecision(3);
 
         /// This is needed to receive blocks with columns of AggregateFunction data type
         /// (example: when using stage = 'with_mergeable_state')
@@ -205,6 +212,7 @@ private:
     double max_time;
     size_t confidence;
     String query_id;
+    String query_id_prefix;
     String query_to_execute;
     bool continue_on_errors;
     size_t max_consecutive_errors;
@@ -215,6 +223,8 @@ private:
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
+
+    AutoFinalizedWriteBuffer<WriteBufferFromFileDescriptor> log{STDERR_FILENO};
 
     std::atomic<size_t> consecutive_errors{0};
 
@@ -293,16 +303,16 @@ private:
         }
 
 
-        std::cerr << "Loaded " << queries.size() << " queries.\n";
+        log << "Loaded " << queries.size() << " queries.\n" << flush;
     }
 
 
     void printNumberOfQueriesExecuted(size_t num)
     {
-        std::cerr << "\nQueries executed: " << num;
+        log << "\nQueries executed: " << num;
         if (queries.size() > 1)
-            std::cerr << " (" << (num * 100.0 / queries.size()) << "%)";
-        std::cerr << ".\n";
+            log << " (" << (num * 100.0 / queries.size()) << "%)";
+        log << ".\n" << flush;
     }
 
     /// Try push new query and check cancellation conditions
@@ -329,19 +339,19 @@ private:
 
             if (interrupt_listener.check())
             {
-                std::cout << "Stopping launch of queries. SIGINT received." << std::endl;
+                std::cout << "Stopping launch of queries. SIGINT received.\n";
                 return false;
             }
+        }
 
-            double seconds = delay_watch.elapsedSeconds();
-            if (delay > 0 && seconds > delay)
-            {
-                printNumberOfQueriesExecuted(queries_executed);
-                cumulative
-                    ? report(comparison_info_total, total_watch.elapsedSeconds())
-                    : report(comparison_info_per_interval, seconds);
-                delay_watch.restart();
-            }
+        double seconds = delay_watch.elapsedSeconds();
+        if (delay > 0 && seconds > delay)
+        {
+            printNumberOfQueriesExecuted(queries_executed);
+            cumulative
+                ? report(comparison_info_total, total_watch.elapsedSeconds())
+                : report(comparison_info_per_interval, seconds);
+            delay_watch.restart();
         }
 
         return true;
@@ -428,22 +438,20 @@ private:
             catch (...)
             {
                 std::lock_guard lock(mutex);
-                std::cerr << "An error occurred while processing the query " << "'" << query << "'"
-                          << ": " << getCurrentExceptionMessage(false) << std::endl;
+                log << "An error occurred while processing the query " << "'" << query << "'"
+                          << ": " << getCurrentExceptionMessage(false) << '\n';
                 if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
                 {
                     shutdown = true;
                     throw;
                 }
-                else
-                {
-                    std::cerr << getCurrentExceptionMessage(print_stacktrace,
-                        true /*check embedded stack trace*/) << std::endl;
 
-                    size_t info_index = round_robin ? 0 : connection_index;
-                    ++comparison_info_per_interval[info_index]->errors;
-                    ++comparison_info_total[info_index]->errors;
-                }
+                log << getCurrentExceptionMessage(print_stacktrace,
+                    true /*check embedded stack trace*/) << '\n' << flush;
+
+                size_t info_index = round_robin ? 0 : connection_index;
+                ++comparison_info_per_interval[info_index]->errors;
+                ++comparison_info_total[info_index]->errors;
             }
             // Count failed queries toward executed, so that we'd reach
             // max_iterations even if every run fails.
@@ -463,8 +471,11 @@ private:
 
         RemoteQueryExecutor executor(
             *entry, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+
         if (!query_id.empty())
             executor.setQueryId(query_id);
+        else if (!query_id_prefix.empty())
+            executor.setQueryId(query_id_prefix + "_" + Poco::UUIDGenerator().createRandom().toString());
 
         Progress progress;
         executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -493,7 +504,7 @@ private:
     {
         std::lock_guard lock(mutex);
 
-        std::cerr << "\n";
+        log << "\n";
         for (size_t i = 0; i < infos.size(); ++i)
         {
             const auto & info = infos[i];
@@ -513,31 +524,31 @@ private:
                     connection_description += conn->getDescription();
                 }
             }
-            std::cerr
-                    << connection_description << ", "
-                    << "queries: " << info->queries << ", ";
+            log
+                << connection_description << ", "
+                << "queries: " << info->queries.load() << ", ";
             if (info->errors)
             {
-                std::cerr << "errors: " << info->errors << ", ";
+                log << "errors: " << info->errors << ", ";
             }
-            std::cerr
-                    << "QPS: " << (info->queries / seconds) << ", "
-                    << "RPS: " << (info->read_rows / seconds) << ", "
-                    << "MiB/s: " << (info->read_bytes / seconds / 1048576) << ", "
-                    << "result RPS: " << (info->result_rows / seconds) << ", "
-                    << "result MiB/s: " << (info->result_bytes / seconds / 1048576) << "."
-                    << "\n";
+            log
+                << "QPS: " << fmt::format("{:.3f}", info->queries / seconds) << ", "
+                << "RPS: " << fmt::format("{:.3f}", info->read_rows / seconds) << ", "
+                << "MiB/s: " << fmt::format("{:.3f}", info->read_bytes / seconds / 1048576) << ", "
+                << "result RPS: " << fmt::format("{:.3f}", info->result_rows / seconds) << ", "
+                << "result MiB/s: " << fmt::format("{:.3f}", info->result_bytes / seconds / 1048576) << "."
+                << "\n";
         }
-        std::cerr << "\n";
+        log << "\n";
 
         auto print_percentile = [&](double percent)
         {
-            std::cerr << percent << "%\t\t";
+            log << percent << "%\t\t";
             for (const auto & info : infos)
             {
-                std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec.\t";
+                log << fmt::format("{:.3f}", info->sampler.quantileNearest(percent / 100.0)) << " sec.\t";
             }
-            std::cerr << "\n";
+            log << "\n";
         };
 
         for (int percent = 0; percent <= 90; percent += 10)
@@ -548,13 +559,15 @@ private:
         print_percentile(99.9);
         print_percentile(99.99);
 
-        std::cerr << "\n" << t_test.compareAndReport(confidence).second << "\n";
+        log << "\n" << t_test.compareAndReport(confidence).second << "\n";
 
         if (!cumulative)
         {
             for (auto & info : infos)
                 info->clear();
         }
+
+        log.next();
     }
 
 public:
@@ -617,6 +630,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("stacktrace", "print stack traces of exceptions")
             ("confidence", value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id", value<std::string>()->default_value(""), "")
+            ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
             ("reconnect", "establish new connection for every query")
@@ -624,7 +638,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         ;
 
         Settings settings;
-        addProgramOptions(settings, desc);
+        settings.addToProgramOptions(desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -653,6 +667,50 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         Strings hosts = options.count("host") ? options["host"].as<Strings>() : Strings({"localhost"});
 
+        String proto_send_chunked {"notchunked"};
+        String proto_recv_chunked {"notchunked"};
+
+        if (options.count("proto_caps"))
+        {
+            std::string proto_caps_str = options["proto_caps"].as<std::string>();
+
+            std::vector<std::string_view> proto_caps;
+            splitInto<','>(proto_caps, proto_caps_str);
+
+            for (auto cap_str : proto_caps)
+            {
+                std::string direction;
+
+                if (cap_str.starts_with("send_"))
+                {
+                    direction = "send";
+                    cap_str = cap_str.substr(std::string_view("send_").size());
+                }
+                else if (cap_str.starts_with("recv_"))
+                {
+                    direction = "recv";
+                    cap_str = cap_str.substr(std::string_view("recv_").size());
+                }
+
+                if (cap_str != "chunked" && cap_str != "notchunked" && cap_str != "chunked_optional" && cap_str != "notchunked_optional")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "proto_caps option is incorrect ({})", proto_caps_str);
+
+                if (direction.empty())
+                {
+                    proto_send_chunked = cap_str;
+                    proto_recv_chunked = cap_str;
+                }
+                else
+                {
+                    if (direction == "send")
+                        proto_send_chunked = cap_str;
+                    else
+                        proto_recv_chunked = cap_str;
+                }
+            }
+        }
+
+
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),
             options["delay"].as<double>(),
@@ -664,6 +722,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
+            proto_send_chunked,
+            proto_recv_chunked,
             options["quota_key"].as<std::string>(),
             options["stage"].as<std::string>(),
             options.count("randomize"),
@@ -671,6 +731,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["timelimit"].as<double>(),
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
+            options["query_id_prefix"].as<std::string>(),
             options["query"].as<std::string>(),
             options["max-consecutive-errors"].as<size_t>(),
             options.count("ignore-error"),
@@ -682,7 +743,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << std::endl;
+        std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << '\n';
         return getCurrentExceptionCode();
     }
 }

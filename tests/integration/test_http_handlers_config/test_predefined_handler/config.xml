@@ -19,6 +19,10 @@
                 <type>predefined_query_handler</type>
                 <query>SELECT name, value FROM system.settings WHERE name = {setting_name_1:String} OR name = {setting_name_2:String}</query>
                 <content_type>application/generic+one</content_type>
+                <http_response_headers>
+                  <X-Test-Http-Response-Headers-Works>it works</X-Test-Http-Response-Headers-Works>
+                  <X-Test-Http-Response-Headers-Even-Multiple>also works</X-Test-Http-Response-Headers-Even-Multiple>
+                </http_response_headers>
             </handler>
         </rule>
         <rule>
@@ -27,6 +31,36 @@
             <handler>
                 <type>predefined_query_handler</type>
                 <query>INSERT INTO test_table(id, data) SELECT {id:UInt32}, {_request_body:String}</query>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <url>/test_predefined_handler_auth_with_password</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <user>with_password</user>
+                <password>password</password>
+                <query>SELECT currentUser()</query>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_predefined_handler_auth_with_password_fail</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <user>with_password</user>
+                <!-- No password - authentication should fail -->
+                <query>SELECT currentUser()</query>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_predefined_handler_auth_without_password</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <user>without_password</user>
+                <query>SELECT currentUser()</query>
             </handler>
         </rule>
     </http_handlers>

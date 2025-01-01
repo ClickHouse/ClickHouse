@@ -1,13 +1,20 @@
 ## sudo -H pip install PyMySQL
+import logging
+import time
 import warnings
+
 import pymysql.cursors
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-import time
-import logging
+from helpers.network import PartitionManager
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
-CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]
+CONFIG_FILES = [
+    "configs/remote_servers.xml",
+    "configs/named_collections.xml",
+    "configs/bg_reconnect.xml",
+]
 USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -76,7 +83,7 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
 
     query = instance.query
     query(
-        """
+        f"""
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -95,11 +102,45 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
     """
     )
 
-    result = query("SELECT id, value_1, value_2 FROM test_dictionary_custom_query")
+    result = query(
+        "SELECT dictGetString('test_dictionary_custom_query', 'value_1', toUInt64(1))"
+    )
+    assert result == "Value_1\n"
 
+    result = query("SELECT id, value_1, value_2 FROM test_dictionary_custom_query")
     assert result == "1\tValue_1\tValue_2\n"
 
     query("DROP DICTIONARY test_dictionary_custom_query;")
+
+    query(
+        f"""
+    CREATE DICTIONARY test_cache_dictionary_custom_query
+    (
+        id1 UInt64,
+        id2 UInt64,
+        value_concat String
+    )
+    PRIMARY KEY id1, id2
+    LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+    SOURCE(MYSQL(
+        HOST 'mysql80'
+        PORT 3306
+        USER 'root'
+        PASSWORD 'clickhouse'
+        QUERY 'SELECT id AS id1, id + 1 AS id2, CONCAT_WS(" ", "The", value_1) AS value_concat FROM test.test_table_1'))
+    LIFETIME(0)
+    """
+    )
+
+    result = query(
+        "SELECT dictGetString('test_cache_dictionary_custom_query', 'value_concat', (1, 2))"
+    )
+    assert result == "The Value_1\n"
+
+    result = query("SELECT id1, value_concat FROM test_cache_dictionary_custom_query")
+    assert result == "1\tThe Value_1\n"
+
+    query("DROP DICTIONARY test_cache_dictionary_custom_query;")
 
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_1;")
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_2;")
@@ -400,3 +441,91 @@ def execute_mysql_query(connection, query):
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(create_table_mysql_template.format(table_name))
+
+
+def test_background_dictionary_reconnect(started_cluster):
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict;")
+    execute_mysql_query(
+        mysql_connection,
+        "CREATE TABLE test.dict (id Integer, value Text);",
+    )
+    execute_mysql_query(
+        mysql_connection, "INSERT INTO test.dict VALUES (1, 'Value_1');"
+    )
+
+    query = instance.query
+    query(
+        f"""
+    DROP DICTIONARY IF EXISTS dict;
+    CREATE DICTIONARY dict
+    (
+        id UInt64,
+        value String
+    )
+    PRIMARY KEY id
+    LAYOUT(DIRECT())
+    SOURCE(MYSQL(
+        USER 'root'
+        PASSWORD 'clickhouse'
+        DB 'test'
+        QUERY $doc$SELECT * FROM test.dict;$doc$
+        BACKGROUND_RECONNECT 'true'
+        REPLICA(HOST 'mysql80' PORT 3306 PRIORITY 1)))
+    """
+    )
+
+    result = query("SELECT value FROM dict WHERE id = 1")
+    assert result == "Value_1\n"
+
+    class MySQL_Instance:
+        pass
+
+    mysql_instance = MySQL_Instance()
+    mysql_instance.ip_address = started_cluster.mysql8_ip
+
+    query("TRUNCATE TABLE IF EXISTS system.text_log")
+
+    with PartitionManager() as pm:
+        # Break connection to mysql server
+        pm.partition_instances(
+            instance, mysql_instance, action="REJECT --reject-with tcp-reset"
+        )
+
+        # Exhaust possible connection pool and initiate reconnection attempts
+        for _ in range(5):
+            try:
+                result = query("SELECT value FROM dict WHERE id = 1")
+            except Exception as e:
+                pass
+
+        time.sleep(5)
+
+    time.sleep(5)
+
+    query("SYSTEM FLUSH LOGS")
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Failed to connect to MySQL %: mysqlxx::ConnectionFailed'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'"
+            )
+        )
+        > 0
+    )
+    assert (
+        int(
+            query(
+                "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to MySQL server on %'"
+            )
+        )
+        > 0
+    )

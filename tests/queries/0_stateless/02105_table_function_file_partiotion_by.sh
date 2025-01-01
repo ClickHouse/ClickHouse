@@ -5,13 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# See 01658_read_file_to_string_column.sh
-user_files_path=$($CLICKHOUSE_CLIENT_BINARY --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
-
-mkdir -p "${user_files_path}/"
-chmod 777 ${user_files_path}
-
-FILE_PATH="${user_files_path}/test_table_function_file"
+FILE_PATH="${USER_FILES_PATH}/test_table_function_file"
 
 function cleanup()
 {

@@ -1,9 +1,13 @@
 ---
 slug: /en/operations/system-tables/asynchronous_metric_log
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # asynchronous_metric_log
 
-Contains the historical values for `system.asynchronous_metrics`, which are saved once per minute. Enabled by default.
+<SystemTableCloud/>
+
+Contains the historical values for `system.asynchronous_metrics`, which are saved once per time interval (one second by default). Enabled by default.
 
 Columns:
 

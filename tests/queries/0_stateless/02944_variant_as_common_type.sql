@@ -1,5 +1,3 @@
-set allow_experimental_analyzer=0; -- The result type for if function with constant is different with analyzer. It wil be fixed after refactoring around constants in analyzer.
-
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
 
@@ -73,4 +71,3 @@ select toTypeName(res), array([1, 2, 3], [[1, 2, 3]]) as res;
 select toTypeName(res), map('a', 1, 'b', 'str_1') as res;
 select toTypeName(res), map('a', 1, 'b', map('c', 2, 'd', 'str_1')) as res;
 select toTypeName(res), map('a', 1, 'b', [1, 2, 3], 'c', [[4, 5, 6]]) as res;
-

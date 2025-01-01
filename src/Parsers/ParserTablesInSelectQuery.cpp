@@ -109,17 +109,17 @@ bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-void ParserTablesInSelectQueryElement::parseJoinStrictness(Pos & pos, ASTTableJoin & table_join)
+static void parseJoinStrictness(IParser::Pos & pos, ASTTableJoin & table_join, Expected & expected)
 {
-    if (ParserKeyword(Keyword::ANY).ignore(pos))
+    if (ParserKeyword(Keyword::ANY).ignore(pos, expected))
         table_join.strictness = JoinStrictness::Any;
-    else if (ParserKeyword(Keyword::ALL).ignore(pos))
+    else if (ParserKeyword(Keyword::ALL).ignore(pos, expected))
         table_join.strictness = JoinStrictness::All;
-    else if (ParserKeyword(Keyword::ASOF).ignore(pos))
+    else if (ParserKeyword(Keyword::ASOF).ignore(pos, expected))
         table_join.strictness = JoinStrictness::Asof;
-    else if (ParserKeyword(Keyword::SEMI).ignore(pos))
+    else if (ParserKeyword(Keyword::SEMI).ignore(pos, expected))
         table_join.strictness = JoinStrictness::Semi;
-    else if (ParserKeyword(Keyword::ANTI).ignore(pos) || ParserKeyword(Keyword::ONLY).ignore(pos))
+    else if (ParserKeyword(Keyword::ANTI).ignore(pos, expected) || ParserKeyword(Keyword::ONLY).ignore(pos, expected))
         table_join.strictness = JoinStrictness::Anti;
 }
 
@@ -146,41 +146,41 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
         }
         else
         {
-            if (ParserKeyword(Keyword::GLOBAL).ignore(pos))
+            if (ParserKeyword(Keyword::GLOBAL).ignore(pos, expected))
                 table_join->locality = JoinLocality::Global;
-            else if (ParserKeyword(Keyword::LOCAL).ignore(pos))
+            else if (ParserKeyword(Keyword::LOCAL).ignore(pos, expected))
                 table_join->locality = JoinLocality::Local;
 
             table_join->strictness = JoinStrictness::Unspecified;
 
             /// Legacy: allow JOIN type before JOIN kind
-            parseJoinStrictness(pos, *table_join);
+            parseJoinStrictness(pos, *table_join, expected);
 
             bool no_kind = false;
-            if (ParserKeyword(Keyword::INNER).ignore(pos))
+            if (ParserKeyword(Keyword::INNER).ignore(pos, expected))
                 table_join->kind = JoinKind::Inner;
-            else if (ParserKeyword(Keyword::LEFT).ignore(pos))
+            else if (ParserKeyword(Keyword::LEFT).ignore(pos, expected))
                 table_join->kind = JoinKind::Left;
-            else if (ParserKeyword(Keyword::RIGHT).ignore(pos))
+            else if (ParserKeyword(Keyword::RIGHT).ignore(pos, expected))
                 table_join->kind = JoinKind::Right;
-            else if (ParserKeyword(Keyword::FULL).ignore(pos))
+            else if (ParserKeyword(Keyword::FULL).ignore(pos, expected))
                 table_join->kind = JoinKind::Full;
-            else if (ParserKeyword(Keyword::CROSS).ignore(pos))
+            else if (ParserKeyword(Keyword::CROSS).ignore(pos, expected))
                 table_join->kind = JoinKind::Cross;
-            else if (ParserKeyword(Keyword::PASTE).ignore(pos))
+            else if (ParserKeyword(Keyword::PASTE).ignore(pos, expected))
                 table_join->kind = JoinKind::Paste;
             else
                 no_kind = true;
 
             /// Standard position: JOIN type after JOIN kind
-            parseJoinStrictness(pos, *table_join);
+            parseJoinStrictness(pos, *table_join, expected);
 
             /// Optional OUTER keyword for outer joins.
             if (table_join->kind == JoinKind::Left
                 || table_join->kind == JoinKind::Right
                 || table_join->kind == JoinKind::Full)
             {
-                ParserKeyword(Keyword::OUTER).ignore(pos);
+                ParserKeyword(Keyword::OUTER).ignore(pos, expected);
             }
 
             if (no_kind)

@@ -20,6 +20,8 @@
 #include <Poco/Net/X509Certificate.h>
 #endif
 
+static constexpr UInt64 HTTP_MAX_CHUNK_SIZE = 100ULL << 30;
+
 namespace DB
 {
 HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session, const ProfileEvents::Event & read_event)
@@ -54,12 +56,11 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     /// and retry with exactly the same (incomplete) set of rows.
     /// That's why we have to check body size if it's provided.
     if (getChunkedTransferEncoding())
-        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), context->getMaxChunkSize());
+        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), HTTP_MAX_CHUNK_SIZE);
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_unique<LimitReadBuffer>(std::move(in), content_length,
-                                                   /* trow_exception */ true, /* exact_limit */ content_length);
+        stream = std::make_unique<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
     {

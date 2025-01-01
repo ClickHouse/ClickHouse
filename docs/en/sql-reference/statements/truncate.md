@@ -25,7 +25,7 @@ If the `alter_sync` is set to `2` and some replicas are not active for more than
 
 ## TRUNCATE ALL TABLES
 ``` sql
-TRUNCATE ALL TABLES [IF EXISTS] db [ON CLUSTER cluster]
+TRUNCATE ALL TABLES FROM [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Removes all data from all tables in a database.

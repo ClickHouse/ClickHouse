@@ -2,12 +2,12 @@
 
 #include <chrono>
 #include <string_view>
+#include <optional>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-
 
 namespace DB
 {
@@ -125,8 +125,10 @@ struct SettingAutoWrapper
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
+    std::optional<Type> get() const { return is_auto ? std::nullopt : std::make_optional(base.value); }
 };
 
+using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;
 using SettingFieldUInt64Auto = SettingAutoWrapper<SettingFieldUInt64>;
 using SettingFieldInt64Auto = SettingAutoWrapper<SettingFieldInt64>;
 using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;
@@ -153,7 +155,7 @@ struct SettingFieldMaxThreads
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto==true`.
+    /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto == true`.
     String toString() const;
     void parseFromString(const String & str);
 
@@ -165,7 +167,11 @@ private:
 };
 
 
-enum class SettingFieldTimespanUnit { Millisecond, Second };
+enum class SettingFieldTimespanUnit : uint8_t
+{
+    Millisecond,
+    Second
+};
 
 template <SettingFieldTimespanUnit unit_>
 struct SettingFieldTimespan
@@ -243,12 +249,6 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
-#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-#define NORETURN [[noreturn]]
-#else
-#define NORETURN
-#endif
-
 struct SettingFieldMap
 {
 public:
@@ -265,11 +265,11 @@ public:
     operator const Map &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    NORETURN String toString() const;
-    NORETURN void parseFromString(const String & str);
+    String toString() const;
+    void parseFromString(const String & str);
 
-    NORETURN void writeBinary(WriteBuffer & out) const;
-    NORETURN void readBinary(ReadBuffer & in);
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
 
 #undef NORETURN

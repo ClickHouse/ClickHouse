@@ -1,3 +1,4 @@
+#include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -17,6 +18,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+}
 
 namespace ErrorCodes
 {
@@ -82,7 +89,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
             getName(), queryToString(kind_arg));
 
-    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.get<String>());
+    ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
     auto explain_query = std::make_shared<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
@@ -91,15 +98,15 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             "Table function '{}' requires a serialized string settings argument, got '{}'",
             getName(), queryToString(function->arguments->children[1]));
 
-    const auto & settings_str = settings_arg->value.get<String>();
+    const auto & settings_str = settings_arg->value.safeGet<String>();
     if (!settings_str.empty())
     {
         const Settings & settings = context->getSettingsRef();
 
         /// parse_only_internals_ = true - we don't want to parse `SET` keyword
         ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
-        ASTPtr settings_ast = parseQuery(settings_parser, settings_str,
-            settings.max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+        ASTPtr settings_ast = parseQuery(
+            settings_parser, settings_str, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         explain_query->setSettings(std::move(settings_ast));
     }
 

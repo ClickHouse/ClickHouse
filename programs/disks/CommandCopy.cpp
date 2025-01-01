@@ -1,6 +1,8 @@
-#include "ICommand.h"
 #include <Interpreters/Context.h>
+#include "Common/Exception.h"
 #include <Common/TerminalSize.h>
+#include "DisksClient.h"
+#include "ICommand.h"
 
 namespace DB
 {
@@ -10,59 +12,89 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+
 class CommandCopy final : public ICommand
 {
 public:
-    CommandCopy()
+    explicit CommandCopy() : ICommand()
     {
         command_name = "copy";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Recursively copy data from `FROM_PATH` to `TO_PATH`";
-        usage = "copy [OPTION]... <FROM_PATH> <TO_PATH>";
-        command_option_description->add_options()
-            ("disk-from", po::value<String>(), "disk from which we copy")
-            ("disk-to", po::value<String>(), "disk to which we copy");
+        description = "Recursively copy data from `path-from` to `path-to`";
+        options_description.add_options()(
+            "disk-from", po::value<String>(), "disk from which we copy is executed (default value is a current disk)")(
+            "disk-to", po::value<String>(), "disk to which copy is executed (default value is a current disk)")(
+            "path-from", po::value<String>(), "path from which copy is executed (mandatory, positional)")(
+            "path-to", po::value<String>(), "path to which copy is executed (mandatory, positional)")(
+            "recursive,r", "recursively copy the directory (required to remove a directory)");
+        positional_options_description.add("path-from", 1);
+        positional_options_description.add("path-to", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration & config,
-        po::variables_map & options) const override
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        if (options.count("disk-from"))
-            config.setString("disk-from", options["disk-from"].as<String>());
-        if (options.count("disk-to"))
-            config.setString("disk-to", options["disk-to"].as<String>());
-    }
+        auto disk_from = getDiskWithPath(client, options, "disk-from");
+        auto disk_to = getDiskWithPath(client, options, "disk-to");
+        String path_from = disk_from.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
+        String path_to = disk_to.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
+        bool recursive = options.count("recursive");
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
-        Poco::Util::LayeredConfiguration & config) override
-    {
-        if (command_arguments.size() != 2)
+        if (disk_from.getDisk()->existsFile(path_from))
         {
-            printHelpMessage();
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
+            auto target_location = getTargetLocation(path_from, disk_to, path_to);
+            if (!disk_to.getDisk()->existsDirectory(target_location))
+            {
+                disk_from.getDisk()->copyFile(
+                    path_from,
+                    *disk_to.getDisk(),
+                    target_location,
+                    /* read_settings= */ {},
+                    /* write_settings= */ {},
+                    /* cancellation_hook= */ {});
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "cannot overwrite directory {} with non-directory {}", target_location, path_from);
+            }
         }
+        else if (disk_from.getDisk()->existsDirectory(path_from))
+        {
+            if (!recursive)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--recursive not specified; omitting directory {}", path_from);
+            }
+            auto target_location = getTargetLocation(path_from, disk_to, path_to);
 
-        String disk_name_from = config.getString("disk-from", config.getString("disk", "default"));
-        String disk_name_to = config.getString("disk-to", config.getString("disk", "default"));
-
-        const String & path_from = command_arguments[0];
-        const String & path_to =  command_arguments[1];
-
-        DiskPtr disk_from = disk_selector->get(disk_name_from);
-        DiskPtr disk_to = disk_selector->get(disk_name_to);
-
-        String relative_path_from = validatePathAndGetAsRelative(path_from);
-        String relative_path_to = validatePathAndGetAsRelative(path_to);
-
-        disk_from->copyDirectoryContent(relative_path_from, disk_to, relative_path_to, /* read_settings= */ {}, /* write_settings= */ {}, /* cancellation_hook= */ {});
+            if (disk_to.getDisk()->existsFile(target_location))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot overwrite non-directory {} with directory {}", path_to, target_location);
+            }
+            if (!disk_to.getDisk()->existsDirectory(target_location))
+            {
+                disk_to.getDisk()->createDirectory(target_location);
+            }
+            disk_from.getDisk()->copyDirectoryContent(
+                path_from,
+                disk_to.getDisk(),
+                target_location,
+                /* read_settings= */ {},
+                /* write_settings= */ {},
+                /* cancellation_hook= */ {});
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "cannot stat '{}' on disk '{}': No such file or directory",
+                path_from,
+                disk_from.getDisk()->getName());
+        }
     }
 };
+
+CommandPtr makeCommandCopy()
+{
+    return std::make_shared<DB::CommandCopy>();
 }
 
-std::unique_ptr <DB::ICommand> makeCommandCopy()
-{
-    return std::make_unique<DB::CommandCopy>();
 }

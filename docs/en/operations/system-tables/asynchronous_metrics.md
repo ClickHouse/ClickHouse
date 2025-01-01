@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/asynchronous_metrics
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # asynchronous_metrics
+
+<SystemTableCloud/>
 
 Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
 
@@ -211,7 +215,7 @@ Number of threads in the server of the replicas communication protocol (without 
 
 The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up. A proxy-indicator of overall system latency and responsiveness.
 
-### LoadAverage_*N*
+### LoadAverage*N*
 
 The whole system load, averaged with exponential smoothing over 1 minute. The load represents the number of threads across all the processes (the scheduling entities of the OS kernel), that are currently running by CPU or waiting for IO, or ready to run but not being scheduled at this point of time. This number includes all the processes, not only clickhouse-server. The number can be greater than the number of CPU cores, if the system is overloaded, and many processes are ready to run but waiting for CPU or IO.
 
@@ -636,6 +640,10 @@ An internal metric of the low-level memory allocator (jemalloc). See https://jem
 An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.retained
+
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
+
+### jemalloc.prof.active
 
 An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 

@@ -74,7 +74,7 @@ public:
     const char * data() const { return ptr_begin; }
     const char * dataEnd() const { return ptr_end; }
 
-    enum ElementType
+    enum ElementType : uint8_t
     {
         TYPE_OBJECT,
         TYPE_ARRAY,
@@ -203,9 +203,7 @@ T JSON::getWithDefault(const std::string & key, const T & default_) const
 
         if (key_json.isType<T>())
             return key_json.get<T>();
-        else
-            return default_;
-    }
-    else
         return default_;
+    }
+    return default_;
 }

@@ -1,3 +1,3 @@
-HTTP/1.1 200 OK
+HTTP/1.1 500 Internal Server Error
 encoding type chunked
-error code 1000
+error code 69

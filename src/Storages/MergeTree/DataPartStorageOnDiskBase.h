@@ -20,6 +20,7 @@ public:
     std::string getRelativePath() const override;
     std::string getPartDirectory() const override;
     std::string getFullRootPath() const override;
+    std::string getParentDirectory() const override;
 
     Poco::Timestamp getLastModified() const override;
     UInt64 calculateTotalSizeOnDisk() const override;
@@ -69,6 +70,15 @@ public:
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const override;
+
+    MutableDataPartStoragePtr freezeRemote(
+    const std::string & to,
+    const std::string & dir_path,
+    const DiskPtr & dst_disk,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::function<void(const DiskPtr &)> save_metadata_callback,
+    const ClonePartParams & params) const override;
 
     MutableDataPartStoragePtr clonePart(
         const std::string & to,
@@ -139,6 +149,9 @@ private:
     /// Actual file name may be the same as expected
     /// or be the name of the file with packed data.
     virtual NameSet getActualFileNamesOnDisk(const NameSet & file_names) const = 0;
+
+    /// Returns the destination path for the part directory while copying a detached part.
+    String getPartDirForPrefix(const String & prefix, bool detached, int try_no) const;
 };
 
 }

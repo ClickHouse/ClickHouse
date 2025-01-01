@@ -16,7 +16,7 @@ select min(i), max(i), count() from d where _partition_value.1 = 10 group by _pa
 select min(i) from d where 1 = _partition_value.1;
 
 -- fuzz crash https://github.com/ClickHouse/ClickHouse/issues/37151
-SELECT min(i), max(i), count() FROM d WHERE (_partition_value.1) = 0 GROUP BY ignore(bitTest(ignore(NULL), 65535), NULL, (_partition_value.1) = 7, '10.25', bitTest(NULL, -9223372036854775808), NULL, ignore(ignore(-2147483647, NULL)), 1024), _partition_id ORDER BY _partition_id ASC NULLS FIRST;
+SELECT min(i), max(i), count() FROM d WHERE (_partition_value.1) = 0 GROUP BY ignore(bitTest(ignore(NULL), 0), NULL, (_partition_value.1) = 7, '10.25', bitTest(NULL, 0), NULL, ignore(ignore(-2147483647, NULL)), 1024), _partition_id ORDER BY _partition_id ASC NULLS FIRST;
 
 drop table d;
 
@@ -76,6 +76,6 @@ insert into test select number, number from numbers(1e3);
 
 select count(if(d=4, d, 1)) from test settings force_optimize_projection = 1;
 select count(d/3) from test settings force_optimize_projection = 1;
-select count(if(d=4, Null, 1)) from test settings force_optimize_projection = 1; -- { serverError 584 }
+select count(if(d=4, Null, 1)) from test settings force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 
 drop table test;

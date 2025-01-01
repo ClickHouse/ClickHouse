@@ -1,14 +1,27 @@
 #include "ReadBufferFromWebServer.h"
 
-#include <Common/logger_useful.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <IO/Operators.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <Common/logger_useful.h>
+
 #include <thread>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds http_connection_timeout;
+    extern const SettingsSeconds http_receive_timeout;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsSeconds keep_alive_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -49,9 +62,9 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     const auto & settings = context->getSettingsRef();
     const auto & server_settings = context->getServerSettings();
 
-    auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings.keep_alive_timeout);
-    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
-    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings.http_receive_timeout, Poco::Timespan(20, 0)));
+    auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings);
+    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
+    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
 
     auto res = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::DISK)

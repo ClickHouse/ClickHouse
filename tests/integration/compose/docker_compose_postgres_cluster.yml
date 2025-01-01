@@ -1,4 +1,3 @@
-version: '2.3'
 services:
     postgres2:
         image: postgres

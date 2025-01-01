@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: replica
+# Tags: replica, no-shared-merge-tree
+# no-shared-merge-tree -- non minimalistic header is not supported
 
 set -e
 
@@ -10,13 +11,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SHARD=$($CLICKHOUSE_CLIENT --query "Select getMacro('shard')")
 REPLICA=$($CLICKHOUSE_CLIENT --query "Select getMacro('replica')")
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
+
 
 DROP TABLE IF EXISTS part_header_r1;
 DROP TABLE IF EXISTS part_header_r2;
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 SET replication_alter_partitions_sync = 2;
+-- May affect part names
+set prefer_warmed_unmerged_parts_seconds=0;
+set ignore_cold_parts_seconds=0;
 
 CREATE TABLE part_header_r1(x UInt32, y UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/{shard}', '1{replica}') ORDER BY x
@@ -24,14 +29,16 @@ CREATE TABLE part_header_r1(x UInt32, y UInt32)
              old_parts_lifetime = 1,
              cleanup_delay_period = 0,
              cleanup_delay_period_random_add = 0,
-             cleanup_thread_preferred_points_per_iteration=0;
+             cleanup_thread_preferred_points_per_iteration=0,
+             cache_populated_by_fetch=0;
 CREATE TABLE part_header_r2(x UInt32, y UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_00814/part_header/{shard}', '2{replica}') ORDER BY x
     SETTINGS use_minimalistic_part_header_in_zookeeper = 1,
              old_parts_lifetime = 1,
              cleanup_delay_period = 0,
              cleanup_delay_period_random_add = 0,
-             cleanup_thread_preferred_points_per_iteration=0;
+             cleanup_thread_preferred_points_per_iteration=0,
+             cache_populated_by_fetch=0;
 
 SELECT '*** Test fetches ***';
 INSERT INTO part_header_r1 VALUES (1, 1);
@@ -62,7 +69,11 @@ do
     [[ $count1 == 1 && $count2 == 1 ]] && break
 done
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
+
+-- May affect part names
+set prefer_warmed_unmerged_parts_seconds=0;
+set ignore_cold_parts_seconds=0;
 
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';

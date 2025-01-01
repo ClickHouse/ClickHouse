@@ -14,7 +14,7 @@ public:
 
     ASTPtr clone() const override;
 
-    enum class Operator
+    enum class Operator : uint8_t
     {
         UNKNOWN,
         EXCEPT_ALL,
@@ -22,8 +22,6 @@ public:
         INTERSECT_ALL,
         INTERSECT_DISTINCT,
     };
-
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
@@ -33,6 +31,9 @@ public:
 
     /// Final operator after applying visitor.
     Operator final_operator = Operator::UNKNOWN;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

@@ -1,6 +1,7 @@
 SET enable_optimize_predicate_expression = 1;
 SET joined_subquery_requires_alias = 0;
 SET convert_query_to_cnf = 0;
+SET allow_deprecated_error_prone_window_functions = 1;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/3885
 -- https://github.com/ClickHouse/ClickHouse/issues/5485

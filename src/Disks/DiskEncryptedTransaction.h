@@ -12,7 +12,7 @@
 namespace DB
 {
 
-namespace FileEncryption { enum class Algorithm; }
+namespace FileEncryption { enum class Algorithm : uint8_t; }
 
 struct DiskEncryptedSettings
 {
@@ -242,6 +242,13 @@ public:
     {
         auto wrapped_path = wrappedPath(path);
         return delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
+    }
+
+    /// Truncate file to the target size.
+    void truncateFile(const std::string & src_path, size_t target_size) override
+    {
+        auto wrapped_path = wrappedPath(src_path);
+        delegate_transaction->truncateFile(wrapped_path, target_size);
     }
 
 

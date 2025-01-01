@@ -1,7 +1,7 @@
-option(ENABLE_S2_GEOMETRY "Enable S2 geometry library" ${ENABLE_LIBRARIES})
+option(ENABLE_S2_GEOMETRY "Enable S2 Geometry" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_S2_GEOMETRY)
-    message(STATUS "Not using S2 geometry")
+    message(STATUS "Not using S2 Geometry")
     return()
 endif()
 
@@ -38,6 +38,7 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2cell_index.cc"
     "${S2_SOURCE_DIR}/s2/s2cell_union.cc"
     "${S2_SOURCE_DIR}/s2/s2centroids.cc"
+    "${S2_SOURCE_DIR}/s2/s2chain_interpolation_query.cc"
     "${S2_SOURCE_DIR}/s2/s2closest_cell_query.cc"
     "${S2_SOURCE_DIR}/s2/s2closest_edge_query.cc"
     "${S2_SOURCE_DIR}/s2/s2closest_point_query.cc"
@@ -46,6 +47,7 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2coords.cc"
     "${S2_SOURCE_DIR}/s2/s2crossing_edge_query.cc"
     "${S2_SOURCE_DIR}/s2/s2debug.cc"
+    "${S2_SOURCE_DIR}/s2/s2density_tree.cc"
     "${S2_SOURCE_DIR}/s2/s2earth.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_clipping.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_crosser.cc"
@@ -53,8 +55,10 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2edge_distances.cc"
     "${S2_SOURCE_DIR}/s2/s2edge_tessellator.cc"
     "${S2_SOURCE_DIR}/s2/s2error.cc"
+    "${S2_SOURCE_DIR}/s2/s2fractal.cc"
     "${S2_SOURCE_DIR}/s2/s2furthest_edge_query.cc"
     "${S2_SOURCE_DIR}/s2/s2hausdorff_distance_query.cc"
+    "${S2_SOURCE_DIR}/s2/s2index_cell_data.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng_rect.cc"
     "${S2_SOURCE_DIR}/s2/s2latlng_rect_bounder.cc"
@@ -63,10 +67,10 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2lax_polyline_shape.cc"
     "${S2_SOURCE_DIR}/s2/s2loop.cc"
     "${S2_SOURCE_DIR}/s2/s2loop_measures.cc"
+    "${S2_SOURCE_DIR}/s2/s2max_distance_targets.cc"
     "${S2_SOURCE_DIR}/s2/s2measures.cc"
     "${S2_SOURCE_DIR}/s2/s2memory_tracker.cc"
     "${S2_SOURCE_DIR}/s2/s2metrics.cc"
-    "${S2_SOURCE_DIR}/s2/s2max_distance_targets.cc"
     "${S2_SOURCE_DIR}/s2/s2min_distance_targets.cc"
     "${S2_SOURCE_DIR}/s2/s2padded_cell.cc"
     "${S2_SOURCE_DIR}/s2/s2point_compression.cc"
@@ -80,10 +84,11 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2predicates.cc"
     "${S2_SOURCE_DIR}/s2/s2projections.cc"
     "${S2_SOURCE_DIR}/s2/s2r2rect.cc"
-    "${S2_SOURCE_DIR}/s2/s2region.cc"
-    "${S2_SOURCE_DIR}/s2/s2region_term_indexer.cc"
+    "${S2_SOURCE_DIR}/s2/s2random.cc"
     "${S2_SOURCE_DIR}/s2/s2region_coverer.cc"
     "${S2_SOURCE_DIR}/s2/s2region_intersection.cc"
+    "${S2_SOURCE_DIR}/s2/s2region_sharder.cc"
+    "${S2_SOURCE_DIR}/s2/s2region_term_indexer.cc"
     "${S2_SOURCE_DIR}/s2/s2region_union.cc"
     "${S2_SOURCE_DIR}/s2/s2shape_index.cc"
     "${S2_SOURCE_DIR}/s2/s2shape_index_buffered_region.cc"
@@ -94,9 +99,12 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/s2shapeutil_coding.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_contains_brute_force.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_conversion.cc"
+    "${S2_SOURCE_DIR}/s2/s2shapeutil_count_vertices.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_edge_iterator.cc"
+    "${S2_SOURCE_DIR}/s2/s2shapeutil_edge_wrap.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_get_reference_point.cc"
     "${S2_SOURCE_DIR}/s2/s2shapeutil_visit_crossing_edge_pairs.cc"
+    "${S2_SOURCE_DIR}/s2/s2testing.cc"
     "${S2_SOURCE_DIR}/s2/s2text_format.cc"
     "${S2_SOURCE_DIR}/s2/s2wedge_relations.cc"
     "${S2_SOURCE_DIR}/s2/s2winding_operation.cc"
@@ -140,6 +148,7 @@ target_link_libraries(_s2 PRIVATE
     absl::strings
     absl::type_traits
     absl::utility
+    absl::vlog_is_on
 )
 
 target_include_directories(_s2 SYSTEM BEFORE PUBLIC "${S2_SOURCE_DIR}/")

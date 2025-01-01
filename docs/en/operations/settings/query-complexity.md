@@ -49,6 +49,18 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max_memory_usage](#settings_max_memory_usage).
 
+For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
+
+``` sql
+ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
+```
+
+You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
+
+```sql
+SELECT getSetting('max_memory_usage_for_user');
+```
+
 ## max_rows_to_read {#max-rows-to-read}
 
 The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
@@ -110,6 +122,14 @@ Default value: `0`.
 
 Cloud default value: half the memory amount per replica.
 
+## max_bytes_ratio_before_external_group_by {#settings-max_bytes_ratio_before_external_group_by}
+
+The ratio of available memory that is allowed for `GROUP BY`, once reached, uses external memory for aggregation.
+
+For example, if set to `0.6`, `GROUP BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external aggregation.
+
+Default value: `0.5`.
+
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
 Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
@@ -120,6 +140,14 @@ Enables or disables execution of `ORDER BY` clauses in external memory. See [ORD
 Default value: 0.
 
 Cloud default value: half the memory amount per replica.
+
+## max_bytes_ratio_before_external_sort {#settings-max_bytes_ratio_before_external_sort}
+
+The ratio of available memory that is allowed for `ORDER BY`, once reached, uses external sort.
+
+For example, if set to `0.6`, `ORDER BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+
+Default value: `0.5`.
 
 ## max_rows_to_sort {#max-rows-to-sort}
 
@@ -177,10 +205,10 @@ Result:
 Maximum query execution time in seconds.
 At this time, it is not checked for one of the sorting stages, or when merging and finalizing aggregate functions.
 
-The `max_execution_time` parameter can be a bit tricky to understand. 
-It operates based on interpolation relative to the current query execution speed (this behaviour is controlled by [timeout_before_checking_execution_speed](#timeout-before-checking-execution-speed)). 
+The `max_execution_time` parameter can be a bit tricky to understand.
+It operates based on interpolation relative to the current query execution speed (this behaviour is controlled by [timeout_before_checking_execution_speed](#timeout-before-checking-execution-speed)).
 ClickHouse will interrupt a query if the projected execution time exceeds the specified `max_execution_time`.
-By default, the timeout_before_checking_execution_speed is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse will begin estimating the total execution time. 
+By default, the timeout_before_checking_execution_speed is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse will begin estimating the total execution time.
 If, for example, `max_execution_time` is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated time exceeds this 3600-second limit.
 If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use clock time as the basis for `max_execution_time`.
 
@@ -188,7 +216,7 @@ If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use c
 
 What to do if the query is run longer than `max_execution_time` or the estimated running time is longer than `max_estimated_execution_time`: `throw` or `break`. By default, `throw`.
 
-# max_execution_time_leaf
+## max_execution_time_leaf
 
 Similar semantic to `max_execution_time` but only apply on leaf node for distributed or remote queries.
 
@@ -204,7 +232,7 @@ We can use `max_execution_time_leaf` as the query settings:
 SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
 ```
 
-# timeout_overflow_mode_leaf
+## timeout_overflow_mode_leaf
 
 What to do when the query in leaf node run longer than `max_execution_time_leaf`: `throw` or `break`. By default, `throw`.
 
@@ -303,7 +331,7 @@ What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘
 
 Limits the number of rows in the hash table that is used when joining tables.
 
-This settings applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
+This settings applies to [SELECT ... JOIN](../../sql-reference/statements/select/join.md#select-join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
 
@@ -320,7 +348,7 @@ Default value: 0.
 
 Limits the size in bytes of the hash table used when joining tables.
 
-This setting applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
+This setting applies to [SELECT ... JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
 
 If the query contains joins, ClickHouse checks this setting for every intermediate result.
 
@@ -426,3 +454,17 @@ Example:
 ```
 
 Default value: 0 (Infinite count of simultaneous sessions).
+
+## max_partitions_to_read {#max-partitions-to-read}
+
+Limits the maximum number of partitions that can be accessed in one query.
+
+The setting value specified when the table is created can be overridden via query-level setting.
+
+Possible values:
+
+- Any positive integer.
+
+Default value: -1 (unlimited).
+
+You can also specify a MergeTree setting [max_partitions_to_read](merge-tree-settings#max-partitions-to-read) in tables' setting.

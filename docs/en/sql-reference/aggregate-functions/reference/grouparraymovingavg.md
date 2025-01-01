@@ -1,6 +1,6 @@
 ---
 slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingavg
-sidebar_position: 114
+sidebar_position: 143
 ---
 
 # groupArrayMovingAvg

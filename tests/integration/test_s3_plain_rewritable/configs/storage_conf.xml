@@ -1,0 +1,55 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3_plain_rewritable>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <endpoint_subpath from_env="ENDPOINT_SUBPATH"></endpoint_subpath>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </disk_s3_plain_rewritable>
+            <disk_cache_s3_plain_rewritable>
+                <type>cache</type>
+                <disk>disk_s3_plain_rewritable</disk>
+                <path>/var/lib/clickhouse/disks/s3_plain_rewritable_cache/</path>
+                <max_size>1000000000</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </disk_cache_s3_plain_rewritable>
+            <disk_s3_plain_rewritable_with_metadata_cache>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <endpoint>http://minio1:9001/root/data_with_cache/</endpoint>
+                <endpoint_subpath from_env="ENDPOINT_SUBPATH"></endpoint_subpath>
+                <object_metadata_cache_size>1000</object_metadata_cache_size>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </disk_s3_plain_rewritable_with_metadata_cache>
+        </disks>
+        <policies>
+            <s3_plain_rewritable>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain_rewritable</disk>
+                    </main>
+                </volumes>
+            </s3_plain_rewritable>
+            <cache_s3_plain_rewritable>
+                <volumes>
+                    <main>
+                        <disk>disk_cache_s3_plain_rewritable</disk>
+                    </main>
+                </volumes>
+            </cache_s3_plain_rewritable>
+            <s3_plain_rewritable_with_metadata_cache>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain_rewritable_with_metadata_cache</disk>
+                    </main>
+                </volumes>
+            </s3_plain_rewritable_with_metadata_cache>
+        </policies>
+    </storage_configuration>
+</clickhouse>

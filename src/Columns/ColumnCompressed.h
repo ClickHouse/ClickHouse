@@ -3,6 +3,7 @@
 #include <optional>
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
+#include <Common/WeakHash.h>
 #include <IO/BufferWithOwnMemory.h>
 
 
@@ -69,9 +70,11 @@ public:
 
     /// Helper methods for compression.
 
-    /// If data is not worth to be compressed and not 'always_compress' - returns nullptr.
+    /// If data is not worth to be compressed - returns nullptr.
+    /// By default it requires that compressed data is at least 50% smaller than original.
+    /// With `force_compression` set to true, it requires compressed data to be not larger than the source data.
     /// Note: shared_ptr is to allow to be captured by std::function.
-    static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool always_compress);
+    static std::shared_ptr<Memory<>> compressBuffer(const void * data, size_t data_size, bool force_compression);
 
     static void decompressBuffer(
         const void * compressed_data, void * decompressed_data, size_t compressed_size, size_t decompressed_size);
@@ -81,11 +84,16 @@ public:
     TypeIndex getDataType() const override { throwMustBeDecompressed(); }
     Field operator[](size_t) const override { throwMustBeDecompressed(); }
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override { throwMustBeDecompressed(); }
     StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
     bool tryInsert(const Field &) override { throwMustBeDecompressed(); }
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
+#else
+    void doInsertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
+#endif
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }
@@ -94,13 +102,17 @@ public:
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
-    void updateWeakHash32(WeakHash32 &) const override { throwMustBeDecompressed(); }
+    WeakHash32 getWeakHash32() const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
     void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
+#endif
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throwMustBeDecompressed();
@@ -121,6 +133,9 @@ public:
     double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
     UInt64 getNumberOfDefaultRows() const override { throwMustBeDecompressed(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
+
+    bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
+    void takeDynamicStructureFromSourceColumns(const Columns &) override { throwMustBeDecompressed(); }
 
 protected:
     size_t rows;

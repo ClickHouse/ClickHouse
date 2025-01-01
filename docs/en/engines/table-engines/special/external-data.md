@@ -29,7 +29,7 @@ Only a single table can be retrieved from stdin.
 The following parameters are optional: **–name**– Name of the table. If omitted, _data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
 
-One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, …
+One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, ...
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Defines the column names and types.
 
 The files specified in ‘file’ will be parsed by the format specified in ‘format’, using the data types specified in ‘types’ or ‘structure’. The table will be uploaded to the server and accessible there as a temporary table with the name in ‘name’.

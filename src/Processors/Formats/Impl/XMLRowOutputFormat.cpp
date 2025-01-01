@@ -178,11 +178,6 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
 }
 
 
-void XMLRowOutputFormat::onProgress(const Progress & value)
-{
-    statistics.progress.incrementPiecewiseAtomically(value);
-}
-
 void XMLRowOutputFormat::finalizeImpl()
 {
     writeCString("\t<rows>", *ostr);
@@ -191,6 +186,7 @@ void XMLRowOutputFormat::finalizeImpl()
 
 
     writeRowsBeforeLimitAtLeast();
+    writeRowsBeforeAggregationAtLeast();
 
     if (!exception_message.empty())
         writeException();
@@ -216,6 +212,16 @@ void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
         writeCString("\t<rows_before_limit_at_least>", *ostr);
         writeIntText(statistics.rows_before_limit, *ostr);
         writeCString("</rows_before_limit_at_least>\n", *ostr);
+    }
+}
+
+void XMLRowOutputFormat::writeRowsBeforeAggregationAtLeast()
+{
+    if (statistics.applied_aggregation)
+    {
+        writeCString("\t<rows_before_aggregation>", *ostr);
+        writeIntText(statistics.rows_before_aggregation, *ostr);
+        writeCString("</rows_before_aggregation>\n", *ostr);
     }
 }
 

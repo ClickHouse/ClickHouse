@@ -9,13 +9,10 @@ import sys
 import traceback
 from pathlib import Path
 
-# isort: off
 from github import Github
 
-# isort: on
-
 from build_download_helper import download_builds_filter
-from ci_config import CI_CONFIG
+from ci_config import CI
 from clickhouse_helper import get_instance_id, get_instance_type
 from commit_status_helper import get_commit
 from docker_images_helper import get_docker_image, pull_image
@@ -86,7 +83,7 @@ def main():
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
-    required_build = CI_CONFIG.test_configs[check_name].required_build
+    required_build = CI.JOB_CONFIGS[check_name].get_required_build()
 
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
         event = json.load(event_file)

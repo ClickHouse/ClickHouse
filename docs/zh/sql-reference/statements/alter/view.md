@@ -4,9 +4,9 @@ sidebar_position: 50
 sidebar_label: VIEW
 ---
 
-# ALTER TABLE … MODIFY QUERY 语句 {#alter-modify-query}
+# ALTER TABLE ... MODIFY QUERY 语句 {#alter-modify-query}
 
-当使用`ALTER TABLE … MODIFY QUERY`语句创建一个[物化视图](../create/view.md#materialized)时，可以修改`SELECT`查询。当物化视图在没有  `TO [db.]name` 的情况下创建时使用它。必须启用 `allow_experimental_alter_materialized_view_structure`设置。
+当使用`ALTER TABLE ... MODIFY QUERY`语句创建一个[物化视图](../create/view.md#materialized)时，可以修改`SELECT`查询。当物化视图在没有  `TO [db.]name` 的情况下创建时使用它。必须启用 `allow_experimental_alter_materialized_view_structure`设置。
 
 如果一个物化视图使用`TO [db.]name`，你必须先 [DETACH](../detach.mdx) 视图。用[ALTER TABLE](index.md)修改目标表，然后 [ATTACH](../attach.mdx)之前分离的(`DETACH`)视图。
 

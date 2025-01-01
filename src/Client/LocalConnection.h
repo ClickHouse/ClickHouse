@@ -101,7 +101,7 @@ public:
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
-    const String & getDescription() const override { return description; }
+    const String & getDescription([[maybe_unused]] bool with_extra = false) const override { return description; }  /// NOLINT
 
     std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
 
@@ -114,11 +114,14 @@ public:
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
         bool with_pending_data/* = false */,
+        const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
+
+    bool isSendDataNeeded() const override;
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
@@ -151,7 +154,10 @@ private:
 
     void sendProfileEvents();
 
+    /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
+
+    bool needSendProgressOrMetrics();
 
     ContextMutablePtr query_context;
     Session session;
@@ -172,4 +178,5 @@ private:
 
     ReadBuffer * in;
 };
+
 }

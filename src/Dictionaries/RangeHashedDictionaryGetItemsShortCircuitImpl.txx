@@ -1,7 +1,7 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 
 #define INSTANTIATE_GET_ITEMS_SHORT_CIRCUIT_IMPL(DictionaryKeyType, IsNullable, ValueType) \
-    template size_t RangeHashedDictionary<DictionaryKeyType>::getItemsShortCircuitImpl<ValueType, IsNullable>( \
+    template void RangeHashedDictionary<DictionaryKeyType>::getItemsShortCircuitImpl<ValueType, IsNullable>( \
         const Attribute & attribute, \
         const Columns & key_columns, \
         typename RangeHashedDictionary<DictionaryKeyType>::ValueSetterFunc<ValueType> && set_value, \
@@ -18,7 +18,7 @@ namespace DB
 
 template <DictionaryKeyType dictionary_key_type>
 template <typename ValueType, bool is_nullable>
-size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
+void RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     typename RangeHashedDictionary<dictionary_key_type>::ValueSetterFunc<ValueType> && set_value,
@@ -120,6 +120,7 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
                 }
 
                 default_mask[key_index] = 1;
+                set_value(key_index, ValueType{}, true);
 
                 keys_extractor.rollbackCurrentKey();
             }
@@ -127,6 +128,5 @@ size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
-    return keys_found;
 }
 }

@@ -3,8 +3,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <fmt/format.h>
-
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
 #include <base/getPageSize.h>
@@ -75,7 +73,7 @@ void MMappedFileDescriptor::set(int fd_, size_t offset_)
 {
     size_t file_size = getFileSize(fd_);
 
-    if (offset > static_cast<size_t>(file_size))
+    if (offset > file_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MMappedFileDescriptor: requested offset is greater than file size");
 
     set(fd_, offset_, file_size - offset);
@@ -101,5 +99,3 @@ MMappedFileDescriptor::~MMappedFileDescriptor()
 }
 
 }
-
-

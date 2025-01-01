@@ -1,6 +1,6 @@
 SELECT
-    (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`,
-    (b AS b) + 3 AS `plus(b, 3)`
+    (b AS `cityHash64(a)`) + 10,
+    (b AS b) + 3
 FROM column_swap_test_test
 WHERE b = 1
 QUERY id: 0
@@ -27,7 +27,7 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
     cityHash64(a) + 10,
     b + 3
@@ -57,10 +57,10 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
-    (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`,
-    (b AS b) + 3 AS `plus(b, 3)`
+    (b AS `cityHash64(a)`) + 10,
+    (b AS b) + 3
 FROM column_swap_test_test
 WHERE b = 0
 QUERY id: 0
@@ -87,10 +87,10 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
-    (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`,
-    (b AS b) + 3 AS `plus(b, 3)`
+    (b AS `cityHash64(a)`) + 10,
+    (b AS b) + 3
 FROM column_swap_test_test
 WHERE b = 0
 QUERY id: 0
@@ -117,10 +117,10 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
-    (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`,
-    (b AS b) + 3 AS `plus(b, 3)`
+    (b AS `cityHash64(a)`) + 10,
+    (b AS b) + 3
 FROM column_swap_test_test
 WHERE b = 1
 QUERY id: 0
@@ -147,8 +147,8 @@ QUERY id: 0
         LIST id: 12, nodes: 2
           COLUMN id: 13, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 14, constant_value: UInt64_1, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
-SELECT (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`
+  SETTINGS enable_analyzer=1
+SELECT (b AS `cityHash64(a)`) + 10
 FROM column_swap_test_test
 WHERE b = 0
 QUERY id: 0
@@ -169,10 +169,10 @@ QUERY id: 0
         LIST id: 8, nodes: 2
           COLUMN id: 9, column_name: b, result_type: UInt64, source_id: 5
           CONSTANT id: 10, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
-    (cityHash64(a) AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`,
-    a AS a
+    (cityHash64(a) AS `cityHash64(a)`) + 10,
+    a
 FROM column_swap_test_test
 WHERE cityHash64(a) = 0
 QUERY id: 0
@@ -201,10 +201,10 @@ QUERY id: 0
               LIST id: 13, nodes: 1
                 COLUMN id: 14, column_name: a, result_type: String, source_id: 7
           CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
-    (cityHash64(a) AS b) + 10 AS `plus(b, 10)`,
-    a AS a
+    (cityHash64(a) AS b) + 10,
+    a
 FROM column_swap_test_test
 WHERE cityHash64(a) = 0
 QUERY id: 0
@@ -233,7 +233,7 @@ QUERY id: 0
               LIST id: 13, nodes: 1
                 COLUMN id: 14, column_name: a, result_type: String, source_id: 7
           CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
     a AS `substring(reverse(b), 1, 1)`,
     a AS a
@@ -255,7 +255,7 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: \'c\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
     a AS `substring(reverse(b), 1, 1)`,
     a AS a
@@ -277,7 +277,7 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: \'c\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT
     a AS t1,
     a AS t2
@@ -299,7 +299,7 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: String, source_id: 3
           CONSTANT id: 8, constant_value: \'c\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT a AS `substring(reverse(b), 1, 1)`
 FROM column_swap_test_test
 WHERE a = \'c\'
@@ -317,7 +317,7 @@ QUERY id: 0
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: a, result_type: String, source_id: 3
           CONSTANT id: 7, constant_value: \'c\', constant_value_type: String
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT a
 FROM t_bad_constraint
 QUERY id: 0
@@ -328,4 +328,4 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: UInt32, source_id: 3
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_bad_constraint
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

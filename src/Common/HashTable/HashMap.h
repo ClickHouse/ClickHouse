@@ -291,9 +291,22 @@ public:
           *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
           */
         if (inserted)
-            new (&it->getMapped()) typename Cell::Mapped();
+            new (reinterpret_cast<void*>(&it->getMapped())) typename Cell::Mapped();
 
         return it->getMapped();
+    }
+
+    /// Only inserts the value if key isn't already present
+    void ALWAYS_INLINE insertIfNotPresent(const Key & x, const typename Cell::Mapped & value)
+    {
+        LookupResult it;
+        bool inserted;
+        this->emplace(x, it, inserted);
+        if (inserted)
+        {
+            new (&it->getMapped()) typename Cell::Mapped();
+            it->getMapped() = value;
+        }
     }
 
     const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
