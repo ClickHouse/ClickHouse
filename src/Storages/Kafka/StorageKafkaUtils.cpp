@@ -412,6 +412,14 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
     auto kafka_format_settings = kafka_settings.getFormatSettings();
     result.insert(result.end(), kafka_format_settings.begin(), kafka_format_settings.end());
+
+    /// It does not make sense to use auto detection here, since the format
+    /// will be reset for each message, plus, auto detection takes CPU
+    /// time.
+    result.setSetting("input_format_csv_detect_header", false);
+    result.setSetting("input_format_tsv_detect_header", false);
+    result.setSetting("input_format_custom_detect_header", false);
+
     return result;
 }
 
