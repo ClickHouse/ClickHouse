@@ -61,7 +61,7 @@ void PrettyBlockOutputFormat::calculateWidths(
 
     /// Calculate the widths of all values.
     String serialized_value;
-    size_t prefix = 2; // Tab character adjustment
+    size_t prefix = row_number_width + (style == Style::Space ? 1 : 2); // Tab character adjustment
     for (size_t i = 0; i < num_columns; ++i)
     {
         const auto & elem = header.getByPosition(i);
@@ -323,7 +323,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     ///    ┃ name ┃
     ///    ┌─name─┐
     ///    └─name─┘
-    ///     name
+    ///      name
     auto write_names = [&](bool is_top) -> void
     {
         writeString(left_blank, out);
@@ -515,6 +515,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
+    size_t prefix = row_number_width + (style == Style::Space ? 1 : 2);
+
     bool is_continuation = start_from_offset > 0 && start_from_offset < serialized_value->size();
 
     String serialized_fragment;
@@ -529,7 +531,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         const char * next_nl = find_first_symbols<'\n'>(serialized_value->data() + start_from_offset, end);
         size_t fragment_end_offset = next_nl - serialized_value->data();
         serialized_fragment = serialized_value->substr(start_from_offset, fragment_end_offset - start_from_offset);
-        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), 0);
+        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
         start_from_offset = fragment_end_offset;
     }
     else
@@ -555,7 +557,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     {
         is_cut = true;
         serialized_fragment.resize(UTF8::computeBytesBeforeWidth(
-            reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), 0, format_settings.pretty.max_value_width));
+            reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix, format_settings.pretty.max_value_width));
 
         if (color)
         {
