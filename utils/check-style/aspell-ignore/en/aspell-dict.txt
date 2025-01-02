@@ -88,6 +88,7 @@ BestEffortOrZero
 BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
+BetaBadge
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -293,6 +294,7 @@ ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
 ExecutablePool
+ExperimentalBadge
 ExtType
 ExternalDistributed
 FFFD
@@ -1216,6 +1218,7 @@ alphaTokens
 amplab
 analysisOfVariance
 analytics
+annindexes
 anonymize
 anonymized
 ansi
