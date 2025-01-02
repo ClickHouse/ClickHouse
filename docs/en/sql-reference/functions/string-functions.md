@@ -2539,3 +2539,37 @@ Result:
 │ foo                        │
 └────────────────────────────┘
 ```
+## strncmp
+
+Compare two strings.
+
+**Syntax**
+```sql
+strncmp(a_str, a_offset, b_str, b_offset, n);
+```
+
+**Arguments**
+- `a_str` — The string to be compared.
+- `a_offset` — Compare `a_str` from offset `a_offset`
+- `b_str` — The other string to be compared.
+- `b_offset` — Compare `b_str` from offset `b_offset`
+- `n` Compare `n` bytes in `a_str` and `b_str`.
+
+**Returned value**
+- -1 — If `a_str`[`a_offset`: `a_offset` + `n`] < `b_str`[`b_offset`:`b_offset` + `n`].
+- 0 — If `a_str`[`a_offset`: `a_offset` + `n`] = `b_str`[`b_offset`:`b_offset` + `n`].
+- 1 — If `a_str`[`a_offset`: `a_offset` + `n`] > `b_str`[`b_offset`:`b_offset` + `n`].
+
+**Example**
+```sql
+SELECT
+    strncmp('123', 0, '123', 0, 3),
+    strncmp('124', 0, '123', 0, 3),
+    strncmp('121', 0, '123', 0, 3)
+```
+Result:
+```result
+   ┌─strncmp('123⋯123', 0, 3)─┬─strncmp('124⋯123', 0, 3)─┬─strncmp('121⋯123', 0, 3)─┐
+1. │                        0 │                        1 │                       -1 │
+   └──────────────────────────┴──────────────────────────┴──────────────────────────┘
+```
