@@ -6,9 +6,20 @@
 #include <Common/Stopwatch.h>
 #include <base/sleep.h>
 
+namespace ProfileEvents
+{
+    extern const Event ThrottlerSleepMicroseconds;
+}
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TOO_SLOW;
+    extern const int TIMEOUT_EXCEEDED;
+}
 
 static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_in_seconds, UInt64 total_elapsed_microseconds)
 {

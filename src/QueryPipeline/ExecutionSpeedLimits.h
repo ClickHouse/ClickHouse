@@ -10,7 +10,6 @@ class Stopwatch;
 
 namespace ProfileEvents
 {
-    extern const Event ThrottlerSleepMicroseconds;
     extern const Event OverflowBreak;
     extern const Event OverflowThrow;
 }
@@ -20,9 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 /// Limits for query execution speed.
