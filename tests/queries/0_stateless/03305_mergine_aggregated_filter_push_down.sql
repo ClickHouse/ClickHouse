@@ -1,7 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 
 CREATE TABLE tab (x UInt32, y UInt32, z UInt32) engine = MergeTree order by x;
-insert into tab select number, number, number from numbers(1e6);
+insert into tab select number, number, number from numbers(8129 * 123);
 
 set enable_analyzer=1;
 set prefer_localhost_replica=1;
