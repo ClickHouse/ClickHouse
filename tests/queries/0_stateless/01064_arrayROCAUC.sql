@@ -86,6 +86,7 @@ select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], true, [0, 0, 0], true); 
 select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], true, [0, 0, 0, NULL]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], true, ['a', 'b', 'c', 'd']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], true, [0, 1, 0, 0, 0]); -- { serverError BAD_ARGUMENTS }
+select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [-1, 0, 0, 0]); -- { serverError BAD_ARGUMENTS }
 select arrayROCAUC(x, y, true, z) from (
   select [1] as x, [0] as y, [0, 0, 0, 0, 0, 0, 0, 0] as z
   UNION ALL

@@ -63,6 +63,7 @@ select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, NULL, 1, 1]); -- { serverError ILLE
 select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, 0, NULL]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], ['a', 'b', 'c']); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, 1, 0, 0]); -- { serverError BAD_ARGUMENTS }
+select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, -1, 0]); -- { serverError BAD_ARGUMENTS }
 select arrayAUCPR(x, y, z) from (
   select [1] as x, [0] as y, [0, 0, 0, 0, 0, 0] as z
   UNION ALL
