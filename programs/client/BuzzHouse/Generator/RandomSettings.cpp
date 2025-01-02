@@ -150,7 +150,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"engine_file_skip_empty_files", trueOrFalse},
     {"engine_url_skip_empty_files", trueOrFalse},
     {"exact_rows_before_limit", trueOrFalse},
-    {"external_table_functions_use_nulls", trueOrFalse},
+    //{"external_table_functions_use_nulls", trueOrFalse},
     {"external_table_strict_query", trueOrFalse},
     {"extremes", trueOrFalse},
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalse},
