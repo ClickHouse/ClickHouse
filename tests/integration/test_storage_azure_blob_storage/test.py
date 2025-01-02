@@ -1459,6 +1459,10 @@ def test_format_detection(cluster):
         result
         == f"CREATE TABLE default.test_format_detection\\n(\\n    `x` Nullable(String),\\n    `y` Nullable(String)\\n)\\nENGINE = AzureBlobStorage(\\'{storage_account_url}\\', \\'cont\\', \\'test_format_detection1\\', \\'{account_name}\\', \\'{account_key}\\', \\'JSON\\', \\'none\\')\n"
     )
+    azure_query(
+        node,
+        f"DROP TABLE test_format_detection",
+    )
 
 
 def test_write_to_globbed_partitioned_path(cluster):
@@ -1593,7 +1597,10 @@ def test_hive_partitioning_with_one_parameter(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
     )
 
     query = (
@@ -1631,7 +1638,10 @@ def test_hive_partitioning_with_all_parameters(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
     )
 
     query = (
@@ -1657,7 +1667,10 @@ def test_hive_partitioning_without_setting(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage(azure_conf2, storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
         f" container='cont', blob_path='{path}', format='CSVWithNames', compression='auto', structure='{table_format}') VALUES {values_1}, {values_2}",
-        settings={"azure_truncate_on_insert": 1},
+        settings={
+            "azure_truncate_on_insert": 1,
+            "use_hive_partitioning": 0,
+        },
     )
 
     query = (

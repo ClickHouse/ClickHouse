@@ -7,6 +7,9 @@ option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
    but is not possible to satisfy" ON)
 
+# This allows to compile some code conditionally in the private build while having byte-identical source files.
+set (CLICKHOUSE_CLOUD 0)
+
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
@@ -231,7 +234,7 @@ endif ()
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
-    set(SPLITTED_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
+    set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
@@ -268,6 +271,10 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
 else ()
     set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
 endif ()
+
+if (COMPILER_CACHE STREQUAL "chcache")
+    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
+endif()
 
 option (ENABLE_BUILD_PATH_MAPPING "Enable remapping of file source paths in debug info, predefined preprocessor macros, and __builtin_FILE(). It's used to generate reproducible builds. See https://reproducible-builds.org/docs/build-path" ${ENABLE_BUILD_PATH_MAPPING_DEFAULT})
 
@@ -347,10 +354,11 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-if (NOT ENABLE_TESTS AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
+if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
     # https://clang.llvm.org/docs/ThinLTO.html
     # Applies to clang and linux only.
     # Disabled when building with tests or sanitizers.
+    # Also disabled with clang-tidy where we don't care about linking
     option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
 endif()
 
@@ -462,6 +470,9 @@ endif ()
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+# Ensure that we always use the dummy launchers for our own code.
+set_dummy_launchers_if_needed()
 
 if (NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
@@ -592,8 +603,6 @@ endif()
 include (cmake/sanitize_targets.cmake)
 
 if (COMPILER_CACHE STREQUAL "chcache")
-    set (ENABLE_BUILD_PATH_MAPPING_DEFAULT ON)
-
     get_all_targets(all_targets)
     set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
     foreach(target ${all_targets})

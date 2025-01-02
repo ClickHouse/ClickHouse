@@ -8,6 +8,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
@@ -33,7 +34,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_limit_for_ann_queries;
+    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
 }
 
 namespace ServerSetting
@@ -51,11 +52,6 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace Setting
-{
-    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
 }
 
 namespace
@@ -295,16 +291,9 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
     auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
 
-    auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row, ThreadGroupPtr thread_group)
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "VectorSimIndex");
+    auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
-
         /// add is thread-safe
         auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]);
         if (!result)
@@ -322,11 +311,10 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     for (size_t row = 0; row < rows; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        auto task = [group = CurrentThread::getGroup(), &add_vector_to_index, key, row] { add_vector_to_index(key, row, group); };
-        thread_pool.scheduleOrThrowOnError(task);
+        runner([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
     }
 
-    thread_pool.wait();
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 }
@@ -408,7 +396,6 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     ContextPtr context)
     : parameters(parameters_)
     , metric_kind(metric_kind_)
-    , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
     if (expansion_search == 0)
@@ -428,11 +415,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
         ((parameters->distance_function == "L2Distance" && metric_kind == unum::usearch::metric_kind_t::l2sq_k)
         || (parameters->distance_function == "cosineDistance" && metric_kind == unum::usearch::metric_kind_t::cos_k));
 
-    /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
-    if (distance_function_in_query_and_distance_function_in_index_match && (parameters->limit <= max_limit_for_ann_queries))
-        return false;
-
-    return true;
+    return !distance_function_in_query_and_distance_function_in_index_match;
 }
 
 std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
