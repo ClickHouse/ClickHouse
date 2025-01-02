@@ -22,7 +22,6 @@ namespace DB
 
 class Block;
 struct Settings;
-class SettingsChanges;
 struct FormatFactorySettings;
 struct ReadSettings;
 
@@ -51,7 +50,9 @@ template <typename Allocator>
 struct Memory;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
-FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
+
+template <typename T>
+FormatSettings getFormatSettings(const ContextPtr & context, const T & settings);
 
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
@@ -94,13 +95,13 @@ private:
 
     // Incompatible with FileSegmentationEngine.
     using RandomAccessInputCreator = std::function<InputFormatPtr(
-        ReadBuffer & buf,
-        const Block & header,
-        const FormatSettings & settings,
-        const ReadSettings & read_settings,
-        bool is_remote_fs,
-        size_t max_download_threads,
-        size_t max_parsing_threads)>;
+            ReadBuffer & buf,
+            const Block & header,
+            const FormatSettings & settings,
+            const ReadSettings& read_settings,
+            bool is_remote_fs,
+            size_t max_download_threads,
+            size_t max_parsing_threads)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,

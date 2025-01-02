@@ -1,7 +1,8 @@
+version: '2.3'
 services:
     postgres1:
         image: postgres
-        command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_statement=all", "-c", "max_connections=200", "-c", "statement_timeout=180000"] # statement_timeout: avoid test timeout because of postgres getting unavailable
+        command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_filename=postgresql.log", "-c", "log_statement=all", "-c", "max_connections=200"]
         restart: always
         expose:
             - ${POSTGRES_PORT:-5432}

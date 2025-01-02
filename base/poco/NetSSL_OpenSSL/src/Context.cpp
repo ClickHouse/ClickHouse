@@ -106,11 +106,6 @@ Context::Context(
 
 Context::~Context()
 {
-    if (_pSSLContext == nullptr)
-    {
-        return;
-    }
-
 	try
 	{
 		SSL_CTX_free(_pSSLContext);

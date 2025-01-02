@@ -5,6 +5,7 @@
 #if USE_LIBPQXX
 
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -17,7 +18,6 @@
 namespace DB
 {
 
-struct MaterializedPostgreSQLSettings;
 class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 

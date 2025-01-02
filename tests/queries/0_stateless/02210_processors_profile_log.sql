@@ -20,8 +20,8 @@ SELECT
         -- SourceFromSingleChunk, that feed data to ExpressionTransform,
         -- will feed first block and then wait in PortFull.
         name = 'SourceFromSingleChunk', output_wait_elapsed_us >= 0.9e6 ? 1 : output_wait_elapsed_us,
-        -- LazyOutputFormatLazyOutputFormat is the output
-        -- so it cannot starts to execute before sleep(1) will be executed.
+        -- NullSource/LazyOutputFormatLazyOutputFormat are the outputs
+        -- so they cannot starts to execute before sleep(1) will be executed.
         input_wait_elapsed_us>=1e6 ? 1 : input_wait_elapsed_us)
     elapsed,
     input_rows,

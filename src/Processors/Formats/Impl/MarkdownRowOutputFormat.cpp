@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/MarkdownRowOutputFormat.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/IDataType.h>
-#include <Formats/FormatFactory.h>
 
 namespace DB
 {

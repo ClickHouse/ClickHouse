@@ -170,7 +170,8 @@ bool VolumeJBOD::areMergesAvoided() const
     auto are_merges_avoided_user_override_value = are_merges_avoided_user_override.load(std::memory_order_acquire);
     if (are_merges_avoided_user_override_value)
         return *are_merges_avoided_user_override_value;
-    return are_merges_avoided;
+    else
+        return are_merges_avoided;
 }
 
 void VolumeJBOD::setAvoidMergesUserOverride(bool avoid)

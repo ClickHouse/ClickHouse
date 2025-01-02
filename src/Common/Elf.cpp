@@ -192,7 +192,8 @@ String Elf::getStoredBinaryHash() const
 {
     if (auto section = findSectionByName(".clickhouse.hash"))
         return {section->begin(), section->end()};
-    return {};
+    else
+        return {};
 }
 
 

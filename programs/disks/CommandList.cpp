@@ -23,7 +23,7 @@ public:
     {
         bool recursive = options.count("recursive");
         bool show_hidden = options.count("all");
-        const auto & disk = client.getCurrentDiskWithPath();
+        auto disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 
         if (recursive)
@@ -72,9 +72,13 @@ private:
             auto path = [&]() -> String
             {
                 if (relative_path.ends_with("/"))
+                {
                     return relative_path + file_name;
-
-                return relative_path + "/" + file_name;
+                }
+                else
+                {
+                    return relative_path + "/" + file_name;
+                }
             }();
             if (disk.isDirectory(path))
             {
