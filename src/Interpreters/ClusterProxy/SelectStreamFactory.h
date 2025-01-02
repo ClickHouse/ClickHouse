@@ -91,6 +91,7 @@ public:
     void createForShard(
         const Cluster::ShardInfo & shard_info,
         const QueryTreeNodePtr & query_tree,
+        const ASTPtr & pushed_down_filters,
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,

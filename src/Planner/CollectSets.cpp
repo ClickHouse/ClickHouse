@@ -68,8 +68,8 @@ public:
             auto set_key = in_second_argument->getTreeHash();
             if (sets.findStorage(set_key))
                 return;
-
-            sets.addFromStorage(set_key, storage_set->getSet(), second_argument_table->getStorageID());
+            auto ast = in_second_argument->toAST();
+            sets.addFromStorage(set_key, std::move(ast), storage_set->getSet(), second_argument_table->getStorageID());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
@@ -86,7 +86,8 @@ public:
             if (sets.findTuple(set_key, set_element_types))
                 return;
 
-            sets.addFromTuple(set_key, std::move(set), settings);
+            auto ast = in_second_argument->toAST();
+            sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
@@ -100,7 +101,8 @@ public:
             if (in_second_argument->as<TableNode>())
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
-            sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
+            auto ast = in_second_argument->toAST();
+            sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
         }
         else
         {

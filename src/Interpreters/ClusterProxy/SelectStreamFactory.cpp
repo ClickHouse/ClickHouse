@@ -16,6 +16,9 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/PredicateRewriteVisitor.h>
+#include <Interpreters/JoinedTables.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Client/IConnections.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -42,6 +45,8 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
+    extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
 }
 
 namespace ErrorCodes
@@ -296,6 +301,7 @@ void SelectStreamFactory::createForShardImpl(
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const QueryTreeNodePtr & query_tree,
+    const ASTPtr & pushed_down_filters,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
     ContextPtr context,
@@ -314,6 +320,26 @@ void SelectStreamFactory::createForShard(
         has_missing_objects = replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
 
     auto query_ast = queryNodeToDistributedSelectQuery(modified_query);
+
+    const auto & settings = context->getSettingsRef();
+    if (pushed_down_filters && !(shard_info.isLocal() && settings[Setting::prefer_localhost_replica]))
+    {
+        JoinedTables joined_tables(context, query_ast->as<ASTSelectQuery &>(), false, false);
+        joined_tables.resolveTables();
+        const auto & tables_with_columns = joined_tables.tablesWithColumns();
+
+        /// Case with JOIN is not supported so far.
+        if (tables_with_columns.size() == 1)
+        {
+            bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
+            bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
+
+            ASTs predicates{pushed_down_filters};
+            PredicateRewriteVisitor::Data data(context, predicates, tables_with_columns.front(), optimize_final, optimize_with);
+
+            data.rewriteSubquery(query_ast->as<ASTSelectQuery &>(), tables_with_columns.front().columns.getNames());
+        }
+    }
 
     createForShardImpl(
         shard_info,
