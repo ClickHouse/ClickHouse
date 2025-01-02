@@ -34,7 +34,7 @@ constexpr static double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 /// because between selecting parts to merge and doing merge, amount of free space could have decreased.
 constexpr static double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
-UInt64 CompactionStatistics::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted)
+UInt64 CompactionStatistics::estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted)
 {
     size_t bytes_size = 0;
     time_t current_time = std::time(nullptr);

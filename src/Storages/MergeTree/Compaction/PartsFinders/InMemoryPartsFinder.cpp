@@ -1,36 +1,42 @@
-#include <optional>
-
 #include <Storages/MergeTree/Compaction/PartsFinders/InMemoryPartsFinder.h>
+
+#include <optional>
 
 namespace DB
 {
 
-static std::optional<MergeTreeData::DataPartsVector> findPartsInMemory(const MergeTreeData & data, const PartsRange & range)
+static std::optional<MergeTreeDataPartsVector> findPartsInMemory(const MergeTreeData & data, const PartsRange & range, bool try_outdated)
 {
-    MergeTreeData::DataPartsVector data_parts;
+    MergeTreeDataPartsVector data_parts;
 
-    for (const auto & part : range)
+    auto lookup_part = [&](const PartProperties & properties)
     {
-        /// FIXME: Outdated parts need to be fetched only inside transaction.
-        auto data_part = data.getPartIfExists(part.part_info, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
-
-        if (!data_part)
-            return std::nullopt;
+        if (try_outdated)
+            return data.getPartIfExists(properties.part_info, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
         else
-            data_parts.push_back(std::move(data_part));
+            return data.getPartIfExists(properties.part_info, {MergeTreeDataPartState::Active});
+    };
+
+    for (const auto & properties : range)
+    {
+        if (auto part = lookup_part(properties))
+            data_parts.push_back(std::move(part));
+        else
+            return std::nullopt;
     }
 
     return data_parts;
 }
 
-InMemoryPartsFinder::InMemoryPartsFinder(const MergeTreeData & data_)
+InMemoryPartsFinder::InMemoryPartsFinder(const MergeTreeData & data_, bool can_use_outdated_parts_)
     : data(data_)
+    , can_use_outdated_parts(can_use_outdated_parts_)
 {
 }
 
 FutureMergedMutatedPartPtr InMemoryPartsFinder::constructFuturePart(const MergeSelectorChoice & choice) const
 {
-    auto data_parts = findPartsInMemory(data, choice.range);
+    auto data_parts = findPartsInMemory(data, choice.range, can_use_outdated_parts);
     if (!data_parts.has_value())
         return nullptr;
 

@@ -1,14 +1,15 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
-#include <pcg_random.hpp>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/randomSeed.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+
+#include <pcg_random.hpp>
 
 #include <cmath>
 

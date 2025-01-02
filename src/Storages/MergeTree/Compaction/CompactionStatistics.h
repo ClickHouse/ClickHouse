@@ -13,7 +13,7 @@ public:
 
     /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
       */
-    static UInt64 estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & account_for_deleted = false);
+    static UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false);
 
     /** Estimate approximate amount of disk space needed to be free before schedule such merge.
       */

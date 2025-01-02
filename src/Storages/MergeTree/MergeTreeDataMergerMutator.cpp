@@ -26,6 +26,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsInt64 merge_with_ttl_timeout;
     extern const MergeTreeSettingsInt64 merge_with_recompression_ttl_timeout;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
@@ -67,7 +68,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const AllowedMergingPredi
         /// So we have to check if this part is currently being inserted with quorum and so on and so forth.
         /// Obviously we have to check it manually only for the first part
         /// of each range because it will be automatically checked for a pair of parts.
-        while (current_it < range.end())
+        while (current_it != range.end())
         {
             PartProperties & current_part = *current_it++;
 
@@ -248,7 +249,7 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
 {
 }
 
-void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, time_t next_due_time)
+void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, const MergeTreeSettingsPtr & settings, time_t current_time)
 {
     assert(!merge_choice.range.empty());
     const String & partition_id = merge_choice.range.front().part_info.partition_id;
@@ -256,13 +257,13 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoice &
     switch (merge_choice.merge_type)
     {
         case MergeType::Regular:
-            /// Do not update anything with regular merge.
+            /// Do not update anything for regular merge.
             return;
         case MergeType::TTLDelete:
-            next_delete_ttl_merge_times_by_partition[partition_id] = next_due_time;
+            next_delete_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
             return;
         case MergeType::TTLRecompress:
-            next_recompress_ttl_merge_times_by_partition[partition_id] = next_due_time;
+            next_recompress_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
             return;
     }
 }
@@ -370,7 +371,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
 
     if (merge_choice.has_value())
     {
-        updateTTLMergeTimes(merge_choice.value(), current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout]);
+        updateTTLMergeTimes(merge_choice.value(), settings, current_time);
         return std::move(merge_choice.value());
     }
 

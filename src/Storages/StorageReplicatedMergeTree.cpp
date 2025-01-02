@@ -4097,7 +4097,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
             if (select_merge_result.has_value())
             {
-                future_merged_part = InMemoryPartsFinder(*this).constructFuturePart(select_merge_result.value());
+                future_merged_part = InMemoryPartsFinder(*this, /*can_use_outdated_parts_=*/false).constructFuturePart(select_merge_result.value());
                 if (!future_merged_part)
                 {
                     LOG_DEBUG(log,
@@ -6124,6 +6124,7 @@ bool StorageReplicatedMergeTree::optimize(
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, NO_TRANSACTION_PTR);
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
 
     auto try_assign_merge = [&](const String & partition_id) -> bool
@@ -6151,8 +6152,6 @@ bool StorageReplicatedMergeTree::optimize(
 
             const auto select_merge = [&]() -> std::expected<MergeSelectorChoice, SelectMergeFailure>
             {
-                auto parts_collector = std::make_shared<VisiblePartsCollector>(*this, NO_TRANSACTION_PTR);
-
                 if (partition_id.empty())
                 {
                     return merger_mutator.selectPartsToMerge(
@@ -6179,7 +6178,7 @@ bool StorageReplicatedMergeTree::optimize(
 
             const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
             {
-                auto future_part = InMemoryPartsFinder(*this).constructFuturePart(choice);
+                auto future_part = InMemoryPartsFinder(*this, /*can_use_outdated_parts_=*/false).constructFuturePart(choice);
                 if (!future_part)
                     return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,

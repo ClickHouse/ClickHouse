@@ -32,7 +32,7 @@ using AllowedMergingPredicate = std::function<std::expected<void, PreformattedMe
  */
 class MergeTreeDataMergerMutator
 {
-    void updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, time_t next_due_time);
+    void updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, const MergeTreeSettingsPtr & settings, time_t current_time);
 
 public:
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
