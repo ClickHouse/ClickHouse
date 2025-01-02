@@ -16,17 +16,6 @@ using PartitionIdToTTLs = std::map<String, time_t>;
   */
 class ITTLMergeSelector : public IMergeSelector
 {
-protected:
-    using Iterator = PartsRange::const_iterator;
-
-    /// Get TTL value for part, may depend on child type and some settings in constructor.
-    virtual time_t getTTLForPart(const PartProperties & part) const = 0;
-
-    /// Returns true if part can be used during ranges building process.
-    virtual bool canConsiderPart(const PartProperties & part) const = 0;
-
-    const time_t current_time;
-
 public:
     ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
 
@@ -34,10 +23,28 @@ public:
         const PartsRanges & parts_ranges,
         size_t max_total_size_to_merge) const override;
 
-private:
-    Iterator findLeftRangeBorder(Iterator left, Iterator begin, size_t & usable_memory) const;
-    Iterator findRightRangeBorder(Iterator right, Iterator end, size_t & usable_memory) const;
+protected:
+    /// Get TTL value for part, may depend on child type and some settings in constructor.
+    virtual time_t getTTLForPart(const PartProperties & part) const = 0;
 
+    /// Returns true if part can be used during ranges building process.
+    virtual bool canConsiderPart(const PartProperties & part) const = 0;
+
+private:
+    using RangesIterator = PartsRanges::const_iterator;
+    using PartsIterator = PartsRange::const_iterator;
+    struct CenterPosition
+    {
+        RangesIterator range;
+        PartsIterator center;
+    };
+
+    bool needToPostponePartition(const std::string & partition_id) const;
+    std::optional<CenterPosition> findCenter(const PartsRanges & parts_ranges) const;
+    PartsIterator findLeftRangeBorder(PartsIterator left, PartsIterator begin, size_t & usable_memory) const;
+    PartsIterator findRightRangeBorder(PartsIterator right, PartsIterator end, size_t & usable_memory) const;
+
+    const time_t current_time;
     const PartitionIdToTTLs & merge_due_times;
 };
 
