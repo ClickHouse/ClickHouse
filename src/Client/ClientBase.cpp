@@ -2872,7 +2872,7 @@ void ClientBase::runInteractive()
     if (isNewYearMode())
         output_stream << "Happy new year." << std::endl;
     else if (isChineseNewYearMode(local_tz))
-        output_stream << "Happy Chinese new year. 春节快乐!" << fmt::format(" {}年快乐!", getChineseZodiac()) << std::endl;
+        output_stream << "Happy Chinese new year. 春节快乐!" << fmt::format(" {}年快乐.", getChineseZodiac()) << std::endl;
     else
         output_stream << "Bye." << std::endl;
 }

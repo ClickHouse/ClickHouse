@@ -107,7 +107,7 @@ std::string getChineseZodiac()
     int year = DateLUT::instance().toYear(current_time);
 
     // Traditional Chinese Zodiac
-    static const char * zodiacs[12] = {
+    static constexpr const char * zodiacs[12] = {
         "鼠", "牛", "虎", "兔", "龙", "蛇",
         "马", "羊", "猴", "鸡", "狗", "猪"
     };
