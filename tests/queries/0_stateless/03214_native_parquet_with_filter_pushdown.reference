@@ -47,7 +47,6 @@ create temporary table test_nested_scan_with_nullable as select * from generateR
     aan Array(Array(Nullable(FixedString(10)))),
     l LowCardinality(String),
     ln LowCardinality(Nullable(FixedString(11))),
-    al Array(LowCardinality(UInt128)),
     aaln Array(Array(LowCardinality(Nullable(String)))),
     mln Map(LowCardinality(String), Nullable(Int8)),
     t Tuple(Map(FixedString(5), Tuple(Array(UInt16), Nullable(UInt16), Array(Tuple(Int8, Decimal64(10))))), Tuple(kitchen UInt64, sink String)),
@@ -418,3 +417,53 @@ select * from file(test_nullable_primitive_scan.parquet) where dec256 <= 0.5 set
 select * from file(test_nullable_primitive_scan.parquet) where dec256 = 0.5 settings input_format_parquet_use_native_reader=true except select * from file(test_nullable_primitive_scan.parquet) where dec256 = 0.5 settings input_format_parquet_use_native_reader=false;
 select * from file(test_nullable_primitive_scan.parquet) where dec256 is null settings input_format_parquet_use_native_reader=true except select * from file(test_nullable_primitive_scan.parquet) where dec256 is null settings input_format_parquet_use_native_reader=false;
 select * from file(test_nullable_primitive_scan.parquet) where dec256 is not null settings input_format_parquet_use_native_reader=true except select * from file(test_nullable_primitive_scan.parquet) where dec256 is not null settings input_format_parquet_use_native_reader=false;
+-- nested types
+
+drop table if exists test_nested_scan;
+create temporary table test_nested_scan as select * from generateRandom('
+    idx Nullable(Int8),
+    u32 Array(UInt32),
+    i8 Array(Int8),
+    datetime Array(DateTime),
+    enum16 Array(Enum16(''xx'' = 1000, ''yy'' = 2000, ''zz'' = 3000)),
+    float32 Array(Float32),
+    str Array(String),
+    fstr Array(FixedString(12)),
+    u128 Array(UInt128),
+    decimal64 Array(Decimal64(10)),
+    ipv4 Array(IPv4),
+    msi Map(String, Int16),
+    tup Tuple(FixedString(3), Array(String), Map(Int8, Date))') limit 2000;
+insert into function file(test_nested_scan.parquet) select * from test_nested_scan;
+select * from file(test_nested_scan.parquet) where idx > 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx > 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan.parquet) where idx >= 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx >= 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan.parquet) where idx < 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx < 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan.parquet) where idx <= 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx <= 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan.parquet) where idx = 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx = 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan.parquet) where idx in (15,16,17,18,19) settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx in (15,16,17,18,19) settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan.parquet) where idx not in (15,16,17,18,19) settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx not in (15,16,17,18,19) settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan.parquet) where idx is null settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx is null settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan.parquet) where idx is not null settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan.parquet) where idx is not null settings input_format_parquet_use_native_reader=false;
+drop table if exists test_nested_scan_with_nullable;
+create temporary table test_nested_scan_with_nullable as select * from generateRandom('
+    idx Nullable(Int8),
+    aa Array(Array(UInt32)),
+    aaa Array(Array(Array(UInt32))),
+    an Array(Nullable(String)),
+    aan Array(Array(Nullable(FixedString(10)))),
+    l LowCardinality(String),
+    ln LowCardinality(Nullable(FixedString(11))),
+    aaln Array(Array(LowCardinality(Nullable(String)))),
+    mln Map(LowCardinality(String), Nullable(Int8)),
+    t Tuple(Map(FixedString(5), Tuple(Array(UInt16), Nullable(UInt16), Array(Tuple(Int8, Decimal64(10))))), Tuple(kitchen UInt64, sink String)),
+    n Nested(hello UInt64, world Tuple(first String, second FixedString(1)))') limit 2000;
+insert into function file(test_nested_scan_with_nullable.parquet) select * from test_nested_scan_with_nullable;
+select * from file(test_nested_scan_with_nullable.parquet) where idx > 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx > 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan_with_nullable.parquet) where idx >= 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx >= 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan_with_nullable.parquet) where idx < 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx < 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan_with_nullable.parquet) where idx <= 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx <= 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan_with_nullable.parquet) where idx = 20 settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx = 20 settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan_with_nullable.parquet) where idx in (15,16,17,18,19) settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx in (15,16,17,18,19) settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan_with_nullable.parquet) where idx not in (15,16,17,18,19) settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx not in (15,16,17,18,19) settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan_with_nullable.parquet) where idx is null settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx is null settings input_format_parquet_use_native_reader=false;
+select * from file(test_nested_scan_with_nullable.parquet) where idx is not null settings input_format_parquet_use_native_reader=true except select * from file(test_nested_scan_with_nullable.parquet) where idx is not null settings input_format_parquet_use_native_reader=false;

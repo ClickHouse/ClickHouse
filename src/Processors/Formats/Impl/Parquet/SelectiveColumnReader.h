@@ -740,7 +740,7 @@ public:
     }
 
     ~OptionalColumnReader() override = default;
-    String getName() override { return "OptionalColumnReader"; }
+    String getName() override { return fmt::format("Optional({})", child->getName()); }
 
     const PaddedPODArray<Int16> & getDefinitionLevels() override;
     const PaddedPODArray<Int16> & getRepetitionLevels() override;
@@ -812,7 +812,7 @@ protected:
 
 public:
     ~ListColumnReader() override = default;
-    String getName() override { return "ListColumnReader"; }
+    String getName() override { return fmt::format("List({})", children.front()->getName()); }
 
     void read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read) override;
 

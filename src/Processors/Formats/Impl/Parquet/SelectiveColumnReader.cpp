@@ -1116,7 +1116,7 @@ void StringDictionaryReader::nextIdxBatchIfEmpty(size_t rows_to_read)
     if (!rows_to_read)
         return;
     state.idx_buffer.resize(rows_to_read);
-    size_t count = idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(rows_to_read));
+    size_t count [[maybe_unused]] = idx_decoder.GetBatch(state.idx_buffer.data(), static_cast<int>(rows_to_read));
     chassert(count == rows_to_read);
 }
 
@@ -1939,19 +1939,6 @@ static void insertManyToFilter(PaddedPODArray<bool> & filter, bool value, size_t
     std::fill(filter.end() - count, filter.end(), value);
 }
 
-static size_t countTailEmptyRows(IColumn::Offsets & offsets)
-{
-    size_t count = 0;
-    for (int i = static_cast<int>(offsets.size() - 1); i >= 0; i--)
-    {
-        if (offsets[i] != offsets[i - 1])
-            break;
-        else
-            count++;
-    }
-    return count;
-}
-
 // must read full
 void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set, size_t rows_to_read)
 {
@@ -1981,6 +1968,8 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
     while (rows_read < rows_to_read || !finished)
     {
         int array_size = 0;
+        size_t tail_empty_rows = 0;
+        //        size_t old_offsets_size = offsets.size();
         size_t old_max_offset = offsets.back();
         const auto & def_levels = getDefinitionLevels();
         bool has_def_level = !def_levels.empty();
@@ -2010,21 +1999,27 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                     rows_read += finished;
                     if (has_filter)
                     {
-                        auto valid = row_set->get(rows_read - 1);
+                        auto valid = row_set->get(rows_read - finished);
                         if (valid)
                         {
                             insertManyToFilter(child_filter, true, array_size);
                             appendRecord(array_size);
                         }
                         else
+                        {
                             insertManyToFilter(child_filter, false, array_size);
+                            last_row_level_idx = count;
+                            finished = true;
+                        }
                     }
                     else
                         appendRecord(array_size);
+                    tail_empty_rows = array_size > 0 ? 0 : tail_empty_rows + 1;
                     array_size = 0;
                     if (rows_read >= rows_to_read && finished)
                         break;
                 }
+
                 if (has_def_level && dl < def_level)
                 {
                     // skip empty record in parent level
@@ -2035,17 +2030,22 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                         continue;
                     }
                     // value is null
-                    if (state.null_map)
+                    if (!has_filter || row_set->get(rows_read))
                     {
-                        state.null_map->data()[offsets.size()] = 1;
+                        if (state.null_map)
+                        {
+                            state.null_map->data()[offsets.size()] = 1;
+                        }
+                        appendRecord(0);
                     }
                     else
                     {
-                        count++;
-                        appendRecord(0);
-                        chassert(array_size == 0);
-                        continue;
+                        last_row_level_idx = count;
                     }
+                    tail_empty_rows++;
+                    chassert(array_size == 0);
+                    count++;
+                    continue;
                 }
                 else
                 {
@@ -2075,6 +2075,7 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                 {
                     insertManyToFilter(child_filter, false, array_size);
                     finished = true;
+                    last_row_level_idx = count;
                 }
             }
             else
@@ -2082,6 +2083,7 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
                 rows_read += finished;
                 appendRecord(array_size);
             }
+            tail_empty_rows = array_size > 0 ? 0 : tail_empty_rows + 1;
         }
         OptionalRowSet filter;
         if (has_filter)
@@ -2101,13 +2103,12 @@ void ListColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_set,
         }
 
         // skip tail empty records, child reader never read tail empty rows
-        auto empty_count = countTailEmptyRows(offsets);
-        if (empty_count)
+        if (tail_empty_rows)
             for (auto & child : children)
             {
                 if (!child->isLeafReader())
                 {
-                    child->advance(empty_count, true);
+                    child->advance(tail_empty_rows, true);
                 }
             }
 
@@ -2132,14 +2133,11 @@ MutableColumnPtr ListColumnReader::createColumn()
 }
 void ListColumnReader::skip(size_t rows)
 {
-    for (const auto & child : children)
-    {
-        // may be can skip generate columns.
-        auto tmp = child->createColumn();
-        OptionalRowSet set;
-        set->setAllFalse();
-        read(tmp, set, rows);
-    }
+    // may be can skip generate columns.
+    auto tmp = createColumn();
+    OptionalRowSet set = RowSet(rows);
+    set->setAllFalse();
+    read(tmp, set, rows);
 }
 
 size_t ListColumnReader::availableRows() const
