@@ -1,8 +1,10 @@
 ---
+title: groupBitmapAnd
 slug: /en/sql-reference/aggregate-functions/reference/groupbitmapand
 sidebar_position: 149
-title: groupBitmapAnd
 ---
+
+# groupBitmapAnd
 
 Calculations the AND of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
 

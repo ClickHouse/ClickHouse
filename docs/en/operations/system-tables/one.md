@@ -1,4 +1,5 @@
 ---
+title: one
 slug: /en/operations/system-tables/one
 ---
 # one

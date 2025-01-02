@@ -2,6 +2,7 @@
 slug: /ru/
 sidebar_position: 0
 sidebar_label: "Что такое ClickHouse"
+displayed_sidebar: russia
 ---
 
 # Что такое ClickHouse {#what-is-clickhouse}

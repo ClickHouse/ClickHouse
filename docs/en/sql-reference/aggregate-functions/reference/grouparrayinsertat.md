@@ -1,4 +1,5 @@
 ---
+title: groupArrayInsertAt
 slug: /en/sql-reference/aggregate-functions/reference/grouparrayinsertat
 sidebar_position: 140
 ---

@@ -1,4 +1,5 @@
 ---
+title: flameGraph
 slug: /en/sql-reference/aggregate-functions/reference/flame_graph
 sidebar_position: 138
 ---

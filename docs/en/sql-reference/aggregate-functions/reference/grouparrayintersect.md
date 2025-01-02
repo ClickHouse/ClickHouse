@@ -1,4 +1,5 @@
 ---
+title: groupArrayIntersect
 slug: /en/sql-reference/aggregate-functions/reference/grouparrayintersect
 sidebar_position: 141
 ---

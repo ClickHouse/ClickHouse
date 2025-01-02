@@ -1,4 +1,5 @@
 ---
+title: kafka_consumers
 slug: /en/operations/system-tables/kafka_consumers
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

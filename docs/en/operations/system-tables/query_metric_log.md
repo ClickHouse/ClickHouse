@@ -1,4 +1,5 @@
 ---
+title: query_metric_log
 slug: /en/operations/system-tables/query_metric_log
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';

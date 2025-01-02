@@ -1,4 +1,5 @@
 ---
+title: dropped_tables
 slug: /en/operations/system-tables/dropped_tables
 ---
 # dropped_tables
