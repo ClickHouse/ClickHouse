@@ -1581,7 +1581,17 @@ void ReadFromMerge::convertAndFilterSourceStream(
         }
     }
 
-    /// Add missing columns
+    ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
+
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+        && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
+        convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+
+    /// This is the filter for the individual source table.
+    if (row_policy_data_opt)
+        row_policy_data_opt->addFilterTransform(child.plan);
+
+    /// Add missing columns for the resulting Merge table.
     {
         auto adding_missing_defaults_dag = addMissingDefaults(
             child.plan.getCurrentHeader(),
@@ -1593,15 +1603,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
         auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(expression_step));
     }
-
-    ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
-
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-        && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
-        convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
-
-    if (row_policy_data_opt)
-        row_policy_data_opt->addFilterTransform(child.plan);
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         child.plan.getCurrentHeader().getColumnsWithTypeAndName(),
