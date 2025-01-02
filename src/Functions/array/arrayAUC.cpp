@@ -133,7 +133,8 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<is_pr>>(); }
 
 private:
-    static constexpr size_t partial_auc_offsets_size = is_pr ? 3 : 4;
+    static constexpr size_t partial_offsets_index = is_pr ? 2 : 3;
+    static constexpr size_t partial_offsets_size = is_pr ? 3 : 4;
 
     static bool isValidBooleanColumn(ColumnWithTypeAndName argument)
     {
@@ -304,10 +305,10 @@ private:
                     current_offset,
                     next_offset,
                     scale,
-                    partial_auc_offsets->getData().getUInt(partial_auc_offsets_size * i),
-                    partial_auc_offsets->getData().getUInt(partial_auc_offsets_size * i + 1),
-                    partial_auc_offsets->getData().getUInt(partial_auc_offsets_size * i + 2),
-                    partial_auc_offsets_size == 4 ? partial_auc_offsets->getData().getUInt(partial_auc_offsets_size * i + 3) : 0);
+                    partial_auc_offsets->getData().getUInt(partial_offsets_size * i),
+                    partial_auc_offsets->getData().getUInt(partial_offsets_size * i + 1),
+                    partial_auc_offsets->getData().getUInt(partial_offsets_size * i + 2),
+                    partial_offsets_size == 4 ? partial_auc_offsets->getData().getUInt(partial_offsets_size * i + 3) : 0);
             else
                 result[i] = apply(scores, labels, current_offset, next_offset, scale);
             current_offset = next_offset;
@@ -364,46 +365,20 @@ public:
                 nested_type_labels->getName());
 
         /// `scale` argument validation
-        bool is_third_arg_scale = !is_pr;
-
-        if (!is_pr && number_of_arguments >= 3)
-        {
-            if (!isValidBooleanColumn(arguments[2]))
-            {
-                if (number_of_arguments == 4)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Third argument (scale) for function {} must be of type const Bool",
-                        getName());
-                /// Postpone the exception in case the third argument can be arr_partial_offsets
-                else
-                    is_third_arg_scale = false;
-            }
-        }
+        if (!is_pr && number_of_arguments >= 3 && !isValidBooleanColumn(arguments[2]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be of type const Bool", getName());
 
         /// `arr_partial_offsets` argument validation
-        size_t arr_partial_offsets_idx = is_pr || !is_third_arg_scale ? 2 : 3;
-
-        if (number_of_arguments >= arr_partial_offsets_idx + 1)
+        if (number_of_arguments >= partial_offsets_index + 1)
         {
-            const DataTypeArray * array_type_offsets = checkAndGetDataType<DataTypeArray>(arguments[arr_partial_offsets_idx].type.get());
+            const DataTypeArray * array_type_offsets = checkAndGetDataType<DataTypeArray>(arguments[partial_offsets_index].type.get());
             if (!array_type_offsets)
-            {
-                if (!is_pr && !is_third_arg_scale)
-                    /// Third argument's type doesn't match `scale` nor `arr_partial_offsets`
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Type of third argument for function {} must match one of the optional arguments' types: const Bool (scale) or "
-                        "Array (arr_partial_offsets)",
-                        getName());
-                else
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "{} argument (arr_partial_offsets) for function {} must be of type Array",
-                        is_pr ? "Third" : "Fourth",
-                        getName());
-            }
-
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "{} argument (arr_partial_offsets) for function {} must be of type Array",
+                    partial_offsets_index == 2 ? "Third" : "Fourth",
+                    getName());
 
             const auto & nested_type_offsets = array_type_offsets->getNestedType();
             /// Last argument (arr_partial_offsets) must be an array of integers
@@ -411,7 +386,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "{} argument (arr_partial_offsets) for function {} cannot process values of type {}, should be Integer",
-                    arr_partial_offsets_idx == 2 ? "Third" : "Fourth",
+                    partial_offsets_index == 2 ? "Third" : "Fourth",
                     getName(),
                     nested_type_offsets->getName());
         }
@@ -449,51 +424,46 @@ public:
 
         /// Handle the `scale` argument (if passed and the function is arrayROCAUC, otherwise default to true)
         bool scale = true;
-        bool is_third_arg_scale = !is_pr && number_of_arguments >= 3 && isValidBooleanColumn(arguments[2]);
-
-        if (is_third_arg_scale && input_rows_count > 0)
+        if (!is_pr && number_of_arguments >= 3 && input_rows_count > 0)
             scale = arguments[2].column->getBool(0);
 
         /// Handle the `arr_partial_offsets argument (if passed)
-        size_t arr_partial_offsets_idx = is_pr || !is_third_arg_scale ? 2 : 3;
-
         ColumnPtr col_offsets = nullptr;
         const ColumnArray * col_array_offsets = nullptr;
-        if (number_of_arguments == arr_partial_offsets_idx + 1)
+        if (number_of_arguments == partial_offsets_index + 1)
         {
-            col_offsets = arguments[arr_partial_offsets_idx].column->convertToFullColumnIfConst();
+            col_offsets = arguments[partial_offsets_index].column->convertToFullColumnIfConst();
             col_array_offsets = checkAndGetColumn<ColumnArray>(col_offsets.get());
             if (!col_array_offsets)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column {} of {} argument of function {}",
-                    arguments[arr_partial_offsets_idx].column->getName(),
-                    arr_partial_offsets_idx == 2 ? "third" : "fourth",
+                    arguments[partial_offsets_index].column->getName(),
+                    partial_offsets_index == 2 ? "third" : "fourth",
                     getName());
 
             /// The partial offsets argument must be a column containing 3-elements (PR AUC) or 4-elements (ROC AUC) arrays on each row
             const auto & offsets = col_array_offsets->getOffsets();
 
-            if ((col_array_offsets->getData().size() != partial_auc_offsets_size * input_rows_count)
-                || (offsets.size() != input_rows_count))
+            if ((col_array_offsets->getData().size() != partial_offsets_size * input_rows_count) || (offsets.size() != input_rows_count))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "{} argument (arr_partial_offsets) for function {} must contain Arrays of size {}",
-                    arr_partial_offsets_idx == 2 ? "Third" : "Fourth",
+                    partial_offsets_index == 2 ? "Third" : "Fourth",
                     getName(),
-                    partial_auc_offsets_size);
+                    partial_offsets_size);
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 auto current = offsets[i];
                 auto previous = i == 0 ? 0 : offsets[i - 1];
-                if (current - previous != partial_auc_offsets_size)
+                if (current - previous != partial_offsets_size)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "{} argument (arr_partial_offsets) for function {} must contain Arrays of size {}, not {}",
-                        arr_partial_offsets_idx == 2 ? "Third" : "Fourth",
+                        partial_offsets_index == 2 ? "Third" : "Fourth",
                         getName(),
-                        partial_auc_offsets_size,
+                        partial_offsets_size,
                         current - previous);
             }
 
@@ -503,11 +473,10 @@ public:
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "{} argument (arr_partial_offsets) for function {} must not contain negative values",
-                        arr_partial_offsets_idx == 2 ? "Third" : "Fourth",
+                        partial_offsets_index == 2 ? "Third" : "Fourth",
                         getName());
             }
         }
-
 
         auto col_res = ColumnVector<Float64>::create();
 

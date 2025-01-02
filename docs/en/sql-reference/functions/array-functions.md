@@ -2153,7 +2153,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
 **Syntax**
 
 ``` sql
-arrayROCAUC(arr_scores, arr_labels[, scale][, arr_partial_offsets])
+arrayROCAUC(arr_scores, arr_labels[, scale[, arr_partial_offsets]])
 ```
 
 Alias: `arrayAUC`
