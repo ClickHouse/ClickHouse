@@ -496,6 +496,16 @@ public:
                         partial_auc_offsets_size,
                         current - previous);
             }
+
+            for (size_t i = 0; i < col_array_offsets->getData().size(); ++i)
+            {
+                if (col_array_offsets->getData().getInt(i) < 0)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} argument (arr_partial_offsets) for function {} must not contain negative values",
+                        arr_partial_offsets_idx == 2 ? "Third" : "Fourth",
+                        getName());
+            }
         }
 
 
