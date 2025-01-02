@@ -898,7 +898,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     // So it's easier to just pass a descriptor, without the terminal name.
     if (global_context->getApplicationType() == Context::ApplicationType::SERVER)
     {
-         tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd, buf_size);
+         tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
          return;
     }
 
@@ -2836,9 +2836,9 @@ void ClientBase::runInteractive()
         highlight_callback,
         input_stream,
         output_stream,
-        in_fd,
-        out_fd,
-        err_fd
+        stdin_fd,
+        stdout_fd,
+        stderr_fd
     );
 #else
     lr = LineReader(
@@ -2849,7 +2849,7 @@ void ClientBase::runInteractive()
         word_break_characters,
         input_stream,
         output_stream,
-        in_fd
+        stdin_fd
     );
 #endif
 
@@ -3021,7 +3021,7 @@ void ClientBase::runNonInteractive()
     {
         /// If 'query' parameter is not set, read a query from stdin.
         /// The query is read entirely into memory (streaming is disabled).
-        ReadBufferFromFileDescriptor in(in_fd);
+        ReadBufferFromFileDescriptor in(stdin_fd);
         String text;
         readStringUntilEOF(text, in);
         if (query_fuzzer_runs)
