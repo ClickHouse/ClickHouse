@@ -276,7 +276,8 @@ private:
             /// If we're calculating the partial AUC, the user needs to pass the total_positives or total_negatives labels
             /// Otherwise, we assume that the whole curve was traversed above, which means that the threshold is at minimum and all
             /// labels were predicted as true. This means that curr_tp = total positive labels and curr_fp = total negative labels
-            return scale_back_area(area, total_positives > 0 ? total_positives : curr_tp, total_negatives > 0 ? total_negatives : curr_fp);
+            return scale_back_area(
+                area, total_positives != 0 ? total_positives : curr_tp, total_negatives != 0 ? total_negatives : curr_fp);
         }
         return area;
     }
