@@ -604,11 +604,11 @@ void loadSystemTables(const bool has_cloud_features)
            {"is_currently_used", new IntType(8, true)},
            {"last_used", new IntType(64, true)},
            {"rdkafka_stat", new StringType(std::nullopt)}}},
-         {"stack_trace",
+         /*{"stack_trace",
           {{"thread_name", new StringType(std::nullopt)},
            {"thread_id", new IntType(64, true)},
            {"query_id", new StringType(std::nullopt)},
-           {"trace", new ArrayType(new IntType(64, true))}}},
+           {"trace", new ArrayType(new IntType(64, true))}}},*/
          {"rocksdb",
           {{"database", new StringType(std::nullopt)},
            {"table", new StringType(std::nullopt)},
