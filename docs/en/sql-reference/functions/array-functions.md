@@ -2156,7 +2156,7 @@ For more details, please see [here](https://developers.google.com/machine-learni
 arrayROCAUC(arr_scores, arr_labels[, scale][, arr_partial_offsets])
 ```
 
-Alias: `arrayAUC`, `arrayAUCROC`.
+Alias: `arrayAUC`
 
 **Arguments**
 
@@ -2194,7 +2194,7 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## arrayPRAUC
+## arrayAUCPR
 
 Calculates the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
@@ -2205,10 +2205,10 @@ For more details, please see [here](https://developers.google.com/machine-learni
 **Syntax**
 
 ``` sql
-arrayPRAUC(arr_scores, arr_labels[, arr_partial_offsets])
+arrayAUCPR(arr_scores, arr_labels[, arr_partial_offsets])
 ```
 
-Alias: `arrayAUCPR`
+Alias: `arrayPRAUC`
 
 **Arguments**
 
@@ -2233,13 +2233,13 @@ Returns PR-AUC value with type Float64.
 Query:
 
 ``` sql
-select arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+select arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
 
 ``` text
-┌─arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+┌─arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                              0.8333333333333333 │
 └─────────────────────────────────────────────────┘
 ```

@@ -1237,7 +1237,6 @@ argmax
 argmin
 arrayAUC
 arrayAUCPR
-arrayAUCROC
 arrayAll
 arrayAvg
 arrayCompact
@@ -1272,7 +1271,6 @@ arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
-arrayPRAUC
 arrayPartialReverseSort
 arrayPartialShuffle
 arrayPartialSort

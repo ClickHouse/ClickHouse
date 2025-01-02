@@ -90,6 +90,7 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 array
+arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -121,7 +122,6 @@ arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
-arrayPRAUC
 arrayPopBack
 arrayPopFront
 arrayProduct

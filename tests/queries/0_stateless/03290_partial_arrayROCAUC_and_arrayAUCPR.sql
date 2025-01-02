@@ -4,12 +4,12 @@
 -- labels = [0, 0, 1, 1]
 
 select 
-  floor(arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10), 
+  floor(arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10), 
   floor(arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]), 10);
 
 with partial_aucs as (
   select 
-    arrayPRAUC(scores, labels, pr_offsets) as partial_pr_auc,
+    arrayAUCPR(scores, labels, pr_offsets) as partial_pr_auc,
     arrayROCAUC(scores, labels, true, roc_offsets) as partial_roc_auc
   from (
     select [0.8] as scores, [1] as labels, [0, 0, 2] as pr_offsets, [0, 0, 2, 2] as roc_offsets
@@ -28,7 +28,7 @@ from partial_aucs;
 
 with partial_aucs as (
   select
-    arrayPRAUC(scores, labels, pr_offsets) as partial_pr_auc,
+    arrayAUCPR(scores, labels, pr_offsets) as partial_pr_auc,
     arrayROCAUC(scores, labels, true, roc_offsets) as partial_roc_auc
   from (
     select [0.8, 0.4] as scores, [1, 0] as labels, [0, 0, 2] as pr_offsets, [0, 0, 2, 2] as roc_offsets
@@ -46,7 +46,7 @@ from partial_aucs;
 -- labels = [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]
 
 select 
-  floor(arrayPRAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10),
+  floor(arrayAUCPR([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10),
   floor(arrayROCAUC([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 0, 1, 0, 0, 0, 1, 0, 0, 1]), 10);
 
 -- Example of a more robust query that can be used to calculate AUC for a large dataset
@@ -76,7 +76,7 @@ grouped_scores AS (
 ),
 partial_aucs AS (
   SELECT 
-    arrayPRAUC(
+    arrayAUCPR(
       scores, 
       labels, 
       [
