@@ -86,6 +86,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_squash_max_wait_ms", 0, 1000, "Add new setting"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
+            {"output_format_pretty_multiline_fields", false, true, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical", false, true, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
@@ -101,6 +105,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
             {"optimize_extract_common_expressions", false, false, "Introduce setting to optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
+            {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
