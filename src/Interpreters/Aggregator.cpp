@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <future>
 #include <numeric>
-#include <optional>
 #include <Poco/Util/Application.h>
 #include <Core/Settings.h>
 
@@ -227,12 +226,11 @@ Aggregator::Params::Params(
 
 size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by)
 {
-    std::optional<size_t> threshold;
-    if (max_bytes_before_external_group_by != 0)
-        threshold = max_bytes_before_external_group_by;
-
     if (max_bytes_ratio_before_external_group_by != 0.)
     {
+        if (max_bytes_before_external_group_by > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings max_bytes_ratio_before_external_group_by and max_bytes_before_external_group_by cannot be set simultaneously");
+
         double ratio = max_bytes_ratio_before_external_group_by;
         if (ratio < 0 || ratio >= 1.)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({})", ratio);
@@ -240,14 +238,9 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
         auto available_system_memory = getMostStrictAvailableSystemMemory();
         if (available_system_memory.has_value())
         {
-            size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
+            max_bytes_before_external_group_by = static_cast<size_t>(*available_system_memory * ratio);
+            LOG_TEST(getLogger("Aggregator"), "Set max_bytes_before_external_group_by={} (ratio: {}, available system memory: {})",
+                formatReadableSizeWithBinarySuffix(max_bytes_before_external_group_by),
                 ratio,
                 formatReadableSizeWithBinarySuffix(*available_system_memory));
         }
@@ -257,7 +250,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
         }
     }
 
-    return threshold.value_or(0);
+    return max_bytes_before_external_group_by;
 }
 
 Aggregator::Params::Params(
@@ -1090,8 +1083,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// - and plus this will require other changes in the interface.
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[all_keys_are_const ? 1 : row_end]);
 
-    size_t key_start;
-    size_t key_end;
+    size_t key_start, key_end;
     /// If all keys are const, key columns contain only 1 row.
     if  (all_keys_are_const)
     {

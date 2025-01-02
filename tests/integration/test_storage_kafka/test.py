@@ -5276,7 +5276,7 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     while True:
         result_rdkafka_stat = instance.query(
             """
-            SELECT table, JSONExtractString(rdkafka_stat, 'type') AS value
+            SELECT table, JSONExtractString(rdkafka_stat, 'type')
             FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
             """
         )
@@ -5289,8 +5289,8 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
         result_rdkafka_stat
         == """Row 1:
 ──────
-table: kafka
-value: consumer
+table:                                   kafka
+JSONExtractString(rdkafka_stat, 'type'): consumer
 """
     )
 

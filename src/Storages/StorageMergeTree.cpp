@@ -1437,8 +1437,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     assert(!isStaticStorage());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    MergeMutateSelectedEntryPtr merge_entry;
-    MergeMutateSelectedEntryPtr mutate_entry;
+    MergeMutateSelectedEntryPtr merge_entry, mutate_entry;
 
     auto shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
@@ -2738,9 +2737,7 @@ void StorageMergeTree::fillNewPartNameAndResetLevel(MutableDataPartPtr & part, D
 {
     part->info.min_block = part->info.max_block = increment.get();
     part->info.mutation = 0;
-
-    bool keep_non_zero_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
+    part->info.level = 0;
     part->setName(part->getNewName(part->info));
 }
 

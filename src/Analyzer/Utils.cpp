@@ -34,7 +34,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
-#include <ranges>
 namespace DB
 {
 namespace Setting
@@ -211,7 +210,8 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     bool resolve)
 {
     std::string cast_type = type->getName();
-    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type), std::make_shared<DataTypeString>());
+    auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
+    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
 
     std::string cast_function_name = "_CAST";
     auto cast_function_node = std::make_shared<FunctionNode>(cast_function_name);
@@ -349,8 +349,6 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
         }
         case QueryTreeNodeType::ARRAY_JOIN:
             [[fallthrough]];
-        case QueryTreeNodeType::CROSS_JOIN:
-            [[fallthrough]];
         case QueryTreeNodeType::JOIN:
         {
             auto table_expression_tables_in_select_query_ast = table_expression->toAST(convert_to_ast_options);
@@ -409,13 +407,6 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 nodes_to_process.push_back(node_to_process->as<ArrayJoinNode>()->getTableExpression());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                     nodes_to_process.push_back(expr);
                 break;
             }
             case QueryTreeNodeType::JOIN:
@@ -486,13 +477,6 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
                     result.push_back(std::move(node_to_process));
                 break;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & join_node = node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : std::ranges::reverse_view(join_node.getTableExpressions()))
-                    nodes_to_process.push_front(expr);
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
@@ -546,12 +530,6 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
                 nodes_to_process.push_front(array_join_node.getTableExpression());
                 break;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = node_to_process->as<CrossJoinNode &>();
-                nodes_to_process.push_front(cross_join_node.getTableExpressions().front());
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
@@ -595,16 +573,6 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Que
         {
             auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
             buildTableExpressionsStackImpl(array_join_node.getTableExpression(), result);
-            result.push_back(join_tree_node);
-            break;
-        }
-        case QueryTreeNodeType::CROSS_JOIN:
-        {
-            auto & cross_join_node = join_tree_node->as<CrossJoinNode &>();
-
-            for (const auto & expr : cross_join_node.getTableExpressions())
-                buildTableExpressionsStackImpl(expr, result);
-
             result.push_back(join_tree_node);
             break;
         }
@@ -819,7 +787,8 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
 
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
 {
-    auto enum_literal_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
+    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
+    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
 
     auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
     QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };

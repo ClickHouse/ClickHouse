@@ -359,11 +359,10 @@ namespace
     }
 }
 
-
-FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
-{
-    return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
-}
+    FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
+    {
+        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
+    }
 
 DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
 {

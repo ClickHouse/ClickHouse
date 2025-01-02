@@ -11,19 +11,19 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (database)
     {
-        database->format(ostr, settings, state, frame);
+        database->formatImpl(ostr, settings, state, frame);
         ostr << '.';
     }
 
     chassert(table);
-    table->format(ostr, settings, state, frame);
+    table->formatImpl(ostr, settings, state, frame);
 
     formatOnCluster(ostr, settings);
 
     if (partition)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " PARTITION " << (settings.hilite ? hilite_none : "");
-        partition->format(ostr, settings, state, frame);
+        partition->formatImpl(ostr, settings, state, frame);
     }
 
     if (final)
@@ -38,7 +38,7 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
     if (deduplicate_by_columns)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " BY " << (settings.hilite ? hilite_none : "");
-        deduplicate_by_columns->format(ostr, settings, state, frame);
+        deduplicate_by_columns->formatImpl(ostr, settings, state, frame);
     }
 }
 

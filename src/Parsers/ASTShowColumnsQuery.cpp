@@ -39,13 +39,13 @@ void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
     if (where_expression)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-        where_expression->format(ostr, settings, state, frame);
+        where_expression->formatImpl(ostr, settings, state, frame);
     }
 
     if (limit_length)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " LIMIT " << (settings.hilite ? hilite_none : "");
-        limit_length->format(ostr, settings, state, frame);
+        limit_length->formatImpl(ostr, settings, state, frame);
     }
 }
 

@@ -17,9 +17,10 @@
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
-#include <expected>
-
 #include "StringHelpers.h"
+
+/// TODO: Remove after we lifted the libc++ from 15 to 16 (where std::expected is supported).
+#include <tl/expected.hpp>
 
 namespace DB
 {
@@ -129,36 +130,37 @@ namespace
         {}
     };
 
-    using VoidOrError  = std::expected<void,  ErrorCodeAndMessage>;
-    using PosOrError   = std::expected<Pos,   ErrorCodeAndMessage>;
-    using Int32OrError = std::expected<Int32, ErrorCodeAndMessage>;
-    using Int64OrError = std::expected<Int64, ErrorCodeAndMessage>;
+    /// TODO replace tl::expected by std::expected once libc++ was raised from 15 to 16
+    using VoidOrError  = tl::expected<void,  ErrorCodeAndMessage>;
+    using PosOrError   = tl::expected<Pos,   ErrorCodeAndMessage>;
+    using Int32OrError = tl::expected<Int32, ErrorCodeAndMessage>;
+    using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
 
 
 /// Returns an error based on the error handling mode.
 /// As an optimization, for error_handling = Zero/Null, we only care that
 /// an error happened but not which one specifically. This removes the need
 /// to copy the error string.
-#define RETURN_ERROR(error_code, ...)                                         \
-{                                                                             \
-    if constexpr (error_handling == ErrorHandling::Exception)                 \
-        return std::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
-    else                                                                      \
-        return std::unexpected(ErrorCodeAndMessage(error_code));              \
+#define RETURN_ERROR(error_code, ...)                                        \
+{                                                                            \
+    if constexpr (error_handling == ErrorHandling::Exception)                \
+        return tl::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
+    else                                                                     \
+        return tl::unexpected(ErrorCodeAndMessage(error_code));              \
 }
 
 /// Run a function and return an error if the call failed.
 #define RETURN_ERROR_IF_FAILED(function_call)             \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
-        return std::unexpected(result.error());           \
+        return tl::unexpected(result.error());            \
 }
 
 /// Run a function and either assign the result (if successful) or return an error.
 #define ASSIGN_RESULT_OR_RETURN_ERROR(res, function_call) \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
-        return std::unexpected(result.error());           \
+        return tl::unexpected(result.error());            \
     else                                                  \
         (res) = *result;                                  \
 }
@@ -760,7 +762,7 @@ namespace
                 /// Ensure all input was consumed
                 if (cur < end)
                 {
-                    result = std::unexpected(ErrorCodeAndMessage(
+                    result = tl::unexpected(ErrorCodeAndMessage(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Invalid format input {} is malformed at {}",
                         str_ref.toView(),

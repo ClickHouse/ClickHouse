@@ -55,8 +55,8 @@ public:
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_)
-    , path_to_table_symlinks(fs::path("data") / escapeForFileName(name_) / "")
-    , path_to_metadata_symlink(fs::path("metadata") / escapeForFileName(name_))
+    , path_to_table_symlinks(fs::path(getContext()->getPath()) / "data" / escapeForFileName(name_) / "")
+    , path_to_metadata_symlink(fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
@@ -76,9 +76,8 @@ void DatabaseAtomic::createDirectories()
 void DatabaseAtomic::createDirectoriesUnlocked()
 {
     DatabaseOnDisk::createDirectoriesUnlocked();
-    db_disk->createDirectories("metadata");
-    if (db_disk->isSymlinkSupported())
-        db_disk->createDirectories(path_to_table_symlinks);
+    fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
+    fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
 
@@ -105,17 +104,14 @@ void DatabaseAtomic::drop(ContextPtr)
     assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     try
     {
-        if (db_disk->isSymlinkSupported())
-        {
-            db_disk->removeFileIfExists(path_to_metadata_symlink);
-            db_disk->removeRecursive(path_to_table_symlinks);
-        }
+        (void)fs::remove(path_to_metadata_symlink);
+        (void)fs::remove_all(path_to_table_symlinks);
     }
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
-    db_disk->removeRecursive(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -178,7 +174,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
 
-        db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
+        fs::create_directory(fs::path(table_metadata_path_drop).parent_path());
 
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
@@ -190,7 +186,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         /// (it's more likely to lost connection, than to fail before applying local changes).
         /// TODO better detection and recovery
 
-        db_disk->replaceFile(table_metadata_path, table_metadata_path_drop); /// Mark table as dropped
+        fs::rename(table_metadata_path, table_metadata_path_drop);  /// Mark table as dropped
         DatabaseOrdinary::detachTableUnlocked(table_name);  /// Should never throw
         table_name_to_path.erase(table_name);
     }
@@ -322,10 +318,11 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
+
     if (exchange)
-        db_disk->renameExchange(old_metadata_path, new_metadata_path);
+        renameExchange(old_metadata_path, new_metadata_path);
     else
-        db_disk->moveFile(old_metadata_path, new_metadata_path);
+        renameNoReplace(old_metadata_path, new_metadata_path);
 
     /// After metadata was successfully moved, the following methods should not throw (if they do, it's a logical error)
     table_data_path = detach(*this, table_name, table->storesDataOnDisk());
@@ -374,13 +371,13 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         /// TODO better detection and recovery
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
-        db_disk->moveFile(table_metadata_tmp_path, table_metadata_path); /// Commit point (a sort of)
+        renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
         attachTableUnlocked(query.getTable(), table);   /// Should never throw
         table_name_to_path.emplace(query.getTable(), table_data_path);
     }
     catch (...)
     {
-        db_disk->removeFileIfExists(table_metadata_tmp_path);
+        (void)fs::remove(table_metadata_tmp_path);
         throw;
     }
     if (table->storesDataOnDisk())
@@ -392,8 +389,9 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
 {
     bool check_file_exists = true;
     SCOPE_EXIT({
+        std::error_code code;
         if (check_file_exists)
-            db_disk->removeFileIfExists(table_metadata_tmp_path);
+            (void)std::filesystem::remove(table_metadata_tmp_path, code);
     });
 
     std::lock_guard lock{mutex};
@@ -409,9 +407,9 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
 
-    check_file_exists = db_disk->renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
+    check_file_exists = renameExchangeIfSupported(table_metadata_tmp_path, table_metadata_path);
     if (!check_file_exists)
-        db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+        std::filesystem::rename(table_metadata_tmp_path, table_metadata_path);
 }
 
 void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
@@ -488,27 +486,19 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
     if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
         return;
 
-    if (!db_disk->isSymlinkSupported())
-        return;
-
-    // When `db_disk` is a `DiskLocal` object, `existsDirectory` will return false if the input path is a symlink.
-    // So we use `existsFileOrDirectory` here to check if the symlink exists.
-    if (!db_disk->existsFileOrDirectory(path_to_table_symlinks))
+    if (!fs::exists(path_to_table_symlinks))
         return;
 
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
-    for (const auto it = db_disk->iterateDirectory(path_to_table_symlinks); it->isValid(); it->next())
+    for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
     {
-        auto table_path = fs::path(it->path());
-        if (table_path.filename().empty())
-            table_path = table_path.parent_path();
-        if (!db_disk->isSymlink(table_path))
+        if (!FS::isSymlink(table_path))
         {
-            throw Exception(
-                ErrorCodes::ABORTED, "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path));
+            throw Exception(ErrorCodes::ABORTED,
+                "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
         }
 
-        db_disk->removeFileIfExists(table_path);
+        (void)fs::remove(table_path);
     }
 }
 
@@ -519,7 +509,7 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
         base->goals(),
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Atomic database {}", getDatabaseName()),
-        [this, mode](AsyncLoader &, const LoadJobPtr &)
+        [this, mode] (AsyncLoader &, const LoadJobPtr &)
         {
             if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
                 return;
@@ -528,8 +518,8 @@ LoadTaskPtr DatabaseAtomic::startupDatabaseAsync(AsyncLoader & async_loader, Loa
                 std::lock_guard lock{mutex};
                 table_names = table_name_to_path;
             }
-            if (db_disk->isSymlinkSupported())
-                db_disk->createDirectories(path_to_table_symlinks);
+
+            fs::create_directories(path_to_table_symlinks);
             for (const auto & table : table_names)
             {
                 /// All tables in database should be loaded at this point
@@ -571,8 +561,6 @@ void DatabaseAtomic::stopLoading()
 
 void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_path_exist)
 {
-    if (!db_disk->isSymlinkSupported())
-        return;
     try
     {
         String table_name = table->getStorageID().getTableName();
@@ -584,13 +572,14 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
         fs::path data = fs::weakly_canonical(table->getDataPaths()[0]);
 
         /// If it already points where needed.
-        if (db_disk->equivalentNoThrow(data, link))
+        std::error_code ec;
+        if (fs::equivalent(data, link, ec))
             return;
 
-        if (if_data_path_exist && !db_disk->existsFileOrDirectory(data))
+        if (if_data_path_exist && !fs::exists(data))
             return;
 
-        db_disk->createDirectoriesSymlink(data, link);
+        fs::create_directory_symlink(data, link);
     }
     catch (...)
     {
@@ -600,13 +589,10 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
 
 void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 {
-    if (!db_disk->isSymlinkSupported())
-        return;
-
     try
     {
         String path = path_to_table_symlinks + escapeForFileName(table_name);
-        db_disk->removeFileIfExists(path);
+        (void)fs::remove(path);
     }
     catch (...)
     {
@@ -616,16 +602,13 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 
 void DatabaseAtomic::tryCreateMetadataSymlink()
 {
-    if (!db_disk->isSymlinkSupported())
-        return;
-
     /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by ClickHouse,
     /// it's needed only for convenient introspection.
     assert(path_to_metadata_symlink != metadata_path);
     fs::path metadata_symlink(path_to_metadata_symlink);
-    if (db_disk->existsFileOrDirectory(metadata_symlink))
+    if (fs::exists(metadata_symlink))
     {
-        if (!db_disk->isSymlink(metadata_symlink))
+        if (!FS::isSymlink(metadata_symlink))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} exists", path_to_metadata_symlink);
     }
     else
@@ -633,9 +616,9 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
         try
         {
             /// fs::exists could return false for broken symlink
-            if (db_disk->isSymlinkNoThrow(metadata_symlink))
-                db_disk->removeFileIfExists(metadata_symlink);
-            db_disk->createDirectoriesSymlink(metadata_path, path_to_metadata_symlink);
+            if (FS::isSymlinkNoThrow(metadata_symlink))
+                (void)fs::remove(metadata_symlink);
+            fs::create_directory_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)
         {
@@ -647,6 +630,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
+
     createDirectories();
     waitDatabaseStarted();
 
@@ -661,8 +645,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 
     try
     {
-        if (db_disk->isSymlinkSupported())
-            db_disk->removeFileIfExists(path_to_metadata_symlink);
+        (void)fs::remove(path_to_metadata_symlink);
     }
     catch (...)
     {
@@ -670,9 +653,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
-    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
-    auto new_database_metadata_path = fs::path("metadata") / (new_name_escaped + ".sql");
-    db_disk->moveFile(old_database_metadata_path, new_database_metadata_path);
+    auto old_database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(getDatabaseName()) + ".sql";
+    auto new_database_metadata_path = getContext()->getPath() + "metadata/" + new_name_escaped + ".sql";
+    renameNoReplace(old_database_metadata_path, new_database_metadata_path);
 
     String old_path_to_table_symlinks;
 
@@ -694,16 +677,13 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             table.second->renameInMemory(table_id);
         }
 
-        path_to_metadata_symlink = fs::path("metadata") / new_name_escaped;
+        path_to_metadata_symlink = getContext()->getPath() + "metadata/" + new_name_escaped;
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = fs::path("data") / new_name_escaped / "";
+        path_to_table_symlinks = getContext()->getPath() + "data/" + new_name_escaped + "/";
     }
 
-    if (db_disk->isSymlinkSupported())
-    {
-        db_disk->moveDirectory(old_path_to_table_symlinks, path_to_table_symlinks);
-        tryCreateMetadataSymlink();
-    }
+    fs::rename(old_path_to_table_symlinks, path_to_table_symlinks);
+    tryCreateMetadataSymlink();
 }
 
 void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)

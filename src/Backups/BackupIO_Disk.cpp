@@ -93,6 +93,12 @@ void BackupWriterDisk::removeFile(const String & file_name)
     disk->removeFileIfExists(root_path / file_name);
 }
 
+void BackupWriterDisk::removeFiles(const Strings & file_names)
+{
+    for (const auto & file_name : file_names)
+        disk->removeFileIfExists(root_path / file_name);
+}
+
 void BackupWriterDisk::removeEmptyDirectories()
 {
     removeEmptyDirectoriesImpl(root_path);

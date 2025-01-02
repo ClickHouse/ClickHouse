@@ -1272,7 +1272,7 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
 
 /// This optimization is obsolete and will be removed.
 /// optimizeReadInOrder covers it.
-size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & /*settings*/)
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
 {
     /// Find the following sequence of steps, add InputOrderInfo and apply prefix sort description to
     /// SortingStep:

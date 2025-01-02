@@ -65,9 +65,11 @@ public:
         String variable_name = assert_cast<const ColumnConst &>(*col.column).getValue<String>();
         auto variable = global_variable_map.find(Poco::toLower(variable_name));
 
+        Field val = 0;
         if (variable != global_variable_map.end())
-            return result_type->createColumnConst(input_rows_count, variable->second.value);
-        return result_type->createColumnConstWithDefaultValue(input_rows_count);
+            val = variable->second.value;
+
+        return result_type->createColumnConst(input_rows_count, val);
     }
 
 private:
@@ -76,14 +78,11 @@ private:
         DataTypePtr type;
         Field value;
     };
-    std::unordered_map<String, TypeAndValue> global_variable_map =
-    {
-        {"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
-        {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
-        {"version_comment", {std::make_shared<DataTypeString>(), ""}},
-        {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}},
-        {"track_system_variables", {std::make_shared<DataTypeString>(), ""}},
-    };
+    std::unordered_map<String, TypeAndValue> global_variable_map
+        = {{"max_allowed_packet", {std::make_shared<DataTypeInt32>(), 67108864}},
+           {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
+           {"version_comment", {std::make_shared<DataTypeString>(), ""}},
+           {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}}};
 };
 
 }
@@ -94,3 +93,4 @@ REGISTER_FUNCTION(GlobalVariable)
 }
 
 }
+

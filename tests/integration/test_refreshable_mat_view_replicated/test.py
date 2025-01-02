@@ -217,11 +217,6 @@ def fn_setup_tables():
     )
     node.query(f"INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
 
-    yield
-
-    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_db.test_rmv")
-
 
 @pytest.mark.parametrize(
     "select_query",
@@ -285,7 +280,7 @@ def test_append(
 @pytest.mark.parametrize("if_not_exists", [True, False])
 @pytest.mark.parametrize("depends_on", [None, ["default.dummy_rmv"]])
 @pytest.mark.parametrize("empty", [True, False])
-@pytest.mark.parametrize("database_name", ["test_db"])
+@pytest.mark.parametrize("database_name", ["test_db"])  # None,
 @pytest.mark.parametrize(
     "settings",
     [
@@ -407,8 +402,8 @@ def test_real_wait_refresh(
         "test_rmv",
         condition=lambda x: x["last_refresh_time"] == rmv["next_refresh_time"],
         # wait for refresh a little bit more than 10 seconds
-        max_attempts=30,
-        delay=0.5,
+        max_attempts=12,
+        delay=1,
         wait_status="Scheduled",
     )
 
@@ -427,7 +422,7 @@ def test_real_wait_refresh(
         expect_rows(2, table=tgt)
 
     assert rmv2["exception"] is None
-    assert rmv2["status"] in ["Scheduled", "Running"]
+    assert rmv2["status"] == "Scheduled"
     assert rmv2["last_success_time"] == rmv["next_refresh_time"]
     assert rmv2["last_refresh_time"] == rmv["next_refresh_time"]
     assert rmv2["retry"] == 0 and rmv22["retry"] == 0
@@ -560,8 +555,8 @@ def test_long_query_cancel(fn_setup_tables):
 
 @pytest.fixture(scope="function")
 def fn3_setup_tables():
-    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default SYNC")
-    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_db.test_rmv")
 
     node.query(

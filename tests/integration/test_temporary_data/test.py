@@ -28,8 +28,6 @@ def test_tmp_data_no_leftovers(start_cluster):
     q = node.get_query_request
 
     settings = {
-        "max_bytes_ratio_before_external_group_by": 0,
-        "max_bytes_ratio_before_external_sort": 0,
         "max_bytes_before_external_group_by": "10K",
         "max_bytes_before_external_sort": "10K",
         "join_algorithm": "grace_hash",

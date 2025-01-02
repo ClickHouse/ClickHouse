@@ -267,7 +267,7 @@
 
     <!-- <listen_backlog>4096</listen_backlog> -->
 
-    <!-- <max_connections>4096</max_connections> -->
+    <max_connections>4096</max_connections>
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
     <keep_alive_timeout>10</keep_alive_timeout>
@@ -1125,7 +1125,6 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
-        <symbolize>true</symbolize>
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.

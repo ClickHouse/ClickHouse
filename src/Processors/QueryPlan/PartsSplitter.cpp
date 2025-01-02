@@ -897,22 +897,9 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     RangesInDataParts intersecting_parts_ranges = std::move(parts);
 
-    auto create_merging_pipe = [&](const auto & ranges)
-    {
-        auto pipe = in_order_reading_step_getter(ranges);
-
-        pipe.addSimpleTransform([sorting_expr](const Block & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, sorting_expr);
-        });
-
-        return pipe;
-    };
-
     if (!isSafePrimaryKey(primary_key))
     {
-        if (!intersecting_parts_ranges.empty())
-            result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
+        result.merging_pipes.emplace_back(in_order_reading_step_getter(intersecting_parts_ranges));
         return result;
     }
 
@@ -925,8 +912,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     if (!split_intersecting_parts_ranges_into_layers)
     {
-        if (!intersecting_parts_ranges.empty())
-            result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
+        result.merging_pipes.emplace_back(in_order_reading_step_getter(intersecting_parts_ranges));
         return result;
     }
 
@@ -939,7 +925,9 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     for (size_t i = 0; i < layers.size(); ++i)
     {
-        result.merging_pipes[i] = create_merging_pipe(layers[i]);
+        result.merging_pipes[i] = in_order_reading_step_getter(std::move(layers[i]));
+        result.merging_pipes[i].addSimpleTransform([sorting_expr](const Block & header)
+                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
 
         auto & filter_function = filters[i];
         if (!filter_function)

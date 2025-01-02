@@ -751,9 +751,7 @@ def test_system_users():
 
     node1.query("DROP USER u1")
 
-    expected_error = (
-        "necessary to have the grant SELECT ON default.tbl WITH GRANT OPTION"
-    )
+    expected_error = "necessary to have the grant CREATE USER ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
     )

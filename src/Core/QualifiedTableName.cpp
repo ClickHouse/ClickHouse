@@ -8,7 +8,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
+extern const int SYNTAX_ERROR;
 }
 
 UInt64 QualifiedTableName::hash() const
@@ -25,42 +25,6 @@ QualifiedTableName QualifiedTableName::parseFromString(const String & maybe_qual
     if (!name)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid qualified name: {}", maybe_qualified_name);
     return *name;
-}
-
-std::string QualifiedTableName::getFullName() const
-{
-    if (database.empty())
-        return table;
-    return database + '.' + table;
-}
-
-std::optional<QualifiedTableName> QualifiedTableName::tryParseFromString(const String & maybe_qualified_name)
-{
-    if (maybe_qualified_name.empty())
-        return {};
-
-    /// Do not allow dot at the beginning and at the end
-    auto pos = maybe_qualified_name.find('.');
-    if (pos == 0 || pos == (maybe_qualified_name.size() - 1))
-        return {};
-
-    QualifiedTableName name;
-    if (pos == std::string::npos)
-    {
-        name.table = maybe_qualified_name;
-    }
-    else if (maybe_qualified_name.find('.', pos + 1) != std::string::npos)
-    {
-        /// Do not allow multiple dots
-        return {};
-    }
-    else
-    {
-        name.database = maybe_qualified_name.substr(0, pos);
-        name.table = maybe_qualified_name.substr(pos + 1);
-    }
-
-    return name;
 }
 
 }

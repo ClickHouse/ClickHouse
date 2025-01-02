@@ -625,7 +625,6 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
-void skipStringUntilWhitespace(ReadBuffer & buf);
 
 void readStringUntilAmpersand(String & s, ReadBuffer & buf);
 void readStringUntilEquals(String & s, ReadBuffer & buf);
