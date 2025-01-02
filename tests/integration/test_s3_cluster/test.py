@@ -527,7 +527,8 @@ def test_hive_partitioning(started_cluster):
                 f"""
                 INSERT
                     INTO FUNCTION s3('http://minio1:9001/root/data/hive/key={i}/data.parquet', 'minio', 'minio123', 'Parquet', 'key Int32, value Int32')
-                    VALUES ({i}, {i})
+                    SELECT {i}, {i}
+                    SETTINGS use_hive_partitioning = 0
                 """
             )
 
