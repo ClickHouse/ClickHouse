@@ -397,11 +397,16 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed)
 {
+    CommitSettings commit_settings_copy;
+    {
+        std::lock_guard lock(mutex);
+        commit_settings_copy = commit_settings;
+    }
     return std::make_shared<ObjectStorageQueueSource>(
         getName(), processor_id,
         file_iterator, configuration, object_storage,
         info, format_settings,
-        commit_settings,
+        commit_settings_copy,
         files_metadata,
         local_context, max_block_size, shutdown_called, table_is_being_dropped,
         getQueueLog(object_storage, local_context, enable_logging_to_queue_log),
@@ -451,11 +456,13 @@ void StorageObjectStorageQueue::threadFunc()
             if (streamToViews())
             {
                 /// Reset the reschedule interval.
+                std::lock_guard lock(mutex);
                 reschedule_processing_interval_ms = polling_min_timeout_ms;
             }
             else
             {
                 /// Increase the reschedule interval.
+                std::lock_guard lock(mutex);
                 reschedule_processing_interval_ms = std::min<size_t>(polling_max_timeout_ms, reschedule_processing_interval_ms + polling_backoff_ms);
             }
 
@@ -579,15 +586,10 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
-    /// For compatibility.
-    "s3queue_processing_threads_num",
-    "s3queue_loading_retries",
-    "s3queue_after_processing",
-    "s3queue_tracked_files_limit",
-    "s3queue_tracked_file_ttl_sec",
-    "s3queue_polling_min_timeout_ms",
-    "s3queue_polling_max_timeout_ms",
-    "s3queue_polling_backoff_ms",
+    "max_processed_files_before_commit",
+    "max_processed_rows_before_commit",
+    "max_processed_bytes_before_commit",
+    "max_processing_time_sec_before_commit",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -597,12 +599,11 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
-    /// For compatibility.
-    "s3queue_loading_retries",
-    "s3queue_after_processing",
-    "s3queue_polling_min_timeout_ms",
-    "s3queue_polling_max_timeout_ms",
-    "s3queue_polling_backoff_ms",
+    "max_processed_files_before_commit",
+    "max_processed_rows_before_commit",
+    "max_processed_bytes_before_commit",
+    "max_processing_time_sec_before_commit",
+    "buckets",
 };
 
 static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
@@ -723,12 +724,23 @@ void StorageObjectStorageQueue::alter(
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)
         {
+            std::lock_guard lock(mutex);
+
             if (change.name == "polling_min_timeout_ms")
                 polling_min_timeout_ms = change.value.safeGet<UInt64>();
             if (change.name == "polling_max_timeout_ms")
                 polling_max_timeout_ms = change.value.safeGet<UInt64>();
             if (change.name == "polling_backoff_ms")
                 polling_backoff_ms = change.value.safeGet<UInt64>();
+
+            if (change.name == "max_processed_files_before_commit")
+                commit_settings.max_processed_files_before_commit = change.value.safeGet<UInt64>();
+            if (change.name == "max_processed_rows_before_commit")
+                commit_settings.max_processed_rows_before_commit = change.value.safeGet<UInt64>();
+            if (change.name == "max_processed_bytes_before_commit")
+                commit_settings.max_processed_bytes_before_commit = change.value.safeGet<UInt64>();
+            if (change.name == "max_processing_time_sec_before_commit")
+                commit_settings.max_processing_time_sec_before_commit = change.value.safeGet<UInt64>();
         }
 
         StorageInMemoryMetadata metadata = getInMemoryMetadata();
@@ -776,16 +788,21 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::last_processed_path] = table_metadata.last_processed_path;
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
-    settings[ObjectStorageQueueSetting::polling_min_timeout_ms] = polling_min_timeout_ms;
-    settings[ObjectStorageQueueSetting::polling_max_timeout_ms] = polling_max_timeout_ms;
-    settings[ObjectStorageQueueSetting::polling_backoff_ms] = polling_backoff_ms;
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = 0;
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = 0;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
-    settings[ObjectStorageQueueSetting::max_processed_files_before_commit] = commit_settings.max_processed_files_before_commit;
-    settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
-    settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
-    settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
+
+    {
+        std::lock_guard lock(mutex);
+        settings[ObjectStorageQueueSetting::polling_min_timeout_ms] = polling_min_timeout_ms;
+        settings[ObjectStorageQueueSetting::polling_max_timeout_ms] = polling_max_timeout_ms;
+        settings[ObjectStorageQueueSetting::polling_backoff_ms] = polling_backoff_ms;
+        settings[ObjectStorageQueueSetting::max_processed_files_before_commit] = commit_settings.max_processed_files_before_commit;
+        settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
+        settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
+        settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
+    }
+
     return settings;
 }
 
