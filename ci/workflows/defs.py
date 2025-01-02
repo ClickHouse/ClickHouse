@@ -14,8 +14,8 @@ class RunnerLabels:
 
 
 class CIFiles:
-    UNIT_TESTS_RESULTS = "/tmp/praktika/output/unit_tests_result.json"
-    UNIT_TESTS_BIN = "/tmp/praktika/build/src/unit_tests_dbms"
+    UNIT_TESTS_RESULTS = "./tmp_ci/output/unit_tests_result.json"
+    UNIT_TESTS_BIN = "./tmp_ci/build/src/unit_tests_dbms"
 
 
 BASE_BRANCH = "master"
@@ -313,7 +313,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        path=f"./ci/tmp/build/programs/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
@@ -330,7 +330,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
+        path=f"./ci/tmp/build/programs/clickhouse-odbc-bridge",
     ).parametrize(
         names=[
             ArtifactNames.CH_ODBC_B_AMD_DEBUG,

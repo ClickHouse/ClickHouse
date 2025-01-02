@@ -58,7 +58,7 @@ class ClickHouseProc:
     @staticmethod
     def log_cluster_config():
         return Shell.check(
-            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster /tmp/praktika/etc/clickhouse-server/config.d/system_logs_export.yaml",
+            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster ./tmp_ci/etc/clickhouse-server/config.d/system_logs_export.yaml",
             verbose=True,
         )
 

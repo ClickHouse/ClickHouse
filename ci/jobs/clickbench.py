@@ -8,12 +8,12 @@ from ci.praktika.utils import Shell, Utils
 # TODO: generic functionality - move to separate file
 class ClickHouseBinary:
     def __init__(self):
-        self.path = "/tmp/praktika/input/"
-        self.config_path = "/tmp/praktika/config"
+        self.path = "./tmp_ci/input/"
+        self.config_path = "./tmp_ci/config"
         self.start_cmd = (
             f"{self.path}/clickhouse-server --config-file={self.config_path}/config.xml"
         )
-        self.log_file = "/tmp/praktika/server.log"
+        self.log_file = "./tmp_ci/server.log"
         self.port = 9000
 
     def install(self):

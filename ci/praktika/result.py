@@ -310,7 +310,7 @@ class Result(MetaClasses.Serializable):
 
         # Set log file path if logging is enabled
         log_file = (
-            f"{Settings.TEMP_DIR}/{Utils.normalize_string(name)}.log"
+            f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
             if with_log
             else None
         )
@@ -602,7 +602,7 @@ class _ResultS3:
 
 
 class ResultTranslator:
-    GTEST_RESULT_FILE = "/tmp/praktika/gtest.json"
+    GTEST_RESULT_FILE = "./tmp_ci/gtest.json"
 
     @classmethod
     def from_gtest(cls):

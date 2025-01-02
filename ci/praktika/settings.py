@@ -36,7 +36,7 @@ class _Settings:
     ######################################
     #        CI workspace settings       #
     ######################################
-    TEMP_DIR: str = "/tmp/praktika"
+    TEMP_DIR: str = "./ci/tmp"
     OUTPUT_DIR: str = f"{TEMP_DIR}/output"
     INPUT_DIR: str = f"{TEMP_DIR}/input"
     PYTHON_INTERPRETER: str = "python3"
@@ -50,7 +50,7 @@ class _Settings:
     SECRET_GH_APP_ID: str = "GH_APP_ID"
     SECRET_GH_APP_PEM_KEY: str = "GH_APP_PEM_KEY"
 
-    ENV_SETUP_SCRIPT: str = "/tmp/praktika_setup_env.sh"
+    ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
 
     ######################################
@@ -71,7 +71,6 @@ class _Settings:
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
-    DOCKER_WD: str = "/wd"
 
     ######################################
     #        CI DB Settings              #

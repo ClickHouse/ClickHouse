@@ -1,13 +1,16 @@
 import argparse
 import os
 
-from praktika.result import Result, ResultTranslator
-from praktika.settings import Settings
+from praktika.result import Result
 from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.workflows.defs import CIFiles, ToolSet
 from ci.workflows.pull_request import S3_BUILDS_BUCKET
+
+current_directory = Utils.cwd()
+build_dir = f"{current_directory}/ci/tmp/build/"
+temp_dir = f"{current_directory}/ci/tmp/"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -123,8 +126,6 @@ def main():
             COMPILER_CPP=ToolSet.COMPILER_CPP,
         )
 
-    build_dir = f"{Settings.TEMP_DIR}/build"
-
     res = True
     results = []
     version = ""
@@ -194,7 +195,7 @@ def main():
         else:
             deb_arch = "arm64"
 
-        output_dir = "/tmp/praktika/output/"
+        output_dir = "./tmp_ci/output/"
         assert Shell.check(f"rm -f {output_dir}/*.deb")
 
         results.append(
