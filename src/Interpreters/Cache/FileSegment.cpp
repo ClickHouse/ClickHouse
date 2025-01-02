@@ -696,10 +696,13 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
 
     segment_range.right = segment_range.left + result_size - 1;
 
-    const size_t diff = reserved_size - downloaded_size;
-    chassert(reserved_size >= downloaded_size);
-    if (diff)
-        getQueueIterator()->decrementSize(diff);
+    if (reserved_size > result_size)
+    {
+        const size_t diff = reserved_size - result_size;
+        if (diff)
+            queue_iterator->decrementSize(diff);
+        reserved_size = result_size;
+    }
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const
@@ -820,11 +823,14 @@ void FileSegment::complete(bool allow_background_download)
 
                 if (!added_to_download_queue)
                 {
+                    /// Reset the writer to reduce memory usage,
+                    /// because we do not know when download will be continued next time.
                     if (cache_writer)
                     {
                         cache_writer->finalize();
                         cache_writer.reset();
                     }
+
                     shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
@@ -844,23 +850,14 @@ void FileSegment::complete(bool allow_background_download)
                 {
                     LOG_TEST(log, "Resize file segment {} to downloaded: {}", range().toString(), current_downloaded_size);
 
+                    /// Reset the writer to reduce memory usage,
+                    /// because we do not know when download will be continued next time.
                     if (cache_writer)
                     {
                         cache_writer->finalize();
                         cache_writer.reset();
                     }
 
-                    /**
-                    * Only last holder of current file segment can resize the file segment,
-                    * because there is an invariant that file segments returned to users
-                    * in FileSegmentsHolder represent a contiguous range, so we can resize
-                    * it only when nobody needs it.
-                    */
-
-                    /// Resize this file segment by creating a copy file segment with DOWNLOADED state,
-                    /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
-                    /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
-                    /// (this will be crucial for other file segment holder, not for current one).
                     shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
