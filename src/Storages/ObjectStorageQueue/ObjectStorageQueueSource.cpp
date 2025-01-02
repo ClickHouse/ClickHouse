@@ -571,8 +571,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
 
             processed_files.back().state = FileState::ErrorOnRead;
-            file_status->onFailed(getCurrentExceptionMessage(true));
-
             if (file_status->processed_rows == 0 && processed_files.size() > 1)
             {
                 /// If we did not process any rows from the failed file,
@@ -581,9 +579,14 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 processed_files.back().metadata->resetProcessing();
                 processed_files.pop_back();
                 file_iterator->returnForRetry(reader.getObjectInfo());
+                LOG_TRACE(
+                    log,
+                    "Processing of file {} failed with {}, "
+                    "but there are successfully processed files ({}), "
+                    "will commit them and retry the failed file",
+                    path, getCurrentExceptionMessage(false), processed_files.size() - 1);
                 return {};
             }
-
             throw;
         }
 
@@ -703,6 +706,7 @@ void ObjectStorageQueueSource::finalizeCommit(bool success, const std::string & 
             file_metadata->finalizeProcessed();
             try
             {
+                /// TODO: move before commit to keeper.
                 applyAfterProcessingAction();
             }
             catch (...)

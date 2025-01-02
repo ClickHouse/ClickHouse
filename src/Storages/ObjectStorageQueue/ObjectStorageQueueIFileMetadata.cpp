@@ -18,6 +18,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     zkutil::ZooKeeperPtr getZooKeeper()
