@@ -1892,7 +1892,13 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
             if (join_clause.hasASOF())
             {
                 const auto & asof_conditions = join_clause.getASOFConditions();
-                assert(asof_conditions.size() == 1);
+                if (asof_conditions.size() > 1)
+                {
+                    throw Exception(
+                        ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                        "JOIN {} ASOF JOIN expects exactly one inequality in ON section",
+                        join_node.formatASTForErrorMessage());
+                }
 
                 const auto & asof_condition = asof_conditions[0];
                 table_join->setAsofInequality(asof_condition.asof_inequality);
