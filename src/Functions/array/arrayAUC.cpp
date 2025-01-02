@@ -133,65 +133,71 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<is_pr>>(); }
 
 private:
-    static constexpr size_t partial_auc_offsets_arg_index = is_pr ? 2 : 3;
     static constexpr size_t partial_auc_offsets_size = is_pr ? 3 : 4;
+
+    static bool isValidBooleanColumn(ColumnWithTypeAndName argument)
+    {
+        if (!isBool(argument.type))
+            return false;
+        if (argument.column.get() == nullptr)
+            return false;
+        if (!isColumnConst(*argument.column))
+            return false;
+        return true;
+    }
 
     static Float64 increase_unscaled_area(size_t prev_fp, size_t prev_tp, size_t curr_fp, size_t curr_tp)
     {
         if constexpr (is_pr)
-            /** PR curve plots Precision x Recall
-              *
-              * Precision = TP / (TP + FP)
-              * Recall = TP / (TP + FN)
-              *
-              * The AUC is calculated using the Right Riemann Sum.
-              *
-              * Instead of calculating
-              *   area += (Recall_n - Recall_{n-1}) * Precision_n,
-              * we simplify it to
-              *   area += (TP_n - TP_{n-1}) * Precision_n
-              * and compute the "unscaled" area.
-              *
-              * The unscaled area represents the AUC of the Precision x TP curve.
-              * Later we can divide it by (TP + FN) to obtain the correct AUC.
-              *
-              * This can be done because (TP + FN) is constant and equal to total positive labels.
-              */
+            /// PR curve plots Precision x Recall
+            ///
+            /// Precision = TP / (TP + FP)
+            /// Recall = TP / (TP + FN)
+            ///
+            /// The AUC is calculated using the Right Riemann Sum.
+            ///
+            /// Instead of calculating
+            ///   area += (Recall_n - Recall_{n-1}) * Precision_n,
+            /// we simplify it to
+            ///   area += (TP_n - TP_{n-1}) * Precision_n
+            /// and compute the "unscaled" area.
+            ///
+            /// The unscaled area represents the AUC of the Precision x TP curve.
+            /// Later we can divide it by (TP + FN) to obtain the correct AUC.
+            ///
+            /// This can be done because (TP + FN) is constant and equal to total positive labels.
             return static_cast<Float64>(curr_tp) / (curr_tp + curr_fp) * (curr_tp - prev_tp);
         else
-            /** ROC curve plots TPR x FPR
-              *
-              * TPR = TP / (TP + FN)
-              * FPR = FP / (FP + TN)
-              *
-              * The AUC is calculated using the Trapezoidal Rule.
-              *
-              * Instead of calculating
-              *   area += (FPR_n - FPR_{n-1}) * (TPR_n + TPR_{n-1}) / 2,
-              * we simplify it to
-              *   area += (FP_n - FP_{n-1}) * (TP_n + TP_{n-1}) / 2,
-              * and compute the "unscaled" area.
-              *
-              * The unscaled area represents the AUC of the TP x FP curve.
-              * Later we can divide it by (TP + FN) and (FP + TN) to obtain the correct AUC.
-              *
-              * This can be done because both (TP + FN) and (FP + TN) are constant and
-              *   equal to total positive labels and total negative labels, respectively.
-              */
+            /// ROC curve plots TPR x FPR
+            ///
+            /// TPR = TP / (TP + FN)
+            /// FPR = FP / (FP + TN)
+            ///
+            /// The AUC is calculated using the Trapezoidal Rule.
+            ///
+            /// Instead of calculating
+            ///   area += (FPR_n - FPR_{n-1}) * (TPR_n + TPR_{n-1}) / 2,
+            /// we simplify it to
+            ///   area += (FP_n - FP_{n-1}) * (TP_n + TP_{n-1}) / 2,
+            /// and compute the "unscaled" area.
+            ///
+            /// The unscaled area represents the AUC of the TP x FP curve.
+            /// Later we can divide it by (TP + FN) and (FP + TN) to obtain the correct AUC.
+            ///
+            /// This can be done because both (TP + FN) and (FP + TN) are constant and
+            ///   equal to total positive labels and total negative labels, respectively.
             return (curr_fp - prev_fp) * (curr_tp + prev_tp) / 2.0;
     }
 
     static Float64 scale_back_area(Float64 area, size_t total_positive_labels, size_t total_negative_labels)
     {
         if constexpr (is_pr)
-            /** To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
-              * This scales back to Precision x Recall by dividing the area by (TP + FN).
-              */
+            /// To simplify the calculations, previously we calculated the AUC for the Precision x TP curve.
+            /// This scales back to Precision x Recall by dividing the area by (TP + FN).
             return area / total_positive_labels;
         else
-            /** To simplify the calculations, previously we calculated the AUC for the TP x FP curve.
-              * This scales back to TPR x FPR by dividing the area by (TP + FN) and (FP + TN).
-              */
+            /// To simplify the calculations, previously we calculated the AUC for the TP x FP curve.
+            /// This scales back to TPR x FPR by dividing the area by (TP + FN) and (FP + TN).
             return area / total_positive_labels / total_negative_labels;
     }
 
@@ -328,60 +334,85 @@ public:
                 number_of_arguments,
                 is_pr ? "2 or 3" : "2, 3 or 4");
 
-        /// `arr_scores` and `arr_labels` arguments validation
-        for (size_t i = 0; i < 2; ++i)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
-            if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The two first arguments for function {} must be of type Array", getName());
+        /// `arr_scores` argument validation
+        const DataTypeArray * array_type_scores = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type_scores)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument (arr_scores) for function {} must be of type Array", getName());
 
-            const auto & nested_type = array_type->getNestedType();
-            /// First argument (arr_scores) must be an array of numbers
-            if (i == 0 && !isNativeNumber(nested_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument (arr_scores) for function {} cannot process values of type {}, should be Number",
-                    getName(),
-                    nested_type->getName());
-            /// Second argument (arr_labels) must be an array of numbers or enums
-            if (i == 1 && !isNativeNumber(nested_type) && !isEnum(nested_type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument (arr_labels) for function {} cannot process values of type {}, should be Number or Enum",
-                    getName(),
-                    nested_type->getName());
-        }
+        const auto & nested_type_scores = array_type_scores->getNestedType();
+        if (!isNativeNumber(nested_type_scores))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument (arr_scores) for function {} cannot process values of type {}, should be Number",
+                getName(),
+                nested_type_scores->getName());
+
+        /// `arr_labels` argument validation
+        const DataTypeArray * array_type_labels = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
+        if (!array_type_labels)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument (arr_labels) for function {} must be of type Array", getName());
+
+        const auto & nested_type_labels = array_type_labels->getNestedType();
+        if (!isNativeNumber(nested_type_labels) && !isEnum(nested_type_labels))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument (arr_labels) for function {} cannot process values of type {}, should be Number or Enum",
+                getName(),
+                nested_type_labels->getName());
 
         /// `scale` argument validation
+        bool is_third_arg_scale = !is_pr;
+
         if (!is_pr && number_of_arguments >= 3)
         {
-            if (!isBool(arguments[2].type) || arguments[2].column.get() == nullptr || !isColumnConst(*arguments[2].column))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Third argument (scale) for function {} must be of type const Bool",
-                    getName());
+            if (!isValidBooleanColumn(arguments[2]))
+            {
+                if (number_of_arguments == 4)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Third argument (scale) for function {} must be of type const Bool",
+                        getName());
+                /// Postpone the exception in case the third argument can be arr_partial_offsets
+                else
+                    is_third_arg_scale = false;
+            }
         }
 
         /// `arr_partial_offsets` argument validation
-        if (number_of_arguments == partial_auc_offsets_arg_index + 1)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[partial_auc_offsets_arg_index].type.get());
-            if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "{} argument (arr_partial_offsets) for function {} must be of type Array",
-                    is_pr ? "Third" : "Fourth",
-                    getName());
+        size_t arr_partial_offsets_idx = is_pr || !is_third_arg_scale ? 2 : 3;
 
-            const auto & nested_type = array_type->getNestedType();
+        if (number_of_arguments >= arr_partial_offsets_idx + 1)
+        {
+            const DataTypeArray * array_type_offsets = checkAndGetDataType<DataTypeArray>(arguments[arr_partial_offsets_idx].type.get());
+            if (!array_type_offsets)
+            {
+                if (!is_pr && !is_third_arg_scale)
+                    /// Third argument's type doesn't match `scale` nor `arr_partial_offsets`
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Type of third argument for function {} must match one of the optional arguments' types: const Bool (scale) or "
+                        "Array (arr_partial_offsets)",
+                        getName());
+                else
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "{} argument (arr_partial_offsets) for function {} must be of type Array",
+                        is_pr ? "Third" : "Fourth",
+                        getName());
+            }
+
+
+            const auto & nested_type_offsets = array_type_offsets->getNestedType();
             /// Last argument (arr_partial_offsets) must be an array of integers
-            if (!isInteger(nested_type))
+            if (!isInteger(nested_type_offsets))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "{} argument (arr_partial_offsets) for function {} cannot process values of type {}, should be Integer",
-                    is_pr ? "Third" : "Fourth",
+                    arr_partial_offsets_idx == 2 ? "Third" : "Fourth",
                     getName(),
-                    nested_type->getName());
+                    nested_type_offsets->getName());
         }
 
         return std::make_shared<DataTypeFloat64>();
@@ -413,26 +444,30 @@ public:
                 getName());
 
         if (!col_array1->hasEqualOffsets(*col_array2))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Array arguments for function {} must have equal sizes", getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First two arguments for function {} must be Arrays of equal sizes", getName());
 
         /// Handle the `scale` argument (if passed and the function is arrayROCAUC, otherwise default to true)
         bool scale = true;
-        if (!is_pr && number_of_arguments >= 3 && input_rows_count > 0)
+        bool is_third_arg_scale = !is_pr && number_of_arguments >= 3 && isValidBooleanColumn(arguments[2]);
+
+        if (is_third_arg_scale && input_rows_count > 0)
             scale = arguments[2].column->getBool(0);
 
         /// Handle the `arr_partial_offsets argument (if passed)
+        size_t arr_partial_offsets_idx = is_pr || !is_third_arg_scale ? 2 : 3;
+
         ColumnPtr col_offsets = nullptr;
         const ColumnArray * col_array_offsets = nullptr;
-        if (number_of_arguments == partial_auc_offsets_arg_index + 1)
+        if (number_of_arguments == arr_partial_offsets_idx + 1)
         {
-            col_offsets = arguments[partial_auc_offsets_arg_index].column->convertToFullColumnIfConst();
+            col_offsets = arguments[arr_partial_offsets_idx].column->convertToFullColumnIfConst();
             col_array_offsets = checkAndGetColumn<ColumnArray>(col_offsets.get());
             if (!col_array_offsets)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column {} of {} argument of function {}",
-                    arguments[partial_auc_offsets_arg_index].column->getName(),
-                    is_pr ? "third" : "fourth",
+                    arguments[arr_partial_offsets_idx].column->getName(),
+                    arr_partial_offsets_idx == 2 ? "third" : "fourth",
                     getName());
 
             /// The partial offsets argument must be a column containing 3-elements (PR AUC) or 4-elements (ROC AUC) arrays on each row
@@ -443,7 +478,7 @@ public:
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "{} argument (arr_partial_offsets) for function {} must contain Arrays of size {}",
-                    is_pr ? "Third" : "Fourth",
+                    arr_partial_offsets_idx == 2 ? "Third" : "Fourth",
                     getName(),
                     partial_auc_offsets_size);
 
@@ -455,7 +490,7 @@ public:
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "{} argument (arr_partial_offsets) for function {} must contain Arrays of size {}, not {}",
-                        is_pr ? "Third" : "Fourth",
+                        arr_partial_offsets_idx == 2 ? "Third" : "Fourth",
                         getName(),
                         partial_auc_offsets_size,
                         current - previous);
