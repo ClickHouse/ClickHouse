@@ -375,7 +375,7 @@ public:
             /// Workaround not to deallocate the key that will be used further.
             wrapped_key.setNeedsDeallocation(false);
             /// The signature is checked, so just verify that user is associated with publickey.
-            /// For reference: the OpenSSH's server does rougly the same:
+            /// For reference: the OpenSSH's server does roughly the same:
             /// https://github.com/openssh/openssh-portable/blob/826483d51a9fee60703298bbf839d9ce37943474/auth2-pubkey.c#L226-L234
             db_session_created->authenticate(SSHPTYCredentials{user_name, wrapped_key}, peer_address);
 
