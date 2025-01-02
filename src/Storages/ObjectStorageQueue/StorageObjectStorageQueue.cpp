@@ -658,7 +658,7 @@ static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands
             setting.name = normalizeSetting(setting.name);
 
         std::set<std::string> settings_resets;
-        for (auto & setting : command.settings_resets)
+        for (const auto & setting : command.settings_resets)
             settings_resets.insert(normalizeSetting(setting));
 
         command.settings_resets = settings_resets;
