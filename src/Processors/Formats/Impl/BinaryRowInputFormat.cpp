@@ -44,9 +44,9 @@ bool BinaryRowInputFormat<with_defaults>::readRow(DB::MutableColumns & columns, 
         {
             const auto & column_index = this->column_mapping->column_indexes_for_input_fields[file_column];
             if (column_index)
-                ext.read_columns[*column_index] = binary_reader->readFieldImpl(*columns[*column_index], this->serializations[*column_index]);
+                ext.read_columns[*column_index] = this->format_reader->readFieldImpl(*columns[*column_index], this->serializations[*column_index]);
             else
-                binary_reader->skipField(file_column);
+                this->format_reader->skipField(file_column);
         }
 
         this->column_mapping->insertDefaultsForNotSeenColumns(columns, ext.read_columns);
@@ -54,7 +54,7 @@ bool BinaryRowInputFormat<with_defaults>::readRow(DB::MutableColumns & columns, 
     else
     {
         for (size_t file_column = 0; file_column < columns.size(); ++file_column)
-            ext.read_columns[file_column] = binary_reader->readFieldImpl(*columns[file_column], this->serializations[file_column]);
+            ext.read_columns[file_column] = this->format_reader->readFieldImpl(*columns[file_column], this->serializations[file_column]);
     }
 
     /// If defaults_for_omitted_fields is set to 0, we should leave already inserted defaults.

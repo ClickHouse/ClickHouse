@@ -54,9 +54,6 @@ public:
     std::string getDiagnosticInfo() override { return {}; }
 
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-
-private:
-    BinaryFormatReader<with_defaults> * binary_reader;
 };
 
 class BinaryWithNamesAndTypesSchemaReader : public FormatWithNamesAndTypesSchemaReader
