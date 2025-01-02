@@ -129,6 +129,8 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
             std::vector<std::string> ignore_settings;
             auto settings_changes = storage_def.settings->changes;
 
+            std::set<std::string> names;
+
             /// We support settings starting with s3_ for compatibility.
             for (auto & change : settings_changes)
             {
@@ -140,8 +142,14 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def)
 
                 if (change.name == "current_shard_num")
                     ignore_settings.push_back(change.name);
-                if (change.name == "total_shards_num")
+                else if (change.name == "total_shards_num")
                     ignore_settings.push_back(change.name);
+                else
+                {
+                    bool inserted = names.insert(change.name).second;
+                    if (!inserted)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", change.name);
+                }
             }
 
             for (const auto & setting : ignore_settings)
