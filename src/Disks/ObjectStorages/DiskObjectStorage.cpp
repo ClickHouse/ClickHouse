@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Common/checkStackSize.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
@@ -19,8 +18,7 @@
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
-#include <Parsers/ASTCreateResourceQuery.h>
+
 
 namespace DB
 {
@@ -73,10 +71,9 @@ DiskObjectStorage::DiskObjectStorage(
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
     , send_metadata(config.getBool(config_prefix + ".send_metadata", false))
-    , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
-    , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
+    , read_resource_name(config.getString(config_prefix + ".read_resource", ""))
+    , write_resource_name(config.getString(config_prefix + ".write_resource", ""))
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}, WriteSettings{}))
-    , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     data_source_description = DataSourceDescription{
         .type = DataSourceType::ObjectStorage,
@@ -86,98 +83,6 @@ DiskObjectStorage::DiskObjectStorage(
         .is_encrypted = false,
         .is_cached = object_storage->supportsCache(),
     };
-    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
-        [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
-        {
-            std::unique_lock lock{resource_mutex};
-
-            // Sets of matching resource names. Required to resolve possible conflicts in deterministic way
-            std::set<String> new_read_resource_name_from_sql;
-            std::set<String> new_write_resource_name_from_sql;
-            std::set<String> new_read_resource_name_from_sql_any;
-            std::set<String> new_write_resource_name_from_sql_any;
-
-            // Current state
-            if (!read_resource_name_from_sql.empty())
-                new_read_resource_name_from_sql.insert(read_resource_name_from_sql);
-            if (!write_resource_name_from_sql.empty())
-                new_write_resource_name_from_sql.insert(write_resource_name_from_sql);
-            if (!read_resource_name_from_sql_any.empty())
-                new_read_resource_name_from_sql_any.insert(read_resource_name_from_sql_any);
-            if (!write_resource_name_from_sql_any.empty())
-                new_write_resource_name_from_sql_any.insert(write_resource_name_from_sql_any);
-
-            // Process all updates in specified order
-            for (const auto & [entity_type, resource_name, resource] : events)
-            {
-                if (entity_type == WorkloadEntityType::Resource)
-                {
-                    if (resource) // CREATE RESOURCE
-                    {
-                        auto * create = typeid_cast<ASTCreateResourceQuery *>(resource.get());
-                        chassert(create);
-                        for (const auto & [mode, disk] : create->operations)
-                        {
-                            if (!disk)
-                            {
-                                switch (mode)
-                                {
-                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql_any.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql_any.insert(resource_name); break;
-                                }
-                            }
-                            else if (*disk == name)
-                            {
-                                switch (mode)
-                                {
-                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql.insert(resource_name); break;
-                                }
-                            }
-                        }
-                    }
-                    else // DROP RESOURCE
-                    {
-                        new_read_resource_name_from_sql.erase(resource_name);
-                        new_write_resource_name_from_sql.erase(resource_name);
-                        new_read_resource_name_from_sql_any.erase(resource_name);
-                        new_write_resource_name_from_sql_any.erase(resource_name);
-                    }
-                }
-            }
-
-            String old_read_resource = getReadResourceNameNoLock();
-            String old_write_resource = getWriteResourceNameNoLock();
-
-            // Apply changes
-            if (!new_read_resource_name_from_sql_any.empty())
-                read_resource_name_from_sql_any = *new_read_resource_name_from_sql_any.begin();
-            else
-                read_resource_name_from_sql_any.clear();
-
-            if (!new_write_resource_name_from_sql_any.empty())
-                write_resource_name_from_sql_any = *new_write_resource_name_from_sql_any.begin();
-            else
-                write_resource_name_from_sql_any.clear();
-
-            if (!new_read_resource_name_from_sql.empty())
-                read_resource_name_from_sql = *new_read_resource_name_from_sql.begin();
-            else
-                read_resource_name_from_sql.clear();
-
-            if (!new_write_resource_name_from_sql.empty())
-                write_resource_name_from_sql = *new_write_resource_name_from_sql.begin();
-            else
-                write_resource_name_from_sql.clear();
-
-            String new_read_resource = getReadResourceNameNoLock();
-            String new_write_resource = getWriteResourceNameNoLock();
-
-            if (old_read_resource != new_read_resource)
-                LOG_INFO(log, "Using resource '{}' instead of '{}' for READ", new_read_resource, old_read_resource);
-            if (old_write_resource != new_write_resource)
-                LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
-        });
 }
 
 StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) const
@@ -474,65 +379,6 @@ void DiskObjectStorage::removeSharedRecursive(
     transaction->commit();
 }
 
-void DiskObjectStorage::removeSharedRecursiveWithLimit(
-    const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
-{
-    if (remove_shared_recursive_file_limit == 0)
-    {
-        removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
-        return;
-    }
-
-
-    RemoveBatchRequest local_paths;
-    std::vector<std::string> directories;
-
-    auto check_limit_reached = [&]()
-    {
-        const auto path_count = local_paths.size() + directories.size();
-        chassert(path_count <= this->remove_shared_recursive_file_limit);
-        return local_paths.size() + directories.size() == this->remove_shared_recursive_file_limit;
-    };
-
-    auto remove = [&]()
-    {
-        auto transaction = createObjectStorageTransaction();
-        if (!local_paths.empty())
-            transaction->removeSharedFiles(local_paths, keep_all_batch_data, file_names_remove_metadata_only);
-        for (auto & directory : directories)
-            transaction->removeDirectory(directory);
-        transaction->commit();
-        local_paths.clear();
-        directories.clear();
-    };
-
-    std::function<void(const std::string &)> traverse_metadata_recursive = [&](const std::string & path_to_remove)
-    {
-        checkStackSize();
-        if (check_limit_reached())
-            remove();
-
-        if (metadata_storage->existsFile(path_to_remove))
-        {
-            chassert(path_to_remove.starts_with(path));
-            local_paths.emplace_back(path_to_remove);
-        }
-        else
-        {
-            for (auto it = metadata_storage->iterateDirectory(path_to_remove); it->isValid(); it->next())
-            {
-                traverse_metadata_recursive(it->path());
-                if (check_limit_reached())
-                    remove();
-            }
-            directories.push_back(path_to_remove);
-        }
-    };
-
-    traverse_metadata_recursive(path);
-    remove();
-}
-
 bool DiskObjectStorage::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(reservation_mutex);
@@ -634,29 +480,13 @@ static inline Settings updateIOSchedulingSettings(const Settings & settings, con
 String DiskObjectStorage::getReadResourceName() const
 {
     std::unique_lock lock(resource_mutex);
-    return getReadResourceNameNoLock();
+    return read_resource_name;
 }
 
 String DiskObjectStorage::getWriteResourceName() const
 {
     std::unique_lock lock(resource_mutex);
-    return getWriteResourceNameNoLock();
-}
-
-String DiskObjectStorage::getReadResourceNameNoLock() const
-{
-    if (read_resource_name_from_config.empty())
-        return read_resource_name_from_sql.empty() ? read_resource_name_from_sql_any : read_resource_name_from_sql;
-    else
-        return read_resource_name_from_config;
-}
-
-String DiskObjectStorage::getWriteResourceNameNoLock() const
-{
-    if (write_resource_name_from_config.empty())
-        return write_resource_name_from_sql.empty() ? write_resource_name_from_sql_any : write_resource_name_from_sql;
-    else
-        return write_resource_name_from_config;
+    return write_resource_name;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
@@ -703,10 +533,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     };
 
     /// Avoid cache fragmentation by choosing bigger buffer size.
-    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
-        && object_storage->supportsCache()
-        && read_settings.enable_filesystem_cache;
-
+    bool prefer_bigger_buffer_size = object_storage->supportsCache() && read_settings.enable_filesystem_cache;
     size_t buffer_size = prefer_bigger_buffer_size
         ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
         : settings.remote_fs_buffer_size;
@@ -795,13 +622,11 @@ void DiskObjectStorage::applyNewSettings(
 
     {
         std::unique_lock lock(resource_mutex);
-        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name_from_config)
-            read_resource_name_from_config = new_read_resource_name;
-        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name_from_config)
-            write_resource_name_from_config = new_write_resource_name;
+        if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name)
+            read_resource_name = new_read_resource_name;
+        if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name)
+            write_resource_name = new_write_resource_name;
     }
-
-    remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
 
     IDisk::applyNewSettings(config, context_, config_prefix, disk_map);
 }
@@ -813,7 +638,7 @@ void DiskObjectStorage::restoreMetadataIfNeeded(
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        auto current_schema_version = DB::DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(object_storage.get(), object_key_prefix);
+        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_key_prefix);
         if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 

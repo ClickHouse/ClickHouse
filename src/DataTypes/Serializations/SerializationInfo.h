@@ -4,10 +4,8 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
-namespace Poco::JSON
-{
-class Object;
-}
+#include <Poco/JSON/Object.h>
+
 
 namespace DB
 {
@@ -69,7 +67,7 @@ public:
     virtual void serialializeKindBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
-    virtual void toJSON(Poco::JSON::Object & object) const;
+    virtual Poco::JSON::Object toJSON() const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
     void setKind(ISerialization::Kind kind_) { kind = kind_; }

@@ -10,18 +10,16 @@ ClickHouse works 100-1000x faster than traditional database management systems, 
 
 For more information and documentation see https://clickhouse.com/.
 
+<!-- This is not related to the docker official library, remove it before commit to https://github.com/docker-library/docs -->
 ## Versions
 
 -	The `latest` tag points to the latest release of the latest stable branch.
 -	Branch tags like `22.2` point to the latest release of the corresponding branch.
--	Full version tags like `22.2.3` and `22.2.3.5` point to the corresponding release.
-<!-- docker-official-library:off -->
-<!-- This is not related to the docker official library, remove it before commit to https://github.com/docker-library/docs -->
+-	Full version tags like `22.2.3.5` point to the corresponding release.
 -	The tag `head` is built from the latest commit to the default branch.
 -	Each tag has optional `-alpine` suffix to reflect that it's built on top of `alpine`.
 
 <!-- REMOVE UNTIL HERE -->
-<!-- docker-official-library:on -->
 ### Compatibility
 
 -	The amd64 image requires support for [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3). Virtually all x86 CPUs after 2005 support SSE3.

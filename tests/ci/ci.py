@@ -798,6 +798,10 @@ def _upload_build_profile_data(
         logging.info("Unknown CI logs host, skip uploading build profile data")
         return
 
+    if not pr_info.number == 0:
+        logging.info("Skipping uploading build profile data for PRs")
+        return
+
     instance_type = get_instance_type()
     instance_id = get_instance_id()
     auth = {

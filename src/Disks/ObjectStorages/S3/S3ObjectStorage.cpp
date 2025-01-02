@@ -9,14 +9,12 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/IO/getThreadPoolReader.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/deleteFileFromS3.h>
 #include <Interpreters/Context.h>
-#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
 #include <IO/S3/BlobStorageLogWriter.h>

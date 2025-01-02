@@ -21,7 +21,6 @@ class QueryExpressionsAliasVisitor ;
 class QueryNode;
 class JoinNode;
 class ColumnNode;
-class TableNode;
 
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
@@ -87,7 +86,7 @@ public:
 
     /// Resolve identifier functions
 
-    static std::shared_ptr<TableNode> tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
+    static QueryTreeNodePtr tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, ContextPtr context);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
         size_t identifier_bind_size,
@@ -117,10 +116,6 @@ public:
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
-        const QueryTreeNodePtr & table_expression_node,
-        IdentifierResolveScope & scope);
-
     QueryTreeNodePtr tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
@@ -131,14 +126,7 @@ public:
         const QueryTreeNodePtr & resolved_expression,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveExpressionFromArrayJoinNestedExpression(
-        const QueryTreeNodePtr & resolved_expression,
-        IdentifierResolveScope & scope,
-        ColumnNode & array_join_column_expression_typed,
-        QueryTreeNodePtr & array_join_column_inner_expression);
-
-    QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(
-        const QueryTreeNodePtr & resolved_expression,
+    QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(const QueryTreeNodePtr & resolved_expression,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 

@@ -1,9 +1,7 @@
-#include <string_view>
 #include <IO/HTTPCommon.h>
 
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Poco/Any.h>
-#include <Poco/StreamCopier.h>
 #include <Common/Exception.h>
 
 #include "config.h"
@@ -86,10 +84,9 @@ void assertResponseIsOk(const String & uri, Poco::Net::HTTPResponse & response, 
             ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 
-        std::string body;
-        Poco::StreamCopier::copyToString(istr, body);
-
-        throw HTTPException(code, uri, status, response.getReason(), body);
+        istr.seekg(0, std::ios::end);
+        size_t body_length = istr.tellg();
+        throw HTTPException(code, uri, status, response.getReason(), body_length);
     }
 }
 
@@ -98,13 +95,13 @@ Exception HTTPException::makeExceptionMessage(
     const std::string & uri,
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
-    const std::string & body)
+    size_t body_length)
 {
     return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
-        "body length: {} bytes, body: '{}'",
-        uri, static_cast<int>(http_status), reason, body.length(), body);
+        "body length: {} bytes",
+        uri, static_cast<int>(http_status), reason, body_length);
 }
 
 }

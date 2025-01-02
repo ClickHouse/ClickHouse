@@ -5,7 +5,6 @@ import random
 import string
 import time
 import uuid
-from multiprocessing.dummy import Pool
 
 import pytest
 
@@ -208,11 +207,6 @@ def run_query(instance, query, stdin=None, settings=None):
     return result
 
 
-def random_str(length=6):
-    alphabet = string.ascii_lowercase + string.digits
-    return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
-
-
 def generate_random_files(
     started_cluster,
     files_path,
@@ -222,18 +216,10 @@ def generate_random_files(
     row_num=10,
     start_ind=0,
     bucket=None,
-    use_random_names=False,
 ):
-    if use_random_names:
-        files = [
-            (f"{files_path}/{random_str(10)}.csv", i)
-            for i in range(start_ind, start_ind + count)
-        ]
-    else:
-        files = [
-            (f"{files_path}/test_{i}.csv", i)
-            for i in range(start_ind, start_ind + count)
-        ]
+    files = [
+        (f"{files_path}/test_{i}.csv", i) for i in range(start_ind, start_ind + count)
+    ]
     files.sort(key=lambda x: x[0])
 
     print(f"Generating files: {files}")
@@ -398,29 +384,17 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
     node.query("system flush logs")
 
     if engine_name == "S3Queue":
-        system_tables = ["s3queue_log", "s3queue"]
+        system_table_name = "s3queue_log"
     else:
-        system_tables = ["azure_queue_log", "azure_queue"]
-
-    for table in system_tables:
-        if table.endswith("_log"):
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE table = '{table_name}'"
-                    )
-                )
-                == files_num * row_num
+        system_table_name = "azure_queue_log"
+    assert (
+        int(
+            node.query(
+                f"SELECT sum(rows_processed) FROM system.{system_table_name} WHERE table = '{table_name}'"
             )
-        else:
-            assert (
-                int(
-                    node.query(
-                        f"SELECT sum(rows_processed) FROM system.{table} WHERE zookeeper_path = '{keeper_path}'"
-                    )
-                )
-                == files_num * row_num
-            )
+        )
+        == files_num * row_num
+    )
 
     if engine_name == "S3Queue":
         minio = started_cluster.minio_client
@@ -467,8 +441,6 @@ def test_failed_retry(started_cluster, mode, engine_name):
         additional_settings={
             "s3queue_loading_retries": retries_num,
             "keeper_path": keeper_path,
-            "polling_max_timeout_ms": 5000,
-            "polling_backoff_ms": 1000,
         },
         engine_name=engine_name,
     )
@@ -914,8 +886,6 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_buckets": 2,
-                "polling_max_timeout_ms": 2000,
-                "polling_backoff_ms": 1000,
                 **({"s3queue_processing_threads_num": 1} if mode == "ordered" else {}),
             },
         )
@@ -993,8 +963,6 @@ def test_max_set_age(started_cluster):
             "cleanup_interval_min_ms": max_age / 3,
             "cleanup_interval_max_ms": max_age / 3,
             "loading_retries": 0,
-            "polling_max_timeout_ms": 5000,
-            "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
             "loading_retries": 0,
         },
@@ -1065,9 +1033,6 @@ def test_max_set_age(started_cluster):
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
         f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
-    )
-    assert "Cannot parse input" in node.query(
-        f"SELECT exception FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
     )
 
     assert 1 == int(
@@ -1472,8 +1437,8 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
-    files_to_generate = 600
-    row_num = 1000
+    files_to_generate = 300
+    row_num = 300
     total_rows = row_num * files_to_generate
     shards_num = 2
 
@@ -1489,8 +1454,6 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_buckets": shards_num,
-                "polling_max_timeout_ms": 1000,
-                "polling_backoff_ms": 0,
             },
         )
         i += 1
@@ -1741,8 +1704,6 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_last_processed_path": f"{files_path}/test_5.csv",
                 "s3queue_buckets": 2,
-                "polling_max_timeout_ms": 2000,
-                "polling_backoff_ms": 1000,
             },
         )
 
@@ -1794,7 +1755,6 @@ def test_upgrade(started_cluster):
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
-            "after_processing": "keep",
         },
     )
     total_values = generate_random_files(
@@ -2174,7 +2134,6 @@ def test_processing_threads(started_cluster):
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Using 16 processing threads"
     )
-
 
 def test_alter_settings(started_cluster):
     node1 = started_cluster.instances["node1"]
@@ -2581,48 +2540,13 @@ def test_upgrade_3(started_cluster):
     assert expected_rows == get_count()
 
     node.restart_with_latest_version()
-
     assert table_name in node.query("SHOW TABLES")
 
-    node.query(
-        f"""
-        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=111
+    assert (
+        "Cannot alter settings, because table engine doesn't support settings changes"
+        in node.query_and_get_error(
+            f"""
+        ALTER TABLE {table_name} MODIFY SETTING processing_threads_num=5
     """
-    )
-    assert 111 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
-        )
-    )
-
-    node.query(
-        f"""
-        ALTER TABLE {table_name} MODIFY SETTING polling_min_timeout_ms=222, polling_max_timeout_ms=333
-    """
-    )
-    assert 222 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_min_timeout_ms'"
-        )
-    )
-    assert 333 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
-        )
-    )
-
-    assert "polling_max_timeout_ms = 333" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    node.restart_clickhouse()
-
-    assert "polling_max_timeout_ms = 333" in node.query(
-        f"SHOW CREATE TABLE {table_name}"
-    )
-
-    assert 333 == int(
-        node.query(
-            f"SELECT value FROM system.s3_queue_settings WHERE table = '{table_name}' and name = 'polling_max_timeout_ms'"
         )
     )

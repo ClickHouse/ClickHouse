@@ -32,7 +32,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions = true;
 
     /// If merge-filters optimization is enabled.
-    bool merge_filters = true;
+    bool merge_filters = false;
 
     /// If filter push down optimization is enabled.
     bool filter_push_down = true;
@@ -69,9 +69,6 @@ struct QueryPlanOptimizationSettings
 
     /// If remove-redundant-distinct-steps optimization is enabled.
     bool remove_redundant_distinct = true;
-
-    /// If use vector search is enabled, the query will try use the vector similarity index
-    bool try_use_vector_search = true;
 
     bool optimize_prewhere = true;
 

@@ -6,11 +6,7 @@ sidebar_position: 210
 
 ## varPop
 
-Calculates the population variance:
-
-$$
-\frac{\Sigma{(x - \bar{x})^2}}{n}
-$$
+Calculates the population variance.
 
 **Syntax**
 
