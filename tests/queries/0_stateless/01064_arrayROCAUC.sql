@@ -77,7 +77,6 @@ select arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], [0, 0, 0, 0], true); -- 
 
 -- alias
 select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], false);
-select arrayAUCROC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1], false);
 
 -- negative tests
 select arrayROCAUC([0, 0, 1, 1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

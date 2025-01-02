@@ -103,7 +103,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
   * For the curve we can calculate, literally, Area Under the Curve, that will be in the range of [0..1].
   *
   * Let's look at the example:
-  * arrayPRAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+  * arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
   *
   * 1. We have pairs: (-, 0.1), (-, 0.4), (+, 0.35), (+, 0.8)
   *
@@ -129,7 +129,7 @@ template <bool is_pr>
 class FunctionArrayAUC : public IFunction
 {
 public:
-    static constexpr auto name = is_pr ? "arrayPRAUC" : "arrayROCAUC";
+    static constexpr auto name = is_pr ? "arrayAUCPR" : "arrayROCAUC";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayAUC<is_pr>>(); }
 
 private:
@@ -519,11 +519,10 @@ REGISTER_FUNCTION(ArrayAUC)
     /// ROC AUC
     factory.registerFunction<FunctionArrayAUC<false>>();
     factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
-    factory.registerAlias("arrayAUCROC", "arrayROCAUC");
 
     /// PR AUC
     factory.registerFunction<FunctionArrayAUC<true>>();
-    factory.registerAlias("arrayAUCPR", "arrayPRAUC");
+    factory.registerAlias("arrayPRAUC", "arrayAUCPR");
 }
 
 }
