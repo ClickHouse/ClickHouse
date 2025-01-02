@@ -128,11 +128,11 @@ PartsRanges splitByMergePredicate(PartsRanges && ranges, const AllowedMergingPre
     PartsRanges mergeable_ranges;
     for (auto && range : ranges)
     {
-        auto splitted_range_by_predicate = splitByMergePredicate(std::move(range), can_merge, predicate_split_phase_log);
-        insertAtEnd(mergeable_ranges, std::move(splitted_range_by_predicate));
+        auto split_range_by_predicate = splitByMergePredicate(std::move(range), can_merge, predicate_split_phase_log);
+        insertAtEnd(mergeable_ranges, std::move(split_range_by_predicate));
     }
 
-    LOG_TRACE(predicate_split_phase_log, "Splitted parts into {} mergeable ranges using merge predicate", mergeable_ranges.size());
+    LOG_TRACE(predicate_split_phase_log, "Split parts into {} mergeable ranges using merge predicate", mergeable_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, calculatePartsCount(mergeable_ranges));
     ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, mergeable_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
