@@ -36,7 +36,7 @@ public:
         if (switch_to_disk)
         {
             client.switchToDisk(disk_name, path);
-        } 
+        }
     }
 };
 

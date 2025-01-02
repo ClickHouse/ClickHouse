@@ -17,7 +17,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_DISK;
-    }
+}
 
 namespace DB
 {
@@ -180,7 +180,8 @@ DisksClient::DisksClient(const Poco::Util::AbstractConfiguration & config_, Cont
         postponed_disks.emplace(
             DEFAULT_DISK_NAME,
             std::pair{
-                [this, config_prefix]() {
+                [this, config_prefix]() -> DiskPtr
+                {
                     return std::make_shared<DiskLocal>(
                         DEFAULT_DISK_NAME, this->context->getPath(), 0, this->context, this->config, config_prefix);
                 },
@@ -261,7 +262,7 @@ void DisksClient::switchToDisk(const String & disk_, const std::optional<String>
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The disk '{}' is unknown or unitialized", disk_);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The disk '{}' is unknown or uninitialized", disk_);
     }
 }
 
