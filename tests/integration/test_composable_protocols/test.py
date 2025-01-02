@@ -200,6 +200,7 @@ def test_proxy_1():
     else:
         assert False, "Expected 'Exception: user123: Authentication failed'"
 
+
 # tests PROXYv1 over HTTP
 def test_http_proxy_1():
     proxy = Proxy1()
