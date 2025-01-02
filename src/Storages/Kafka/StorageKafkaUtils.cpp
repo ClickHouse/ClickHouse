@@ -12,8 +12,8 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
@@ -96,21 +96,6 @@ void registerStorageKafka(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
-
-        for (size_t i = 0; i < args_count; ++i)
-        {
-            /// If the user wrote e.g. ('kafka_broker_list' = '1'),
-            /// then engine_args[i] is an ASTFunction node, not a plain literal.
-            if (engine_args[i]->as<ASTFunction>())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Keyword arguments are not supported inside the parentheses for Kafka engine. "
-                    "Please use plain string literals or move them into the SETTINGS clause."
-                );
-            }
-        }
-
         const bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
@@ -127,7 +112,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
 // Check arguments and settings
-#define CHECK_KAFKA_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME, EVAL) \
+#define CHECK_KAFKA_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME, EVAL, TYPE) \
     /* One of the four required arguments is not specified */ \
     if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 && !(*kafka_settings)[KafkaSetting::PAR_NAME].changed) \
     { \
@@ -158,7 +143,7 @@ void registerStorageKafka(StorageFactory & factory)
             engine_args[(ARG_NUM)-1] \
                 = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
         } \
-        (*kafka_settings)[KafkaSetting::PAR_NAME] = engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
+        (*kafka_settings)[KafkaSetting::PAR_NAME] = checkAndGetLiteralArgument<TYPE>(engine_args[(ARG_NUM)-1], #PAR_NAME); \
     }
 
         /** Arguments of engine is following:
@@ -178,22 +163,22 @@ void registerStorageKafka(StorageFactory & factory)
         /// In case of named collection we already validated the arguments.
         if (collection_name.empty())
         {
-            CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
-            CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_client_id, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_poll_timeout_ms, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(13, kafka_flush_interval_ms, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(14, kafka_thread_per_consumer, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0, bool)
+            CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_client_id, 2, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_poll_timeout_ms, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(13, kafka_flush_interval_ms, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(14, kafka_thread_per_consumer, 0, bool)
+            CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0, bool)
+            CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0, UInt64)
         }
 
 #undef CHECK_KAFKA_STORAGE_ARGUMENT
