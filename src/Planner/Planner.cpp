@@ -1689,7 +1689,10 @@ void Planner::buildPlanForQueryNode()
             && !query_processing_info.isFirstStage()
             && expression_analysis_result.hasWhere())
         {
-            addObjectFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE");
+            if (typeid_cast<ReadFromCluster *>(query_plan.getRootNode()->step.get()))
+            {
+                addObjectFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE");
+            }
         }
 
         if (query_processing_info.isFromAggregationState())
