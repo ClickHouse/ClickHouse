@@ -14,6 +14,7 @@ public:
     {
     }
     const std::vector<ManifestFileEntry> & getManifestFiles() const { return manifest_files; }
+    Int64 getShapshotId() const { return snapshot_id; }
 
 private:
     std::vector<ManifestFileEntry> manifest_files;
