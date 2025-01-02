@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-import os
-import random
-import string
-import time
-
 import pytest
 
 import helpers.keeper_utils as keeper_utils
@@ -41,8 +36,6 @@ node3 = cluster.add_instance(
     with_minio=True,
 )
 
-from kazoo.client import KazooClient, KazooState
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -56,11 +49,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def stop_zk(zk):

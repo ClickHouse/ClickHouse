@@ -3,6 +3,7 @@ import time
 
 import pytest
 
+import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -19,8 +20,6 @@ node3 = cluster.add_instance(
     main_configs=["configs/keeper_config_with_allow_list_all.xml"],
     stay_alive=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -74,11 +73,7 @@ def get_keeper_socket(nodename):
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def close_keeper_socket(cli):

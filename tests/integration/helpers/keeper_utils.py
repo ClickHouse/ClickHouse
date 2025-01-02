@@ -360,9 +360,15 @@ def get_any_follower(cluster, nodes):
     raise Exception("No followers in Keeper cluster.")
 
 
-def get_fake_zk(cluster, node, timeout: float = 30.0) -> KazooClient:
+def get_fake_zk(cluster, nodename, timeout: float = 30.0) -> KazooClient:
+    kazoo_retry = {
+        "max_tries": 10,
+    }
     _fake = KazooClient(
-        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
+        hosts=cluster.get_instance_ip(nodename) + ":9181",
+        timeout=timeout,
+        connection_retry=kazoo_retry,
+        command_retry=kazoo_retry,
     )
     _fake.start()
     return _fake

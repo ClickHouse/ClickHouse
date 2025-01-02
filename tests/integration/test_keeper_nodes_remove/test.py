@@ -4,8 +4,8 @@ import os
 import time
 
 import pytest
-from kazoo.client import KazooClient, KazooState
 
+import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -34,11 +34,7 @@ def started_cluster():
 
 
 def get_fake_zk(node, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, node.name, timeout=timeout)
 
 
 def test_nodes_remove(started_cluster):

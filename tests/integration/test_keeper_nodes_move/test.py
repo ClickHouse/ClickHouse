@@ -5,11 +5,9 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.client import KazooClient, KazooState
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -43,11 +41,7 @@ def start(node):
 
 
 def get_fake_zk(node, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, node.name, timeout=timeout)
 
 
 def test_node_move(started_cluster):
