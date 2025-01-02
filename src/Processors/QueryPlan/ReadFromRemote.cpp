@@ -160,7 +160,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
 
     if (stage == QueryProcessingStage::Complete)
     {
-        add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
+        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
+            add_totals = ast_select->group_by_with_totals;
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
@@ -233,6 +234,14 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     addConvertingActions(pipes.back(), out_header, shard.has_missing_objects);
 }
 
+ASTSelectQuery & getSelectQuery(ASTPtr ast)
+{
+    if (const auto * explain = ast->as<ASTExplainQuery>())
+        ast = explain->getExplainedQuery();
+
+    return ast->as<ASTSelectQuery &>();
+}
+
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
@@ -242,7 +251,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
     if (stage == QueryProcessingStage::Complete)
     {
-        add_totals = shard.query->as<ASTSelectQuery &>().group_by_with_totals;
+        if (const auto * ast_select = shard.query->as<ASTSelectQuery>())
+            add_totals = ast_select->group_by_with_totals;
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
@@ -273,7 +283,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
         for (size_t i = 0; i < shard.shard_info.per_replica_pools.size(); ++i)
         {
             auto query = shard.query->clone();
-            auto & select_query = query->as<ASTSelectQuery &>();
+            auto & select_query = getSelectQuery(query);
             auto shard_filter = shard.shard_filter_generator(i + 1);
             if (shard_filter)
             {
@@ -435,7 +445,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     LoggerPtr log_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     std::vector<ConnectionPoolPtr> pools_to_use_,
-    std::optional<size_t> exclude_pool_index_)
+    std::optional<size_t> exclude_pool_index_,
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
     : ISourceStep(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -450,6 +461,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , log(log_)
     , pools_to_use(std::move(pools_to_use_))
     , exclude_pool_index(exclude_pool_index_)
+    , connection_pool_with_failover(connection_pool_with_failover_)
 {
     chassert(cluster->getShardCount() == 1);
 
@@ -546,7 +558,8 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(
         scalars,
         external_tables,
         stage,
-        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
+        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
+        connection_pool_with_failover);
 
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
