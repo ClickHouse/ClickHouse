@@ -310,13 +310,21 @@ struct FormatSettings
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
         bool highlight_trailing_spaces = true;
+        bool multiline_fields = true;
         /// Set to 2 for auto
         UInt64 color = 2;
 
-        bool output_format_pretty_row_numbers = false;
-        UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
-        UInt64 output_format_pretty_display_footer_column_names = 1;
-        UInt64 output_format_pretty_display_footer_column_names_min_rows = 50;
+        bool row_numbers = false;
+        UInt64 single_large_number_tip_threshold = 1'000'000;
+        UInt64 display_footer_column_names = 1;
+        UInt64 display_footer_column_names_min_rows = 50;
+
+        UInt64 squash_consecutive_ms = 50;
+        UInt64 squash_max_wait_ms = 1000;
+
+        bool fallback_to_vertical = true;
+        UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
+        UInt64 fallback_to_vertical_min_table_width = 250;
 
         enum class Charset : uint8_t
         {

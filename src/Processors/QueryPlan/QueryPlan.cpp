@@ -28,6 +28,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+SettingsChanges ExplainPlanOptions::toSettingsChanges() const
+{
+    SettingsChanges changes;
+    changes.emplace_back("header", int(header));
+    changes.emplace_back("description", int(description));
+    changes.emplace_back("actions", int(actions));
+    changes.emplace_back("indexes", int(indexes));
+    changes.emplace_back("sorting", int(sorting));
+    changes.emplace_back("distributed", int(distributed));
+
+    return changes;
+}
+
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
 QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
@@ -204,7 +217,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     return last_pipeline;
 }
 
-static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
+static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());
     map.add("Node Id", step.getUniqID());
@@ -300,9 +313,9 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 }
 
 static void explainStep(
-    const IQueryPlanStep & step,
+    IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
-    const QueryPlan::ExplainPlanOptions & options)
+    const ExplainPlanOptions & options)
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
@@ -355,13 +368,16 @@ static void explainStep(
 
     if (options.indexes)
         step.describeIndexes(settings);
+
+    if (options.distributed)
+        step.describeDistributedPlan(settings, options);
 }
 
-std::string debugExplainStep(const IQueryPlanStep & step)
+std::string debugExplainStep(IQueryPlanStep & step)
 {
     WriteBufferFromOwnString out;
+    ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out};
-    QueryPlan::ExplainPlanOptions options{.actions = true};
     explainStep(step, settings, options);
     return out.str();
 }

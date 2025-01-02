@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** An adapter that allows to execute array* functions over Map types arguments.
@@ -78,12 +79,36 @@ public:
             impl.getReturnTypeImpl(nested_arguments);
         };
 
+        DataTypePtr nested_type;
         /// If method is not overloaded in the implementation call default implementation
         /// from IFunction. Here inheritance cannot be used for template parameterized field.
         if constexpr (impl_has_get_return_type)
-            return Adapter::wrapType(impl.getReturnTypeImpl(nested_arguments));
+            nested_type = impl.getReturnTypeImpl(nested_arguments);
         else
-            return Adapter::wrapType(dynamic_cast<const IFunction &>(impl).getReturnTypeImpl(nested_arguments));
+            nested_type = dynamic_cast<const IFunction &>(impl).getReturnTypeImpl(nested_arguments);
+
+        if constexpr (std::is_same_v<Impl, FunctionArrayMap> || std::is_same_v<Impl, FunctionArrayConcat>)
+        {
+            /// Check if nested type is Array(Tuple(key, value))
+            const auto * type_array = typeid_cast<const DataTypeArray *>(nested_type.get());
+            if (!type_array)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Expected Array(Tuple(key, value)) type, got {}", nested_type->getName());
+
+            const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_array->getNestedType().get());
+            if (!type_tuple)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Expected Array(Tuple(key, value)) type, got {}", nested_type->getName());
+
+            if (type_tuple->getElements().size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Expected Array(Tuple(key, value)) type, got {}", nested_type->getName());
+
+            /// Recreate nested type with explicitly named tuple.
+            return Adapter::wrapType(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{type_tuple->getElement(0), type_tuple->getElement(1)}, Names{"keys", "values"})));
+        }
+        else
+            return Adapter::wrapType(nested_type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -153,7 +178,7 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
 
     static DataTypePtr extractNestedType(const DataTypeMap & type_map)
     {
-        return type_map.getNestedTypeWithUnnamedTuple();
+        return type_map.getNestedType();
     }
 
     static ColumnPtr extractNestedColumn(const ColumnMap & column_map)

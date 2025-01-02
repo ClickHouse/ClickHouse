@@ -37,6 +37,7 @@ def get_fasttest_cmd(
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
         f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
         "-e stage=clone_submodules "
+        "--tmpfs /tmp/clickhouse "
         f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/repo "
         f"--volume={output_path}:/test_output {image} /repo/tests/docker_scripts/fasttest_runner.sh"
     )

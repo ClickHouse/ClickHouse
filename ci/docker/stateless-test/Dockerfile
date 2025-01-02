@@ -120,3 +120,7 @@ RUN npm install -g azurite@3.30.0 \
 
 ENV PYTHONPATH=".:./ci"
 USER clickhouse
+
+# A directory for cache
+RUN mkdir /dev/shm/clickhouse
+

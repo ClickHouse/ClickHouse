@@ -950,7 +950,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
     if (!function)
         return {false, 0};
 
-    if (function->isAggregateFunction())
+    if (function->isAggregateFunction() || function->isWindowFunction())
         return {true, 0};
 
     UInt64 pushed_children = 0;

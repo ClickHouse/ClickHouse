@@ -82,7 +82,8 @@ private:
         {"version", {std::make_shared<DataTypeString>(), "5.7.30"}},
         {"version_comment", {std::make_shared<DataTypeString>(), ""}},
         {"transaction_isolation", {std::make_shared<DataTypeString>(), "READ-UNCOMMITTED"}},
-        {"track_system_variables", {std::make_shared<DataTypeString>(), ""}},
+        {"session_track_system_variables", {std::make_shared<DataTypeString>(), ""}},
+        {"sql_mode", {std::make_shared<DataTypeString>(), "ALLOW_INVALID_DATES,ANSI_QUOTES,IGNORE_SPACE,NO_AUTO_VALUE_ON_ZERO,NO_DIR_IN_CREATE,ONLY_FULL_GROUP_BY,PAD_CHAR_TO_FULL_LENGTH,PIPES_AS_CONCAT,REAL_AS_FLOAT"}},
     };
 };
 

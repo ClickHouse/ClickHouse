@@ -209,6 +209,9 @@ protected:
     Statistics statistics;
     std::atomic_bool has_progress_update_to_write = false;
 
+    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
+    std::mutex writing_mutex;
+
 private:
     size_t rows_read_before = 0;
     bool are_totals_written = false;
@@ -216,9 +219,6 @@ private:
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;
     size_t result_bytes = 0;
-
-    /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
-    std::mutex writing_mutex;
 };
 
 }
