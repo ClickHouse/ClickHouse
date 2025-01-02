@@ -41,9 +41,15 @@
 #include <Common/escapeForFileName.h>
 #include <IO/SharedThreadPools.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric ActiveDataMutations;
+    extern const Metric ActiveMetadataMutations;
+}
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
@@ -233,6 +239,9 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
+
+    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
+    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
 }
 
 void StorageMergeTree::read(
@@ -1561,9 +1570,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        if (current_mutations_by_version.size() <= finished_mutations_to_keep)
-            return 0;
-
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
 
@@ -2659,7 +2665,7 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     auto res = std::make_shared<MutationsSnapshot>(params, std::move(info));
 
     bool need_data_mutations = res->hasDataMutations();
-    bool need_metadata_mutations = num_metadata_mutations_to_apply > 0;
+    bool need_metadata_mutations = res->hasMetadataMutations();
 
     if (!need_data_mutations && !need_metadata_mutations)
         return res;
