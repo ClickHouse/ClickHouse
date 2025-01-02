@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
+    extern const int BAD_ARGUMENTS;
 }
 
 #define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(DECLARE, ALIAS) \
