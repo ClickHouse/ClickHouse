@@ -561,9 +561,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                      path, file_status->processed_rows);
         }
 
-        if (processed_files.empty() || processed_files.back()->getPath() != path)
+        if (processed_files.empty() || processed_files.back().metadata->getPath() != path)
         {
-            processed_files.push_back(file_metadata);
+            processed_files.emplace_back(FileState::Processing, file_metadata);
             progress->processed_files += 1;
         }
 
@@ -595,23 +595,27 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto message = getCurrentExceptionMessage(true);
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
 
-            failed_during_read_files.push_back(file_metadata);
-            file_status->onFailed(getCurrentExceptionMessage(true));
-
-            if (file_status->processed_rows == 0)
+            processed_files.back().state = FileState::ErrorOnRead;
+            if (file_status->processed_rows == 0 && processed_files.size() > 1)
             {
-                if (file_status->retries < file_metadata->getMaxTries())
-                    file_iterator->returnForRetry(reader.getObjectInfo());
-
                 /// If we did not process any rows from the failed file,
                 /// commit all previously processed files,
                 /// not to lose the work already done.
+                processed_files.back().metadata->resetProcessing();
+                processed_files.pop_back();
+                file_iterator->returnForRetry(reader.getObjectInfo());
+                LOG_TRACE(
+                    log,
+                    "Processing of file {} failed with {}, "
+                    "but there are successfully processed files ({}), "
+                    "will commit them and retry the failed file",
+                    path, getCurrentExceptionMessage(false), processed_files.size() - 1);
                 return {};
             }
-
             throw;
         }
 
+        processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
         file_status.reset();
         reader = {};
@@ -658,10 +662,10 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
 void ObjectStorageQueueSource::commit(bool success, const std::string & exception_message)
 {
-    LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
-             processed_files.size(), success ? "Processed" : "Failed", failed_during_read_files.size());
+    LOG_TEST(log, "Having {} files to set as {}",
+             processed_files.size(), success ? "Processed" : "Failed");
 
-    for (const auto & file_metadata : processed_files)
+    for (const auto & [file_state, file_metadata] : processed_files)
     {
         if (success)
         {
@@ -672,23 +676,10 @@ void ObjectStorageQueueSource::commit(bool success, const std::string & exceptio
         {
             file_metadata->setFailed(
                 exception_message,
-                /* reduce_retry_count */false,
+                /* reduce_retry_count */file_state == FileState::ErrorOnRead,
                 /* overwrite_status */true);
-
         }
         appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */success);
-    }
-
-    for (const auto & file_metadata : failed_during_read_files)
-    {
-        /// `exception` from commit args is from insertion to storage.
-        /// Here we do not used it as failed_during_read_files were not inserted into storage, but skipped.
-        file_metadata->setFailed(
-            file_metadata->getFileStatus()->getException(),
-            /* reduce_retry_count */true,
-            /* overwrite_status */false);
-
-        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */false);
     }
 }
 

@@ -24,14 +24,15 @@ public:
     using Source = StorageObjectStorageSource;
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
+    using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
     struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
             const Source::ObjectInfo & object_info,
-            ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_);
+            FileMetadataPtr file_metadata_);
 
-        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata;
+        FileMetadataPtr file_metadata;
     };
 
     class FileIterator : public StorageObjectStorageSource::IIterator
@@ -165,11 +166,20 @@ private:
     const bool commit_once_processed;
 
     LoggerPtr log;
-
-    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> processed_files;
-    std::vector<ObjectStorageQueueMetadata::FileMetadataPtr> failed_during_read_files;
-
     Source::ReaderHolder reader;
+
+    enum class FileState
+    {
+        Processing,
+        ErrorOnRead,
+        Processed,
+    };
+    struct ProcessedFile
+    {
+        FileState state;
+        FileMetadataPtr metadata;
+    };
+    std::vector<ProcessedFile> processed_files;
 
     Chunk generateImpl();
     void applyActionAfterProcessing(const String & path);
