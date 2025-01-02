@@ -314,30 +314,22 @@ select parseDateTime64OrZero('2021-01-04 23:12:34.118112', '%Y-%m-%d %H:%i:%s') 
 1
 select parseDateTime64OrZero('2021-01-04 23:12:34.11811235', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1970-01-01 00:00:00', 6);
 1
---  Test with random inputs between 1900 and 2299 using parseDateTime64
-select parseDateTime64('1924-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1924-02-28 23:22:33.123433', 6);
+-- Test parseDataTime64 supports range between 1900 - 2299
+select parseDateTime64('1899-12-31 23:59:59', '%Y-%m-%d %H:%i:%s'); -- { serverError CANNOT_PARSE_DATETIME }
+select parseDateTime64('1900-01-01 00:00:00', '%Y-%m-%d %H:%i:%s') = toDateTime64('1900-01-01 00:00:00', 0);
 1
-select parseDateTime64('2023-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2023-02-28 23:22:33.123433', 6);
+select parseDateTime64('1920-06-06 00:00:01', '%Y-%m-%d %H:%i:%s') = toDateTime64('1920-06-06 00:00:01', 0);
 1
-select parseDateTime64('2299-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2299-02-28 23:22:33.123433', 6);
+select parseDateTime64('1970-01-01 00:00:00', '%Y-%m-%d %H:%i:%s') = toDateTime64('1970-01-01 00:00:00', 0);
 1
-select parseDateTime64('1900-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1900-02-28 23:22:33.123433', 6);
+select parseDateTime64('1971-02-03 04:05:06', '%Y-%m-%d %H:%i:%s') = toDateTime64('1971-02-03 04:05:06', 0);
 1
---  Test with random inputs between 1900 and 2299 using parseDateTime64OrNull
-select parseDateTime64OrNull('1924-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1924-02-28 23:22:33.123433', 6);
+select parseDateTime64('2105-02-03 04:05:06', '%Y-%m-%d %H:%i:%s') = toDateTime64('2105-02-03 04:05:06', 0);
 1
-select parseDateTime64OrNull('2023-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2023-02-28 23:22:33.123433', 6);
+select parseDateTime64('2106-02-07 06:28:15', '%Y-%m-%d %H:%i:%s') = toDateTime64('2106-02-07 06:28:15', 0);
 1
-select parseDateTime64OrNull('2299-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2299-02-28 23:22:33.123433', 6);
+select parseDateTime64('2106-02-08 06:28:15', '%Y-%m-%d %H:%i:%s') = toDateTime64('2106-02-08 06:28:15', 0);
 1
-select parseDateTime64OrNull('1900-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1900-02-28 23:22:33.123433', 6);
+select parseDateTime64('2299-12-31 23:59:59', '%Y-%m-%d %H:%i:%s') = toDateTime64('2299-12-31 23:59:59', 0);
 1
--- Test with random inputs between 1900 and 2299 using parseDateTime64OrZero
-select parseDateTime64OrZero('1924-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1924-02-28 23:22:33.123433', 6);
-1
-select parseDateTime64OrZero('2023-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2023-02-28 23:22:33.123433', 6);
-1
-select parseDateTime64OrZero('2299-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('2299-02-28 23:22:33.123433', 6);
-1
-select parseDateTime64OrZero('1900-02-28 23:22:33.123433', '%Y-%m-%d %H:%i:%s.%f') = toDateTime64('1900-02-28 23:22:33.123433', 6);
-1
+select parseDateTime64('2300-01-01 00:00:00', '%Y-%m-%d %H:%i:%s'); -- { serverError CANNOT_PARSE_DATETIME }

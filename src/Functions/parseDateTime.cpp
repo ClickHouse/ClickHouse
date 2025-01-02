@@ -160,7 +160,7 @@ namespace
 }
 
     template <ErrorHandling error_handling, ReturnType return_type>
-    struct DateTime
+    struct ParsedValue
     {
         static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 1900 : 1970;
         static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 2299 : 2106;
@@ -199,9 +199,9 @@ namespace
 
         static bool yearOutOfRange(Int32 y) { return y < min_year || y > max_year; }
 
-        bool minYear() const { return min_year; }
+        Int32 minYear() const { return min_year; }
 
-        bool maxYear() const { return max_year; }
+        Int32 maxYear() const { return max_year; }
 
         void reset()
         {
@@ -719,7 +719,7 @@ namespace
             const std::vector<Instruction> instructions = parseFormat(format);
             const auto & time_zone = getTimeZone(arguments);
 
-            alignas(64) DateTime<error_handling, return_type> datetime; /// Make datetime fit in a cache line.
+            alignas(64) ParsedValue<error_handling, return_type> datetime; /// Make datetime fit in a cache line.
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
@@ -823,8 +823,8 @@ namespace
 
             using Func = std::conditional_t<
                 parse_syntax == ParseSyntax::MySQL,
-                PosOrError (*)(Pos, Pos, const String &, DateTime<error_handling, return_type> &),
-                std::function<PosOrError(Pos, Pos, const String &, DateTime<error_handling, return_type> &)>>;
+                PosOrError (*)(Pos, Pos, const String &, ParsedValue<error_handling, return_type> &),
+                std::function<PosOrError(Pos, Pos, const String &, ParsedValue<error_handling, return_type> &)>>;
             const Func func{};
             const String func_name;
             const String literal; /// Only used when current instruction parses literal
@@ -850,7 +850,7 @@ namespace
             }
 
             [[nodiscard]]
-            PosOrError perform(Pos cur, Pos end, DateTime<error_handling, return_type> & date) const
+            PosOrError perform(Pos cur, Pos end, ParsedValue<error_handling, return_type> & date) const
             {
                 if (func)
                     return func(cur, end, fragment, date);
@@ -991,7 +991,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment))
 
@@ -1011,7 +1011,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment))
 
@@ -1032,7 +1032,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
                 String text1(cur, 3);
@@ -1063,7 +1063,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
@@ -1072,7 +1072,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month))
@@ -1081,7 +1081,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlCentury(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlCentury(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 century;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century)))
@@ -1090,7 +1090,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 day_of_month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
@@ -1099,7 +1099,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlAmericanDate(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
 
@@ -1120,7 +1120,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment))
 
@@ -1135,7 +1135,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlISO8601Date(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
 
@@ -1155,7 +1155,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 year2;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
@@ -1164,7 +1164,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
@@ -1173,7 +1173,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfYear(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlDayOfYear(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 day_of_year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
@@ -1182,7 +1182,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment))
                 RETURN_ERROR_IF_FAILED(date.setDayOfWeek(*cur - '0'))
@@ -1191,7 +1191,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Week(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlISO8601Week(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week)))
@@ -1200,7 +1200,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfWeek0To6 requires size >= 1", fragment))
 
@@ -1214,7 +1214,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
                 String text1(cur, 3);
@@ -1247,7 +1247,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlYear2(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlYear2(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 year2;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
@@ -1256,7 +1256,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlYear4(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlYear4(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
@@ -1265,7 +1265,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment))
 
@@ -1295,7 +1295,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMinute(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlMinute(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
@@ -1304,7 +1304,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlAMPM(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlAMPM(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment))
 
@@ -1316,7 +1316,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHHMM12(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlHHMM12(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment))
 
@@ -1334,7 +1334,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHHMM24(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlHHMM24(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment))
 
@@ -1349,7 +1349,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlSecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlSecond(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 second;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
@@ -1358,7 +1358,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlMicrosecond(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 if constexpr (return_type == ReturnType::DateTime)
                 {
@@ -1384,7 +1384,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlISO8601Time(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment))
 
@@ -1403,7 +1403,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHour12(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlHour12(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
@@ -1412,7 +1412,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
@@ -1421,7 +1421,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlHour24(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
@@ -1430,7 +1430,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
@@ -1539,7 +1539,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaEra(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaEra(int, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment))
 
@@ -1551,7 +1551,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 century;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
@@ -1560,7 +1560,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 year_of_era;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
@@ -1569,7 +1569,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 week_year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
@@ -1578,7 +1578,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
@@ -1587,7 +1587,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 day_of_week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
@@ -1596,7 +1596,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment))
 
@@ -1628,7 +1628,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
@@ -1637,7 +1637,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 day_of_year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
@@ -1646,7 +1646,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
@@ -1655,7 +1655,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
                 String text1(cur, 3);
@@ -1686,7 +1686,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 day_of_month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(
@@ -1697,7 +1697,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment))
 
@@ -1709,7 +1709,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
@@ -1718,7 +1718,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
@@ -1727,7 +1727,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
@@ -1736,7 +1736,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
@@ -1745,7 +1745,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
@@ -1754,7 +1754,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 second;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
@@ -1763,7 +1763,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaMicrosecondOfSecond(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaMicrosecondOfSecond(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 Int32 microsecond;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, microsecond)))
@@ -1772,7 +1772,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaTimezone(size_t, Pos cur, Pos end, const String &, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaTimezone(size_t, Pos cur, Pos end, const String &, ParsedValue<error_handling, return_type> & date)
             {
                 String read_time_zone;
                 while (cur <= end)
@@ -1794,7 +1794,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaTimezoneOffset(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling, return_type> & date)
+            static PosOrError jodaTimezoneOffset(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & date)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "jodaTimezoneOffset requires size >= 5", fragment))
 
