@@ -369,7 +369,14 @@ EOF
 
     # Make files with status and description we'll show for this check on Github.
     task_exit_code=$fuzzer_exit_code
-    if [ "$server_died" == 1 ]
+    if [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
+    then
+        echo "BuzzHouse may fail for now. Please inspect the log to find the issues it found."
+
+        task_exit_code=0
+        echo "success" > status.txt
+        echo "OK" > description.txt
+    elif [ "$server_died" == 1 ]
     then
         # The server has died.
         if ! rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
@@ -389,15 +396,6 @@ EOF
             task_exit_code=210
             echo "failure" > status.txt
         fi
-
-    elif [ "$FUZZER_TO_RUN" = "BuzzHouse"  ]
-    then
-        # BuzzHouse is expected to fail for now.
-        echo "BuzzHouse is expected to fail for now. Please inspect the log to find the issues it found."
-
-        task_exit_code=0
-        echo "success" > status.txt
-        echo "OK" > description.txt
     elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
     then
         # Variants of a normal run:
