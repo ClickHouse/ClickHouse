@@ -26,6 +26,8 @@ public:
 
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
     PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_);
+    ~PrettyBlockOutputFormat() override;
+
     String getName() const override { return "PrettyBlockOutputFormat"; }
 
 protected:
@@ -47,6 +49,7 @@ protected:
     virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
+    virtual void writeSuffixImpl();
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
@@ -74,11 +77,18 @@ private:
     bool mono_block;
     bool color;
 
+    /// Fallback to Vertical format for wide but short tables.
+    std::unique_ptr<IRowOutputFormat> vertical_format_fallback;
+
     /// For mono_block == true only
     Chunk mono_chunk;
 
-    /// Fallback to Vertical format for wide but short tables.
-    std::unique_ptr<IRowOutputFormat> vertical_format_fallback;
+    /// Implements squashing of chunks by time
+    std::condition_variable mono_chunk_condvar;
+    std::optional<ThreadFromGlobalPool> thread;
+    std::atomic_bool finish{false};
+    void writingThread();
+    void stopThread();
 };
 
 }
