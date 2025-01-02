@@ -4,6 +4,8 @@ CREATE TABLE tab (x UInt32, y UInt32, z UInt32) engine = MergeTree order by x;
 insert into tab select number, number, number from numbers(1e6);
 
 set enable_analyzer=1;
+set prefer_localhost_replica=1;
+set optimize_aggregation_in_order=0, optimize_read_in_order=0;
 
 -- { echoOn }
 
