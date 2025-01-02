@@ -40,7 +40,7 @@ struct ReplicatedMergeTreeLogEntryData
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
         CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
         CLEAR_INDEX,    /// NOTE: Deprecated. Drop specific index from specified partition.
-        REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
+        REPLACE_RANGE,  /// Drop certain range of parts and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
         SYNC_PINNED_PART_UUIDS, /// Synchronization point for ensuring that all replicas have up to date in-memory state.
@@ -135,7 +135,6 @@ struct ReplicatedMergeTreeLogEntryData
     int alter_version = -1; /// May be equal to -1, if it's normal mutation, not metadata update.
 
     /// only ALTER METADATA command
-    /// NOTE It's never used
     bool have_mutation = false; /// If this alter requires additional mutation step, for data update
 
     String columns_str; /// New columns data corresponding to alter_version

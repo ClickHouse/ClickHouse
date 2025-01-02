@@ -81,6 +81,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(rows);
     src_rows += rows;
     src_bytes += chunk.bytes();
 
@@ -255,29 +257,25 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         {
             return Status::Ready;
         }
-        else
-        {
-            output.push(std::move(to_push_chunk));
-            return Status::Ready;
-        }
-    }
-    else
-    {
-        if (is_consume_finished)
-        {
-            output.push(std::move(to_push_chunk));
-            output.finish();
-            LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})",
-                src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
-            return Status::Finished;
-        }
 
-        if (input.isFinished())
-        {
-            is_consume_finished = true;
-            return Status::Ready;
-        }
+        output.push(std::move(to_push_chunk));
+        return Status::Ready;
     }
+
+    if (is_consume_finished)
+    {
+        output.push(std::move(to_push_chunk));
+        output.finish();
+        LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})", src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
+        return Status::Finished;
+    }
+
+    if (input.isFinished())
+    {
+        is_consume_finished = true;
+        return Status::Ready;
+    }
+
     if (!input.hasData())
     {
         input.setNeeded();

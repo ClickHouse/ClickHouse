@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-${CLICKHOUSE_CLIENT} -nq """
+${CLICKHOUSE_CLIENT} -q """
     CREATE TABLE t1_local
     (
         n UInt64,
@@ -49,7 +49,7 @@ ${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --parallel_distr
 """ | grep -v EmptySink | grep -c Sink
 
 echo "inserting into a remote table from remote (reading with parallel replicas) with concurrency max_insert_threads"
-${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --allow_experimental_parallel_reading_from_replicas 2 --cluster_for_parallel_replicas 'parallel_replicas' --max_parallel_replicas 3 -q """
+${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --enable_parallel_replicas 2 --cluster_for_parallel_replicas 'parallel_replicas' --max_parallel_replicas 3 -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t4_pr;

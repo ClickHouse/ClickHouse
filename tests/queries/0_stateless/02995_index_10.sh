@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: long, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
+# Tags: long, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-distributed-cache
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} "
+${CLICKHOUSE_CLIENT} -q "
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a String, b String, c String) ENGINE = MergeTree ORDER BY (a, b, c) SETTINGS index_granularity = 11;
@@ -37,8 +37,9 @@ WHERE a >= (round(pow(sipHash64(1, try), 1 / (3 + sipHash64(2, try) % 8))) AS a1
   AND b <= (b1 + round(pow(sipHash64(7, try), 1 / (3 + sipHash64(8, try) % 8))))::String
   AND c >= (round(pow(sipHash64(9, try), 1 / (3 + sipHash64(10, try) % 8))) AS c1)::String
   AND c <= (c1 + round(pow(sipHash64(11, try), 1 / (3 + sipHash64(12, try) % 8))))::String
-HAVING count() > 0;
-"
-done | ${CLICKHOUSE_CLIENT} 
+HAVING count() > 0
+SETTINGS trace_profile_events=0 -- test is too slow with profiling
+;"
+done | ${CLICKHOUSE_CLIENT}
 
-${CLICKHOUSE_CLIENT} "DROP TABLE test"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test"

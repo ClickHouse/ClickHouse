@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 
 import gzip
+import io
 import json
 import logging
 import os
-import io
 import random
 import threading
 import time
 
-from azure.storage.blob import BlobServiceClient
-import helpers.client
 import pytest
+from azure.storage.blob import BlobServiceClient
+
+import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.test_tools import TSV
-from helpers.network import PartitionManager
 from helpers.mock_servers import start_mock_servers
-from helpers.test_tools import exec_query_with_retry
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV, exec_query_with_retry
 from test_storage_azure_blob_storage.test import azure_query
 
 
@@ -72,6 +72,7 @@ def test_select_all(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_select_all.csv', 'devstoreaccount1',"
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'key UInt64, data String') "
         f"VALUES (1, 'a'), (2, 'b')",
+        settings={"azure_truncate_on_insert": 1},
     )
     print(get_azure_file_content("test_cluster_select_all.csv", port))
 
@@ -101,6 +102,7 @@ def test_count(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_count.csv', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', "
         f"'auto', 'key UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
     print(get_azure_file_content("test_cluster_count.csv", port))
 
@@ -129,6 +131,7 @@ def test_union_all(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_parquet_union_all', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'Parquet', "
         f"'auto', 'a Int32, b String') VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     pure_azure = azure_query(
@@ -180,6 +183,7 @@ def test_skip_unavailable_shards(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_skip_unavailable.csv', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         f"'auto', 'a UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
     result = azure_query(
         node,
@@ -200,6 +204,7 @@ def test_unset_skip_unavailable_shards(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_unset_skip_unavailable.csv', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         f"'auto', 'a UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
     result = azure_query(
         node,
@@ -218,6 +223,7 @@ def test_cluster_with_named_collection(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
         f"'auto', 'a UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     pure_azure = azure_query(
@@ -249,6 +255,7 @@ def test_partition_parallel_reading_with_cluster(cluster):
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', '{filename}', 'devstoreaccount1', "
         f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', '{table_format}') "
         f"PARTITION BY {partition_by} VALUES {values}",
+        settings={"azure_truncate_on_insert": 1},
     )
 
     assert "1,2,3\n" == get_azure_file_content("test_tf_3.csv", port)
@@ -272,12 +279,12 @@ def test_format_detection(cluster):
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection0', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt32, y String') select number as x, 'str_' || toString(number) from numbers(10)",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection0', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt32, y String') select number as x, 'str_' || toString(number) from numbers(10) SETTINGS azure_truncate_on_insert=1",
     )
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt32, y String') select number as x, 'str_' || toString(number) from numbers(10, 10)",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection1', '{account_name}', '{account_key}', 'JSONEachRow', 'auto', 'x UInt32, y String') select number as x, 'str_' || toString(number) from numbers(10, 10) SETTINGS azure_truncate_on_insert=1",
     )
 
     expected_desc_result = azure_query(

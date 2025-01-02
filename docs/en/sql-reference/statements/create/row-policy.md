@@ -8,7 +8,7 @@ title: "CREATE ROW POLICY"
 Creates a [row policy](../../../guides/sre/user-management/index.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
 :::tip
-Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
+Row policies make sense only for users with readonly access. If a user can modify a table or copy partitions between tables, it defeats the restrictions of row policies.
 :::
 
 Syntax:
@@ -24,40 +24,40 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
 
 ## USING Clause
 
-Allows to specify a condition to filter rows. An user will see a row if the condition is calculated to non-zero for the row.
+Allows specifying a condition to filter rows. A user will see a row if the condition is calculated to non-zero for the row.
 
 ## TO Clause
 
-In the section `TO` you can provide a list of users and roles this policy should work for. For example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+In the `TO` section you can provide a list of users and roles this policy should work for. For example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
-Keyword `ALL` means all the ClickHouse users including current user. Keyword `ALL EXCEPT` allow to exclude some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
 :::note
-If there are no row policies defined for a table then any user can `SELECT` all the row from the table. Defining one or more row policies for the table makes the access to the table depending on the row policies no matter if those row policies are defined for the current user or not. For example, the following policy
+If there are no row policies defined for a table, then any user can `SELECT` all the rows from the table. Defining one or more row policies for the table makes access to the table dependent on the row policies, no matter if those row policies are defined for the current user or not. For example, the following policy:
 
 `CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
 
-forbids the users `mira` and `peter` to see the rows with `b != 1`, and any non-mentioned user (e.g., the user `paul`) will see no rows from `mydb.table1` at all.
+forbids the users `mira` and `peter` from seeing the rows with `b != 1`, and any non-mentioned user (e.g., the user `paul`) will see no rows from `mydb.table1` at all.
 
-If that's not desirable it can't be fixed by adding one more row policy, like the following:
+If that's not desirable, it can be fixed by adding one more row policy, like the following:
 
 `CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
 :::
 
 ## AS Clause
 
-It's allowed to have more than one policy enabled on the same table for the same user at the one time. So we need a way to combine the conditions from multiple policies.
+It's allowed to have more than one policy enabled on the same table for the same user at one time. So we need a way to combine the conditions from multiple policies.
 
-By default policies are combined using the boolean `OR` operator. For example, the following policies
+By default, policies are combined using the boolean `OR` operator. For example, the following policies:
 
 ``` sql
 CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
 CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 ```
 
-enables the user `peter` to see rows with either `b=1` or `c=2`.
+enable the user `peter` to see rows with either `b=1` or `c=2`.
 
-The `AS` clause specifies how policies should be combined with other policies. Policies can be either permissive or restrictive. By default policies are permissive, which means they are combined using the boolean `OR` operator.
+The `AS` clause specifies how policies should be combined with other policies. Policies can be either permissive or restrictive. By default, policies are permissive, which means they are combined using the boolean `OR` operator.
 
 A policy can be defined as restrictive as an alternative. Restrictive policies are combined using the boolean `AND` operator.
 
@@ -68,25 +68,25 @@ row_is_visible = (one or more of the permissive policies' conditions are non-zer
                  (all of the restrictive policies's conditions are non-zero)
 ```
 
-For example, the following policies
+For example, the following policies:
 
 ``` sql
 CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
 CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 ```
 
-enables the user `peter` to see rows only if both `b=1` AND `c=2`.
+enable the user `peter` to see rows only if both `b=1` AND `c=2`.
 
 Database policies are combined with table policies.
 
-For example, the following policies
+For example, the following policies:
 
 ``` sql
 CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
 CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 ```
 
-enables the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
+enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
 
 

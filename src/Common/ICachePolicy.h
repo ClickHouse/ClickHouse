@@ -55,6 +55,7 @@ public:
     virtual void set(const Key & key, const MappedPtr & mapped) = 0;
 
     virtual void remove(const Key & key) = 0;
+    virtual void remove(std::function<bool(const Key & key, const MappedPtr & mapped)> predicate) = 0;
 
     virtual void clear() = 0;
     virtual std::vector<KeyMapped> dump() const = 0;

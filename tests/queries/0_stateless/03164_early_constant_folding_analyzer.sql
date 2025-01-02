@@ -26,5 +26,4 @@ ENGINE = MergeTree ORDER BY (date, pull_request_number, commit_sha, check_name, 
 
 insert into checks select * from generateRandom() limit 1;
 
-
-select trimLeft(explain) from (explain SELECT count(1) FROM checks WHERE test_name IS NOT NULL) where explain like '%ReadFromPreparedSource%' SETTINGS allow_experimental_analyzer = 1, allow_experimental_parallel_reading_from_replicas = 0;
+select trimLeft(explain) from (explain SELECT count(1) FROM checks WHERE test_name IS NOT NULL) where explain like '%ReadFromPreparedSource%' SETTINGS enable_analyzer = 1, enable_parallel_replicas = 0;

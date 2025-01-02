@@ -36,6 +36,7 @@ public:
 protected:
     void fillColumnPositions();
     NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
+    void findPositionForMissedNested(size_t pos);
 
     using InputStreamGetter = ISerialization::InputStreamGetter;
 
@@ -43,7 +44,10 @@ protected:
         const NameAndTypePair & name_and_type,
         ColumnPtr & column,
         size_t rows_to_read,
-        const InputStreamGetter & getter);
+        const InputStreamGetter & getter,
+        ISerialization::SubstreamsCache & cache,
+        std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns,
+        const ColumnNameLevel & name_level_for_offsets);
 
     void readPrefix(
         const NameAndTypePair & name_and_type,

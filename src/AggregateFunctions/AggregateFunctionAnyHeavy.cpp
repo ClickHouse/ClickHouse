@@ -68,7 +68,10 @@ public:
         if (data().isEqualTo(to.data()))
             counter += to.counter;
         else if (!data().has() || counter < to.counter)
+        {
             data().set(to.data(), arena);
+            counter = to.counter - counter;
+        }
         else
             counter -= to.counter;
     }

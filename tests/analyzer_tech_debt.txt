@@ -1,4 +1,3 @@
 01624_soft_constraints
-02354_vector_search_queries
 # Check after ConstantNode refactoring
 02944_variant_as_common_type

@@ -38,6 +38,7 @@ public:
         POSTGRESQL = 5,
         LOCAL = 6,
         TCP_INTERSERVER = 7,
+        PROMETHEUS = 8,
     };
 
     enum class HTTPMethod : uint8_t
@@ -165,5 +166,5 @@ private:
 };
 
 String toString(ClientInfo::Interface interface);
-
+String toString(ClientInfo::HTTPMethod method);
 }

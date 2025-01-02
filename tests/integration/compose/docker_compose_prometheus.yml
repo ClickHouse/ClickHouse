@@ -1,0 +1,56 @@
+services:
+  prometheus_writer:
+    image: prom/prometheus:v2.50.1
+    hostname: ${PROMETHEUS_WRITER_HOSTNAME:-prometheus_writer}
+    restart: always
+    entrypoint: |
+      /bin/sh -c 'truncate -s 0 /etc/prometheus/prometheus.yml
+      cat << EOF >> /etc/prometheus/prometheus.yml
+      global:
+        scrape_interval: 1s
+      scrape_configs:
+        - job_name: "prometheus"
+          static_configs:
+            - targets: ["localhost:${PROMETHEUS_WRITER_PORT}"]
+      EOF
+      if [ -n "${PROMETHEUS_REMOTE_WRITE_HANDLER}" ]; then
+        echo "remote_write:" >> /etc/prometheus/prometheus.yml
+        echo "  - url: \"${PROMETHEUS_REMOTE_WRITE_HANDLER}\"" >> /etc/prometheus/prometheus.yml
+      fi
+      #cat "/etc/prometheus/prometheus.yml"
+      /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.console.libraries="/usr/share/prometheus/console_libraries" --web.console.templates="/usr/share/prometheus/consoles" --web.listen-address="0.0.0.0:${PROMETHEUS_WRITER_PORT}" &> /var/log/prometheus/prometheus.log'
+    expose:
+      - ${PROMETHEUS_WRITER_PORT}
+    healthcheck:
+      test: curl -f "ttps://localhost:${PROMETHEUS_WRITER_PORT}/api/v1/status/runtimeinfo" || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - type: ${PROMETHEUS_WRITER_LOGS_FS:-tmpfs}
+        source: ${PROMETHEUS_WRITER_LOGS:-}
+        target: /var/log/prometheus
+
+  prometheus_reader:
+    image: prom/prometheus:v2.50.1
+    hostname: ${PROMETHEUS_READER_HOSTNAME:-prometheus_reader}
+    restart: always
+    entrypoint: |
+      /bin/sh -c 'truncate -s 0 /etc/prometheus/prometheus.yml
+      if [ -n "${PROMETHEUS_REMOTE_READ_HANDLER}" ]; then
+        echo "remote_read:" >> /etc/prometheus/prometheus.yml
+        echo "  - url: \"${PROMETHEUS_REMOTE_READ_HANDLER}\"" >> /etc/prometheus/prometheus.yml
+      fi
+      #cat "/etc/prometheus/prometheus.yml"
+      /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.console.libraries="/usr/share/prometheus/console_libraries" --web.console.templates="/usr/share/prometheus/consoles" --web.listen-address="0.0.0.0:${PROMETHEUS_READER_PORT}" &> /var/log/prometheus/prometheus.log'
+    expose:
+      - ${PROMETHEUS_READER_PORT}
+    healthcheck:
+      test: curl -f "ttps://localhost:${PROMETHEUS_READER_PORT}/api/v1/status/runtimeinfo" || exit 1
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - type: ${PROMETHEUS_READER_LOGS_FS:-tmpfs}
+        source: ${PROMETHEUS_READER_LOGS:-}
+        target: /var/log/prometheus

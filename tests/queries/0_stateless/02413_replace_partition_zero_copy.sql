@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-fasttest
+-- Tags: no-replicated-database, no-fasttest, no-shared-merge-tree
 -- Tag no-replicated-database: different number of replicas
 
 create table src1 (n int) engine=ReplicatedMergeTree('/test/02413/{database}/src', '1') order by tuple() settings storage_policy='s3_cache', allow_remote_fs_zero_copy_replication=1;

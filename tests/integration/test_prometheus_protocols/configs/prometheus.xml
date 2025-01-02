@@ -1,0 +1,21 @@
+<clickhouse>
+    <prometheus>
+        <port>9092</port>
+        <handlers>
+            <my_rule_1>
+                <url>/write</url>
+                <handler>
+                    <type>remote_write</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_1>
+            <my_rule_2>
+                <url>/read</url>
+                <handler>
+                    <type>remote_read</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_2>
+        </handlers>
+    </prometheus>
+</clickhouse>

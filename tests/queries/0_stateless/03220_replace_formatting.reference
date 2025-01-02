@@ -1,0 +1,16 @@
+SELECT * REPLACE ((1 / 3) / 3 AS dummy)
+SELECT * REPLACE ((1 / 3) / 3 AS dummy)
+SELECT * REPLACE STRICT (1 AS id, 2 AS value)
+FROM
+(
+    SELECT
+        0 AS id,
+        1 AS value
+)
+SELECT * REPLACE STRICT (1 AS id, 2 AS value)
+FROM
+(
+    SELECT
+        0 AS id,
+        1 AS value
+)

@@ -1,5 +1,6 @@
 SET session_timezone = 'UTC'; -- disable timezone randomization
-SET allow_experimental_analyzer = 1; -- The old path formats the result with different whitespaces
+SET enable_analyzer = 1; -- The old path formats the result with different whitespaces
+SET output_format_pretty_single_large_number_tip_threshold = 0;
 
 SELECT '-- Negative tests';
 SELECT dateTimeToSnowflakeID();  -- {serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}

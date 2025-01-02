@@ -65,16 +65,25 @@ static Chunk prepareTotals(Chunk chunk)
 
 void IOutputFormat::work()
 {
+    std::lock_guard lock(writing_mutex);
+
+    if (has_progress_update_to_write)
+    {
+        writeProgress(statistics.progress);
+        has_progress_update_to_write = false;
+    }
+
     writePrefixIfNeeded();
 
     if (finished && !finalized)
     {
-        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
+        if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedStep())
             setRowsBeforeLimit(rows_before_limit_counter->get());
-
-        finalize();
+        if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
+            setRowsBeforeAggregation(rows_before_aggregation_counter->get());
+        finalizeUnlocked();
         if (auto_flush)
-            flush();
+            flushImpl();
         return;
     }
 
@@ -100,26 +109,40 @@ void IOutputFormat::work()
     }
 
     if (auto_flush)
-        flush();
+        flushImpl();
 
     has_input = false;
 }
 
-void IOutputFormat::flush()
+void IOutputFormat::flushImpl()
 {
     out.next();
 }
 
+void IOutputFormat::flush()
+{
+    std::lock_guard lock(writing_mutex);
+    flushImpl();
+}
+
 void IOutputFormat::write(const Block & block)
 {
+    std::lock_guard lock(writing_mutex);
+
+    if (has_progress_update_to_write)
+    {
+        writeProgress(statistics.progress);
+        has_progress_update_to_write = false;
+    }
+
     writePrefixIfNeeded();
     consume(Chunk(block.getColumns(), block.rows()));
 
     if (auto_flush)
-        flush();
+        flushImpl();
 }
 
-void IOutputFormat::finalize()
+void IOutputFormat::finalizeUnlocked()
 {
     if (finalized)
         return;
@@ -128,6 +151,28 @@ void IOutputFormat::finalize()
     finalizeImpl();
     finalizeBuffers();
     finalized = true;
+}
+
+void IOutputFormat::finalize()
+{
+    std::lock_guard lock(writing_mutex);
+    finalizeUnlocked();
+}
+
+void IOutputFormat::onProgress(const Progress & progress)
+{
+    statistics.progress.incrementPiecewiseAtomically(progress);
+    if (writesProgressConcurrently())
+    {
+        std::unique_lock lock(writing_mutex, std::try_to_lock);
+        if (lock)
+        {
+            writeProgress(statistics.progress);
+            has_progress_update_to_write = false;
+        }
+        else
+            has_progress_update_to_write = true;
+    }
 }
 
 }

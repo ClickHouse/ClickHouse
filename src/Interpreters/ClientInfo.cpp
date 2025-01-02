@@ -254,6 +254,8 @@ String toString(ClientInfo::Interface interface)
             return "LOCAL";
         case ClientInfo::Interface::TCP_INTERSERVER:
             return "TCP_INTERSERVER";
+        case ClientInfo::Interface::PROMETHEUS:
+            return "PROMETHEUS";
     }
 
     return std::format("Unknown server interface ({}).", static_cast<int>(interface));
@@ -278,6 +280,21 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
         if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
             continue;
         http_headers[header.first] = header.second;
+    }
+}
+
+String toString(ClientInfo::HTTPMethod method)
+{
+    switch (method)
+    {
+        case ClientInfo::HTTPMethod::UNKNOWN:
+            return "UNKNOWN";
+        case ClientInfo::HTTPMethod::GET:
+            return "GET";
+        case ClientInfo::HTTPMethod::POST:
+            return "POST";
+        case ClientInfo::HTTPMethod::OPTIONS:
+            return "OPTIONS";
     }
 }
 

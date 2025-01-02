@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-ordinary-database
-# Test is too heavy, avoid parallel run in Flaky Check
+# Tags: long, no-ordinary-database
 # shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -22,39 +21,42 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE tmp (x UInt32, nm Int32) ENGINE=MergeTr
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO src VALUES (0, 0)"
 
-function get_now()
-{
-    date +%s
-}
-
 is_pid_exist()
 {
     local pid=$1
     ps -p $pid > /dev/null
 }
 
-function run_until_deadline_and_at_least_times()
+function run_with_time_and_iterations_limits()
 {
     set -e
 
-    local deadline=$1; shift
+    local min_time=$1; shift
+    local max_time=$1; shift
     local min_iterations=$1; shift
+    local max_iterations=$1; shift
     local function_to_run=$1; shift
 
+    # if [ "${1:-X}" = "1" ]; then
+    #     set -x
+    # fi
+
     local started_time
-    started_time=$(get_now)
-    local i=0
+    started_time=$SECONDS
+    local iteration=0
 
     while true
     do
-        $function_to_run $i "$@"
+        $function_to_run $iteration "$@"
 
-        [[ $(get_now) -lt $deadline ]] || break
+        [[ $SECONDS -lt $max_time ]] || break
+        [[ $SECONDS -lt $min_time ]] || [[ $iteration -lt $max_iterations ]] || break
 
-        i=$(($i + 1))
+        iteration=$(($iteration + 1))
     done
 
-    [[ $i -gt $min_iterations ]] || echo "$i/$min_iterations : not enough iterations of $function_to_run has been made from $started_time until $deadline" >&2
+    [[ $iteration -gt $min_iterations ]] || echo "$iteration/$min_iterations : not enough iterations of $function_to_run has been made from $started_time until $max_time" >&2
+    set +x
 }
 
 function insert_commit_action()
@@ -155,42 +157,44 @@ function select_insert_action()
         ROLLBACK;"
 }
 
-MAIN_TIME_PART=400
-SECOND_TIME_PART=30
+MIN_SECONDS=5
+MAX_SECONDS=400
 WAIT_FINISH=60
-LAST_TIME_GAP=10
 
-if [[ $((MAIN_TIME_PART + SECOND_TIME_PART + WAIT_FINISH + LAST_TIME_GAP)) -ge  600 ]]; then
+if [[ $((MAX_SECONDS + WAIT_FINISH)) -ge  550 ]]; then
     echo "time sttings are wrong" 2>&1
     exit 1
 fi
 
-START_TIME=$(get_now)
-STOP_TIME=$((START_TIME + MAIN_TIME_PART))
-SECOND_STOP_TIME=$((STOP_TIME + SECOND_TIME_PART))
-MIN_ITERATIONS=20
+START_TIME=$SECONDS
+MIN_TIME=$((START_TIME + MIN_SECONDS))
+MAX_TIME=$((START_TIME + MAX_SECONDS))
+MIN_ITERATIONS=15
+MAX_ITERATIONS=200
 
-run_until_deadline_and_at_least_times $STOP_TIME $MIN_ITERATIONS insert_commit_action 1   & PID_1=$!
-run_until_deadline_and_at_least_times $STOP_TIME $MIN_ITERATIONS insert_commit_action 2   & PID_2=$!
-run_until_deadline_and_at_least_times $STOP_TIME $MIN_ITERATIONS insert_rollback_action 3 & PID_3=$!
+run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS insert_commit_action 1   & PID_1=$!
+run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS insert_commit_action 2   & PID_2=$!
+run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS insert_rollback_action 3 & PID_3=$!
 
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS optimize_action      & PID_4=$!
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS select_action        & PID_5=$!
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS select_insert_action & PID_6=$!
+run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS optimize_action      & PID_4=$!
+run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS select_action        & PID_5=$!
+run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS select_insert_action & PID_6=$!
 sleep 0.$RANDOM
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS select_action        & PID_7=$!
-run_until_deadline_and_at_least_times $SECOND_STOP_TIME $MIN_ITERATIONS select_insert_action & PID_8=$!
+run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS select_action        & PID_7=$!
+run_with_time_and_iterations_limits $MIN_TIME $MAX_TIME $MIN_ITERATIONS $MAX_ITERATIONS select_insert_action & PID_8=$!
 
-wait $PID_1 || echo "insert_commit_action has failed with status $?" 2>&1
-wait $PID_2 || echo "second insert_commit_action has failed with status $?" 2>&1
-wait $PID_3 || echo "insert_rollback_action has failed with status $?" 2>&1
-
+is_pid_exist $PID_1 || echo "insert_commit_action is not running" 2>&1
+is_pid_exist $PID_2 || echo "second insert_commit_action is not running" 2>&1
+is_pid_exist $PID_3 || echo "insert_rollback_action is not running" 2>&1
 is_pid_exist $PID_4 || echo "optimize_action is not running" 2>&1
 is_pid_exist $PID_5 || echo "select_action is not running" 2>&1
 is_pid_exist $PID_6 || echo "select_insert_action is not running" 2>&1
 is_pid_exist $PID_7 || echo "second select_action is not running" 2>&1
 is_pid_exist $PID_8 || echo "second select_insert_action is not running" 2>&1
 
+wait $PID_1 || echo "insert_commit_action has failed with status $?" 2>&1
+wait $PID_2 || echo "second insert_commit_action has failed with status $?" 2>&1
+wait $PID_3 || echo "insert_rollback_action has failed with status $?" 2>&1
 wait $PID_4 || echo "optimize_action has failed with status $?" 2>&1
 wait $PID_5 || echo "select_action has failed with status $?" 2>&1
 wait $PID_6 || echo "select_insert_action has failed with status $?" 2>&1

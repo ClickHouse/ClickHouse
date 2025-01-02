@@ -1,299 +1,272 @@
 order by d1 nulls first
-\N	None
-\N	None
-\N	None
-\N	None
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,4]	Array(Int64)
-42	Int64
-42	Int64
-42	Int64
-42	Int64
-42	Int64
-43	Int64
-abc	String
-abc	String
-abc	String
-abc	String
-abc	String
-abd	String
+\N	None	false
+\N	None	false
+\N	None	false
+\N	None	false
+\N	None	false
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,4]	Array(Int64)	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-02	Date	true
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+43	Int64	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abd	String	false
 order by d1 nulls last
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,4]	Array(Int64)
-42	Int64
-42	Int64
-42	Int64
-42	Int64
-42	Int64
-43	Int64
-abc	String
-abc	String
-abc	String
-abc	String
-abc	String
-abd	String
-\N	None
-\N	None
-\N	None
-\N	None
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,4]	Array(Int64)	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-02	Date	true
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+43	Int64	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abd	String	false
+\N	None	false
+\N	None	false
+\N	None	false
+\N	None	false
+\N	None	false
 order by d2 nulls first
-\N	None
-\N	None
-\N	None
-\N	None
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,4]	Array(Int64)
-42	Int64
-42	Int64
-42	Int64
-42	Int64
-42	Int64
-43	Int64
-abc	String
-abc	String
-abc	String
-abc	String
-abc	String
-abd	String
+\N	None	false
+\N	None	false
+\N	None	false
+\N	None	false
+\N	None	false
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,4]	Array(Int64)	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-02	Date	true
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+43	Int64	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abd	String	false
 order by d2 nulls last
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,3]	Array(Int64)
-[1,2,4]	Array(Int64)
-42	Int64
-42	Int64
-42	Int64
-42	Int64
-42	Int64
-43	Int64
-abc	String
-abc	String
-abc	String
-abc	String
-abc	String
-abd	String
-\N	None
-\N	None
-\N	None
-\N	None
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,3]	Array(Int64)	true
+[1,2,4]	Array(Int64)	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-01	Date	true
+2020-01-02	Date	true
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+42	Int64	false
+43	Int64	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abc	String	false
+abd	String	false
+\N	None	false
+\N	None	false
+\N	None	false
+\N	None	false
+\N	None	false
 order by d1, d2 nulls first
-[1,2,3]	\N	Array(Int64)	None
-[1,2,3]	[1,2,3]	Array(Int64)	Array(Int64)
-[1,2,3]	[1,2,4]	Array(Int64)	Array(Int64)
-[1,2,3]	42	Array(Int64)	Int64
-[1,2,3]	abc	Array(Int64)	String
-[1,2,4]	[1,2,3]	Array(Int64)	Array(Int64)
-42	\N	Int64	None
-42	[1,2,3]	Int64	Array(Int64)
-42	42	Int64	Int64
-42	43	Int64	Int64
-42	abc	Int64	String
-43	42	Int64	Int64
-abc	\N	String	None
-abc	[1,2,3]	String	Array(Int64)
-abc	42	String	Int64
-abc	abc	String	String
-abc	abd	String	String
-abd	abc	String	String
-\N	\N	None	None
-\N	[1,2,3]	None	Array(Int64)
-\N	42	None	Int64
-\N	abc	None	String
+[1,2,3]	\N	Array(Int64)	true	None	false
+[1,2,3]	[1,2,3]	Array(Int64)	true	Array(Int64)	true
+[1,2,3]	[1,2,4]	Array(Int64)	true	Array(Int64)	true
+[1,2,3]	2020-01-01	Array(Int64)	true	Date	true
+[1,2,3]	42	Array(Int64)	true	Int64	false
+[1,2,3]	abc	Array(Int64)	true	String	false
+[1,2,4]	[1,2,3]	Array(Int64)	true	Array(Int64)	true
+2020-01-01	\N	Date	true	None	false
+2020-01-01	[1,2,3]	Date	true	Array(Int64)	true
+2020-01-01	2020-01-01	Date	true	Date	true
+2020-01-01	2020-01-02	Date	true	Date	true
+2020-01-01	42	Date	true	Int64	false
+2020-01-01	abc	Date	true	String	false
+2020-01-02	2020-01-01	Date	true	Date	true
+42	\N	Int64	false	None	false
+42	[1,2,3]	Int64	false	Array(Int64)	true
+42	2020-01-01	Int64	false	Date	true
+42	42	Int64	false	Int64	false
+42	43	Int64	false	Int64	false
+42	abc	Int64	false	String	false
+43	42	Int64	false	Int64	false
+abc	\N	String	false	None	false
+abc	[1,2,3]	String	false	Array(Int64)	true
+abc	2020-01-01	String	false	Date	true
+abc	42	String	false	Int64	false
+abc	abc	String	false	String	false
+abc	abd	String	false	String	false
+abd	abc	String	false	String	false
+\N	\N	None	false	None	false
+\N	[1,2,3]	None	false	Array(Int64)	true
+\N	2020-01-01	None	false	Date	true
+\N	42	None	false	Int64	false
+\N	abc	None	false	String	false
 order by d1, d2 nulls last
-[1,2,3]	[1,2,3]	Array(Int64)	Array(Int64)
-[1,2,3]	[1,2,4]	Array(Int64)	Array(Int64)
-[1,2,3]	42	Array(Int64)	Int64
-[1,2,3]	abc	Array(Int64)	String
-[1,2,3]	\N	Array(Int64)	None
-[1,2,4]	[1,2,3]	Array(Int64)	Array(Int64)
-42	[1,2,3]	Int64	Array(Int64)
-42	42	Int64	Int64
-42	43	Int64	Int64
-42	abc	Int64	String
-42	\N	Int64	None
-43	42	Int64	Int64
-abc	[1,2,3]	String	Array(Int64)
-abc	42	String	Int64
-abc	abc	String	String
-abc	abd	String	String
-abc	\N	String	None
-abd	abc	String	String
-\N	[1,2,3]	None	Array(Int64)
-\N	42	None	Int64
-\N	abc	None	String
-\N	\N	None	None
+[1,2,3]	[1,2,3]	Array(Int64)	true	Array(Int64)	true
+[1,2,3]	[1,2,4]	Array(Int64)	true	Array(Int64)	true
+[1,2,3]	2020-01-01	Array(Int64)	true	Date	true
+[1,2,3]	42	Array(Int64)	true	Int64	false
+[1,2,3]	abc	Array(Int64)	true	String	false
+[1,2,3]	\N	Array(Int64)	true	None	false
+[1,2,4]	[1,2,3]	Array(Int64)	true	Array(Int64)	true
+2020-01-01	[1,2,3]	Date	true	Array(Int64)	true
+2020-01-01	2020-01-01	Date	true	Date	true
+2020-01-01	2020-01-02	Date	true	Date	true
+2020-01-01	42	Date	true	Int64	false
+2020-01-01	abc	Date	true	String	false
+2020-01-01	\N	Date	true	None	false
+2020-01-02	2020-01-01	Date	true	Date	true
+42	[1,2,3]	Int64	false	Array(Int64)	true
+42	2020-01-01	Int64	false	Date	true
+42	42	Int64	false	Int64	false
+42	43	Int64	false	Int64	false
+42	abc	Int64	false	String	false
+42	\N	Int64	false	None	false
+43	42	Int64	false	Int64	false
+abc	[1,2,3]	String	false	Array(Int64)	true
+abc	2020-01-01	String	false	Date	true
+abc	42	String	false	Int64	false
+abc	abc	String	false	String	false
+abc	abd	String	false	String	false
+abc	\N	String	false	None	false
+abd	abc	String	false	String	false
+\N	[1,2,3]	None	false	Array(Int64)	true
+\N	2020-01-01	None	false	Date	true
+\N	42	None	false	Int64	false
+\N	abc	None	false	String	false
+\N	\N	None	false	None	false
 order by d2, d1 nulls first
-\N	[1,2,3]	None	Array(Int64)
-[1,2,3]	[1,2,3]	Array(Int64)	Array(Int64)
-[1,2,4]	[1,2,3]	Array(Int64)	Array(Int64)
-42	[1,2,3]	Int64	Array(Int64)
-abc	[1,2,3]	String	Array(Int64)
-[1,2,3]	[1,2,4]	Array(Int64)	Array(Int64)
-\N	42	None	Int64
-[1,2,3]	42	Array(Int64)	Int64
-42	42	Int64	Int64
-43	42	Int64	Int64
-abc	42	String	Int64
-42	43	Int64	Int64
-\N	abc	None	String
-[1,2,3]	abc	Array(Int64)	String
-42	abc	Int64	String
-abc	abc	String	String
-abd	abc	String	String
-abc	abd	String	String
-\N	\N	None	None
-[1,2,3]	\N	Array(Int64)	None
-42	\N	Int64	None
-abc	\N	String	None
+\N	[1,2,3]	None	false	Array(Int64)	true
+[1,2,3]	[1,2,3]	Array(Int64)	true	Array(Int64)	true
+[1,2,4]	[1,2,3]	Array(Int64)	true	Array(Int64)	true
+2020-01-01	[1,2,3]	Date	true	Array(Int64)	true
+42	[1,2,3]	Int64	false	Array(Int64)	true
+abc	[1,2,3]	String	false	Array(Int64)	true
+[1,2,3]	[1,2,4]	Array(Int64)	true	Array(Int64)	true
+\N	2020-01-01	None	false	Date	true
+[1,2,3]	2020-01-01	Array(Int64)	true	Date	true
+2020-01-01	2020-01-01	Date	true	Date	true
+2020-01-02	2020-01-01	Date	true	Date	true
+42	2020-01-01	Int64	false	Date	true
+abc	2020-01-01	String	false	Date	true
+2020-01-01	2020-01-02	Date	true	Date	true
+\N	42	None	false	Int64	false
+[1,2,3]	42	Array(Int64)	true	Int64	false
+2020-01-01	42	Date	true	Int64	false
+42	42	Int64	false	Int64	false
+43	42	Int64	false	Int64	false
+abc	42	String	false	Int64	false
+42	43	Int64	false	Int64	false
+\N	abc	None	false	String	false
+[1,2,3]	abc	Array(Int64)	true	String	false
+2020-01-01	abc	Date	true	String	false
+42	abc	Int64	false	String	false
+abc	abc	String	false	String	false
+abd	abc	String	false	String	false
+abc	abd	String	false	String	false
+\N	\N	None	false	None	false
+[1,2,3]	\N	Array(Int64)	true	None	false
+2020-01-01	\N	Date	true	None	false
+42	\N	Int64	false	None	false
+abc	\N	String	false	None	false
 order by d2, d1 nulls last
-[1,2,3]	[1,2,3]	Array(Int64)	Array(Int64)
-[1,2,4]	[1,2,3]	Array(Int64)	Array(Int64)
-42	[1,2,3]	Int64	Array(Int64)
-abc	[1,2,3]	String	Array(Int64)
-\N	[1,2,3]	None	Array(Int64)
-[1,2,3]	[1,2,4]	Array(Int64)	Array(Int64)
-[1,2,3]	42	Array(Int64)	Int64
-42	42	Int64	Int64
-43	42	Int64	Int64
-abc	42	String	Int64
-\N	42	None	Int64
-42	43	Int64	Int64
-[1,2,3]	abc	Array(Int64)	String
-42	abc	Int64	String
-abc	abc	String	String
-abd	abc	String	String
-\N	abc	None	String
-abc	abd	String	String
-[1,2,3]	\N	Array(Int64)	None
-42	\N	Int64	None
-abc	\N	String	None
-\N	\N	None	None
-d1 = d2
-[1,2,3]	[1,2,3]	1	Array(Int64)	Array(Int64)
-[1,2,3]	[1,2,4]	0	Array(Int64)	Array(Int64)
-[1,2,3]	42	0	Array(Int64)	Int64
-[1,2,3]	abc	0	Array(Int64)	String
-[1,2,3]	\N	0	Array(Int64)	None
-[1,2,4]	[1,2,3]	0	Array(Int64)	Array(Int64)
-42	[1,2,3]	0	Int64	Array(Int64)
-42	42	1	Int64	Int64
-42	43	0	Int64	Int64
-42	abc	0	Int64	String
-42	\N	0	Int64	None
-43	42	0	Int64	Int64
-abc	[1,2,3]	0	String	Array(Int64)
-abc	42	0	String	Int64
-abc	abc	1	String	String
-abc	abd	0	String	String
-abc	\N	0	String	None
-abd	abc	0	String	String
-\N	[1,2,3]	0	None	Array(Int64)
-\N	42	0	None	Int64
-\N	abc	0	None	String
-\N	\N	1	None	None
-d1 < d2
-[1,2,3]	[1,2,3]	0	Array(Int64)	Array(Int64)
-[1,2,3]	[1,2,4]	1	Array(Int64)	Array(Int64)
-[1,2,3]	42	1	Array(Int64)	Int64
-[1,2,3]	abc	1	Array(Int64)	String
-[1,2,3]	\N	1	Array(Int64)	None
-[1,2,4]	[1,2,3]	0	Array(Int64)	Array(Int64)
-42	[1,2,3]	0	Int64	Array(Int64)
-42	42	0	Int64	Int64
-42	43	1	Int64	Int64
-42	abc	1	Int64	String
-42	\N	1	Int64	None
-43	42	0	Int64	Int64
-abc	[1,2,3]	0	String	Array(Int64)
-abc	42	0	String	Int64
-abc	abc	0	String	String
-abc	abd	1	String	String
-abc	\N	1	String	None
-abd	abc	0	String	String
-\N	[1,2,3]	0	None	Array(Int64)
-\N	42	0	None	Int64
-\N	abc	0	None	String
-\N	\N	0	None	None
-d1 <= d2
-[1,2,3]	[1,2,3]	1	Array(Int64)	Array(Int64)
-[1,2,3]	[1,2,4]	1	Array(Int64)	Array(Int64)
-[1,2,3]	42	1	Array(Int64)	Int64
-[1,2,3]	abc	1	Array(Int64)	String
-[1,2,3]	\N	1	Array(Int64)	None
-[1,2,4]	[1,2,3]	0	Array(Int64)	Array(Int64)
-42	[1,2,3]	0	Int64	Array(Int64)
-42	42	1	Int64	Int64
-42	43	1	Int64	Int64
-42	abc	1	Int64	String
-42	\N	1	Int64	None
-43	42	0	Int64	Int64
-abc	[1,2,3]	0	String	Array(Int64)
-abc	42	0	String	Int64
-abc	abc	1	String	String
-abc	abd	1	String	String
-abc	\N	1	String	None
-abd	abc	0	String	String
-\N	[1,2,3]	0	None	Array(Int64)
-\N	42	0	None	Int64
-\N	abc	0	None	String
-\N	\N	1	None	None
-d1 > d2
-[1,2,3]	[1,2,3]	0	Array(Int64)	Array(Int64)
-[1,2,3]	[1,2,4]	0	Array(Int64)	Array(Int64)
-[1,2,3]	42	0	Array(Int64)	Int64
-[1,2,3]	abc	0	Array(Int64)	String
-[1,2,3]	\N	0	Array(Int64)	None
-[1,2,4]	[1,2,3]	1	Array(Int64)	Array(Int64)
-42	[1,2,3]	1	Int64	Array(Int64)
-42	42	0	Int64	Int64
-42	43	0	Int64	Int64
-42	abc	0	Int64	String
-42	\N	0	Int64	None
-43	42	1	Int64	Int64
-abc	[1,2,3]	1	String	Array(Int64)
-abc	42	1	String	Int64
-abc	abc	0	String	String
-abc	abd	0	String	String
-abc	\N	0	String	None
-abd	abc	1	String	String
-\N	[1,2,3]	1	None	Array(Int64)
-\N	42	1	None	Int64
-\N	abc	1	None	String
-\N	\N	0	None	None
-d1 >= d2
-[1,2,3]	[1,2,3]	1	Array(Int64)	Array(Int64)
-[1,2,3]	[1,2,4]	1	Array(Int64)	Array(Int64)
-[1,2,3]	42	1	Array(Int64)	Int64
-[1,2,3]	abc	1	Array(Int64)	String
-[1,2,3]	\N	1	Array(Int64)	None
-[1,2,4]	[1,2,3]	1	Array(Int64)	Array(Int64)
-42	[1,2,3]	1	Int64	Array(Int64)
-42	42	1	Int64	Int64
-42	43	1	Int64	Int64
-42	abc	1	Int64	String
-42	\N	1	Int64	None
-43	42	1	Int64	Int64
-abc	[1,2,3]	1	String	Array(Int64)
-abc	42	1	String	Int64
-abc	abc	1	String	String
-abc	abd	1	String	String
-abc	\N	1	String	None
-abd	abc	1	String	String
-\N	[1,2,3]	1	None	Array(Int64)
-\N	42	1	None	Int64
-\N	abc	1	None	String
-\N	\N	1	None	None
+[1,2,3]	[1,2,3]	Array(Int64)	true	Array(Int64)	true
+[1,2,4]	[1,2,3]	Array(Int64)	true	Array(Int64)	true
+2020-01-01	[1,2,3]	Date	true	Array(Int64)	true
+42	[1,2,3]	Int64	false	Array(Int64)	true
+abc	[1,2,3]	String	false	Array(Int64)	true
+\N	[1,2,3]	None	false	Array(Int64)	true
+[1,2,3]	[1,2,4]	Array(Int64)	true	Array(Int64)	true
+[1,2,3]	2020-01-01	Array(Int64)	true	Date	true
+2020-01-01	2020-01-01	Date	true	Date	true
+2020-01-02	2020-01-01	Date	true	Date	true
+42	2020-01-01	Int64	false	Date	true
+abc	2020-01-01	String	false	Date	true
+\N	2020-01-01	None	false	Date	true
+2020-01-01	2020-01-02	Date	true	Date	true
+[1,2,3]	42	Array(Int64)	true	Int64	false
+2020-01-01	42	Date	true	Int64	false
+42	42	Int64	false	Int64	false
+43	42	Int64	false	Int64	false
+abc	42	String	false	Int64	false
+\N	42	None	false	Int64	false
+42	43	Int64	false	Int64	false
+[1,2,3]	abc	Array(Int64)	true	String	false
+2020-01-01	abc	Date	true	String	false
+42	abc	Int64	false	String	false
+abc	abc	String	false	String	false
+abd	abc	String	false	String	false
+\N	abc	None	false	String	false
+abc	abd	String	false	String	false
+[1,2,3]	\N	Array(Int64)	true	None	false
+2020-01-01	\N	Date	true	None	false
+42	\N	Int64	false	None	false
+abc	\N	String	false	None	false
+\N	\N	None	false	None	false

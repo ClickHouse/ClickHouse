@@ -5,7 +5,7 @@ SET allow_experimental_object_type = 1;
 DROP TABLE IF EXISTS t_json_local;
 DROP TABLE IF EXISTS t_json_dist;
 
-CREATE TABLE t_json_local(data JSON) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_json_local(data Object('json')) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_json_dist AS t_json_local ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t_json_local);
 
 INSERT INTO t_json_local FORMAT JSONAsObject {"k1": 2, "k2": {"k3": "qqq", "k4": [44, 55]}}

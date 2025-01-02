@@ -4,9 +4,13 @@ sidebar_position: 50
 sidebar_label: EmbeddedRocksDB
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # EmbeddedRocksDB Engine
 
-This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
+<CloudNotSupportedBadge />
+
+This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
 
 ## Creating a Table {#creating-a-table}
 

@@ -81,7 +81,9 @@ private:
 
     DataTypePtr getReturnTypeForTuples(const DataTypes & arguments) const
     {
-        DataTypePtr key_type, val_type, res;
+        DataTypePtr key_type;
+        DataTypePtr val_type;
+        DataTypePtr res;
 
         for (const auto & arg : arguments)
         {
@@ -125,7 +127,9 @@ private:
 
     DataTypePtr getReturnTypeForMaps(const DataTypes & arguments) const
     {
-        DataTypePtr key_type, val_type, res;
+        DataTypePtr key_type;
+        DataTypePtr val_type;
+        DataTypePtr res;
 
         for (const auto & arg : arguments)
         {
@@ -159,17 +163,17 @@ private:
 
         if (arguments[0]->getTypeId() == TypeIndex::Tuple)
             return getReturnTypeForTuples(arguments);
-        else if (arguments[0]->getTypeId() == TypeIndex::Map)
+        if (arguments[0]->getTypeId() == TypeIndex::Map)
             return getReturnTypeForMaps(arguments);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} only accepts maps", getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} only accepts maps", getName());
     }
 
     template <typename KeyType, typename ValType>
     ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypePtr res_type) const
     {
         MutableColumnPtr res_column = res_type->createColumn();
-        IColumn *to_keys_data, *to_vals_data;
+        IColumn *to_keys_data;
+        IColumn *to_vals_data;
         ColumnArray::Offsets * to_keys_offset;
         ColumnArray::Offsets * to_vals_offset = nullptr;
 
@@ -205,7 +209,8 @@ private:
             [[maybe_unused]] bool first = true;
             for (auto & arg : args)
             {
-                size_t offset = 0, len = arg.key_offsets[0];
+                size_t offset = 0;
+                size_t len = arg.key_offsets[0];
 
                 if (!arg.is_const)
                 {
@@ -237,7 +242,7 @@ private:
                     }
 
                     arg.val_column->get(offset + j, temp_val);
-                    ValType value = temp_val.get<ValType>();
+                    ValType value = temp_val.safeGet<ValType>();
 
                     if constexpr (op_type == OpTypes::ADD)
                     {

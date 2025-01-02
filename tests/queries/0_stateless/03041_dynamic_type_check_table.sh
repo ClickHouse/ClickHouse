@@ -13,7 +13,7 @@ function run()
     $CH_CLIENT -q "insert into test select number, number from numbers(3)"
 
     echo "alter add column"
-    $CH_CLIENT -q "alter table test add column d Dynamic(max_types=3) settings mutations_sync=1"
+    $CH_CLIENT -q "alter table test add column d Dynamic(max_types=2) settings mutations_sync=1"
     $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -q "select x, y, d, d.String, d.UInt64, d.\`Tuple(a UInt64)\`.a from test order by x"
 

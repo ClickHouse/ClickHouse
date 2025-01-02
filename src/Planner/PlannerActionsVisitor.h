@@ -1,13 +1,16 @@
 #pragma once
 
+#include <optional>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/ConstantNode.h>
 
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/WindowDescription.h>
 
 namespace DB
 {
@@ -66,6 +69,8 @@ String calculateActionNodeName(const QueryTreeNodePtr & node,
 /// Calculate action node name for constant
 String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type);
 
+String calculateConstantActionNodeName(const ConstantNode & constant_node);
+
 /// Calculate action node name for constant, data type will be derived from constant literal value
 String calculateConstantActionNodeName(const Field & constant_literal);
 
@@ -73,16 +78,8 @@ String calculateConstantActionNodeName(const Field & constant_literal);
   * Window node action name can only be part of window function action name.
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
   */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
-    const PlannerContext & planner_context,
-    QueryTreeNodeToName & node_to_name,
-    bool use_column_identifier_as_action_node_name = true);
-
-/** Calculate action node name for window node.
-  * Window node action name can only be part of window function action name.
-  * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
-  */
-String calculateWindowNodeActionName(const QueryTreeNodePtr & node,
+String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node,
+    const QueryTreeNodePtr & window_node,
     const PlannerContext & planner_context,
     bool use_column_identifier_as_action_node_name = true);
 

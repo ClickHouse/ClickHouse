@@ -66,7 +66,7 @@ private:
 #ifdef __SSE4_1__
     /// second character of "needle" (if its length is > 1)
     uint8_t second_needle_character = 0;
-    /// first/second needle character broadcasted into a 16 bytes vector
+    /// first/second needle character broadcast into a 16 bytes vector
     __m128i first_needle_character_vec;
     __m128i second_needle_character_vec;
     /// vector of first 16 characters of `needle`
@@ -204,8 +204,8 @@ public:
         while (haystack < haystack_end && haystack_end - haystack >= needle_size)
         {
 #ifdef __SSE4_1__
-            /// Compare the [0:15] bytes from haystack and broadcasted 16 bytes vector from first character of needle.
-            /// Compare the [1:16] bytes from haystack and broadcasted 16 bytes vector from second character of needle.
+            /// Compare the [0:15] bytes from haystack and broadcast 16 bytes vector from first character of needle.
+            /// Compare the [1:16] bytes from haystack and broadcast 16 bytes vector from second character of needle.
             /// Bit AND the results of above two comparisons and get the mask.
             if ((haystack + 1 + N) <= haystack_end && isPageSafe(haystack + 1))
             {

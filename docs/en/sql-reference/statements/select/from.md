@@ -15,7 +15,14 @@ The `FROM` clause specifies the source to read data from:
 
 Subquery is another `SELECT` query that may be specified in parenthesis inside `FROM` clause.
 
-`FROM` clause can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](../../../sql-reference/statements/select/join.md) on them.
+The `FROM` can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](../../../sql-reference/statements/select/join.md) on them.
+
+`FROM` can optionally appear before a `SELECT` clause. This is a ClickHouse-specific extension of standard SQL which makes `SELECT` statements easier to read. Example:
+
+```sql
+FROM table
+SELECT *
+```
 
 ## FINAL Modifier
 
@@ -45,19 +52,19 @@ As an alternative to using `FINAL`, it is sometimes possible to use different qu
 
 ### Example Usage
 
-**Using the `FINAL` keyword**
+Using the `FINAL` keyword
 
 ```sql
 SELECT x, y FROM mytable FINAL WHERE x > 1;
 ```
 
-**Using `FINAL` as a query-level setting**
+Using `FINAL` as a query-level setting
 
 ```sql
 SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
 ```
 
-**Using `FINAL` as a session-level setting**
+Using `FINAL` as a session-level setting
 
 ```sql
 SET final = 1;

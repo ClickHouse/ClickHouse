@@ -15,11 +15,13 @@ namespace DB
 {
 struct ConnectionParameters
 {
-    std::string host;
+    String host;
     UInt16 port{};
     std::string default_database;
     std::string user;
     std::string password;
+    std::string proto_send_chunked = "notchunked";
+    std::string proto_recv_chunked = "notchunked";
     std::string quota_key;
     SSHKey ssh_private_key;
     std::string jwt;
@@ -28,8 +30,8 @@ struct ConnectionParameters
     ConnectionTimeouts timeouts;
 
     ConnectionParameters() = default;
-    ConnectionParameters(const Poco::Util::AbstractConfiguration & config, std::string host);
-    ConnectionParameters(const Poco::Util::AbstractConfiguration & config, std::string host, std::optional<UInt16> port);
+    ConnectionParameters(const Poco::Util::AbstractConfiguration & config, String host);
+    ConnectionParameters(const Poco::Util::AbstractConfiguration & config, String host, std::optional<UInt16> port);
 
     static UInt16 getPortFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host);
 
