@@ -103,12 +103,6 @@ DOCKERS = [
     #     depends_on=["clickhouse/test-util"],
     # ),
     # Docker.Config(
-    #     name="clickhouse/clickbench",
-    #     path="./ci/docker/test/clickbench",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
     #     name="clickhouse/keeper-jepsen-test",
     #     path="./ci/docker/test/keeper-jepsen",
     #     platforms=Docker.Platforms.arm_amd,
@@ -264,6 +258,7 @@ class JobNames:
     PERFORMANCE = "Performance comparison"
     COMPATIBILITY = "Compatibility check"
     Docs = "Docs check"
+    CLICKBENCH = "ClickBench"
 
 
 class ToolSet:
@@ -757,4 +752,27 @@ class Jobs:
         digest_config=Job.CacheDigestConfig(
             include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py"],
         ),
+    )
+    clickbench_jobs = Job.Config(
+        name=JobNames.CLICKBENCH,
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
+        command="python3 ./ci/jobs/clickbench.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/clickbench.py", "./ci/jobs/scripts/clickbench/"],
+        ),
+        run_in_docker="clickhouse/stateless-test",
+        timeout=900,
+    ).parametrize(
+        parameter=[
+            BuildTypes.AMD_RELEASE,
+            BuildTypes.ARM_RELEASE,
+        ],
+        runs_on=[
+            [RunnerLabels.FUNC_TESTER_AMD],
+            [RunnerLabels.FUNC_TESTER_ARM],
+        ],
+        requires=[
+            [ArtifactNames.CH_AMD_RELEASE],
+            [ArtifactNames.CH_ARM_RELEASE],
+        ],
     )
