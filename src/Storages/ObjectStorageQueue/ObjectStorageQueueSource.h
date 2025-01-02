@@ -144,7 +144,7 @@ public:
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
-    void commit(bool success, const std::string & exception_message = {});
+    void commit(bool insert_succeeded, const std::string & exception_message = {});
 
 private:
     const String name;
@@ -176,8 +176,12 @@ private:
     };
     struct ProcessedFile
     {
+        explicit ProcessedFile(FileMetadataPtr metadata_)
+            : state(FileState::Processing), metadata(metadata_) {}
+
         FileState state;
         FileMetadataPtr metadata;
+        std::string exception_during_read;
     };
     std::vector<ProcessedFile> processed_files;
 

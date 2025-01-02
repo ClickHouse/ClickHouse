@@ -563,7 +563,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         if (processed_files.empty() || processed_files.back().metadata->getPath() != path)
         {
-            processed_files.emplace_back(FileState::Processing, file_metadata);
+            processed_files.emplace_back(file_metadata);
             progress->processed_files += 1;
         }
 
@@ -596,23 +596,10 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
 
             processed_files.back().state = FileState::ErrorOnRead;
-            if (file_status->processed_rows == 0 && processed_files.size() > 1)
-            {
-                /// If we did not process any rows from the failed file,
-                /// commit all previously processed files,
-                /// not to lose the work already done.
-                processed_files.back().metadata->resetProcessing();
-                processed_files.pop_back();
-                file_iterator->returnForRetry(reader.getObjectInfo());
-                LOG_TRACE(
-                    log,
-                    "Processing of file {} failed with {}, "
-                    "but there are successfully processed files ({}), "
-                    "will commit them and retry the failed file",
-                    path, getCurrentExceptionMessage(false), processed_files.size() - 1);
-                return {};
-            }
-            throw;
+            processed_files.back().exception_during_read = message;
+
+            /// Stop processing and commit what is already processed.
+            return {};
         }
 
         processed_files.back().state = FileState::Processed;
@@ -660,26 +647,44 @@ Chunk ObjectStorageQueueSource::generateImpl()
     return {};
 }
 
-void ObjectStorageQueueSource::commit(bool success, const std::string & exception_message)
+void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
 {
-    LOG_TEST(log, "Having {} files to set as {}",
-             processed_files.size(), success ? "Processed" : "Failed");
+    LOG_TEST(log, "Having {} files to commit (insert {}succeeded)", processed_files.size(), insert_succeeded ? "" : "hasn't ");
 
-    for (const auto & [file_state, file_metadata] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
     {
-        if (success)
+        switch (file_state)
         {
-            applyActionAfterProcessing(file_metadata->getPath());
-            file_metadata->setProcessed();
+            case FileState::Processed:
+            {
+                applyActionAfterProcessing(file_metadata->getPath());
+                file_metadata->setProcessed();
+                break;
+            }
+            case FileState::Processing:
+            {
+                if (insert_succeeded)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected state of file: {}", file_metadata->getPath());
+                }
+
+                file_metadata->setFailed(exception_message, /* reduce_retry_count */false);
+                break;
+            }
+            case FileState::ErrorOnRead:
+            {
+                chassert(!exception_during_read.empty());
+                file_metadata->setFailed(exception_during_read, /* reduce_retry_count */true);
+                break;
+            }
         }
-        else
-        {
-            file_metadata->setFailed(
-                exception_message,
-                /* reduce_retry_count */file_state == FileState::ErrorOnRead,
-                /* overwrite_status */true);
-        }
-        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */success);
+
+        appendLogElement(
+            file_metadata->getPath(),
+            *file_metadata->getFileStatus(),
+            /* processed */insert_succeeded && file_state == FileState::Processed);
     }
 }
 
