@@ -6,23 +6,9 @@
 #include <Common/Stopwatch.h>
 #include <base/sleep.h>
 
-namespace ProfileEvents
-{
-    extern const Event ThrottlerSleepMicroseconds;
-    extern const Event OverflowBreak;
-    extern const Event OverflowThrow;
-}
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int TOO_SLOW;
-    extern const int LOGICAL_ERROR;
-    extern const int TIMEOUT_EXCEEDED;
-}
 
 static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_in_seconds, UInt64 total_elapsed_microseconds)
 {
@@ -101,38 +87,6 @@ void ExecutionSpeedLimits::throttle(
                 limitProgressingSpeed(read_bytes, max_execution_bps, total_elapsed_microseconds);
         }
     }
-}
-
-template <typename... Args>
-static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
-{
-    switch (mode)
-    {
-        case OverflowMode::THROW:
-            ProfileEvents::increment(ProfileEvents::OverflowThrow);
-            throw Exception(code, std::move(fmt), std::forward<Args>(args)...);
-        case OverflowMode::BREAK:
-            ProfileEvents::increment(ProfileEvents::OverflowBreak);
-            return false;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
-    }
-}
-
-bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMode overflow_mode) const
-{
-    if (max_execution_time != 0)
-    {
-        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
-            return handleOverflowMode(
-                overflow_mode,
-                ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded: elapsed {} seconds, maximum: {} seconds",
-                static_cast<double>(elapsed_ns) / 1000000000ULL,
-                max_execution_time.totalMicroseconds() / 1000000.0);
-    }
-
-    return true;
 }
 
 }
