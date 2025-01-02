@@ -1,7 +1,5 @@
 #pragma once
 
-#include <variant>
-
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
