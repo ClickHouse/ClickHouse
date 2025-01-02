@@ -9,7 +9,7 @@ namespace DB
 
 static bool canIncludeToRange(size_t part_size, time_t part_ttl, time_t current_time, size_t usable_memory)
 {
-    return (0 < part_ttl && part_ttl < current_time) && usable_memory >= part_size;
+    return (0 < part_ttl && part_ttl <= current_time) && usable_memory >= part_size;
 }
 
 bool ITTLMergeSelector::needToPostponePartition(const std::string & partition_id) const
@@ -39,8 +39,10 @@ std::optional<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenter(c
                 continue;
 
             time_t ttl = getTTLForPart(*part);
+            if (!ttl || ttl > current_time)
+                continue;
 
-            if (ttl && (!position || ttl < getTTLForPart(*position->center)))
+            if (!position || ttl < getTTLForPart(*position->center))
                 position.emplace(range, part);
         }
     }
