@@ -50,6 +50,8 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsUInt64 preferred_block_size_bytes;
+    extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
 }
 
 namespace ErrorCodes
@@ -372,6 +374,8 @@ InputFormatPtr FormatFactory::getInput(
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
+    row_input_format_params.preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes];
+    row_input_format_params.preferred_max_column_in_block_size_bytes = settings[Setting::preferred_max_column_in_block_size_bytes];
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];

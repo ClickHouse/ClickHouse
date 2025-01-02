@@ -835,7 +835,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             properties.projections = as_storage_metadata->getProjections().clone();
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
-            /// Note: only supports the source table engine is using the new syntax.
+            /// Note: Only the source table definition with the new syntax is supported.
             if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
