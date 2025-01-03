@@ -869,9 +869,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
 
             if (it != settings_from_storage.end())
+            {
                 settings_from_storage.erase(it);
-
-            /// Intentionally ignore if there is no such setting name
+            }
+            else
+            {
+                /// Intentionally ignore if there is no such setting name
+                LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
+            }
         }
     }
     else if (type == RENAME_COLUMN)

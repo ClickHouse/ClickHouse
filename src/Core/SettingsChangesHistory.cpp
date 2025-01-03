@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
+            {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
             {"use_hive_partitioning", false, true, "Enabled the setting by default."},
@@ -86,6 +87,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_squash_max_wait_ms", 0, 1000, "Add new setting"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
+            {"output_format_pretty_multiline_fields", false, true, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical", false, true, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
         });
         addSettingsChanges(settings_changes_history, "24.12",
