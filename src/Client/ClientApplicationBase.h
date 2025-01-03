@@ -52,6 +52,10 @@ protected:
 private:
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
+    /// Add all options names to the IHints so that we can suggest something meaningful
+    /// in case of typo.
+    void addOptionsToHints(const OptionsDescription & options_description);
+
     std::vector<String> cmd_options;
 
     LoggerPtr fatal_log;

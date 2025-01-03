@@ -16,7 +16,12 @@
 #include <Server/SSH/SSHChannel.h>
 #include <Server/SSH/SSHEvent.h>
 
-#include <sys/poll.h>
+#if defined(USE_MUSL)
+#   include <poll.h>
+#else
+#   include <sys/poll.h>
+#endif
+
 #include <atomic>
 #include <stdexcept>
 

@@ -161,8 +161,21 @@ protected:
     };
 
     virtual void updateLoggerLevel(const String &) {}
-    virtual void printHelpMessage(const OptionsDescription & options_description, bool verbose) = 0;
-    virtual void addOptions(OptionsDescription & options_description) = 0;
+
+    void printHelpOrVersionIfNeeded(const CommandLineOptions & options);
+    /// Prints the help message. The fact whether it is verbose or not depends on the contents of
+    /// the OptionsDescription object.
+    virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
+    /// Add options that are common for the embedded client, regular client or clickhouse-local.
+    void addCommonOptions(OptionsDescription & options_description);
+    /// Add extra options depending on the application (e.g. clickhouse-local or clickhouse-client)
+    virtual void addExtraOptions(OptionsDescription & options_description) = 0;
+    /// Move options from the boost::program_options structure to the one returned by
+    /// getClientConfiguration(). Missing options are filled in with the defaults.
+    /// NB: This happens only for options that are common for the embedded client,
+    /// regular client and clickhouse-local. For any other specific option
+    /// please use processOptions method.
+    void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments,

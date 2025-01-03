@@ -916,19 +916,19 @@ void LocalServer::processConfig()
 }
 
 
-void LocalServer::printHelpMessage(const OptionsDescription & options_description, bool verbose)
+void LocalServer::printHelpMessage(const OptionsDescription & options_description)
 {
-    std::cout << getHelpHeader() << "\n";
-    std::cout << options_description.main_description.value() << "\n";
-    if (verbose)
-        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    std::cout << getHelpFooter() << "\n";
-    std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
-    std::cout << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
+    output_stream << getHelpHeader() << "\n";
+    if (options_description.main_description.has_value())
+        output_stream << options_description.main_description.value() << "\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
+    output_stream << getHelpFooter() << "\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    output_stream << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";
 }
 
 
-void LocalServer::addOptions(OptionsDescription & options_description)
+void LocalServer::addExtraOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
         ("table,N", po::value<std::string>(), "name of the initial table")

@@ -24,7 +24,7 @@ namespace DB
 {
 
 // Client class which can be run embedded into server
-class ClientEmbedded : public ClientBase
+class ClientEmbedded final : public ClientBase
 {
 public:
     explicit ClientEmbedded(
@@ -40,7 +40,7 @@ public:
         global_context = session->makeSessionContext();
         configuration = ConfigHelper::createEmpty();
         layered_configuration = new Poco::Util::LayeredConfiguration();
-        layered_configuration->add(configuration);
+        layered_configuration->addWriteable(configuration, 0);
     }
 
     int run(const NameToNameMap & envVars, const String & first_query);
@@ -59,8 +59,8 @@ protected:
 
     String getName() const override { return "embedded"; }
 
-    void printHelpMessage(const OptionsDescription &, bool) override {}
-    void addOptions(OptionsDescription &) override {}
+    void printHelpMessage(const OptionsDescription &) override;
+    void addExtraOptions(OptionsDescription &) override {}
     void processOptions(const OptionsDescription &,
                         const CommandLineOptions &,
                         const std::vector<Arguments> &,

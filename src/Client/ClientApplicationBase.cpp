@@ -112,17 +112,39 @@ Poco::Util::LayeredConfiguration & ClientApplicationBase::getClientConfiguration
     return config();
 }
 
+void ClientApplicationBase::addOptionsToHints(const OptionsDescription & options_description)
+{
+    auto getter = [](const auto & op)
+    {
+        String op_long_name = op->long_name();
+        return "--" + String(op_long_name);
+    };
+
+    if (options_description.main_description)
+    {
+        const auto & main_options = options_description.main_description->options();
+        std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
+    if (options_description.external_description)
+    {
+        const auto & external_options = options_description.external_description->options();
+        std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
+    if (options_description.hosts_and_ports_description)
+    {
+        const auto & hosts_and_ports_description = options_description.hosts_and_ports_description->options();
+        std::transform(hosts_and_ports_description.begin(), hosts_and_ports_description.end(), std::back_inserter(cmd_options), getter);
+    }
+}
+
 void ClientApplicationBase::init(int argc, char ** argv)
 {
     namespace po = boost::program_options;
 
     /// Don't parse options with Poco library, we prefer neat boost::program_options.
     stopOptionsProcessing();
-
-    stdin_is_a_tty = isatty(STDIN_FILENO);
-    stdout_is_a_tty = isatty(STDOUT_FILENO);
-    stderr_is_a_tty = isatty(STDERR_FILENO);
-    terminal_width = getTerminalWidth();
 
     std::vector<Arguments> external_tables_arguments;
     Arguments common_arguments = {""}; /// 0th argument is ignored.
@@ -144,8 +166,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
         boost::replace_all(arg, "−", "--");
     }
 
-
     OptionsDescription options_description;
+<<<<<<< HEAD
     options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
 
     /// Common options for clickhouse-client and clickhouse-local.
@@ -231,6 +253,13 @@ void ClientApplicationBase::init(int argc, char ** argv)
         const auto & external_options = options_description.external_description->options();
         std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
     }
+=======
+    addCommonOptions(options_description);
+    /// Copy them to be able to print a simplified version of the help message.
+    auto options_description_non_verbose = options_description;
+    addExtraOptions(options_description);
+    addOptionsToHints(options_description);
+>>>>>>> 6651ebea891 (Pass options in a generic way)
 
     po::variables_map options;
     parseAndCheckOptions(options_description, options, common_arguments);
@@ -248,20 +277,18 @@ void ClientApplicationBase::init(int argc, char ** argv)
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
-    if (options.count("verbose"))
-        getClientConfiguration().setBool("verbose", true);
-
-    /// Output of help message.
-    if (options.count("help")
-        || (options.count("host") && options["host"].as<std::string>() == "elp")) /// If user writes -help instead of --help.
+    /// If user writes -help instead of --help.
+    bool user_made_a_typo = options.count("host") && options["host"].as<std::string>() == "elp";
+    if (options.count("help") || user_made_a_typo)
     {
         if (getClientConfiguration().getBool("verbose", false))
-            printHelpMessage(options_description, true);
+            printHelpMessage(options_description);
         else
-            printHelpMessage(options_description_non_verbose, false);
+            printHelpMessage(options_description_non_verbose);
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
+<<<<<<< HEAD
     /// Common options for clickhouse-client and clickhouse-local.
 
     /// Output execution time to stderr in batch mode.
@@ -402,6 +429,9 @@ void ClientApplicationBase::init(int argc, char ** argv)
                 config().setString("proto_caps." + direction, std::string(cap_str));
         }
     }
+=======
+    addOptionsToTheClientConfiguration(options);
+>>>>>>> 6651ebea891 (Pass options in a generic way)
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());
@@ -409,6 +439,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
+
     {
         std::unordered_set<std::string> alias_names;
         alias_names.reserve(options_description.main_description->options().size());

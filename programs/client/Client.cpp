@@ -363,8 +363,6 @@ try
         showClientVersion();
     }
 
-    default_database = config().getString("database", "");
-
     try
     {
         connect();
@@ -653,19 +651,22 @@ void Client::printChangedSettings() const
 }
 
 
-void Client::printHelpMessage(const OptionsDescription & options_description, bool verbose)
+void Client::printHelpMessage(const OptionsDescription & options_description)
 {
-    std::cout << options_description.main_description.value() << "\n";
-    std::cout << options_description.external_description.value() << "\n";
-    std::cout << options_description.hosts_and_ports_description.value() << "\n";
-    if (verbose)
-        std::cout << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
-    std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
-    std::cout << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
+    if (options_description.main_description.has_value())
+        output_stream << options_description.main_description.value() << "\n";
+    if (options_description.external_description.has_value())
+        output_stream << options_description.external_description.value() << "\n";
+    if (options_description.hosts_and_ports_description.has_value())
+        output_stream << options_description.hosts_and_ports_description.value() << "\n";
+
+    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
+    output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
+    output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
 
 
-void Client::addOptions(OptionsDescription & options_description)
+void Client::addExtraOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()("config,c", po::value<std::string>(), "config-file path (another shorthand)")(
@@ -933,12 +934,10 @@ void Client::processConfig()
     }
 
     pager = config().getString("pager", "");
-
     enable_highlight = config().getBool("highlight", true);
     multiline = config().has("multiline");
     print_stack_trace = config().getBool("stacktrace", false);
-
-    pager = config().getString("pager", "");
+    default_database = config().getString("database", "");
 
     setDefaultFormatsAndCompressionFromConfiguration();
 }
