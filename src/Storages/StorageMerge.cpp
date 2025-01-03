@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <functional>
 #include <iterator>
 #include <Analyzer/ConstantNode.h>
@@ -14,12 +13,9 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
-#include <Core/SortDescription.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
-#include <Databases/IDatabase.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -36,6 +32,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/queryToString.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1242,7 +1239,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
     if (processed_stage <= storage_stage)
     {
-        /// If there are only virtual columns in query, you must request at least one other column.
+        /// If there are only virtual columns in query, we must request at least one other column.
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
 
@@ -1537,7 +1534,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
 {
     Block before_block_header = child.plan.getCurrentHeader();
 
-    auto storage_sample_block = snapshot->metadata->getSampleBlock();
     auto pipe_columns = before_block_header.getNamesAndTypesList();
 
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -1583,13 +1579,21 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
+    /// This is the filter for the individual source table.
+    if (row_policy_data_opt)
+        row_policy_data_opt->addFilterTransform(child.plan);
+
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
         && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
-    /// This is the filter for the individual source table.
-    if (row_policy_data_opt)
-        row_policy_data_opt->addFilterTransform(child.plan);
+    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+        child.plan.getCurrentHeader().getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        convert_actions_match_columns_mode);
+
+    auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(convert_actions_dag));
+    child.plan.addStep(std::move(expression_step));
 
     /// Add missing columns for the resulting Merge table.
     {
@@ -1600,17 +1604,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
             local_context,
             false);
 
-        auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
-        child.plan.addStep(std::move(expression_step));
+        auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
+        child.plan.addStep(std::move(adding_missing_defaults_step));
     }
-
-    auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-        child.plan.getCurrentHeader().getColumnsWithTypeAndName(),
-        header.getColumnsWithTypeAndName(),
-        convert_actions_match_columns_mode);
-
-    auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(convert_actions_dag));
-    child.plan.addStep(std::move(expression_step));
 }
 
 const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
