@@ -385,7 +385,7 @@ std::map<std::string, std::function<void(RandomGenerator &, std::string &)>> ser
     {"log_query_settings", trueOrFalse},
     {"log_query_threads", trueOrFalse},
     {"log_query_views", trueOrFalse},
-    {"low_cardinality_allow_in_native_format", trueOrFalse},
+    //{"low_cardinality_allow_in_native_format", trueOrFalse},
     {"low_cardinality_max_dictionary_size",
      [](RandomGenerator & rg, std::string & ret) { ret += std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }},
     {"low_cardinality_use_single_dictionary_for_part", trueOrFalse},
