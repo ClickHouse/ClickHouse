@@ -4,5 +4,8 @@ target_link_libraries (merge_selector PRIVATE dbms)
 clickhouse_add_executable (merge_selector2 merge_selector2.cpp)
 target_link_libraries (merge_selector2 PRIVATE dbms)
 
+clickhouse_add_executable (merge_selector3 merge_selector3.cpp)
+target_link_libraries (merge_selector3 PRIVATE dbms)
+
 clickhouse_add_executable (get_current_inserts_in_replicated get_current_inserts_in_replicated.cpp)
 target_link_libraries (get_current_inserts_in_replicated PRIVATE dbms clickhouse_common_config clickhouse_common_zookeeper_base clickhouse_common_zookeeper)
