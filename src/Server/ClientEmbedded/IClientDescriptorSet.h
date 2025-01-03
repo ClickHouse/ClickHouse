@@ -1,12 +1,14 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <iostream>
 
 namespace DB
 {
 
 
-// Interface, which handles descriptor pairs, that could be attached to embedded client
+// Interface, which handles descriptor pairs, that could be attached to an embedded client.
 class IClientDescriptorSet
 {
 public:
@@ -37,3 +39,5 @@ public:
 };
 
 }
+
+#endif

@@ -1,7 +1,10 @@
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/Exception.h>
 
-#include "pty.h"
+#include <base/openpty.h>
+#include <unistd.h>
 
 namespace DB
 {
@@ -75,3 +78,5 @@ void PtyClientDescriptorSet::changeWindowSize(int width, int height, int width_p
 PtyClientDescriptorSet::~PtyClientDescriptorSet() = default;
 
 }
+
+#endif

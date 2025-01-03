@@ -1,12 +1,16 @@
-#include <stdlib.h>
+#pragma once
+
 #include <fcntl.h>
-#include <unistd.h>
-#include "pty.h"
-#include <stdio.h>
 #include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
 
-/* Nonstandard, but vastly superior to the standard functions */
-
+/**
+ * This funciton is taken from Musl with a few modifications.
+ */
 int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struct winsize *ws)
 {
 	int m, s, n=0, cs;
@@ -31,10 +35,10 @@ int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struc
 	*pm = m;
 	*ps = s;
 
-	pthread_setcancelstate(cs, 0);
+	pthread_setcancelstate(cs, nullptr);
 	return 0;
 fail:
 	close(m);
-	pthread_setcancelstate(cs, 0);
+	pthread_setcancelstate(cs, nullptr);
 	return -1;
 }

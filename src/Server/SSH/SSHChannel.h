@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_SSH
+#if USE_SSH && defined(OS_LINUX)
 
 #include <memory>
 #include <Server/SSH/SSHSession.h>

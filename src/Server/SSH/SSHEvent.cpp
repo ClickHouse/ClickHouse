@@ -1,6 +1,6 @@
 #include <Server/SSH/SSHEvent.h>
 
-#if USE_SSH
+#if USE_SSH && defined(OS_LINUX)
 
 #include <stdexcept>
 #include <Common/Exception.h>

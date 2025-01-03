@@ -1,14 +1,15 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/IClientDescriptorSet.h>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <Poco/Pipe.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {
-
 
 class PtyClientDescriptorSet : public IClientDescriptorSet
 {
@@ -66,3 +67,5 @@ private:
 };
 
 }
+
+#endif
