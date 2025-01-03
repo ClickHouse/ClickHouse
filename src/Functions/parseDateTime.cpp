@@ -101,7 +101,8 @@ namespace
     constexpr Int32 cumulativeDays[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
 
     /// key: year, value: cumulative days from epoch(1970-01-01) to the first day of current year(exclusive).
-    constexpr Int32 cumulativeYearDaysFrom1970[] = {
+    constexpr Int32 cumulativeYearDaysFrom1970[] =
+    {
         0, 365, 730, 1096, 1461, 1826, 2191, 2557, 2922, 3287,
         3652, 4018, 4383, 4748, 5113, 5479, 5844, 6209, 6574, 6940,
         7305, 7670, 8035, 8401, 8766, 9131, 9496, 9862, 10227, 10592,
@@ -138,7 +139,8 @@ namespace
     };
 
     /// key: year, value: cumulative days from the epoch (1970-01-01) to the first day of the current year (exclusive), counting backwards from 1970 to 1969, and so on. For example, the value -365 corresponds to the year 1969, indicating that there are 365 days from 1970-01-01 to 1969-01-01.
-    constexpr Int32 cumulativeYearDaysBefore1970[] = {
+    constexpr Int32 cumulativeYearDaysBefore1970[] =
+    {
         0, -365, -731, -1096, -1461, -1826, -2192, -2557, -2922, -3287,
         -3653, -4018, -4383, -4748, -5114, -5479, -5844, -6209, -6575, -6940,
         -7305, -7670, -8036, -8401, -8766, -9131, -9497, -9862, -10227, -10592,
