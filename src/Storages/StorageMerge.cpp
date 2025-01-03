@@ -1587,9 +1587,17 @@ void ReadFromMerge::convertAndFilterSourceStream(
         && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
 
+    /// Convert types of columns according to the resulting Merge table.
+    ColumnsWithTypeAndName current_step_columns = child.plan.getCurrentHeader().getColumnsWithTypeAndName();
+    ColumnsWithTypeAndName converted_columns;
+    converted_columns.reserve(current_step_columns.size());
+    for (const auto & elem : current_step_columns)
+        if (header.has(elem.name))
+            converted_columns.push_back(header.getByName(elem.name));
+
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-        child.plan.getCurrentHeader().getColumnsWithTypeAndName(),
-        header.getColumnsWithTypeAndName(),
+        current_step_columns,
+        converted_columns,
         convert_actions_match_columns_mode);
 
     auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(convert_actions_dag));
