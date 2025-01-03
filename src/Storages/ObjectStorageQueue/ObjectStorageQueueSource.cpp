@@ -476,17 +476,22 @@ Chunk ObjectStorageQueueSource::generateImpl()
             if (reader)
                 reader->cancel();
 
-            if (!processed_files.empty() && processed_files.back().state == FileState::Processing)
+            /// Are there any started, but not finished files?
+            if (processed_files.empty() || processed_files.back().state != FileState::Processing)
             {
-                /// Something must have been already read.
-                chassert(processed_files.back().metadata->getFileStatus()->processed_rows > 0);
-                /// Mark file as Cancelled, such files will not be set as Failed.
-                processed_files.back().state = FileState::Cancelled;
-                /// Throw exception to avoid inserting half processed file to destination table.
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Processing was cancelled");
+                /// No unfinished files, just stop processing.
+                break;
             }
-            /// Stop processing.
-            break;
+
+            auto started_file = processed_files.back().metadata;
+            /// Something must have been already read.
+            chassert(started_file->getFileStatus()->processed_rows > 0);
+            /// Mark file as Cancelled, such files will not be set as Failed.
+            processed_files.back().state = FileState::Cancelled;
+            /// Throw exception to avoid inserting half processed file to destination table.
+            throw Exception(
+                ErrorCodes::QUERY_WAS_CANCELLED,
+                "Processing was cancelled (having unfinished file: {})", started_file->getPath());
         }
 
         if (shutdown_called)
