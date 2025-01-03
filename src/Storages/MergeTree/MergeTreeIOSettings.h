@@ -36,6 +36,8 @@ struct MergeTreeReaderSettings
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;
+    /// True if we read stream for structure of Dynamic/Object type.
+    bool is_dynamic_or_object_structure = false;
     /// True if data may be compressed by different codecs in one stream.
     bool allow_different_codecs = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
