@@ -60,7 +60,7 @@ MySQLSource::Connection::Connection(
 {
 }
 
-/// Used in MaterializedMySQL and in doInvalidateQuery for dictionary source.
+/// Used in MySQL tables and in doInvalidateQuery for dictionary source.
 MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
