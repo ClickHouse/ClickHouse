@@ -459,7 +459,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 /* bucket_info */nullptr,
                 buckets_num,
                 table_metadata.loading_retries,
-                log).setProcessedAtStartRequests(requests, zookeeper);
+                log).prepareProcessedAtStartRequests(requests, zookeeper);
         }
 
         Coordination::Responses responses;

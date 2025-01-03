@@ -119,6 +119,10 @@ private:
     size_t getDependencies() const;
     bool streamToViews();
     void threadFunc();
+    void commit(
+        bool success,
+        std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+        const std::string & exception_message = {}) const;
 };
 
 }
