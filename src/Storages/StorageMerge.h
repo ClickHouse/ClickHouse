@@ -262,7 +262,7 @@ private:
         QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
-        Names && real_column_names,
+        const Names & real_column_names_read_from_the_source_table,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num) const;

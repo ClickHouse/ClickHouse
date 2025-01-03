@@ -710,7 +710,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             common_processed_stage,
             required_max_block_size,
             table,
-            std::move(column_names_to_read),
+            column_names_to_read,
             row_policy_data_opt,
             modified_context,
             current_streams);
@@ -1212,7 +1212,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     QueryProcessingStage::Enum processed_stage,
     UInt64 max_block_size,
     const StorageWithLockAndName & storage_with_lock,
-    Names && real_column_names,
+    const Names & real_column_names_read_from_the_source_table,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextMutablePtr modified_context,
     size_t streams_num) const
@@ -1221,7 +1221,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
-    if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names))
+    if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names_read_from_the_source_table))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
         /// However, it's needed for Materialized...SQL and it's unlikely that someone will use it with Merge tables.
@@ -1240,6 +1240,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, we must request at least one other column.
+        Names real_column_names = real_column_names_read_from_the_source_table;
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
 
@@ -1577,33 +1578,41 @@ void ReadFromMerge::convertAndFilterSourceStream(
         }
     }
 
-    ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
-
-    /// This is the filter for the individual source table.
+    /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
     if (row_policy_data_opt)
         row_policy_data_opt->addFilterTransform(child.plan);
 
-    /* Output headers may differ from what StorageMerge expects in some cases.
-     * When the child table engine produces a query plan for the stage after FetchColumns,
-     * execution names in the output header may be different.
-     * The same happens with StorageDistributed, even in the case of FetchColumns.
-     */
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
-        && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
-        convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+    /** Output headers may differ from what StorageMerge expects in some cases.
+      * When the child table engine produces a query plan for the stage after FetchColumns,
+      * execution names in the output header may be different.
+      * The same happens with StorageDistributed, even in the case of FetchColumns.
+      */
 
-    /// Convert types of columns according to the resulting Merge table.
+    /** Convert types of columns according to the resulting Merge table.
+      * And convert column names to the expected ones.
+       */
     ColumnsWithTypeAndName current_step_columns = child.plan.getCurrentHeader().getColumnsWithTypeAndName();
     ColumnsWithTypeAndName converted_columns;
+    size_t size = current_step_columns.size();
     converted_columns.reserve(current_step_columns.size());
-    for (const auto & elem : current_step_columns)
-        if (header.has(elem.name))
-            converted_columns.push_back(header.getByName(elem.name));
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto & source_elem = current_step_columns[i];
+        if (header.has(source_elem.name))
+        {
+            converted_columns.push_back(header.getByName(source_elem.name));
+        }
+        else
+        {
+            /// Virtual columns and columns read from Distributed tables (having different name but matched by position).
+            converted_columns.push_back(source_elem);
+        }
+    }
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         current_step_columns,
         converted_columns,
-        convert_actions_match_columns_mode);
+        ActionsDAG::MatchColumnsMode::Position);
 
     auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(convert_actions_dag));
     child.plan.addStep(std::move(expression_step));
