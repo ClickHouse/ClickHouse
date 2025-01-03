@@ -198,25 +198,6 @@ void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 namespace
 {
 
-#if 0
-std::string readFileToStringDirect(const std::string& filename) {
-    std::ifstream file(filename, std::ios::in | std::ios::binary);
-
-     if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
-    }
-    
-     file.seekg(0, std::ios::end); // Позиционируемся в конец файла
-     std::streamsize size = file.tellg();  // Получаем размер файла
-     file.seekg(0, std::ios::beg); // Возвращаемся в начало
-
-    std::string content;
-    content.resize(size);
-    file.read(content.data(), size);
-    return content;
-}
-#endif
-
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
 public:

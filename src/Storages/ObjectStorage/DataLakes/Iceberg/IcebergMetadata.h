@@ -25,7 +25,6 @@ namespace DB
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
-    std::string jsons_logging;
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
@@ -73,14 +72,9 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
     {
         auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
-        try {
-            return version_if_outdated.has_value()
-                ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
-                : nullptr;
-        } catch (...) {
-            throw;
-            //throw std::runtime_error(jsons_logging);
-        }
+        return version_if_outdated.has_value()
+            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
+            : nullptr;
     }
 
     bool supportsExternalMetadataChange() const override { return true; }

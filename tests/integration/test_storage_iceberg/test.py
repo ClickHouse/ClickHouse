@@ -329,7 +329,6 @@ def default_upload_directory(
     started_cluster, storage_type, local_path, remote_path, **kwargs
 ):
     if storage_type == "local":
-        print("default_upload_directory ", local_path, remote_path)
         return started_cluster.default_local_uploader.upload_directory(
             local_path, remote_path, **kwargs
         )
@@ -678,14 +677,6 @@ def test_delete_files(started_cluster, format_version, storage_type):
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
-
-    write_iceberg_from_df(
-        spark,
-        generate_data(spark, 100, 200),
-        TABLE_NAME,
-        mode="upsert",
-        format_version=format_version,
-    )
 
     write_iceberg_from_df(
         spark,
