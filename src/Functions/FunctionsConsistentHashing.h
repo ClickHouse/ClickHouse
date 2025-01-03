@@ -59,10 +59,16 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeNumber<ResultType>>();
+    }
+
     bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {1};

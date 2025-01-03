@@ -377,7 +377,7 @@ bool ColumnLazy::isCollationSupported() const
 }
 
 
-ColumnPtr ColumnLazy::compress() const
+ColumnPtr ColumnLazy::compress(bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compress is not supported for {}", getName());
 }

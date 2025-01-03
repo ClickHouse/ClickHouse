@@ -84,12 +84,12 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
 
 void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    context->getResourceManager()->forEachNode([&] (const String & resource, const String & path, const String & type, const SchedulerNodePtr & node)
+    context->getResourceManager()->forEachNode([&] (const String & resource, const String & path, ISchedulerNode * node)
     {
         size_t i = 0;
         res_columns[i++]->insert(resource);
         res_columns[i++]->insert(path);
-        res_columns[i++]->insert(type);
+        res_columns[i++]->insert(node->getTypeName());
         res_columns[i++]->insert(node->info.weight);
         res_columns[i++]->insert(node->info.priority.value);
         res_columns[i++]->insert(node->isActive());
@@ -118,23 +118,23 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
 
         if (auto * parent = dynamic_cast<FairPolicy *>(node->parent))
         {
-            if (auto value = parent->getChildVRuntime(node.get()))
+            if (auto value = parent->getChildVRuntime(node))
                 vruntime = *value;
         }
-        if (auto * ptr = dynamic_cast<FairPolicy *>(node.get()))
+        if (auto * ptr = dynamic_cast<FairPolicy *>(node))
             system_vruntime = ptr->getSystemVRuntime();
-        if (auto * ptr = dynamic_cast<FifoQueue *>(node.get()))
+        if (auto * ptr = dynamic_cast<FifoQueue *>(node))
             std::tie(queue_length, queue_cost) = ptr->getQueueLengthAndCost();
-        if (auto * ptr = dynamic_cast<ISchedulerQueue *>(node.get()))
+        if (auto * ptr = dynamic_cast<ISchedulerQueue *>(node))
             budget = ptr->getBudget();
-        if (auto * ptr = dynamic_cast<ISchedulerConstraint *>(node.get()))
+        if (auto * ptr = dynamic_cast<ISchedulerConstraint *>(node))
             is_satisfied = ptr->isSatisfied();
-        if (auto * ptr = dynamic_cast<SemaphoreConstraint *>(node.get()))
+        if (auto * ptr = dynamic_cast<SemaphoreConstraint *>(node))
         {
             std::tie(inflight_requests, inflight_cost) = ptr->getInflights();
             std::tie(max_requests, max_cost) = ptr->getLimits();
         }
-        if (auto * ptr = dynamic_cast<ThrottlerConstraint *>(node.get()))
+        if (auto * ptr = dynamic_cast<ThrottlerConstraint *>(node))
         {
             std::tie(max_speed, max_burst) = ptr->getParams();
             throttling_us = ptr->getThrottlingDuration().count() / 1000;

@@ -7,6 +7,7 @@ set (CLICKHOUSE_KEEPER_LINK
     PRIVATE
         clickhouse_common_config
         clickhouse_common_io
+        clickhouse_common_zookeeper_base
         clickhouse_common_zookeeper
         daemon
         clickhouse-keeper-converter-lib

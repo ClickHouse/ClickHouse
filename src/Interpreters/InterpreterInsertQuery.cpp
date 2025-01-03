@@ -74,6 +74,11 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool disable_insertion_and_mutation;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -116,8 +121,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 
             if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                InterpreterSelectQueryAnalyzer interpreter_select(query.select, current_context, select_query_options);
-                header_block = interpreter_select.getSampleBlock();
+                header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
             }
             else
             {
@@ -299,6 +303,7 @@ static bool isTrivialSelect(const ASTPtr & select)
 
 Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
+    size_t view_level,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & columns,
     ThreadStatusesHolderPtr thread_status_holder,
@@ -320,7 +325,7 @@ Chain InterpreterInsertQuery::buildChain(
     if (check_access)
         getContext()->checkAccess(AccessType::INSERT, table->getStorageID(), sample.getNames());
 
-    Chain sink = buildSink(table, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
+    Chain sink = buildSink(table, view_level, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
     Chain chain = buildPreSinkChain(sink.getInputHeader(), table, metadata_snapshot, sample);
 
     chain.appendChain(std::move(sink));
@@ -329,6 +334,7 @@ Chain InterpreterInsertQuery::buildChain(
 
 Chain InterpreterInsertQuery::buildSink(
     const StoragePtr & table,
+    size_t view_level,
     const StorageMetadataPtr & metadata_snapshot,
     ThreadStatusesHolderPtr thread_status_holder,
     ThreadGroupPtr running_group,
@@ -357,7 +363,7 @@ Chain InterpreterInsertQuery::buildSink(
     else
     {
         out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
-            query_ptr, no_destination,
+            query_ptr, view_level, no_destination,
             thread_status_holder, running_group, elapsed_counter_ms, async_insert);
     }
 
@@ -419,7 +425,14 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
     return out;
 }
 
-std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildPreAndSinkChains(size_t presink_streams, size_t sink_streams, StoragePtr table, const StorageMetadataPtr & metadata_snapshot, const Block & query_sample_block)
+std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildPreAndSinkChains(
+    size_t presink_streams,
+    size_t sink_streams,
+    StoragePtr table,
+    size_t view_level,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Block & query_sample_block
+    )
 {
     chassert(presink_streams > 0);
     chassert(sink_streams > 0);
@@ -435,7 +448,7 @@ std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildP
 
     for (size_t i = 0; i < sink_streams; ++i)
     {
-        auto out = buildSink(table, metadata_snapshot, /* thread_status_holder= */ nullptr,
+        auto out = buildSink(table, view_level, metadata_snapshot, /* thread_status_holder= */ nullptr,
             running_group, /* elapsed_counter_ms= */ nullptr);
 
         sink_chains.emplace_back(std::move(out));
@@ -635,7 +648,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     auto [presink_chains, sink_chains] = buildPreAndSinkChains(
         presink_streams_size, sink_streams_size,
-        table, metadata_snapshot, query_sample_block);
+        table, /* view_level */ 0, metadata_snapshot, query_sample_block);
 
     pipeline.resize(presink_chains.size());
 
@@ -689,7 +702,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     {
         auto [presink_chains, sink_chains] = buildPreAndSinkChains(
             /* presink_streams */1, /* sink_streams */1,
-            table, metadata_snapshot, query_sample_block);
+            table, /* view_level */ 0, metadata_snapshot, query_sample_block);
 
         chain = std::move(presink_chains.front());
         chain.appendChain(std::move(sink_chains.front()));
@@ -757,7 +770,7 @@ BlockIO InterpreterInsertQuery::execute()
     const Settings & settings = getContext()->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
-    if (getContext()->getServerSettings().disable_insertion_and_mutation
+    if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
 

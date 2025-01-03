@@ -90,6 +90,7 @@ template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
     const IColumn & column,
     size_t row_num,
+    const FormatSettings & settings,
     WriteBuffer & ostr,
     KeyWriter && key_writer,
     ValueWriter && value_writer) const
@@ -104,15 +105,31 @@ void SerializationMap::serializeTextImpl(
     size_t next_offset = offsets[row_num];
 
     writeChar('{', ostr);
-    for (size_t i = offset; i < next_offset; ++i)
+    if (offset != next_offset)
     {
-        if (i != offset)
-            writeChar(',', ostr);
-
-        key_writer(ostr, key, nested_tuple.getColumn(0), i);
-        writeChar(':', ostr);
-        value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        key_writer(ostr, key, nested_tuple.getColumn(0), offset);
+        if (settings.composed_data_type_output_format_mode == "spark")
+            writeString(std::string_view(" -> "), ostr);
+        else
+            writeChar(':', ostr);
+        value_writer(ostr, value, nested_tuple.getColumn(1), offset);
     }
+    if (settings.composed_data_type_output_format_mode == "spark")
+        for (size_t i = offset + 1; i < next_offset; ++i)
+        {
+            writeString(std::string_view(", "), ostr);
+            key_writer(ostr, key, nested_tuple.getColumn(0), i);
+            writeString(std::string_view(" -> "), ostr);
+            value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        }
+    else
+        for (size_t i = offset + 1; i < next_offset; ++i)
+        {
+            writeChar(',', ostr);
+            key_writer(ostr, key, nested_tuple.getColumn(0), i);
+            writeChar(':', ostr);
+            value_writer(ostr, value, nested_tuple.getColumn(1), i);
+        }
     writeChar('}', ostr);
 }
 
@@ -221,10 +238,13 @@ void SerializationMap::serializeText(const IColumn & column, size_t row_num, Wri
 {
     auto writer = [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
     {
-        subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);
+        if (settings.composed_data_type_output_format_mode == "spark")
+            subcolumn_serialization->serializeText(subcolumn, pos, buf, settings);
+        else
+            subcolumn_serialization->serializeTextQuoted(subcolumn, pos, buf, settings);
     };
 
-    serializeTextImpl(column, row_num, ostr, writer, writer);
+    serializeTextImpl(column, row_num, settings, ostr, writer, writer);
 }
 
 void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
@@ -266,7 +286,7 @@ bool SerializationMap::tryDeserializeText(IColumn & column, ReadBuffer & istr, c
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeTextImpl(column, row_num, ostr,
+    serializeTextImpl(column, row_num, settings, ostr,
         [&settings](WriteBuffer & buf, const SerializationPtr & subcolumn_serialization, const IColumn & subcolumn, size_t pos)
         {
             /// We need to double-quote all keys (including integers) to produce valid JSON.

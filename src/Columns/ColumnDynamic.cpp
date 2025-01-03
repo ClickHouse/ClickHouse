@@ -260,10 +260,11 @@ void ColumnDynamic::insert(const Field & x)
         /// We store values in shared variant in binary form with binary encoded type.
         auto & shared_variant = getSharedVariant();
         auto & chars = shared_variant.getChars();
-        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
-        encodeDataType(field_data_type, value_buf);
-        getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
-        value_buf.finalize();
+        {
+            WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
+            encodeDataType(field_data_type, value_buf);
+            getVariantSerialization(field_data_type, field_data_type_name)->serializeBinary(x, value_buf, getFormatSettings());
+        }
         chars.push_back(0);
         shared_variant.getOffsets().push_back(chars.size());
         variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(shared_variant_discr));
@@ -697,10 +698,11 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     size_t n)
 {
     auto & chars = shared_variant.getChars();
-    WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
-    encodeDataType(type, value_buf);
-    serialization->serializeBinary(src, n, value_buf, getFormatSettings());
-    value_buf.finalize();
+    {
+        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag());
+        encodeDataType(type, value_buf);
+        serialization->serializeBinary(src, n, value_buf, getFormatSettings());
+    }
     chars.push_back(0);
     shared_variant.getOffsets().push_back(chars.size());
 }
@@ -989,15 +991,65 @@ void ColumnDynamic::updatePermutation(IColumn::PermutationSortDirection directio
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
-ColumnPtr ColumnDynamic::compress() const
+ColumnPtr ColumnDynamic::compress(bool force_compression) const
 {
-    ColumnPtr variant_compressed = variant_column_ptr->compress();
+    ColumnPtr variant_compressed = variant_column_ptr->compress(force_compression);
     size_t byte_size = variant_compressed->byteSize();
     return ColumnCompressed::create(size(), byte_size,
         [my_variant_compressed = std::move(variant_compressed), my_variant_info = variant_info, my_max_dynamic_types = max_dynamic_types, my_global_max_dynamic_types = global_max_dynamic_types, my_statistics = statistics]() mutable
         {
             return ColumnDynamic::create(my_variant_compressed->decompress(), my_variant_info, my_max_dynamic_types, my_global_max_dynamic_types, my_statistics);
         });
+}
+
+void ColumnDynamic::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    auto & nested = assert_cast<ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    const auto & variants = variant_column_ptr->getVariants();
+
+    size_t old_size = nested.size();
+    chassert(old_size <= variants.size());
+
+    for (size_t i = 0; i < old_size; ++i)
+    {
+        variants[i]->updateCheckpoint(*nested[i]);
+    }
+
+    /// If column has new variants since last checkpoint create checkpoints for them.
+    if (old_size < variants.size())
+    {
+        nested.resize(variants.size());
+        for (size_t i = old_size; i < variants.size(); ++i)
+            nested[i] = variants[i]->getCheckpoint();
+    }
+
+    checkpoint.size = size();
+}
+
+void ColumnDynamic::rollback(const ColumnCheckpoint & checkpoint)
+{
+    const auto & nested = assert_cast<const ColumnCheckpointWithMultipleNested &>(checkpoint).nested;
+    chassert(nested.size() <= variant_column_ptr->getNumVariants());
+
+    /// The structure hasn't changed, so we can use generic rollback of Variant column
+    if (nested.size() == variant_column_ptr->getNumVariants())
+    {
+        variant_column_ptr->rollback(checkpoint);
+        return;
+    }
+
+    /// Manually rollback internals of Variant column
+    variant_column_ptr->getOffsets().resize_assume_reserved(checkpoint.size);
+    variant_column_ptr->getLocalDiscriminators().resize_assume_reserved(checkpoint.size);
+
+    auto & variants = variant_column_ptr->getVariants();
+    for (size_t i = 0; i < nested.size(); ++i)
+        variants[i]->rollback(*nested[i]);
+
+    /// Keep the structure of variant as is but rollback
+    /// to 0 variants that are not in the checkpoint.
+    for (size_t i = nested.size(); i < variants.size(); ++i)
+        variants[i] = variants[i]->cloneEmpty();
 }
 
 String ColumnDynamic::getTypeNameAt(size_t row_num) const
@@ -1156,6 +1208,15 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
 
         variant_col.getVariantByGlobalDiscriminator(i).prepareForSquashing(source_variant_columns);
     }
+}
+
+bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
+{
+    if (const auto * rhs_concrete = typeid_cast<const ColumnDynamic *>(&rhs))
+        return max_dynamic_types == rhs_concrete->max_dynamic_types && global_max_dynamic_types == rhs_concrete->global_max_dynamic_types
+            && variant_info.variant_name == rhs_concrete->variant_info.variant_name
+            && variant_column->dynamicStructureEquals(*rhs_concrete->variant_column);
+    return false;
 }
 
 void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)

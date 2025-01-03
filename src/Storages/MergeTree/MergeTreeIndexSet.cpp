@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
+#include <Common/quoteString.h>
+
 #include <DataTypes/IDataType.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -12,6 +14,7 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
 

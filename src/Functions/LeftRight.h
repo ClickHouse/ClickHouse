@@ -68,6 +68,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     template <typename Source>
     ColumnPtr executeForSource(const ColumnPtr & column_length,
                           const ColumnConst * column_length_const,

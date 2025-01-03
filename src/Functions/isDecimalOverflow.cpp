@@ -7,6 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Common/intExp.h>
+#include <Core/DecimalFunctions.h>
 
 
 namespace DB
@@ -59,6 +60,11 @@ public:
                             arguments[1]->getName(), getName());
         }
 
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 

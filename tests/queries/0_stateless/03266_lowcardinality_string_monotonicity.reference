@@ -1,0 +1,2 @@
+Condition: (CAST(s, \'LowCardinality(String)\') in [\'42\', \'42\'])
+Condition: (CAST(s, \'String\') in [\'42\', \'42\'])

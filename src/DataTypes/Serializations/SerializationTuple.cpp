@@ -137,12 +137,25 @@ void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 void SerializationTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('(', ostr);
-    for (size_t i = 0; i < elems.size(); ++i)
+    if (!elems.empty())
     {
-        if (i != 0)
-            writeChar(',', ostr);
-        elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
+        if (settings.composed_data_type_output_format_mode == "spark")
+            elems[0]->serializeText(extractElementColumn(column, 0), row_num, ostr, settings);
+        else
+            elems[0]->serializeTextQuoted(extractElementColumn(column, 0), row_num, ostr, settings);
     }
+    if (settings.composed_data_type_output_format_mode == "spark")
+        for (size_t i = 1; i < elems.size(); ++i)
+        {
+            writeString(std::string_view(", "), ostr);
+            elems[i]->serializeText(extractElementColumn(column, i), row_num, ostr, settings);
+        }
+    else
+        for (size_t i = 1; i < elems.size(); ++i)
+        {
+            writeChar(',', ostr);
+            elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
+        }
     writeChar(')', ostr);
 }
 
@@ -386,6 +399,9 @@ ReturnType SerializationTuple::deserializeTupleJSONImpl(IColumn & column, ReadBu
                             name);
                     return false;
                 }
+
+                if (seen_elements[element_pos])
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object contains duplicate key '{}'", name);
 
                 seen_elements[element_pos] = 1;
                 auto & element_column = extractElementColumn(column, element_pos);

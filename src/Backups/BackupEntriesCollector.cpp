@@ -6,6 +6,7 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Backups/IBackupCoordination.h>
+#include <Common/quoteString.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -102,7 +103,6 @@ BackupEntriesCollector::BackupEntriesCollector(
     , read_settings(read_settings_)
     , context(context_)
     , process_list_element(context->getProcessListElement())
-    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , collect_metadata_timeout(context->getConfigRef().getUInt64(
           "backups.collect_metadata_timeout", context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000)))
     , attempts_to_collect_metadata_before_sleep(context->getConfigRef().getUInt("backups.attempts_to_collect_metadata_before_sleep", 2))
@@ -112,10 +112,11 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
     , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
     , log(getLogger("BackupEntriesCollector"))
-    , global_zookeeper_retries_info(
+    , zookeeper_retries_info(
           context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
           context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
-          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms])
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+          context->getProcessListElementSafe())
     , threadpool(threadpool_)
 {
 }
@@ -176,21 +177,7 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
     checkIsQueryCancelled();
 
     current_stage = new_stage;
-    backup_coordination->setStage(new_stage, message);
-
-    if (new_stage == Stage::formatGatheringMetadata(0))
-    {
-        return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
-    }
-    if (new_stage.starts_with(Stage::GATHERING_METADATA))
-    {
-        auto current_time = std::chrono::steady_clock::now();
-        auto end_of_timeout = std::max(current_time, collect_metadata_end_time);
-        return backup_coordination->waitForStage(
-            new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
-    }
-
-    return backup_coordination->waitForStage(new_stage);
+    return backup_coordination->setStage(new_stage, message, /* sync = */ true);
 }
 
 void BackupEntriesCollector::checkIsQueryCancelled() const
@@ -527,7 +514,8 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
             String table_name = create.getTable();
 
-            fs::path metadata_path_in_backup, data_path_in_backup;
+            fs::path metadata_path_in_backup;
+            fs::path data_path_in_backup;
             auto table_name_in_backup = renaming_map.getNewTableName({database_name, table_name});
             if (table_name_in_backup.database == DatabaseCatalog::TEMPORARY_DATABASE)
             {
@@ -597,8 +585,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     try
     {
         /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
-        auto zookeeper_retries_info = global_zookeeper_retries_info;
-        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info, nullptr);
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info);
         retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)

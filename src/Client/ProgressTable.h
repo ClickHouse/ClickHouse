@@ -5,6 +5,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
+#include <list>
 #include <map>
 #include <mutex>
 #include <ostream>
@@ -27,8 +28,9 @@ public:
     }
 
     /// Write progress table with metrics.
-    void writeTable(WriteBufferFromFileDescriptor & message, bool show_table, bool toggle_enabled);
-    void clearTableOutput(WriteBufferFromFileDescriptor & message);
+    void writeTable(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock,
+            bool show_table, bool toggle_enabled);
+    void clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
     void writeFinalTable();
 
     /// Update the metric values. They can be updated from:
@@ -47,7 +49,7 @@ private:
         void updateValue(Int64 new_value, double new_time);
         double calculateProgress(double time_now) const;
         double getValue() const;
-        bool isStale(double now) const;
+        bool isFresh(double now) const;
 
     private:
         const ProfileEvents::Type type;
@@ -79,7 +81,7 @@ private:
         double getSummaryValue();
         double getSummaryProgress(double time_now);
         double getMaxProgress() const;
-        bool isStale(double now) const;
+        bool isFresh(double now) const;
 
     private:
         std::unordered_map<HostName, MetricInfo> host_to_metric;
@@ -87,20 +89,23 @@ private:
     };
 
     size_t tableSize() const;
+    size_t getFreshMetricsCount(double time_now) const;
+
+    size_t getColumnDocumentationWidth(size_t terminal_width) const;
 
     using MetricName = String;
+    using Metric = std::pair<MetricName, MetricInfoPerHost>;
 
     /// The server periodically sends Block with profile events.
     /// This information is stored here.
-    std::map<MetricName, MetricInfoPerHost> metrics;
+    std::list<Metric> metrics;
+    std::map<MetricName, std::list<Metric>::iterator> metrics_iterators;
 
     /// It is possible concurrent access to the metrics.
     std::mutex mutex;
 
     /// Track query execution time on client.
     Stopwatch watch;
-
-    bool written_first_block = false;
 
     size_t column_event_name_width = 20;
 
@@ -110,7 +115,7 @@ private:
     static constexpr std::string_view COLUMN_DOCUMENTATION_NAME = "Documentation";
     static constexpr size_t COLUMN_VALUE_WIDTH = 20;
     static constexpr size_t COLUMN_PROGRESS_WIDTH = 20;
-    static constexpr size_t COLUMN_DOCUMENTATION_WIDTH = 100;
+    static constexpr size_t COLUMN_DOCUMENTATION_MIN_WIDTH = COLUMN_DOCUMENTATION_NAME.size();
 
     std::ostream & output_stream;
     int in_fd;

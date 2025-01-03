@@ -63,7 +63,7 @@ public:
 
         const IDataType & type = *arguments[0];
 
-        if (!isNativeNumber(type))
+        if (!isNumber(type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
 
         if (arguments.size() >= 2)
@@ -82,6 +82,11 @@ public:
             }
         }
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -104,7 +109,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        std::string_view maximum_unit_str, minimum_unit_str;
+        std::string_view maximum_unit_str;
+        std::string_view minimum_unit_str;
         if (arguments.size() >= 2)
         {
             const ColumnPtr & maximum_unit_column = arguments[1].column;

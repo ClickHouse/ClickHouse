@@ -62,8 +62,11 @@ public:
 
     RefreshTaskPtr tryGetTaskForInnerTable(const StorageID & inner_table_id) const;
 
-    /// Calls notifyDependencyProgress() on all tasks that depend on `id`.
+    /// Calls notify() on all tasks that depend on `id`.
     void notifyDependents(const StorageID & id) const;
+
+    void setRefreshesStopped(bool stopped);
+    bool refreshesStopped() const;
 
 private:
     using TaskMap = std::unordered_map<StorageID, RefreshTaskList, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
@@ -77,6 +80,8 @@ private:
     TaskMap tasks;
     DependentsMap dependents;
     InnerTableMap inner_tables;
+
+    std::atomic<bool> refreshes_stopped {false};
 
     RefreshTaskList::iterator addTaskLocked(StorageID id, RefreshTaskPtr task);
     void removeTaskLocked(StorageID id, RefreshTaskList::iterator iter);

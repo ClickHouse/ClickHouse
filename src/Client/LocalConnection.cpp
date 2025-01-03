@@ -33,6 +33,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -93,8 +94,7 @@ void LocalConnection::sendProfileEvents()
     Block profile_block;
     state->after_send_profile_events.restart();
     next_packet_type = Protocol::Server::ProfileEvents;
-    ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, profile_block, last_sent_snapshots);
-    state->block.emplace(std::move(profile_block));
+    state->block.emplace(ProfileEvents::getProfileEvents(server_display_name, state->profile_queue, last_sent_snapshots));
 }
 
 void LocalConnection::sendQuery(
@@ -106,6 +106,7 @@ void LocalConnection::sendQuery(
     const Settings *,
     const ClientInfo * client_info,
     bool,
+    const std::vector<String> & /*external_roles*/,
     std::function<void(const Progress &)> process_progress_callback)
 {
     /// Last query may not have been finished or cancelled due to exception on client side.
@@ -178,7 +179,7 @@ void LocalConnection::sendQuery(
             parser
                 = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         else
-            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert]);
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
         ASTPtr parsed_query;
         if (dialect == Dialect::kusto)
@@ -268,6 +269,7 @@ void LocalConnection::sendQuery(
         {
             state->block = state->io.pipeline.getHeader();
             state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+            state->io.pipeline.setConcurrencyControl(false);
         }
         else if (state->io.pipeline.completed())
         {
@@ -324,6 +326,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
     if (send_profile_events)
         sendProfileEvents();
+}
+
+bool LocalConnection::isSendDataNeeded() const
+{
+    return !state || state->input_pipeline == nullptr;
 }
 
 void LocalConnection::sendCancel()

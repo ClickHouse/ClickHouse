@@ -66,6 +66,11 @@ namespace Setting
     extern const SettingsBool use_hedged_requests;
 }
 
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool skip_unavailable_shards;
+}
+
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
@@ -155,7 +160,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
     if (!settings[Setting::skip_unavailable_shards].changed && distributed_settings)
     {
-        new_settings[Setting::skip_unavailable_shards] = distributed_settings->skip_unavailable_shards.value;
+        new_settings[Setting::skip_unavailable_shards] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards].value;
         new_settings[Setting::skip_unavailable_shards].changed = true;
     }
 
@@ -451,12 +456,12 @@ void executeQuery(
         return;
     }
 
-    DataStreams input_streams;
-    input_streams.reserve(plans.size());
+    Headers input_headers;
+    input_headers.reserve(plans.size());
     for (auto & plan : plans)
-        input_streams.emplace_back(plan->getCurrentDataStream());
+        input_headers.emplace_back(plan->getCurrentHeader());
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
@@ -626,7 +631,8 @@ void executeQueryWithParallelReplicas(
             std::move(analyzed_read_from_merge_tree),
             local_replica_index.value());
 
-        if (!with_parallel_replicas)
+        /// If there's only one replica or the source is empty, just read locally.
+        if (!with_parallel_replicas || pools_to_use.size() == 1)
         {
             query_plan = std::move(*local_plan);
             return;
@@ -653,16 +659,16 @@ void executeQueryWithParallelReplicas(
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
 
-        DataStreams input_streams;
-        input_streams.reserve(2);
-        input_streams.emplace_back(local_plan->getCurrentDataStream());
-        input_streams.emplace_back(remote_plan->getCurrentDataStream());
+        Headers input_headers;
+        input_headers.reserve(2);
+        input_headers.emplace_back(local_plan->getCurrentHeader());
+        input_headers.emplace_back(remote_plan->getCurrentHeader());
 
         std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
         query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
     else
@@ -723,7 +729,7 @@ void executeQueryWithParallelReplicas(
         context, query_ast, storage_id.database_name, storage_id.table_name, /*remote_table_function_ptr*/ nullptr);
     auto header = InterpreterSelectQuery(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
-    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits);
+    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, nullptr);
 }
 
 void executeQueryWithParallelReplicasCustomKey(
@@ -750,7 +756,7 @@ void executeQueryWithParallelReplicasCustomKey(
     }
 
     ColumnsDescriptionByShardNum columns_object;
-    if (hasDynamicSubcolumns(columns))
+    if (hasDynamicSubcolumnsDeprecated(columns))
         columns_object = getExtendedObjectsOfRemoteTables(*query_info.cluster, storage_id, columns, context);
 
     ClusterProxy::SelectStreamFactory select_stream_factory

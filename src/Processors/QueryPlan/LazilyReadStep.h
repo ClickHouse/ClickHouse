@@ -9,7 +9,7 @@ class LazilyReadStep : public ITransformingStep
 {
 public:
     LazilyReadStep(
-        const DataStream & input_stream_,
+        const Header & input_header_,
         const LazilyReadInfoPtr & lazily_read_info_);
 
     String getName() const override { return "LazilyRead"; }
@@ -19,7 +19,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     LazilyReadInfoPtr lazily_read_info;
 };

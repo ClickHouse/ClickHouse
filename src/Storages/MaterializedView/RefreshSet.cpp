@@ -176,7 +176,26 @@ void RefreshSet::notifyDependents(const StorageID & id) const
             res.push_back(task);
     }
     for (const RefreshTaskPtr & t : res)
-        t->notifyDependencyProgress();
+        t->notify();
+}
+
+void RefreshSet::setRefreshesStopped(bool stopped)
+{
+
+    TaskMap tasks_copy;
+    {
+        std::lock_guard lock(mutex);
+        refreshes_stopped.store(stopped);
+        tasks_copy = tasks;
+    }
+    for (const auto & kv : tasks_copy)
+        for (const RefreshTaskPtr & t : kv.second)
+            t->notify();
+}
+
+bool RefreshSet::refreshesStopped() const
+{
+    return refreshes_stopped.load();
 }
 
 RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::optional<StorageID> inner_table_id_, RefreshTaskList::iterator iter_, RefreshTaskList::iterator inner_table_iter_, std::vector<StorageID> dependencies_)

@@ -9,6 +9,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <base/defines.h>
+#include <sys/ioctl.h>
 
 namespace DB::ErrorCodes
 {
@@ -112,7 +113,15 @@ void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap
 void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeInterceptor::CallbackMap & map) const
 {
     char ch;
-    if (read(fd, &ch, 1) > 0)
+
+    int available = 0;
+    if (ioctl(fd, FIONREAD, &available) < 0)
+        throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "ioctl({}, FIONREAD)", fd);
+
+    if (available <= 0)
+        return;
+
+    if (read(fd, &ch, 1) > 0)  /// NOLINT(clang-analyzer-unix.BlockInCriticalSection)
     {
         auto it = map.find(ch);
         if (it != map.end())

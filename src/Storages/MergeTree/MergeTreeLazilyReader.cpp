@@ -122,7 +122,7 @@ void MergeTreeLazilyReader::readLazyColumns(
         for (const auto & row_offset_with_idx : row_offsets)
         {
             auto row_offset = row_offset_with_idx.row_offset;
-            MarkRange mark_range = data_part->index_granularity.getMarkRangeForRowOffset(row_offset);
+            MarkRange mark_range = data_part->index_granularity->getMarkRangeForRowOffset(row_offset);
             mark_ranges.push_back(mark_range);
         }
 
@@ -149,7 +149,7 @@ void MergeTreeLazilyReader::readLazyColumns(
         size_t idx = 0;
         auto mark_range_iter = mark_ranges.begin();
         auto row_offset = row_offsets[idx].row_offset;
-        size_t next_offset = row_offset - data_part->index_granularity.getMarkStartingRow(mark_range_iter->begin);
+        size_t next_offset = row_offset - data_part->index_granularity->getMarkStartingRow(mark_range_iter->begin);
         size_t skipped_rows = next_offset;
         bool continue_reading = false;
 
@@ -190,7 +190,7 @@ void MergeTreeLazilyReader::readLazyColumns(
                     break;
 
                 row_offset = row_offsets[idx].row_offset;
-                next_offset = row_offset - data_part->index_granularity.getMarkStartingRow(mark_range_iter->begin);
+                next_offset = row_offset - data_part->index_granularity->getMarkStartingRow(mark_range_iter->begin);
                 skipped_rows = next_offset;
 
                 if (mark_range_iter->begin == prev_mark)

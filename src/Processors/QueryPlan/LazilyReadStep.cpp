@@ -23,11 +23,11 @@ static ITransformingStep::Traits getTraits()
 }
 
 LazilyReadStep::LazilyReadStep(
-    const DataStream & input_stream_,
+    const Header & input_header_,
     const LazilyReadInfoPtr & lazily_read_info_)
     : ITransformingStep(
-    input_stream_,
-    ColumnLazyTransform::transformHeader(input_stream_.header),
+    input_header_,
+    ColumnLazyTransform::transformHeader(input_header_),
     getTraits())
     , lazily_read_info(lazily_read_info_)
 {}
@@ -69,12 +69,9 @@ void LazilyReadStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Lazily read columns", std::move(json_array));
 }
 
-void LazilyReadStep::updateOutputStream()
+void LazilyReadStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        ColumnLazyTransform::transformHeader(input_streams.front().header),
-        getDataStreamTraits());
+    output_header = ColumnLazyTransform::transformHeader(input_headers.front());
 }
 
 }

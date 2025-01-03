@@ -67,6 +67,10 @@ SELECT count() FROM ( EXPLAIN QUERY TREE
     SELECT * FROM t1 JOIN t2 ON t1.x <=> t2.x AND (t1.x = t1.y OR t1.x IS NULL AND t1.y IS NULL)
 ) WHERE explain like '%CONSTANT%' OR explain ilike '%is%null%';
 
+SELECT count() FROM ( EXPLAIN QUERY TREE
+    SELECT * FROM t1 JOIN t2 ON t1.x = t2.x AND NOT (t1.x = 1 OR t1.x IS NULL)
+) WHERE explain ilike '%function_name: isNull%';
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t1n;

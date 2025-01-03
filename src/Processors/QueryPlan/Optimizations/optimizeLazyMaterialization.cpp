@@ -204,7 +204,7 @@ static void updateStepsDataStreams(StepStack & steps_to_update)
     /// update output data stream for found transforms
     if (!steps_to_update.empty())
     {
-        const DataStream * input_stream = &steps_to_update.back()->getOutputStream();
+        const auto * input_header = &steps_to_update.back()->getOutputHeader();
         chassert(dynamic_cast<ReadFromMergeTree *>(steps_to_update.back()));
         steps_to_update.pop_back();
 
@@ -213,8 +213,8 @@ static void updateStepsDataStreams(StepStack & steps_to_update)
             auto * transforming_step = dynamic_cast<ITransformingStep *>(steps_to_update.back());
             chassert(transforming_step);
 
-            transforming_step->updateInputStream(*input_stream);
-            input_stream = &steps_to_update.back()->getOutputStream();
+            transforming_step->updateInputHeader(*input_header);
+            input_header = &steps_to_update.back()->getOutputHeader();
             steps_to_update.pop_back();
         }
     }
@@ -256,7 +256,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
 
     lazily_read_info->data_parts_info = std::make_shared<DataPartsInfo>();
     lazily_read_info->column_lazy_helper = std::make_shared<MergeTreeLazilyReader>(
-        sorting->getOutputStream().header,
+        sorting->getOutputHeader(),
         reading_step->getMergeTreeData(),
         reading_step->getStorageSnapshot(),
         lazily_read_info,
@@ -283,7 +283,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
     updateStepsDataStreams(steps_to_update);
 
     auto lazily_read_step = std::make_unique<LazilyReadStep>(
-        sorting->getOutputStream(),
+        sorting->getOutputHeader(),
         lazily_read_info);
     lazily_read_step->setStepDescription("Lazily Read");
     replace_node.step = std::move(lazily_read_step);
