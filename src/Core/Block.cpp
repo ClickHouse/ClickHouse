@@ -380,8 +380,18 @@ bool Block::has(const std::string & name, bool case_insensitive) const
 }
 
 
-size_t Block::getPositionByName(const std::string & name) const
+size_t Block::getPositionByName(const std::string & name, bool case_insensitive) const
 {
+    if (case_insensitive)
+    {
+        auto found = std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); });
+        if (found == data.end())
+            throw Exception(
+                ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", name, dumpNames());
+
+        return found - data.begin();
+    }
+
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
