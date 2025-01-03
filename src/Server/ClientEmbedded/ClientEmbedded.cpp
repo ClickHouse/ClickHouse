@@ -34,6 +34,22 @@ T getEnvOption(const NameToNameMap & envVars, const String & key, T defaultValue
 
 }
 
+void ClientEmbedded::printHelpMessage(const OptionsDescription & options_description)
+{
+    output_stream << "Welcome to the ClickHouse embedded client!" << "\n";
+    output_stream << "This client runs on the server side inside the ClickHouse's main process." << "\n";
+
+    if (options_description.main_description.has_value())
+        output_stream << options_description.main_description.value() << "\n";
+    if (options_description.external_description.has_value())
+        output_stream << options_description.external_description.value() << "\n";
+    if (options_description.hosts_and_ports_description.has_value())
+        output_stream << options_description.hosts_and_ports_description.value() << "\n";
+
+    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
+    output_stream << "See also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
+}
+
 
 void ClientEmbedded::processError(const String &) const
 {
@@ -108,54 +124,80 @@ try
 
     setThreadName("LocalServerPty");
 
-    query_processing_stage = QueryProcessingStage::Enum::Complete;
-
-    print_stack_trace = getEnvOption<bool>(envVars, "stacktrace", false);
-
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);
 
+    /**
+    * To pass the environment variables through the SSH protocol you need to follow
+    * the format: ssh -o SetEnv="key1=value1 key2=value2"
+    * But the whole code is used to work with command line options, so we reconstruct them back.
+    */
+    Arguments arguments;
+    arguments.reserve(envVars.size() * 2);
+    for (const auto & [key, value] : envVars)
+    {
+        arguments.emplace_back("--" + key);
+        arguments.emplace_back(value);
+    }
+
+    OptionsDescription options_description;
+    addCommonOptions(options_description);
+
+    po::variables_map options;
+    auto parser = po::command_line_parser(arguments)
+                      .options(options_description.main_description.value())
+                      .allow_unregistered();
+    auto parsed = parser.run();
+    po::store(parsed, options);
+    po::notify(options);
+
+    if (options.count("version") || options.count("V"))
+    {
+        showClientVersion();
+        cleanup();
+        return 0;
+    }
+
+    if (options.count("help"))
+    {
+        printHelpMessage(options_description);
+        cleanup();
+        return 0;
+    }
+
+    addOptionsToTheClientConfiguration(options);
+
     is_interactive = stdin_is_a_tty;
-
-    /// FIXME: We need a generic way on how to handle program options for the embedded client.
+    /**
+    * If a query is passed via SSH - just append it to the list of queries to execute:
+    * ssh -i ~/.ssh/id_rsa default@localhost -p 9022 "SELECT 1"
+    */
     if (!first_query.empty())
-        queries = std::vector<std::string>({first_query});
-
-    auto possible_query = getEnvOption<String>(envVars, "query", "");
-    if (!possible_query.empty())
-        queries = std::vector<std::string>({possible_query});
+        queries.push_back(first_query);
 
     delayed_interactive = is_interactive && !queries.empty();
     if (!is_interactive || delayed_interactive)
     {
-        echo_queries = getEnvOption<bool>(envVars, "echo", false) || getEnvOption<bool>(envVars, "verbose", false);
-        ignore_error = getEnvOption<bool>(envVars, "ignore_error", false);
-    }
-    load_suggestions = (is_interactive || delayed_interactive) && !getEnvOption<bool>(envVars, "disable_suggestion", false);
-    if (load_suggestions)
-    {
-        suggestion_limit = getEnvOption<Int32>(envVars, "suggestion_limit", 10000);
+        echo_queries = getClientConfiguration().getBool("echo", false);
+        ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
 
-    enable_highlight = getEnvOption<bool>(envVars, "highlight", true);
-    multiline = getEnvOption<bool>(envVars, "multiline", false);
+    server_display_name = getFQDNOrHostName();
+    prompt_by_server_display_name = fmt::format("{} :) ", server_display_name);
+    query_processing_stage = QueryProcessingStage::Enum::Complete;
+    pager = getClientConfiguration().getString("pager", "");
+    enable_highlight = getClientConfiguration().getBool("highlight", true);
+    multiline = getClientConfiguration().has("multiline");
+    print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
+    default_database = getClientConfiguration().getString("database", "");
 
-    default_database = getEnvOption<String>(envVars, "database", "");
+    setDefaultFormatsAndCompressionFromConfiguration();
 
-    default_output_format = getEnvOption<String>(envVars, "output-format", getEnvOption<String>(envVars, "format", is_interactive ? "PrettyCompact" : "TSV"));
-    // TODO: Fix
-    // insert_format = "Values";
-    insert_format_max_block_size = getEnvOption<size_t>(envVars, "insert_format_max_block_size",
-        global_context->getSettingsRef()[Setting::max_insert_block_size]);
+    initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
+        toProgressOption(getClientConfiguration().getString("progress-table", "default")));
 
-
-    server_display_name = getEnvOption<String>(envVars, "display_name", getFQDNOrHostName());
-    prompt_by_server_display_name = getEnvOption<String>(envVars, "prompt_by_server_display_name", "{display_name} :) ");
-    std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
-    for (const auto & [key, value] : prompt_substitutions)
-        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
-    initTTYBuffer(toProgressOption(getEnvOption<String>(envVars, "progress", "default")),
-        toProgressOption(getEnvOption<String>(envVars, "progress-table", "default")));
+    /// TODO: Support progress table.
+    initKeystrokeInterceptor();
 
     if (is_interactive)
     {
