@@ -8,8 +8,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-#include <Hugeint.h>
-#include <UHugeint.h>
+#include <HugeInt.h>
+#include <UHugeInt.h>
 
 #include <IO/copyData.h>
 #include <Common/ShellCommand.h>

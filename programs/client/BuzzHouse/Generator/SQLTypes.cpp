@@ -1,8 +1,8 @@
 #include <cstdint>
-#include <Hugeint.h>
+#include <HugeInt.h>
 #include <SQLTypes.h>
 #include <StatementGenerator.h>
-#include <UHugeint.h>
+#include <UHugeInt.h>
 #include <sys/types.h>
 
 namespace BuzzHouse

@@ -1,5 +1,5 @@
-#include <Hugeint.h>
-#include <UHugeint.h>
+#include <HugeInt.h>
+#include <UHugeInt.h>
 
 #include <cassert>
 #include <cmath>

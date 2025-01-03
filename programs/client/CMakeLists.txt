@@ -33,8 +33,8 @@ if (ENABLE_BUZZHOUSE)
         BuzzHouse/Generator/SystemTables.cpp
         BuzzHouse/Generator/QueryOracle.cpp
         BuzzHouse/Generator/ExternalIntegrations.cpp
-        BuzzHouse/Utils/Hugeint.cpp
-        BuzzHouse/Utils/UHugeint.cpp
+        BuzzHouse/Utils/HugeInt.cpp
+        BuzzHouse/Utils/UHugeInt.cpp
     )
 
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_buzzhouse_proto)
