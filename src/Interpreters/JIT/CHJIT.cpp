@@ -27,6 +27,32 @@
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
+#include <llvm/Transforms/Scalar/InstSimplifyPass.h>
+#include <llvm/Transforms/Scalar/LoopRotation.h>
+#include <llvm/Transforms/Scalar/LoopReroll.h>
+#include <llvm/Transforms/Vectorize/LoopVectorize.h>
+#include <llvm/Transforms/Vectorize/VectorCombine.h>
+#include <llvm/Transforms/Vectorize/LoadStoreVectorizer.h>
+#include <llvm/Transforms/Utils/Mem2Reg.h>
+#include <llvm/Transforms/Scalar/ADCE.h>
+#include <llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h>
+#include <llvm/Transforms/Scalar/Reassociate.h>
+#include <llvm/Transforms/Scalar/GVN.h>
+#include <llvm/Transforms/Utils/LoopSimplify.h>
+#include <llvm/Transforms/Scalar/SimplifyCFG.h>
+#include <llvm/Transforms/Scalar/Sink.h>
+#include <llvm/Transforms/Scalar/TailRecursionElimination.h>
+#include <llvm/Transforms/Vectorize/SLPVectorizer.h>
+#include <llvm/Transforms/Scalar/SROA.h>
+#include <llvm/Transforms/Scalar/LoopUnrollPass.h>
+#include <llvm/Transforms/Scalar/LICM.h>
+#include <llvm/Transforms/Scalar/SCCP.h>
+#include <llvm/Transforms/Scalar/IndVarSimplify.h>
+#include <llvm/Transforms/IPO/PartialInlining.h>
+#include <llvm/Transforms/IPO/DeadArgumentElimination.h>
+#include <llvm/Transforms/IPO/SCCP.h>
+#include <llvm/Transforms/IPO/MergeFunctions.h>
+#include <llvm/Transforms/IPO/GlobalOpt.h>
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
@@ -489,19 +515,89 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::FunctionAnalysisManager fam;
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
+    //llvm::MachineFunctionAnalysisManager mfm;
 
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
+    pto.MergeFunctions = true;
+    //pto.LoopInterleaving = true;
+    //pto.LoopVectorization = true;
 
-    llvm::PassBuilder pb(nullptr, pto);
+    llvm::PassBuilder pb(machine.get(), pto);
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
     pb.registerFunctionAnalyses(fam);
     pb.registerLoopAnalyses(lam);
+    //pb.registerMachineFunctionAnalyses(mfm);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
 
+    llvm::FunctionPassManager FPM;
+
+    // mem2reg
+    FPM.addPass(llvm::PromotePass());
+    // Aggressive Instruction Combine
+    FPM.addPass(llvm::AggressiveInstCombinePass());
+    // Reassociate (reorder expressions to improve constant propagation)
+    FPM.addPass(llvm::ReassociatePass());
+    // Eliminate common subexpressions
+    FPM.addPass(llvm::GVNPass());
+    // Constant Propagation
+    FPM.addPass(llvm::SCCPPass());
+    // Aggressive Dead Code Elimination
+    FPM.addPass(llvm::ADCEPass());
+    // Loop Simplification (needs to be followed by a simplifycfg pass)
+    FPM.addPass(llvm::LoopSimplifyPass());
+    {
+        llvm::LoopPassManager loop_manager;
+        //llvm::LICMOptions licm_options{100, 250, false};
+        loop_manager.addPass(llvm::IndVarSimplifyPass());
+        //loop_manager.addPass(llvm::LICMPass(licm_options));
+        FPM.addPass(llvm::createFunctionToLoopPassAdaptor(
+                                    std::move(loop_manager)));
+    }
+    // Unroll loops where needed
+    FPM.addPass(llvm::LoopUnrollPass());
+    FPM.addPass(llvm::SimplifyCFGPass());
+    // Aggressive Dead Code Elimination
+    FPM.addPass(llvm::ADCEPass());
+    // Sink (move instructions to successor blocks where possible)
+    FPM.addPass(llvm::SinkingPass());
+    // Tail Call Elimination
+    FPM.addPass(llvm::TailCallElimPass());
+    // Change series of stores into vector-stores
+    FPM.addPass(llvm::SLPVectorizerPass());
+    // Try to convert aggregates to multiple scalar allocas, then convert to SSA
+    // where possible
+    llvm::SROAOptions sroa_options = llvm::SROAOptions();
+    FPM.addPass(llvm::SROAPass(sroa_options));
+    // Interprocedural Constant Propagation
+    FPM.addPass(llvm::SCCPPass());
+
+    llvm::LoopPassManager LPM;
+    // Add loop-specific passes to the loop pass manager
+    LPM.addPass(llvm::LoopRerollPass());
+    // Add passes to the function pass manager
+    FPM.addPass(llvm::LoopVectorizePass());
+    //FPM.addPass(llvm::LoadStoreVectorizerPass());
+    //FPM.addPass(llvm::VectorCombinePass());
+
+    FPM.addPass(createFunctionToLoopPassAdaptor(std::move(LPM)));
+
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    mpm.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+
+    // Inlines parts of functions (e.g. if-statements if they surround a function body)
+    mpm.addPass(llvm::PartialInlinerPass());
+    // Interprocedural constant propagation
+    mpm.addPass(llvm::IPSCCPPass());
+    // Eliminates unused arguments and return values from functions
+    mpm.addPass(llvm::DeadArgumentEliminationPass());
+    // Merge identical functions
+    mpm.addPass(llvm::MergeFunctionsPass());
+    // Removes unused global variables
+    mpm.addPass(llvm::GlobalOptPass());
+
     mpm.run(module, mam);
 }
 
