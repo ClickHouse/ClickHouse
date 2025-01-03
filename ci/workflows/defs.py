@@ -129,18 +129,18 @@ DOCKERS = [
         depends_on=[],
     ),
     # TODO: move images into ./ci
-    Docker.Config(
-        name="clickhouse/integration-tests-runner",
-        path="./docker/test/integration/runner",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/integration-helper",
-        path="./docker/test/integration/runner",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
+    # Docker.Config(
+    #     name="clickhouse/integration-tests-runner",
+    #     path="./docker/test/integration/runner",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/integration-helper",
+    #     path="./docker/test/integration/runner",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
     # Docker.Config(
     #     name="clickhouse/kerberos-kdc",
     #     path="./docker/test/integration/kerberos_kdc",
@@ -250,6 +250,20 @@ class BuildTypes:
     AMD_UBSAN = "amd_ubsan"
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
+
+    AMD_COVERAGE = "amd_coverage"
+    ARM_BINARY = "arm_binary"
+    AMD_TIDY = "amd_tidy"
+    AMD_DARWIN = "amd_darwin"
+    ARM_DARWIN = "arm_darwin"
+    ARM_V80COMPAT = "arm_v80compat"
+    AMD_FREEBSD = "amd_freebsd"
+    PPC64LE = "amd_ppc64le"
+    AMD_COMPAT = "amd_compat"
+    AMD_MUSL = "amd_musl"
+    RISCV64 = "riscv64"
+    S390X = "s390x"
+    LOONGARCH64 = "loongarch"
 
 
 class JobNames:
