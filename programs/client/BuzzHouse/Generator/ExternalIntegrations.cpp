@@ -177,7 +177,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const st
             }
             break;
             default: {
-                hugeint_t val(rg.nextRandomInt64(), rg.nextRandomUInt64());
+                HugeInt val(rg.nextRandomInt64(), rg.nextRandomUInt64());
 
                 buf.resize(0);
                 val.toString(buf);

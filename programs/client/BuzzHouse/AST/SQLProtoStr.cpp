@@ -350,15 +350,15 @@ CONV_FN(NumericLiteral, nl)
     ret += ")";
 }
 
-CONV_FN(HugeInt, huge)
+CONV_FN(HugeIntLiteral, huge)
 {
-    hugeint_t val(huge.lower(), huge.upper());
+    HugeInt val(huge.upper(), huge.lower());
     val.toString(ret);
 }
 
-CONV_FN(UHugeInt, uhuge)
+CONV_FN(UHugeIntLiteral, uhuge)
 {
-    uhugeint_t val(uhuge.lower(), uhuge.upper());
+    UHugeInt val(uhuge.upper(), uhuge.lower());
     val.toString(ret);
 }
 
@@ -372,13 +372,13 @@ CONV_FN(IntLiteral, int_val)
     {
         ret += std::to_string(int_val.uint_lit());
     }
-    else if (int_val.has_hugeint())
+    else if (int_val.has_huge_lit())
     {
-        HugeIntToString(ret, int_val.hugeint());
+        HugeIntLiteralToString(ret, int_val.huge_lit());
     }
-    else if (int_val.has_uhugeint())
+    else if (int_val.has_uhuge_lit())
     {
-        UHugeIntToString(ret, int_val.uhugeint());
+        UHugeIntLiteralToString(ret, int_val.uhuge_lit());
     }
     else
     {

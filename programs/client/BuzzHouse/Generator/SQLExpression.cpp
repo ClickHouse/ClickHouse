@@ -162,10 +162,10 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         if (noption < 21)
         {
             //hugeint
-            HugeInt * huge = il->mutable_hugeint();
+            HugeIntLiteral * huge = il->mutable_huge_lit();
 
-            huge->set_lower(rg.nextRandomInt64());
-            huge->set_upper(rg.nextRandomUInt64());
+            huge->set_upper(rg.nextRandomInt64());
+            huge->set_lower(rg.nextRandomUInt64());
             if (rg.nextSmallNumber() < 9)
             {
                 il->set_integers(rg.nextBool() ? Integers::Int128 : Integers::Int256);
@@ -174,10 +174,10 @@ int StatementGenerator::generateLiteralValue(RandomGenerator & rg, Expr * expr)
         else if (noption < 41)
         {
             //uhugeint
-            UHugeInt * uhuge = il->mutable_uhugeint();
+            UHugeIntLiteral * uhuge = il->mutable_uhuge_lit();
 
-            uhuge->set_lower(rg.nextRandomUInt64());
             uhuge->set_upper(rg.nextRandomUInt64());
+            uhuge->set_lower(rg.nextRandomUInt64());
             if (rg.nextSmallNumber() < 9)
             {
                 il->set_integers(rg.nextBool() ? Integers::UInt128 : Integers::UInt256);

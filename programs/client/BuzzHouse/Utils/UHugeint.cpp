@@ -7,27 +7,27 @@
 namespace BuzzHouse
 {
 
-uhugeint_t::uhugeint_t(uint64_t value)
+UHugeInt::UHugeInt(uint64_t value)
 {
     this->lower = value;
     this->upper = 0;
 }
 
-bool uhugeint_t::operator==(const uhugeint_t & rhs) const
+bool UHugeInt::operator==(const UHugeInt & rhs) const
 {
     int lower_equals = this->lower == rhs.lower;
     int upper_equals = this->upper == rhs.upper;
     return lower_equals & upper_equals;
 }
 
-bool uhugeint_t::operator!=(const uhugeint_t & rhs) const
+bool UHugeInt::operator!=(const UHugeInt & rhs) const
 {
     int lower_not_equals = this->lower != rhs.lower;
     int upper_not_equals = this->upper != rhs.upper;
     return lower_not_equals | upper_not_equals;
 }
 
-bool uhugeint_t::operator<(const uhugeint_t & rhs) const
+bool UHugeInt::operator<(const UHugeInt & rhs) const
 {
     int upper_smaller = this->upper < rhs.upper;
     int upper_equal = this->upper == rhs.upper;
@@ -35,7 +35,7 @@ bool uhugeint_t::operator<(const uhugeint_t & rhs) const
     return upper_smaller | (upper_equal & lower_smaller);
 }
 
-bool uhugeint_t::operator<=(const uhugeint_t & rhs) const
+bool UHugeInt::operator<=(const UHugeInt & rhs) const
 {
     int upper_smaller = this->upper < rhs.upper;
     int upper_equal = this->upper == rhs.upper;
@@ -43,7 +43,7 @@ bool uhugeint_t::operator<=(const uhugeint_t & rhs) const
     return upper_smaller | (upper_equal & lower_smaller_equals);
 }
 
-bool uhugeint_t::operator>(const uhugeint_t & rhs) const
+bool UHugeInt::operator>(const UHugeInt & rhs) const
 {
     int upper_bigger = this->upper > rhs.upper;
     int upper_equal = this->upper == rhs.upper;
@@ -51,7 +51,7 @@ bool uhugeint_t::operator>(const uhugeint_t & rhs) const
     return upper_bigger | (upper_equal & lower_bigger);
 }
 
-bool uhugeint_t::operator>=(const uhugeint_t & rhs) const
+bool UHugeInt::operator>=(const UHugeInt & rhs) const
 {
     int upper_bigger = this->upper > rhs.upper;
     int upper_equal = this->upper == rhs.upper;
@@ -59,29 +59,29 @@ bool uhugeint_t::operator>=(const uhugeint_t & rhs) const
     return upper_bigger | (upper_equal & lower_bigger_equals);
 }
 
-uhugeint_t uhugeint_t::operator+(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator+(const UHugeInt & rhs) const
 {
-    return uhugeint_t(upper + rhs.upper + ((lower + rhs.lower) < lower), lower + rhs.lower);
+    return UHugeInt(upper + rhs.upper + ((lower + rhs.lower) < lower), lower + rhs.lower);
 }
 
-uhugeint_t uhugeint_t::operator-(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator-(const UHugeInt & rhs) const
 {
-    return uhugeint_t(upper - rhs.upper - ((lower - rhs.lower) > lower), lower - rhs.lower);
+    return UHugeInt(upper - rhs.upper - ((lower - rhs.lower) > lower), lower - rhs.lower);
 }
 
-uhugeint_t uhugeint_t::operator*(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator*(const UHugeInt & rhs) const
 {
-    uhugeint_t result = *this;
+    UHugeInt result = *this;
     result *= rhs;
     return result;
 }
 
-uhugeint_t uhugeint_t::operator>>(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator>>(const UHugeInt & rhs) const
 {
     const uint64_t shift = rhs.lower;
     if (rhs.upper != 0 || shift >= 128)
     {
-        return uhugeint_t(0);
+        return UHugeInt(0);
     }
     else if (shift == 0)
     {
@@ -89,25 +89,25 @@ uhugeint_t uhugeint_t::operator>>(const uhugeint_t & rhs) const
     }
     else if (shift == 64)
     {
-        return uhugeint_t(0, upper);
+        return UHugeInt(0, upper);
     }
     else if (shift < 64)
     {
-        return uhugeint_t(upper >> shift, (upper << (64 - shift)) + (lower >> shift));
+        return UHugeInt(upper >> shift, (upper << (64 - shift)) + (lower >> shift));
     }
     else if ((128 > shift) && (shift > 64))
     {
-        return uhugeint_t(0, (upper >> (shift - 64)));
+        return UHugeInt(0, (upper >> (shift - 64)));
     }
-    return uhugeint_t(0);
+    return UHugeInt(0);
 }
 
-uhugeint_t uhugeint_t::operator<<(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator<<(const UHugeInt & rhs) const
 {
     const uint64_t shift = rhs.lower;
     if (rhs.upper != 0 || shift >= 128)
     {
-        return uhugeint_t(0);
+        return UHugeInt(0);
     }
     else if (shift == 0)
     {
@@ -115,66 +115,66 @@ uhugeint_t uhugeint_t::operator<<(const uhugeint_t & rhs) const
     }
     else if (shift == 64)
     {
-        return uhugeint_t(lower, 0);
+        return UHugeInt(lower, 0);
     }
     else if (shift < 64)
     {
-        return uhugeint_t((upper << shift) + (lower >> (64 - shift)), lower << shift);
+        return UHugeInt((upper << shift) + (lower >> (64 - shift)), lower << shift);
     }
     else if ((128 > shift) && (shift > 64))
     {
-        return uhugeint_t(lower << (shift - 64), 0);
+        return UHugeInt(lower << (shift - 64), 0);
     }
-    return uhugeint_t(0);
+    return UHugeInt(0);
 }
 
-uhugeint_t uhugeint_t::operator&(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator&(const UHugeInt & rhs) const
 {
-    uhugeint_t result;
+    UHugeInt result;
     result.lower = lower & rhs.lower;
     result.upper = upper & rhs.upper;
     return result;
 }
 
-uhugeint_t uhugeint_t::operator|(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator|(const UHugeInt & rhs) const
 {
-    uhugeint_t result;
+    UHugeInt result;
     result.lower = lower | rhs.lower;
     result.upper = upper | rhs.upper;
     return result;
 }
 
-uhugeint_t uhugeint_t::operator^(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator^(const UHugeInt & rhs) const
 {
-    uhugeint_t result;
+    UHugeInt result;
     result.lower = lower ^ rhs.lower;
     result.upper = upper ^ rhs.upper;
     return result;
 }
 
-uhugeint_t uhugeint_t::operator~() const
+UHugeInt UHugeInt::operator~() const
 {
-    uhugeint_t result;
+    UHugeInt result;
     result.lower = ~lower;
     result.upper = ~upper;
     return result;
 }
 
-uhugeint_t & uhugeint_t::operator+=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator+=(const UHugeInt & rhs)
 {
     *this = *this + rhs;
     return *this;
 }
 
-uhugeint_t & uhugeint_t::operator-=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator-=(const UHugeInt & rhs)
 {
     *this = *this - rhs;
     return *this;
 }
 
-static uhugeint_t multiply(uhugeint_t lhs, uhugeint_t rhs)
+static UHugeInt multiply(UHugeInt lhs, UHugeInt rhs)
 {
-    uhugeint_t result;
+    UHugeInt result;
 #if ((__GNUC__ >= 5) || defined(__clang__)) && defined(__SIZEOF_INT128__)
     __uint128_t left = __uint128_t(lhs.lower) + (__uint128_t(lhs.upper) << 64);
     __uint128_t right = __uint128_t(rhs.lower) + (__uint128_t(rhs.upper) << 64);
@@ -234,13 +234,13 @@ static uhugeint_t multiply(uhugeint_t lhs, uhugeint_t rhs)
     return result;
 }
 
-uhugeint_t & uhugeint_t::operator*=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator*=(const UHugeInt & rhs)
 {
     *this = multiply(*this, rhs);
     return *this;
 }
 
-static uint8_t Bits(uhugeint_t x)
+static uint8_t Bits(UHugeInt x)
 {
     uint8_t out = 0;
     if (x.upper)
@@ -261,144 +261,144 @@ static uint8_t Bits(uhugeint_t x)
     return out;
 }
 
-static uhugeint_t divMod(uhugeint_t lhs, uhugeint_t rhs, uhugeint_t & remainder)
+static UHugeInt divMod(UHugeInt lhs, UHugeInt rhs, UHugeInt & remainder)
 {
-    if (rhs == uhugeint_t(0))
+    if (rhs == UHugeInt(0))
     {
         remainder = lhs;
-        return uhugeint_t(0);
+        return UHugeInt(0);
     }
 
-    remainder = uhugeint_t(0);
-    if (rhs == uhugeint_t(1))
+    remainder = UHugeInt(0);
+    if (rhs == UHugeInt(1))
     {
         return lhs;
     }
     else if (lhs == rhs)
     {
-        return uhugeint_t(1);
+        return UHugeInt(1);
     }
-    else if (lhs == uhugeint_t(0) || lhs < rhs)
+    else if (lhs == UHugeInt(0) || lhs < rhs)
     {
         remainder = lhs;
-        return uhugeint_t(0);
+        return UHugeInt(0);
     }
 
-    uhugeint_t result{0};
+    UHugeInt result{0};
     for (uint8_t idx = Bits(lhs); idx > 0; --idx)
     {
-        result <<= uhugeint_t(1);
-        remainder <<= uhugeint_t(1);
+        result <<= UHugeInt(1);
+        remainder <<= UHugeInt(1);
 
-        if (((lhs >> uhugeint_t(idx - 1U)) & uhugeint_t(1)) != uhugeint_t(0))
+        if (((lhs >> UHugeInt(idx - 1U)) & UHugeInt(1)) != UHugeInt(0))
         {
-            remainder += uhugeint_t(1);
+            remainder += UHugeInt(1);
         }
 
         if (remainder >= rhs)
         {
             remainder -= rhs;
-            result += uhugeint_t(1);
+            result += UHugeInt(1);
         }
     }
     return result;
 }
 
-static uhugeint_t divide(uhugeint_t lhs, uhugeint_t rhs)
+static UHugeInt divide(UHugeInt lhs, UHugeInt rhs)
 {
-    uhugeint_t remainder;
+    UHugeInt remainder;
     return divMod(lhs, rhs, remainder);
 }
 
-static uhugeint_t modulo(uhugeint_t lhs, uhugeint_t rhs)
+static UHugeInt modulo(UHugeInt lhs, UHugeInt rhs)
 {
-    uhugeint_t remainder;
+    UHugeInt remainder;
     (void)divMod(lhs, rhs, remainder);
     return remainder;
 }
 
-uhugeint_t & uhugeint_t::operator/=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator/=(const UHugeInt & rhs)
 {
     *this = divide(*this, rhs);
     return *this;
 }
 
-uhugeint_t & uhugeint_t::operator%=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator%=(const UHugeInt & rhs)
 {
     *this = modulo(*this, rhs);
     return *this;
 }
 
-uhugeint_t uhugeint_t::operator/(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator/(const UHugeInt & rhs) const
 {
     return divide(*this, rhs);
 }
 
-uhugeint_t uhugeint_t::operator%(const uhugeint_t & rhs) const
+UHugeInt UHugeInt::operator%(const UHugeInt & rhs) const
 {
     return modulo(*this, rhs);
 }
 
-static uhugeint_t negateInPlace(const uhugeint_t & input)
+static UHugeInt negateInPlace(const UHugeInt & input)
 {
-    uhugeint_t result{0};
+    UHugeInt result{0};
     result -= input;
     return result;
 }
 
-uhugeint_t uhugeint_t::operator-() const
+UHugeInt UHugeInt::operator-() const
 {
     return negateInPlace(*this);
 }
 
-uhugeint_t & uhugeint_t::operator>>=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator>>=(const UHugeInt & rhs)
 {
     *this = *this >> rhs;
     return *this;
 }
 
-uhugeint_t & uhugeint_t::operator<<=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator<<=(const UHugeInt & rhs)
 {
     *this = *this << rhs;
     return *this;
 }
 
-uhugeint_t & uhugeint_t::operator&=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator&=(const UHugeInt & rhs)
 {
     lower &= rhs.lower;
     upper &= rhs.upper;
     return *this;
 }
 
-uhugeint_t & uhugeint_t::operator|=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator|=(const UHugeInt & rhs)
 {
     lower |= rhs.lower;
     upper |= rhs.upper;
     return *this;
 }
 
-uhugeint_t & uhugeint_t::operator^=(const uhugeint_t & rhs)
+UHugeInt & UHugeInt::operator^=(const UHugeInt & rhs)
 {
     lower ^= rhs.lower;
     upper ^= rhs.upper;
     return *this;
 }
 
-bool uhugeint_t::operator!() const
+bool UHugeInt::operator!() const
 {
-    return *this == uhugeint_t(0);
+    return *this == UHugeInt(0);
 }
 
-uhugeint_t::operator bool() const
+UHugeInt::operator bool() const
 {
-    return *this != uhugeint_t(0);
+    return *this != UHugeInt(0);
 }
 
-void uhugeint_t::toString(std::string & res) const
+void UHugeInt::toString(std::string & res) const
 {
     std::string in;
-    uhugeint_t input = *this;
-    uhugeint_t remainder;
+    UHugeInt input = *this;
+    UHugeInt remainder;
 
     while (true)
     {
@@ -406,7 +406,7 @@ void uhugeint_t::toString(std::string & res) const
         {
             break;
         }
-        input = divMod(input, uhugeint_t(10), remainder);
+        input = divMod(input, UHugeInt(10), remainder);
         in.insert(0, std::string(1, static_cast<char>('0' + remainder.lower)));
     }
     if (in.empty())

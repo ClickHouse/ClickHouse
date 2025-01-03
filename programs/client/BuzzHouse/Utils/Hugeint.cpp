@@ -7,13 +7,13 @@
 namespace BuzzHouse
 {
 
-static void negateInPlace(hugeint_t & input)
+static void negateInPlace(HugeInt & input)
 {
     input.lower = std::numeric_limits<uint64_t>::max() - input.lower + 1ull;
     input.upper = -1 - input.upper + (input.lower == 0);
 }
 
-static uint8_t positiveHugeintHighestBit(hugeint_t bits)
+static uint8_t positiveHugeintHighestBit(HugeInt bits)
 {
     uint8_t out = 0;
     if (bits.upper)
@@ -38,7 +38,7 @@ static uint8_t positiveHugeintHighestBit(hugeint_t bits)
     return out;
 }
 
-static bool positiveHugeintIsBitSet(hugeint_t lhs, uint8_t bit_position)
+static bool positiveHugeintIsBitSet(HugeInt lhs, uint8_t bit_position)
 {
     if (bit_position < 64)
     {
@@ -50,23 +50,23 @@ static bool positiveHugeintIsBitSet(hugeint_t lhs, uint8_t bit_position)
     }
 }
 
-static hugeint_t positiveHugeintLeftShift(hugeint_t lhs, uint32_t amount)
+static HugeInt positiveHugeintLeftShift(HugeInt lhs, uint32_t amount)
 {
     assert(amount > 0 && amount < 64);
-    hugeint_t result;
+    HugeInt result;
     result.lower = lhs.lower << amount;
     result.upper = static_cast<int64_t>((static_cast<uint64_t>(lhs.upper) << amount) + (lhs.lower >> (64 - amount)));
     return result;
 }
 
-static hugeint_t divModPositive(hugeint_t lhs, uint64_t rhs, uint64_t & remainder)
+static HugeInt divModPositive(HugeInt lhs, uint64_t rhs, uint64_t & remainder)
 {
     assert(lhs.upper >= 0);
     // divMod code adapted from:
     // https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
     // initialize the result and remainder to 0
-    hugeint_t div_result;
+    HugeInt div_result;
     div_result.lower = 0;
     div_result.upper = 0;
     remainder = 0;
@@ -99,59 +99,59 @@ static hugeint_t divModPositive(hugeint_t lhs, uint64_t rhs, uint64_t & remainde
     return div_result;
 }
 
-int sign(hugeint_t n)
+int sign(HugeInt n)
 {
-    return ((n > hugeint_t(0)) - (n < hugeint_t(0)));
+    return ((n > HugeInt(0)) - (n < HugeInt(0)));
 }
 
-hugeint_t abs(hugeint_t n)
+HugeInt abs(HugeInt n)
 {
-    assert(n != NumericLimits<hugeint_t>::Minimum());
-    return (n * static_cast<hugeint_t>(sign(n)));
+    assert(n != NumericLimits<HugeInt>::minimum());
+    return (n * static_cast<HugeInt>(sign(n)));
 }
 
-static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder);
+static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder);
 
-static hugeint_t divModMinimum(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
+static HugeInt divModMinimum(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
 {
-    assert(lhs == NumericLimits<hugeint_t>::Minimum() || rhs == NumericLimits<hugeint_t>::Minimum());
-    if (rhs == NumericLimits<hugeint_t>::Minimum())
+    assert(lhs == NumericLimits<HugeInt>::minimum() || rhs == NumericLimits<HugeInt>::minimum());
+    if (rhs == NumericLimits<HugeInt>::minimum())
     {
-        if (lhs == NumericLimits<hugeint_t>::Minimum())
+        if (lhs == NumericLimits<HugeInt>::minimum())
         {
-            remainder = hugeint_t(0);
-            return hugeint_t(1);
+            remainder = HugeInt(0);
+            return HugeInt(1);
         }
         remainder = lhs;
-        return hugeint_t(0);
+        return HugeInt(0);
     }
 
     // Add 1 to minimum and run through divMod again
-    hugeint_t result = divMod(NumericLimits<hugeint_t>::Minimum() + hugeint_t(1), rhs, remainder);
+    HugeInt result = divMod(NumericLimits<HugeInt>::minimum() + HugeInt(1), rhs, remainder);
 
     // If the 1 mattered we need to adjust the result, otherwise the remainder
-    if (abs(remainder) + hugeint_t(1) == abs(rhs))
+    if (abs(remainder) + HugeInt(1) == abs(rhs))
     {
-        result -= static_cast<hugeint_t>(sign(rhs));
-        remainder = hugeint_t(0);
+        result -= static_cast<HugeInt>(sign(rhs));
+        remainder = HugeInt(0);
     }
     else
     {
-        remainder -= hugeint_t(1);
+        remainder -= HugeInt(1);
     }
     return result;
 }
 
-static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
+static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
 {
-    if (rhs == hugeint_t(0))
+    if (rhs == HugeInt(0))
     {
         remainder = lhs;
-        return hugeint_t(0);
+        return HugeInt(0);
     }
 
-    // Check if one of the sides is hugeint_t minimum, as that can't be negated.
-    if (lhs == NumericLimits<hugeint_t>::Minimum() || rhs == NumericLimits<hugeint_t>::Minimum())
+    // Check if one of the sides is HugeInt minimum, as that can't be negated.
+    if (lhs == NumericLimits<HugeInt>::minimum() || rhs == NumericLimits<HugeInt>::minimum())
     {
         return divModMinimum(lhs, rhs, remainder);
     }
@@ -170,7 +170,7 @@ static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
     // https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
     // initialize the result and remainder to 0
-    hugeint_t div_result;
+    HugeInt div_result;
     div_result.lower = 0;
     div_result.upper = 0;
     remainder.lower = 0;
@@ -187,13 +187,13 @@ static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
         // we get the value of the bit at position X, where position 0 is the least-significant bit
         if (positiveHugeintIsBitSet(lhs, x - 1))
         {
-            remainder += hugeint_t(1);
+            remainder += HugeInt(1);
         }
         if (remainder >= rhs)
         {
             // the remainder has passed the division multiplier: add one to the divide result
             remainder -= rhs;
-            div_result += hugeint_t(1);
+            div_result += HugeInt(1);
         }
     }
     if (lhs_negative ^ rhs_negative)
@@ -207,22 +207,22 @@ static hugeint_t divMod(hugeint_t lhs, hugeint_t rhs, hugeint_t & remainder)
     return div_result;
 }
 
-static hugeint_t divide(hugeint_t lhs, hugeint_t rhs)
+static HugeInt divide(HugeInt lhs, HugeInt rhs)
 {
-    hugeint_t remainder;
+    HugeInt remainder;
     return divMod(lhs, rhs, remainder);
 }
 
-static hugeint_t modulo(hugeint_t lhs, hugeint_t rhs)
+static HugeInt modulo(HugeInt lhs, HugeInt rhs)
 {
-    hugeint_t remainder;
+    HugeInt remainder;
     (void)divMod(lhs, rhs, remainder);
     return remainder;
 }
 
-static hugeint_t multiply(hugeint_t lhs, hugeint_t rhs)
+static HugeInt multiply(HugeInt lhs, HugeInt rhs)
 {
-    hugeint_t result;
+    HugeInt result;
     bool lhs_negative = lhs.upper < 0;
     bool rhs_negative = rhs.upper < 0;
     if (lhs_negative)
@@ -301,36 +301,36 @@ static hugeint_t multiply(hugeint_t lhs, hugeint_t rhs)
 }
 
 template <class DST>
-hugeint_t hugeintConvertInteger(DST input)
+HugeInt hugeintConvertInteger(DST input)
 {
-    hugeint_t result;
+    HugeInt result;
     result.lower = static_cast<uint64_t>(input);
     result.upper = (input < 0) * -1;
     return result;
 }
 
-hugeint_t::hugeint_t(int64_t value)
+HugeInt::HugeInt(int64_t value)
 {
     auto result = hugeintConvertInteger<int64_t>(value);
     this->lower = result.lower;
     this->upper = result.upper;
 }
 
-bool hugeint_t::operator==(const hugeint_t & rhs) const
+bool HugeInt::operator==(const HugeInt & rhs) const
 {
     int lower_equals = this->lower == rhs.lower;
     int upper_equals = this->upper == rhs.upper;
     return lower_equals & upper_equals;
 }
 
-bool hugeint_t::operator!=(const hugeint_t & rhs) const
+bool HugeInt::operator!=(const HugeInt & rhs) const
 {
     int lower_not_equals = this->lower != rhs.lower;
     int upper_not_equals = this->upper != rhs.upper;
     return lower_not_equals | upper_not_equals;
 }
 
-bool hugeint_t::operator<(const hugeint_t & rhs) const
+bool HugeInt::operator<(const HugeInt & rhs) const
 {
     int upper_smaller = this->upper < rhs.upper;
     int upper_equal = this->upper == rhs.upper;
@@ -338,7 +338,7 @@ bool hugeint_t::operator<(const hugeint_t & rhs) const
     return upper_smaller | (upper_equal & lower_smaller);
 }
 
-bool hugeint_t::operator<=(const hugeint_t & rhs) const
+bool HugeInt::operator<=(const HugeInt & rhs) const
 {
     int upper_smaller = this->upper < rhs.upper;
     int upper_equal = this->upper == rhs.upper;
@@ -346,7 +346,7 @@ bool hugeint_t::operator<=(const hugeint_t & rhs) const
     return upper_smaller | (upper_equal & lower_smaller_equals);
 }
 
-bool hugeint_t::operator>(const hugeint_t & rhs) const
+bool HugeInt::operator>(const HugeInt & rhs) const
 {
     int upper_bigger = this->upper > rhs.upper;
     int upper_equal = this->upper == rhs.upper;
@@ -354,7 +354,7 @@ bool hugeint_t::operator>(const hugeint_t & rhs) const
     return upper_bigger | (upper_equal & lower_bigger);
 }
 
-bool hugeint_t::operator>=(const hugeint_t & rhs) const
+bool HugeInt::operator>=(const HugeInt & rhs) const
 {
     int upper_bigger = this->upper > rhs.upper;
     int upper_equal = this->upper == rhs.upper;
@@ -362,47 +362,47 @@ bool hugeint_t::operator>=(const hugeint_t & rhs) const
     return upper_bigger | (upper_equal & lower_bigger_equals);
 }
 
-hugeint_t hugeint_t::operator+(const hugeint_t & rhs) const
+HugeInt HugeInt::operator+(const HugeInt & rhs) const
 {
-    return hugeint_t(upper + rhs.upper + ((lower + rhs.lower) < lower), lower + rhs.lower);
+    return HugeInt(upper + rhs.upper + ((lower + rhs.lower) < lower), lower + rhs.lower);
 }
 
-hugeint_t hugeint_t::operator-(const hugeint_t & rhs) const
+HugeInt HugeInt::operator-(const HugeInt & rhs) const
 {
-    return hugeint_t(upper - rhs.upper - ((lower - rhs.lower) > lower), lower - rhs.lower);
+    return HugeInt(upper - rhs.upper - ((lower - rhs.lower) > lower), lower - rhs.lower);
 }
 
-hugeint_t hugeint_t::operator*(const hugeint_t & rhs) const
+HugeInt HugeInt::operator*(const HugeInt & rhs) const
 {
-    hugeint_t result = *this;
+    HugeInt result = *this;
     result *= rhs;
     return result;
 }
 
-hugeint_t hugeint_t::operator/(const hugeint_t & rhs) const
+HugeInt HugeInt::operator/(const HugeInt & rhs) const
 {
     return divide(*this, rhs);
 }
 
-hugeint_t hugeint_t::operator%(const hugeint_t & rhs) const
+HugeInt HugeInt::operator%(const HugeInt & rhs) const
 {
     return modulo(*this, rhs);
 }
 
-hugeint_t hugeint_t::operator-() const
+HugeInt HugeInt::operator-() const
 {
-    hugeint_t input = *this;
+    HugeInt input = *this;
     negateInPlace(input);
     return input;
 }
 
-hugeint_t hugeint_t::operator>>(const hugeint_t & rhs) const
+HugeInt HugeInt::operator>>(const HugeInt & rhs) const
 {
-    hugeint_t result;
+    HugeInt result;
     uint64_t shift = rhs.lower;
     if (rhs.upper != 0 || shift >= 128)
     {
-        return hugeint_t(0);
+        return HugeInt(0);
     }
     else if (shift == 0)
     {
@@ -428,17 +428,17 @@ hugeint_t hugeint_t::operator>>(const hugeint_t & rhs) const
     return result;
 }
 
-hugeint_t hugeint_t::operator<<(const hugeint_t & rhs) const
+HugeInt HugeInt::operator<<(const HugeInt & rhs) const
 {
     if (upper < 0)
     {
-        return hugeint_t(0);
+        return HugeInt(0);
     }
-    hugeint_t result;
+    HugeInt result;
     uint64_t shift = rhs.lower;
     if (rhs.upper != 0 || shift >= 128)
     {
-        return hugeint_t(0);
+        return HugeInt(0);
     }
     else if (shift == 64)
     {
@@ -465,109 +465,109 @@ hugeint_t hugeint_t::operator<<(const hugeint_t & rhs) const
     return result;
 }
 
-hugeint_t hugeint_t::operator&(const hugeint_t & rhs) const
+HugeInt HugeInt::operator&(const HugeInt & rhs) const
 {
-    hugeint_t result;
+    HugeInt result;
     result.lower = lower & rhs.lower;
     result.upper = upper & rhs.upper;
     return result;
 }
 
-hugeint_t hugeint_t::operator|(const hugeint_t & rhs) const
+HugeInt HugeInt::operator|(const HugeInt & rhs) const
 {
-    hugeint_t result;
+    HugeInt result;
     result.lower = lower | rhs.lower;
     result.upper = upper | rhs.upper;
     return result;
 }
 
-hugeint_t hugeint_t::operator^(const hugeint_t & rhs) const
+HugeInt HugeInt::operator^(const HugeInt & rhs) const
 {
-    hugeint_t result;
+    HugeInt result;
     result.lower = lower ^ rhs.lower;
     result.upper = upper ^ rhs.upper;
     return result;
 }
 
-hugeint_t hugeint_t::operator~() const
+HugeInt HugeInt::operator~() const
 {
-    hugeint_t result;
+    HugeInt result;
     result.lower = ~lower;
     result.upper = ~upper;
     return result;
 }
 
-hugeint_t & hugeint_t::operator+=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator+=(const HugeInt & rhs)
 {
     *this = *this + rhs;
     return *this;
 }
-hugeint_t & hugeint_t::operator-=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator-=(const HugeInt & rhs)
 {
     *this = *this - rhs;
     return *this;
 }
-hugeint_t & hugeint_t::operator*=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator*=(const HugeInt & rhs)
 {
     *this = multiply(*this, rhs);
     return *this;
 }
-hugeint_t & hugeint_t::operator/=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator/=(const HugeInt & rhs)
 {
     *this = divide(*this, rhs);
     return *this;
 }
-hugeint_t & hugeint_t::operator%=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator%=(const HugeInt & rhs)
 {
     *this = modulo(*this, rhs);
     return *this;
 }
-hugeint_t & hugeint_t::operator>>=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator>>=(const HugeInt & rhs)
 {
     *this = *this >> rhs;
     return *this;
 }
-hugeint_t & hugeint_t::operator<<=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator<<=(const HugeInt & rhs)
 {
     *this = *this << rhs;
     return *this;
 }
-hugeint_t & hugeint_t::operator&=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator&=(const HugeInt & rhs)
 {
     lower &= rhs.lower;
     upper &= rhs.upper;
     return *this;
 }
-hugeint_t & hugeint_t::operator|=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator|=(const HugeInt & rhs)
 {
     lower |= rhs.lower;
     upper |= rhs.upper;
     return *this;
 }
-hugeint_t & hugeint_t::operator^=(const hugeint_t & rhs)
+HugeInt & HugeInt::operator^=(const HugeInt & rhs)
 {
     lower ^= rhs.lower;
     upper ^= rhs.upper;
     return *this;
 }
 
-bool hugeint_t::operator!() const
+bool HugeInt::operator!() const
 {
-    return *this == hugeint_t(0);
+    return *this == HugeInt(0);
 }
 
-hugeint_t::operator bool() const
+HugeInt::operator bool() const
 {
-    return *this != hugeint_t(0);
+    return *this != HugeInt(0);
 }
 
-void hugeint_t::toString(std::string & res) const
+void HugeInt::toString(std::string & res) const
 {
     std::string in;
     uint64_t remainder;
-    hugeint_t input = *this;
+    HugeInt input = *this;
 
-    if (input == NumericLimits<hugeint_t>::Minimum())
+    if (input == NumericLimits<HugeInt>::minimum())
     {
         res += "-170141183460469231731687303715884105728";
         return;
