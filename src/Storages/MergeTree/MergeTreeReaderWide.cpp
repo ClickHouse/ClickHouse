@@ -120,7 +120,8 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 }
 
 size_t MergeTreeReaderWide::readRows(
-    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read,
+    size_t rows_offset, Columns & res_columns)
 {
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
@@ -158,7 +159,7 @@ size_t MergeTreeReaderWide::readRows(
                 readData(
                     column_to_read, serializations[pos], column,
                     from_mark, continue_reading, current_task_last_mark,
-                    max_rows_to_read, cache, deserialize_states_cache, /* was_prefetched =*/ !prefetched_streams.empty());
+                    max_rows_to_read, rows_offset, cache, deserialize_states_cache, /* was_prefetched =*/ !prefetched_streams.empty());
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -195,7 +196,7 @@ size_t MergeTreeReaderWide::readRows(
         }
         catch (Exception & e)
         {
-            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset));
         }
 
         throw;
@@ -384,6 +385,7 @@ void MergeTreeReaderWide::readData(
     bool continue_reading,
     size_t current_task_last_mark,
     size_t max_rows_to_read,
+    size_t rows_offset,
     ISerialization::SubstreamsCache & cache,
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
     bool was_prefetched)
@@ -407,7 +409,8 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
 }
 

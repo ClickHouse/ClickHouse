@@ -2,6 +2,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Columns/IColumnLazyHelper.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/AggregateDescription.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 
 #include <memory>
 
@@ -26,6 +28,9 @@ using FilterInfoPtr = std::shared_ptr<FilterInfo>;
 
 struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+
+struct LazilyReadInfo;
+using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
 struct InputOrderInfo;
 using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
@@ -94,6 +99,16 @@ struct FilterDAGInfo
     bool do_remove_column = false;
 
     std::string dump() const;
+};
+
+struct LazilyReadInfo
+{
+    ColumnsWithTypeAndName lazily_read_columns;
+    bool remove_part_offset_column;
+    DataPartsInfoPtr data_parts_info;
+    ColumnLazyHelperPtr column_lazy_helper;
+
+    LazilyReadInfo() = default;
 };
 
 struct InputOrderInfo

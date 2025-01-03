@@ -56,12 +56,17 @@ public:
         MergeTreeReadPoolPtr pool_,
         MergeTreeSelectAlgorithmPtr algorithm_,
         const PrewhereInfoPtr & prewhere_info_,
+        const LazilyReadInfoPtr & lazily_read_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_);
 
     String getName() const;
 
-    static Block transformHeader(Block block, const PrewhereInfoPtr & prewhere_info);
+    static Block transformHeader(
+        Block block,
+        const LazilyReadInfoPtr & lazily_read_info,
+        const PrewhereInfoPtr & prewhere_info);
+
     Block getHeader() const { return result_header; }
 
     ChunkAndProgress read();
@@ -79,6 +84,12 @@ public:
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
 private:
+    static void injectLazilyReadColumns(
+        size_t rows,
+        Block & block,
+        MergeTreeReadTask * task,
+        const LazilyReadInfoPtr & lazily_read_info);
+
     /// Sets up range readers corresponding to data readers
     void initializeRangeReaders();
 
@@ -88,6 +99,8 @@ private:
     const PrewhereInfoPtr prewhere_info;
     const ExpressionActionsSettings actions_settings;
     const PrewhereExprInfo prewhere_actions;
+
+    const LazilyReadInfoPtr lazily_read_info;
 
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;

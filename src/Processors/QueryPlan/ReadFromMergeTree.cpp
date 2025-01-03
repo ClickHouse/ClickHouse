@@ -335,6 +335,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     std::optional<size_t> number_of_current_replica_)
     : SourceStepWithFilter(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(all_column_names_),
+        {},
         query_info_.prewhere_info), all_column_names_, query_info_, storage_snapshot_, context_)
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
@@ -445,7 +446,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(RangesInDataParts parts_wit
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
         auto processor
-            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, actions_settings, reader_settings);
+            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -539,7 +540,7 @@ Pipe ReadFromMergeTree::readFromPool(
         auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
 
         auto processor
-            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, actions_settings, reader_settings);
+            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -644,7 +645,7 @@ Pipe ReadFromMergeTree::readInOrder(
             algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
 
         auto processor
-            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, actions_settings, reader_settings);
+            = std::make_unique<MergeTreeSelectProcessor>(pool, std::move(algorithm), prewhere_info, lazily_read_info, actions_settings, reader_settings);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -809,6 +810,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
     LOG_TRACE(log, "Spreading mark ranges among streams (default reading)");
 
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    Names tmp_column_names(column_names.begin(), column_names.end());
 
     if (0 == info.sum_marks)
         return {};
@@ -854,7 +856,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         fault(thread_local_rng) &&
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&
-        !prewhere_info)
+        !prewhere_info &&
+        !lazily_read_info)
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);
@@ -894,7 +897,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
 
         auto merging_pipes = std::move(split_ranges_result.merging_pipes);
         auto non_intersecting_parts_ranges_read_pipe = read(std::move(split_ranges_result.non_intersecting_parts_ranges),
-            column_names,
+            tmp_column_names,
             read_type,
             num_streams,
             info.min_marks_for_concurrent_read,
@@ -922,7 +925,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
     }
 
     return read(std::move(parts_with_ranges),
-        column_names,
+        tmp_column_names,
         read_type,
         num_streams,
         info.min_marks_for_concurrent_read,
@@ -1885,9 +1888,38 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 
     output_header = MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
+        lazily_read_info,
         prewhere_info_value);
 
     updateSortDescription();
+}
+
+void ReadFromMergeTree::updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value)
+{
+    lazily_read_info = lazily_read_info_value;
+
+    NameSet names_set;
+
+    for (const auto & column : lazily_read_info->lazily_read_columns)
+    {
+        names_set.insert(column.name);
+    }
+    std::erase_if(all_column_names, [&names_set] (const String & column_name)
+    {
+        return names_set.contains(column_name);
+    });
+
+    if (std::find_if(all_column_names.begin(), all_column_names.end(), [] (const String & column_name)
+        { return column_name == "_part_offset"; }) == all_column_names.end())
+    {
+        lazily_read_info->remove_part_offset_column = true;
+        all_column_names.emplace_back("_part_offset");
+    }
+
+    output_header = MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        lazily_read_info,
+        prewhere_info);
 }
 
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
@@ -2123,6 +2155,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
     std::optional<ActionsDAG> result_projection;
+
+    if (lazily_read_info)
+    {
+        chassert(lazily_read_info->data_parts_info);
+        for (auto & ranges_in_data_part : result.parts_with_ranges)
+        {
+            lazily_read_info->data_parts_info->emplace(
+                ranges_in_data_part.part_index_in_query,
+                DataPartInfo
+                {
+                    .data_part = ranges_in_data_part.data_part,
+                    .alter_conversions = MergeTreeData::getAlterConversionsForPart(
+                        ranges_in_data_part.data_part, mutations_snapshot, storage_snapshot->metadata, getContext())
+                });
+        }
+    }
 
     Pipe pipe = output_each_partition_through_separate_port
         ? groupStreamsByPartition(result, result_projection)

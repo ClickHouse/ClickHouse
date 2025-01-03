@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Columns/ColumnLazy.h>
 #include <Columns/FilterDescription.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
@@ -86,6 +87,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
     const PrewhereInfoPtr & prewhere_info_,
+    const LazilyReadInfoPtr & lazily_read_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_)
     : pool(std::move(pool_))
@@ -93,8 +95,9 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
     , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps, reader_settings_.force_short_circuit_execution))
+    , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
-    , result_header(transformHeader(pool->getHeader(), prewhere_info))
+    , result_header(transformHeader(pool->getHeader(), {}, prewhere_info))
 {
     if (reader_settings.apply_deleted_mask)
     {
@@ -110,6 +113,9 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 
         lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
     }
+
+    if (lazily_read_info)
+        injectLazilyReadColumns(0, result_header, nullptr, lazily_read_info);
 
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
@@ -195,6 +201,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         if (res.row_count)
         {
+            injectLazilyReadColumns(
+                res.row_count, res.block,
+                task.get(), lazily_read_info);
+
             /// Reorder the columns according to result_header
             Columns ordered_columns;
             ordered_columns.reserve(result_header.columns());
@@ -233,9 +243,69 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
     task->initializeRangeReaders(all_prewhere_actions);
 }
 
-Block MergeTreeSelectProcessor::transformHeader(Block block, const PrewhereInfoPtr & prewhere_info)
+void MergeTreeSelectProcessor::injectLazilyReadColumns(
+    size_t rows,
+    Block & block,
+    MergeTreeReadTask * task,
+    const LazilyReadInfoPtr & lazily_read_info)
 {
-    return SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
+    if (!lazily_read_info)
+        return;
+
+    const auto & lazily_read_columns = lazily_read_info->lazily_read_columns;
+    if (rows)
+    {
+        ColumnPtr row_num_column =  block.getByName("_part_offset").column;
+        ColumnPtr part_num_column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
+        Columns columns(2);
+        columns[0] = row_num_column;
+        columns[1] = part_num_column;
+        bool create_empty_column_lazy = false;
+        for (auto column_with_type_and_name : lazily_read_columns)
+        {
+            if (create_empty_column_lazy)
+                column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
+            else
+            {
+                column_with_type_and_name.column = ColumnLazy::create(columns);
+                create_empty_column_lazy = true;
+            }
+            block.insert(column_with_type_and_name);
+        }
+    }
+    else
+    {
+        bool create_empty_column_lazy = false;
+        ColumnPtr row_num_column =  DataTypeUInt64().createColumn();
+        ColumnPtr part_num_column = DataTypeUInt64().createColumn();
+        Columns columns(2);
+        columns[0] = row_num_column;
+        columns[1] = part_num_column;
+        for (auto column_with_type_and_name : lazily_read_columns)
+        {
+            if (create_empty_column_lazy)
+                column_with_type_and_name.column = ColumnLazy::create();
+            else
+            {
+                column_with_type_and_name.column = ColumnLazy::create(columns);
+                create_empty_column_lazy = true;
+            }
+            block.insert(column_with_type_and_name);
+        }
+    }
+
+    if (lazily_read_info->remove_part_offset_column)
+        block.erase("_part_offset");
+}
+
+Block MergeTreeSelectProcessor::transformHeader(
+    Block block,
+    const LazilyReadInfoPtr & lazily_read_info,
+    const PrewhereInfoPtr & prewhere_info)
+{
+    auto transformed = SourceStepWithFilter::applyPrewhereActions(std::move(block), prewhere_info);
+    injectLazilyReadColumns(0, transformed, nullptr, lazily_read_info);
+    return transformed;
 }
 
 }

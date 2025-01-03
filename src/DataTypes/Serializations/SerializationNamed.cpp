@@ -76,13 +76,14 @@ void SerializationNamed::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationNamed::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
     addToPath(settings.path);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
     settings.path.pop_back();
 }
 
