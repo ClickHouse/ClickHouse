@@ -693,7 +693,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
         "",
     )
 
-    print(int(instance.query(f"SELECT count() FROM {TABLE_NAME}")))
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 150")
     default_upload_directory(
@@ -703,18 +703,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
         "",
     )
 
-    print(int(instance.query(f"SELECT count() FROM {TABLE_NAME}")))
-
-    write_iceberg_from_df(
-        spark,
-        generate_data(spark, 100, 200),
-        TABLE_NAME,
-        mode="upsert",
-        format_version=format_version,
-    )
-
-    print(int(instance.query(f"SELECT count() FROM {TABLE_NAME}")))
-
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 50
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])

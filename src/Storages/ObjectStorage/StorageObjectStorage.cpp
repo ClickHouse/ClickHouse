@@ -297,7 +297,8 @@ public:
                         max_block_size,
                         iterator_wrapper[path_iterator],
                         max_parsing_threads,
-                        need_only_count);
+                        need_only_count,
+                        false);
 
                     sources.emplace_back(std::move(source));
                     continue;
@@ -317,7 +318,8 @@ public:
                             max_block_size,
                             iterator_wrapper[path_iterator],
                             max_parsing_threads,
-                            need_only_count);
+                            need_only_count,
+                            false);
                         sources.emplace_back(std::move(source));
                         break;
                     }
@@ -339,7 +341,8 @@ public:
                                 max_block_size,
                                 iterator_wrapper[path_iterator],
                                 max_parsing_threads,
-                                false);
+                                false,
+                                true);
 
                             positional_delete_sources[source_id].push_back(source);
                         }
@@ -356,7 +359,8 @@ public:
                             max_block_size,
                             iterator_wrapper[path_iterator],
                             max_parsing_threads,
-                            false);
+                            false,
+                            true);
 
                         equality_delete_transforms.push_back(
                             [source](const Block & in_header) -> ProcessorPtr
