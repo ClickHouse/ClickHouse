@@ -1602,9 +1602,14 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             converted_columns.push_back(header.getByName(source_elem.name));
         }
-        else
+        else if (header.columns() == current_step_columns.size())
         {
             /// Virtual columns and columns read from Distributed tables (having different name but matched by position).
+            converted_columns.push_back(header.getByPosition(i));
+        }
+        else
+        {
+            /// Matching by name, but some columns are unneeded.
             converted_columns.push_back(source_elem);
         }
     }
