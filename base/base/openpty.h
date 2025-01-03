@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 /**
- * This funciton is taken from Musl with a few modifications.
+ * This function is taken from Musl with a few modifications.
  */
 int openpty(int *pm, int *ps, char *name, const struct termios *tio, const struct winsize *ws)
 {
