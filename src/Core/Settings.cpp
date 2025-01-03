@@ -6009,6 +6009,9 @@ Experimental data deduplication for SELECT queries based on part UUIDs
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine Iceberg
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
+Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+)", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
     DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(

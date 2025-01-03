@@ -110,6 +110,9 @@ public:
     Status prepare() override;
     void work() override;
 
+    ProcessorMemoryStats getMemoryStats() override;
+    bool spillOnSize(size_t bytes) override;
+
 private:
     JoinPtr join;
     Chunk chunk;
