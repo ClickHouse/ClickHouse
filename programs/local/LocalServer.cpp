@@ -875,7 +875,7 @@ void LocalServer::processConfig()
     }
 
     server_display_name = getClientConfiguration().getString("display_name", "");
-    prompt_by_server_display_name = getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) ");
+    getClientConfiguration().setString("prompt", getClientConfiguration().getRawString("prompt_by_server_display_name.default", ":) "));
 }
 
 

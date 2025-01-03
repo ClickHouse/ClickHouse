@@ -201,6 +201,8 @@ void Client::parseConnectionsCredentials(Poco::Util::AbstractConfiguration & con
         }
         if (config.has(prefix + ".accept-invalid-certificate"))
             config.setBool("accept-invalid-certificate", config.getBool(prefix + ".accept-invalid-certificate"));
+        if (config.has(prefix + ".prompt"))
+            config.setString("prompt", config.getString(prefix + ".prompt"));
     }
 
     if (!connection_name.empty() && !connection_found)
@@ -574,25 +576,34 @@ void Client::connect()
         }
     }
 
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-
-    Strings keys;
-    config().keys("prompt_by_server_display_name", keys);
-    for (const String & key : keys)
+    if (config().has("prompt"))
+        prompt = config().getString("prompt");
+    else if (config().has("prompt_by_server_display_name"))
     {
-        if (key != "default" && server_display_name.find(key) != std::string::npos)
+        if (config().has("prompt_by_server_display_name.default"))
+            prompt = config().getRawString("prompt_by_server_display_name.default");
+
+        Strings keys;
+        config().keys("prompt_by_server_display_name", keys);
+        for (const String & key : keys)
         {
-            prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
-            break;
+            if (key != "default" && server_display_name.find(key) != std::string::npos)
+            {
+                prompt = config().getRawString("prompt_by_server_display_name." + key);
+                break;
+            }
         }
     }
 
+    if (prompt.empty())
+        prompt = "{display_name} :) ";
+
     /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
     {
-        String unescaped_prompt_by_server_display_name;
-        ReadBufferFromString in(prompt_by_server_display_name);
-        readEscapedString(unescaped_prompt_by_server_display_name, in);
-        prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
+        String prompt_escaped;
+        ReadBufferFromString in(prompt);
+        readEscapedString(prompt_escaped, in);
+        prompt = std::move(prompt_escaped);
     }
 
     /// Prompt may contain the following substitutions in a form of {name}.
@@ -605,7 +616,7 @@ void Client::connect()
 
     /// Quite suboptimal.
     for (const auto & [key, value] : prompt_substitutions)
-        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+        boost::replace_all(prompt, "{" + key + "}", value);
 }
 
 
