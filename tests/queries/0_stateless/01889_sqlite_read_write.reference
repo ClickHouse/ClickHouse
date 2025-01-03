@@ -57,6 +57,13 @@ col1	Nullable(String)
 col2	Nullable(Int64)					
 col1	Nullable(String)					
 col2	Nullable(Int64)					
+SQLite truncated int64 value #73141
+clickhouse
+2147483648
+sqlite from clickhouse
+2147483648
+sqlite
+2147483648
 test path in clickhouse-local
 line1	1
 line2	2

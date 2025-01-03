@@ -111,6 +111,18 @@ ${CLICKHOUSE_CLIENT} --query="DESCRIBE TABLE sqlite_table3_inferred_function;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE sqlite_table3_inferred_engine;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE sqlite_table3_inferred_function;"
 
+${CLICKHOUSE_CLIENT} --query="select 'SQLite truncated int64 value #73141'";
+sqlite3 "${DB_PATH}" 'CREATE TABLE t0 (c0 INTEGER);'
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE t0 (c0 Int64) ENGINE = MergeTree() ORDER BY tuple();"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE t0 (c0) VALUES (2147483648);"
+${CLICKHOUSE_CLIENT} --query="select 'clickhouse'"
+${CLICKHOUSE_CLIENT} --query="SELECT t0.c0 FROM t0;"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO TABLE FUNCTION sqlite('${DB_PATH}', 't0') SELECT c0 FROM t0;"
+${CLICKHOUSE_CLIENT} --query="select 'sqlite from clickhouse'"
+${CLICKHOUSE_CLIENT} --query="SELECT tx.c0 FROM sqlite('${DB_PATH}', 't0') tx;"
+${CLICKHOUSE_CLIENT} --query="select 'sqlite'"
+sqlite3 "${DB_PATH}" 'SELECT c0 from t0;'
+
 sqlite3 "${DB_PATH2}" 'DROP TABLE IF EXISTS table1'
 sqlite3 "${DB_PATH2}" 'CREATE TABLE table1 (col1 text, col2 smallint);'
 sqlite3 "${DB_PATH2}" "INSERT INTO table1 VALUES ('line1', 1), ('line2', 2), ('line3', 3)"
