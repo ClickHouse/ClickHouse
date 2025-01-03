@@ -457,6 +457,8 @@ public:
     /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.
     static bool isEphemeralSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
+    static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
+
 protected:
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;
