@@ -244,10 +244,6 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
         cached_files_for_current_snapshot = std::nullopt;
     }
     current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
-    std::stringstream os;
-    metadata_object->stringify(os);
-    jsons_logging += os.str() + "\n\n\n\n\n";
-
     return true;
 }
 
