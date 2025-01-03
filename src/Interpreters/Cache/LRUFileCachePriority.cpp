@@ -317,8 +317,10 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
         return true;
     }
-
-    return false;
+    else
+    {
+        return false;
+    }
 }
 
 IFileCachePriority::CollectStatus LRUFileCachePriority::collectCandidatesForEviction(

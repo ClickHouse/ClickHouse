@@ -1,6 +1,4 @@
 set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
-set(LIBCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/libcxx")
-set(LIBCXX_GENERATED_INCLUDE_DIR "${LIBCXX_BINARY_DIR}/include/c++/v1")
 
 set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/algorithm.cpp"
@@ -8,45 +6,33 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/atomic.cpp"
 "${LIBCXX_SOURCE_DIR}/src/barrier.cpp"
 "${LIBCXX_SOURCE_DIR}/src/bind.cpp"
-"${LIBCXX_SOURCE_DIR}/src/call_once.cpp"
 "${LIBCXX_SOURCE_DIR}/src/charconv.cpp"
 "${LIBCXX_SOURCE_DIR}/src/chrono.cpp"
 "${LIBCXX_SOURCE_DIR}/src/condition_variable.cpp"
 "${LIBCXX_SOURCE_DIR}/src/condition_variable_destructor.cpp"
-"${LIBCXX_SOURCE_DIR}/src/error_category.cpp"
+"${LIBCXX_SOURCE_DIR}/src/debug.cpp"
 "${LIBCXX_SOURCE_DIR}/src/exception.cpp"
-"${LIBCXX_SOURCE_DIR}/src/experimental/keep.cpp"
-"${LIBCXX_SOURCE_DIR}/src/filesystem/directory_entry.cpp"
+"${LIBCXX_SOURCE_DIR}/src/experimental/memory_resource.cpp"
 "${LIBCXX_SOURCE_DIR}/src/filesystem/directory_iterator.cpp"
-"${LIBCXX_SOURCE_DIR}/src/filesystem/filesystem_clock.cpp"
-"${LIBCXX_SOURCE_DIR}/src/filesystem/filesystem_error.cpp"
 "${LIBCXX_SOURCE_DIR}/src/filesystem/int128_builtins.cpp"
 "${LIBCXX_SOURCE_DIR}/src/filesystem/operations.cpp"
-"${LIBCXX_SOURCE_DIR}/src/filesystem/path.cpp"
-"${LIBCXX_SOURCE_DIR}/src/fstream.cpp"
+"${LIBCXX_SOURCE_DIR}/src/format.cpp"
 "${LIBCXX_SOURCE_DIR}/src/functional.cpp"
 "${LIBCXX_SOURCE_DIR}/src/future.cpp"
 "${LIBCXX_SOURCE_DIR}/src/hash.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ios.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ios.instantiations.cpp"
 "${LIBCXX_SOURCE_DIR}/src/iostream.cpp"
+"${LIBCXX_SOURCE_DIR}/src/legacy_debug_handler.cpp"
 "${LIBCXX_SOURCE_DIR}/src/legacy_pointer_safety.cpp"
 "${LIBCXX_SOURCE_DIR}/src/locale.cpp"
 "${LIBCXX_SOURCE_DIR}/src/memory.cpp"
-"${LIBCXX_SOURCE_DIR}/src/memory_resource.cpp"
 "${LIBCXX_SOURCE_DIR}/src/mutex.cpp"
 "${LIBCXX_SOURCE_DIR}/src/mutex_destructor.cpp"
 "${LIBCXX_SOURCE_DIR}/src/new.cpp"
-"${LIBCXX_SOURCE_DIR}/src/new_handler.cpp"
-"${LIBCXX_SOURCE_DIR}/src/new_helpers.cpp"
 "${LIBCXX_SOURCE_DIR}/src/optional.cpp"
-"${LIBCXX_SOURCE_DIR}/src/ostream.cpp"
-"${LIBCXX_SOURCE_DIR}/src/print.cpp"
-# This file is needed only if LIBCXX_PSTL_CPU_BACKEND equals "libdispatch"
-# "${LIBCXX_SOURCE_DIR}/src/pstl/libdispatch.cpp"
 "${LIBCXX_SOURCE_DIR}/src/random.cpp"
 "${LIBCXX_SOURCE_DIR}/src/random_shuffle.cpp"
-"${LIBCXX_SOURCE_DIR}/src/regex.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ryu/d2fixed.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ryu/d2s.cpp"
 "${LIBCXX_SOURCE_DIR}/src/ryu/f2s.cpp"
@@ -54,29 +40,15 @@ set(SRCS
 "${LIBCXX_SOURCE_DIR}/src/stdexcept.cpp"
 "${LIBCXX_SOURCE_DIR}/src/string.cpp"
 "${LIBCXX_SOURCE_DIR}/src/strstream.cpp"
-# Don't compile anything non-Unix related.
-# "${LIBCXX_SOURCE_DIR}/src/support/ibm/mbsnrtowcs.cpp"
-# "${LIBCXX_SOURCE_DIR}/src/support/ibm/wcsnrtombs.cpp"
-# "${LIBCXX_SOURCE_DIR}/src/support/ibm/xlocale_zos.cpp"
-# "${LIBCXX_SOURCE_DIR}/src/support/win32/locale_win32.cpp"
-# "${LIBCXX_SOURCE_DIR}/src/support/win32/support.cpp"
-# "${LIBCXX_SOURCE_DIR}/src/support/win32/thread_win32.cpp"
 "${LIBCXX_SOURCE_DIR}/src/system_error.cpp"
 "${LIBCXX_SOURCE_DIR}/src/thread.cpp"
 "${LIBCXX_SOURCE_DIR}/src/typeinfo.cpp"
-"${LIBCXX_SOURCE_DIR}/src/tz.cpp"
-"${LIBCXX_SOURCE_DIR}/src/tzdb_list.cpp"
+"${LIBCXX_SOURCE_DIR}/src/utility.cpp"
 "${LIBCXX_SOURCE_DIR}/src/valarray.cpp"
 "${LIBCXX_SOURCE_DIR}/src/variant.cpp"
 "${LIBCXX_SOURCE_DIR}/src/vector.cpp"
 "${LIBCXX_SOURCE_DIR}/src/verbose_abort.cpp"
 )
-
-configure_file("${LIBCXX_SOURCE_DIR}/include/module.modulemap.in" "${LIBCXX_GENERATED_INCLUDE_DIR}/module.modulemap" @ONLY)
-set(generate-cxx-headers "${LIBCXX_GENERATED_INCLUDE_DIR}/module.modulemap")
-add_library(cxx-headers INTERFACE)
-add_dependencies(cxx-headers generate-cxx-headers)
-target_include_directories(cxx-headers INTERFACE ${LIBCXX_GENERATED_INCLUDE_DIR})
 
 add_library(cxx ${SRCS})
 set_target_properties(cxx PROPERTIES FOLDER "contrib/libcxx-cmake")
@@ -100,7 +72,6 @@ target_compile_options(cxx PRIVATE -w)
 # Enable support for Clang-Thread-Safety-Analysis in libcxx
 target_compile_definitions(cxx PUBLIC -D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS)
 
-target_link_libraries(cxx PUBLIC cxx-headers)
 target_link_libraries(cxx PUBLIC cxxabi)
 
 install(

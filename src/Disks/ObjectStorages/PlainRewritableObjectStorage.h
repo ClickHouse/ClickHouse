@@ -17,7 +17,7 @@ template <typename BaseObjectStorage>
 class PlainRewritableObjectStorage : public BaseObjectStorage
 {
 public:
-    template <typename... Args>
+    template <class... Args>
     explicit PlainRewritableObjectStorage(MetadataStorageMetrics && metadata_storage_metrics_, Args &&... args)
         : BaseObjectStorage(std::forward<Args>(args)...)
         , metadata_storage_metrics(std::move(metadata_storage_metrics_))

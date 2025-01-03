@@ -4,8 +4,6 @@ sidebar_position: 60
 sidebar_label: file
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
 # file
 
 A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/docs/en/sql-reference/table-functions/url.md) table function.  Use `file()` when working with local files, and `s3()` when working with buckets in object storage such as S3, GCS, or MinIO.
@@ -20,7 +18,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 **Parameters**
 
-- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
+- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
 - `path_to_archive` - The relative path to a zip/tar/7z archive. Supports the same globs as `path`.
 - `format` — The [format](/docs/en/interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.
@@ -105,7 +103,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-### Inserting data from a file into a table
+### Inserting data from a file into a table:
 
 ``` sql
 INSERT INTO FUNCTION
@@ -130,7 +128,7 @@ Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Globs in path
+## Globs in path 
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix. There is one exception that if the path refers to an existing
 directory and does not use globs, a `*` will be implicitly added to the path so
@@ -210,8 +208,6 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
-<ExperimentalBadge/>
-
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
 **Example**
@@ -219,6 +215,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ``` sql
+SET use_hive_partitioning = 1;
 SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 

@@ -26,7 +26,6 @@ public:
 
     MergeTreeReadPool(
         RangesInDataParts && parts_,
-        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -34,7 +33,6 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
-        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     ~MergeTreeReadPool() override = default;
