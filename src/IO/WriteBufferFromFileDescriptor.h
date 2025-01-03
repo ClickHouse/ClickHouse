@@ -30,6 +30,8 @@ public:
         fd = fd_;
     }
 
+    ~WriteBufferFromFileDescriptor() override;
+
     int getFD() const
     {
         return fd;

@@ -13,7 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 
 #include <algorithm>
 #include <iterator>
@@ -380,13 +379,4 @@ void KafkaConsumer2::resetIfStopped()
         stalled_status = StalledStatus::CONSUMER_STOPPED;
     }
 }
-
-std::size_t KafkaConsumer2::OnlyTopicNameAndPartitionIdHash::operator()(const TopicPartition & tp) const
-{
-    SipHash s;
-    s.update(tp.topic);
-    s.update(tp.partition_id);
-    return s.get64();
-}
-
 }
