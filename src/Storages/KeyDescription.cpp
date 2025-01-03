@@ -9,8 +9,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
 
@@ -28,7 +27,6 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
-    , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_column(other.additional_column)
 {
@@ -51,6 +49,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
     else
         expression_list_ast.reset();
 
+
     if (other.expression)
         expression = other.expression->clone();
     else
@@ -58,7 +57,6 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     sample_block = other.sample_block;
     column_names = other.column_names;
-    reverse_flags = other.reverse_flags;
     data_types = other.data_types;
 
     /// additional_column is constant property It should never be lost.
@@ -124,42 +122,22 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 {
     KeyDescription result;
     result.definition_ast = definition_ast;
-    auto key_expression_list = extractKeyExpressionList(definition_ast);
-
-    result.expression_list_ast = std::make_shared<ASTExpressionList>();
-    for (const auto & child : key_expression_list->children)
-    {
-        auto real_key = child;
-        if (auto * elem = child->as<ASTStorageOrderByElement>())
-        {
-            real_key = elem->children.front();
-            result.reverse_flags.emplace_back(elem->direction < 0);
-        }
-
-        result.expression_list_ast->children.push_back(real_key);
-        result.column_names.emplace_back(real_key->getColumnName());
-    }
+    result.expression_list_ast = extractKeyExpressionList(definition_ast);
 
     if (additional_column)
     {
         result.additional_column = additional_column;
         ASTPtr column_identifier = std::make_shared<ASTIdentifier>(*additional_column);
-        result.column_names.emplace_back(column_identifier->getColumnName());
         result.expression_list_ast->children.push_back(column_identifier);
-
-        if (!result.reverse_flags.empty())
-            result.reverse_flags.emplace_back(false);
     }
 
-    if (!result.reverse_flags.empty() && result.reverse_flags.size() != result.expression_list_ast->children.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "The size of reverse_flags ({}) does not match the size of KeyDescription {}",
-            result.reverse_flags.size(), result.expression_list_ast->children.size());
+    const auto & children = result.expression_list_ast->children;
+    for (const auto & child : children)
+        result.column_names.emplace_back(child->getColumnName());
 
     {
         auto expr = result.expression_list_ast->clone();
-        auto syntax_result = TreeRewriter(context).analyze(expr, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
+        auto syntax_result = TreeRewriter(context).analyze(expr, columns.getAllPhysical());
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns
@@ -173,39 +151,9 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
             throw Exception(ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
                             "Column {} with type {} is not allowed in key expression, it's not comparable",
                             backQuote(result.sample_block.getByPosition(i).name), result.data_types.back()->getName());
-
-        auto check = [&](const IDataType & type)
-        {
-            if (isDynamic(type) || isVariant(type))
-                throw Exception(
-                    ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_KEY,
-                    "Column with type Variant/Dynamic is not allowed in key expression. Consider using a subcolumn with a specific data "
-                    "type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type");
-        };
-
-        check(*result.data_types.back());
-        result.data_types.back()->forEachChild(check);
     }
 
     return result;
-}
-
-ASTPtr KeyDescription::getOriginalExpressionList() const
-{
-    if (!expression_list_ast || reverse_flags.empty())
-        return expression_list_ast;
-
-    auto expr_list = std::make_shared<ASTExpressionList>();
-    size_t size = expression_list_ast->children.size();
-    for (size_t i = 0; i < size; ++i)
-    {
-        auto column_ast = std::make_shared<ASTStorageOrderByElement>();
-        column_ast->children.push_back(expression_list_ast->children[i]);
-        column_ast->direction = (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1;
-        expr_list->children.push_back(std::move(column_ast));
-    }
-
-    return expr_list;
 }
 
 KeyDescription KeyDescription::buildEmptyKey()
@@ -216,13 +164,13 @@ KeyDescription KeyDescription::buildEmptyKey()
     return result;
 }
 
-KeyDescription KeyDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context, bool allow_order)
+KeyDescription KeyDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
 {
     KeyDescription result;
     if (str.empty())
         return result;
 
-    ParserStorageOrderByClause parser(allow_order);
+    ParserExpression parser;
     ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 

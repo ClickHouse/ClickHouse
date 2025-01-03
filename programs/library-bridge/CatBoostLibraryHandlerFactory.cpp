@@ -26,15 +26,17 @@ CatBoostLibraryHandlerPtr CatBoostLibraryHandlerFactory::tryGetModel(const Strin
 
     if (found)
         return handler->second;
-
-    if (create_if_not_found)
+    else
     {
-        auto new_handler = std::make_shared<CatBoostLibraryHandler>(library_path, model_path);
-        library_handlers.emplace(model_path, new_handler);
-        LOG_DEBUG(log, "Loaded catboost library handler for model path '{}'", model_path);
-        return new_handler;
+        if (create_if_not_found)
+        {
+            auto new_handler = std::make_shared<CatBoostLibraryHandler>(library_path, model_path);
+            library_handlers.emplace(model_path, new_handler);
+            LOG_DEBUG(log, "Loaded catboost library handler for model path '{}'", model_path);
+            return new_handler;
+        }
+        return nullptr;
     }
-    return nullptr;
 }
 
 void CatBoostLibraryHandlerFactory::removeModel(const String & model_path)

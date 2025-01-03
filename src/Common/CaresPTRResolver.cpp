@@ -153,7 +153,7 @@ namespace DB
                 {
                     continue;
                 }
-                if (poll_error)
+                else if (poll_error)
                 {
                     return false;
                 }

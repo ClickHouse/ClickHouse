@@ -21,10 +21,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_syntax_fuse_functions;
-}
 
 namespace ErrorCodes
 {
@@ -48,7 +44,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_syntax_fuse_functions])
+        if (!getSettings().optimize_syntax_fuse_functions)
             return;
 
         auto * function_node = node->as<FunctionNode>();
@@ -85,9 +81,10 @@ QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String
 }
 
 FunctionNodePtr createResolvedAggregateFunction(
-    const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {})
+    const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {}, NullsAction action = NullsAction::EMPTY)
 {
     auto function_node = std::make_shared<FunctionNode>(name);
+    function_node->setNullsAction(action);
 
     if (!parameters.empty())
     {
@@ -99,7 +96,7 @@ FunctionNodePtr createResolvedAggregateFunction(
     function_node->getArguments().getNodes() = { argument };
 
     AggregateFunctionProperties properties;
-    auto aggregate_function = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, {argument->getResultType()}, parameters, properties);
+    auto aggregate_function = AggregateFunctionFactory::instance().get(name, action, {argument->getResultType()}, parameters, properties);
     function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;

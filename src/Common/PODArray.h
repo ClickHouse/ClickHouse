@@ -621,12 +621,12 @@ public:
         {
             return;
         }
-        if (!this->isInitialized() && rhs.isInitialized())
+        else if (!this->isInitialized() && rhs.isInitialized())
         {
             do_move(rhs, *this);
             return;
         }
-        if (this->isInitialized() && !rhs.isInitialized())
+        else if (this->isInitialized() && !rhs.isInitialized())
         {
             do_move(*this, rhs);
             return;
