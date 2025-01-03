@@ -337,7 +337,7 @@ And so on, all overflow will be clamped to zero
             {"from_table", "SELECT mortonEncode(n1, n2) FROM table", ""},
             {"from_table_range", "SELECT mortonEncode((1,2), n1, n2) FROM table", ""},
             },
-        .categories {"ZCurve", "Morton coding"}
+        .category {"Encoding"}
     });
 }
 

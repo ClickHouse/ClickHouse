@@ -1595,7 +1595,7 @@ Consecutively adds a tuple of intervals to a Date or a DateTime.
             .examples{
                 {"tuple", "WITH toDate('2018-01-01') AS date SELECT addTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            .categories{"Tuple", "Interval", "Date", "DateTime"}
+            .category{"Dates and Times"}
         });
 
     factory.registerFunction<FunctionSubtractTupleOfIntervals>(FunctionDocumentation
@@ -1607,7 +1607,7 @@ Consecutively subtracts a tuple of intervals from a Date or a DateTime.
             .examples{
                 {"tuple", "WITH toDate('2018-01-01') AS date SELECT subtractTupleOfIntervals(date, (INTERVAL 1 DAY, INTERVAL 1 YEAR))", ""},
                 },
-            .categories{"Tuple", "Interval", "Date", "DateTime"}
+            .category{"Dates and Times"}
         });
 
     factory.registerFunction<FunctionTupleAddInterval>(FunctionDocumentation
@@ -1625,7 +1625,7 @@ If the types of the first interval (or the interval in the tuple) and the second
                 {"interval1", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
                 {"interval2", "SELECT addInterval(INTERVAL 1 DAY, INTERVAL 1 DAY)", ""},
                 },
-            .categories{"Tuple", "Interval"}
+            .category{"Dates and Times"}
         });
     factory.registerFunction<FunctionTupleSubtractInterval>(FunctionDocumentation
         {
@@ -1642,7 +1642,7 @@ If the types of the first interval (or the interval in the tuple) and the second
                 {"interval1", "SELECT subtractInterval(INTERVAL 1 DAY, INTERVAL 1 MONTH)", ""},
                 {"interval2", "SELECT subtractInterval(INTERVAL 2 DAY, INTERVAL 1 DAY)", ""},
                 },
-            .categories{"Tuple", "Interval"}
+            .category{"Dates and Times"}
         });
 
     factory.registerFunction<FunctionTupleMultiplyByNumber>();

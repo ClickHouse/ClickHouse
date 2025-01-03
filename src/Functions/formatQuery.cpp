@@ -198,7 +198,7 @@ REGISTER_FUNCTION(formatQuery)
                  "    b\n"
                  "FROM tab\n"
                  "WHERE (a > 3) AND (b < 3)"}},
-            .categories{"Other"}});
+            .category{"Other"}});
 }
 
 REGISTER_FUNCTION(formatQueryOrNull)
@@ -219,7 +219,7 @@ REGISTER_FUNCTION(formatQueryOrNull)
                  "    b\n"
                  "FROM tab\n"
                  "WHERE (a > 3) AND (b < 3)"}},
-            .categories{"Other"}});
+            .category{"Other"}});
 }
 
 REGISTER_FUNCTION(formatQuerySingleLine)
@@ -236,7 +236,7 @@ REGISTER_FUNCTION(formatQuerySingleLine)
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
-            .categories{"Other"}});
+            .category{"Other"}});
 }
 
 REGISTER_FUNCTION(formatQuerySingleLineOrNull)
@@ -253,7 +253,7 @@ REGISTER_FUNCTION(formatQuerySingleLineOrNull)
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
-            .categories{"Other"}});
+            .category{"Other"}});
 }
 
 }
