@@ -140,6 +140,7 @@ void ExceptionKeepingTransform::work()
             ready_output = true;
             data.exception = exception;
             onException(data.exception);
+            cancel();
         }
     }
     else if (stage == Stage::Consume || stage == Stage::Generate)
@@ -154,6 +155,7 @@ void ExceptionKeepingTransform::work()
                 ready_output = true;
                 data.exception = exception;
                 onException(data.exception);
+                cancel();
             }
             else
                 stage = Stage::Generate;
@@ -168,6 +170,7 @@ void ExceptionKeepingTransform::work()
                 ready_output = true;
                 data.exception = exception;
                 onException(data.exception);
+                cancel();
             }
             else
             {
@@ -190,6 +193,7 @@ void ExceptionKeepingTransform::work()
             ready_output = true;
             data.exception = exception;
             onException(data.exception);
+            cancel();
         }
     }
 }
