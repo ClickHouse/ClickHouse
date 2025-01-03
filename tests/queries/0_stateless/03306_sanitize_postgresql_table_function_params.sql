@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest because support for PostgreSQL is not included for fast tests
+
 SELECT '--Some statements that should throw argument exception because they do not have valid parameters';
 
 SELECT '--Database name should be valid';
