@@ -26,6 +26,7 @@ void registerTableFunctions()
     registerTableFunctionMongoDB(factory);
 #endif
     registerTableFunctionRedis(factory);
+    registerTableFunctionArrowFlight(factory);
     registerTableFunctionMergeTreeIndex(factory);
     registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionFuzzQuery(factory);

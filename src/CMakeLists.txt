@@ -756,3 +756,5 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 endif ()
+
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::arrow)
