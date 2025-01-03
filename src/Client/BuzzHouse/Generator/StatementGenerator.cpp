@@ -1,11 +1,7 @@
-#include <RandomSettings.h>
-#include <SQLCatalog.h>
-#include <SQLTypes.h>
-#include <StatementGenerator.h>
-
-#include <algorithm>
-#include <cstdint>
-#include <optional>
+#include <Client/BuzzHouse/Generator/RandomSettings.h>
+#include <Client/BuzzHouse/Generator/SQLCatalog.h>
+#include <Client/BuzzHouse/Generator/SQLTypes.h>
+#include <Client/BuzzHouse/Generator/StatementGenerator.h>
 
 namespace BuzzHouse
 {

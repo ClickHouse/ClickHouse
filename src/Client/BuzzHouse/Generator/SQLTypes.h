@@ -1,7 +1,7 @@
 #pragma once
 
-#include <RandomGenerator.h>
-#include <SQLProtoStr.h>
+#include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
 #include <memory>
 #include <optional>

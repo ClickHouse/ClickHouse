@@ -1,5 +1,5 @@
-#include <HugeInt.h>
-#include <UHugeInt.h>
+#include <Client/BuzzHouse/Utils/HugeInt.h>
+#include <Client/BuzzHouse/Utils/UHugeInt.h>
 
 #include <cassert>
 #include <cmath>

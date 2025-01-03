@@ -1,8 +1,7 @@
-#include <SQLCatalog.h>
-#include <SQLFuncs.h>
-#include <SQLTypes.h>
-#include <StatementGenerator.h>
-
+#include <Client/BuzzHouse/Generator/SQLCatalog.h>
+#include <Client/BuzzHouse/Generator/SQLFuncs.h>
+#include <Client/BuzzHouse/Generator/SQLTypes.h>
+#include <Client/BuzzHouse/Generator/StatementGenerator.h>
 
 namespace BuzzHouse
 {

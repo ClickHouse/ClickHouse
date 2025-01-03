@@ -14,10 +14,10 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #if USE_BUZZHOUSE
-#    include <QueryOracle.h>
-#    include <SQLProtoStr.h>
-#    include <StatementGenerator.h>
-#    include <SystemTables.h>
+#    include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#    include <Client/BuzzHouse/Generator/QueryOracle.h>
+#    include <Client/BuzzHouse/Generator/StatementGenerator.h>
+#    include <Client/BuzzHouse/Generator/SystemTables.h>
 #endif
 
 namespace DB

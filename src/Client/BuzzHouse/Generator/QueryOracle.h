@@ -1,8 +1,8 @@
 #pragma once
 
-#include <RandomGenerator.h>
-#include <StatementGenerator.h>
-#include <MD5Impl.h>
+#include <Client/BuzzHouse/Generator/RandomGenerator.h>
+#include <Client/BuzzHouse/Generator/StatementGenerator.h>
+#include <Client/BuzzHouse/Utils/MD5Impl.h>
 
 namespace BuzzHouse
 {

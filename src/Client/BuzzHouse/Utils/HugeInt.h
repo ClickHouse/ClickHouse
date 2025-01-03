@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-#include <Nlimits.h>
+#include <Client/BuzzHouse/Utils/Nlimits.h>
 
 namespace BuzzHouse
 {

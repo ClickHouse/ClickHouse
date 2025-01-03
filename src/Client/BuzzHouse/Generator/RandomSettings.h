@@ -1,8 +1,8 @@
 #pragma once
 
-#include <FuzzConfig.h>
-#include <RandomGenerator.h>
-#include <SQLProtoStr.h>
+#include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
 #include <cstdint>
 #include <functional>

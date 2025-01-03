@@ -1,4 +1,4 @@
-#include <QueryOracle.h>
+#include <Client/BuzzHouse/Generator/QueryOracle.h>
 
 #include <cstdio>
 

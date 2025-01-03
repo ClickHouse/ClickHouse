@@ -1,4 +1,4 @@
-#include <SystemTables.h>
+#include <Client/BuzzHouse/Generator/SystemTables.h>
 
 namespace BuzzHouse
 {

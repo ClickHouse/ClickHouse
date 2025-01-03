@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <SQLProtoStr.h>
+#include <Client/BuzzHouse/AST/SQLProtoStr.h>
 
 namespace BuzzHouse
 {

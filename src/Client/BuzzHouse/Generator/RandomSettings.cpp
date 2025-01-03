@@ -1,4 +1,4 @@
-#include <RandomSettings.h>
+#include <Client/BuzzHouse/Generator/RandomSettings.h>
 
 namespace BuzzHouse
 {

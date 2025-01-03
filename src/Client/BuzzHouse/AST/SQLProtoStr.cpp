@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <limits>
 
-#include <HugeInt.h>
-#include <SQLProtoStr.h>
-#include <UHugeInt.h>
+#include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#include <Client/BuzzHouse/Utils/HugeInt.h>
+#include <Client/BuzzHouse/Utils/UHugeInt.h>
 
 #define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const TYPE &(VAR_NAME))
 #define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const uint32_t quote, const TYPE &(VAR_NAME))

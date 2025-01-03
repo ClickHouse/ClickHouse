@@ -1,5 +1,3 @@
-#include <ExternalIntegrations.h>
-
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
@@ -8,8 +6,9 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-#include <HugeInt.h>
-#include <UHugeInt.h>
+#include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#include <Client/BuzzHouse/Utils/HugeInt.h>
+#include <Client/BuzzHouse/Utils/UHugeInt.h>
 
 #include <IO/copyData.h>
 #include <Common/ShellCommand.h>

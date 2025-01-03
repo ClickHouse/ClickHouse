@@ -1,6 +1,6 @@
 #pragma once
 
-#include <SQLTypes.h>
+#include <Client/BuzzHouse/Generator/SQLTypes.h>
 
 namespace BuzzHouse
 {

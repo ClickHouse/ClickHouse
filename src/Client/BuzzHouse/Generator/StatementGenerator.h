@@ -1,10 +1,9 @@
 #pragma once
 
-#include <ExternalIntegrations.h>
-#include <RandomGenerator.h>
-#include <RandomSettings.h>
-#include <SQLCatalog.h>
-
+#include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#include <Client/BuzzHouse/Generator/RandomGenerator.h>
+#include <Client/BuzzHouse/Generator/RandomSettings.h>
+#include <Client/BuzzHouse/Generator/SQLCatalog.h>
 
 namespace BuzzHouse
 {

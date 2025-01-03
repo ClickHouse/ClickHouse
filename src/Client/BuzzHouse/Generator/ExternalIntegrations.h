@@ -2,8 +2,8 @@
 
 #include "config.h"
 
-#include <FuzzConfig.h>
-#include <SQLCatalog.h>
+#include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#include <Client/BuzzHouse/Generator/SQLCatalog.h>
 
 #if USE_MYSQL
 #    if __has_include(<mysql.h>)
