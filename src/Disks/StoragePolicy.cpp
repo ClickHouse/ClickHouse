@@ -113,6 +113,22 @@ StoragePolicy::StoragePolicy(
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
                         toString(move_factor), backQuote(name));
 
+    auto move_policy_str = config.getString(config_prefix + ".move_policy", "by_part_size");
+    if (move_policy_str == "by_part_size")
+    {
+        move_policy = IStoragePolicy::MovePolicy::BY_PART_SIZE;
+    }
+    else if (move_policy_str == "experimental_by_insert_data_time")
+    {
+        move_policy = IStoragePolicy::MovePolicy::BY_INSERT_DATA_TIME;
+    }
+    else
+    {
+        throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "Unknown values of move_policy parameter.");
+    }
+
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }

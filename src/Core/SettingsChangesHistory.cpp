@@ -621,6 +621,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
+            {"allow_generate_min_max_data_insert_file", false, false, "New setting."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {

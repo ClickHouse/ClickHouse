@@ -45,6 +45,7 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
             {"volume_type", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeType>()), "The type of the volume - JBOD or a single disk."},
             {"max_data_part_size", std::make_shared<DataTypeUInt64>(), "the maximum size of a part that can be stored on any of the volumes disks."},
             {"move_factor", std::make_shared<DataTypeFloat32>(), "When the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1)."},
+            {"move_policy", std::make_shared<DataTypeEnum8>(getTypeEnumValues<IStoragePolicy::MovePolicy>()), "Policy for selecting parts for move to the next volume, `by_part_size` or `experimental_by_insert_data_time`."},
             {"prefer_not_to_merge", std::make_shared<DataTypeUInt8>(), "You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation)."},
             {"perform_ttl_move_on_insert", std::make_shared<DataTypeUInt8>(), "Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule."},
             {"load_balancing", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeLoadBalancing>()), "Policy for disk balancing, `round_robin` or `least_used`."}
@@ -71,6 +72,7 @@ Pipe StorageSystemStoragePolicies::read(
     MutableColumnPtr col_volume_type = ColumnInt8::create();
     MutableColumnPtr col_max_part_size = ColumnUInt64::create();
     MutableColumnPtr col_move_factor = ColumnFloat32::create();
+    MutableColumnPtr col_move_policy = ColumnInt8::create();
     MutableColumnPtr col_prefer_not_to_merge = ColumnUInt8::create();
     MutableColumnPtr col_perform_ttl_move_on_insert = ColumnUInt8::create();
     MutableColumnPtr col_load_balancing = ColumnInt8::create();
@@ -91,6 +93,7 @@ Pipe StorageSystemStoragePolicies::read(
             col_volume_type->insert(static_cast<Int8>(volumes[i]->getType()));
             col_max_part_size->insert(volumes[i]->max_data_part_size);
             col_move_factor->insert(policy_ptr->getMoveFactor());
+            col_move_policy->insert(static_cast<Int8>(policy_ptr->getMovePolicy()));
             col_prefer_not_to_merge->insert(volumes[i]->areMergesAvoided() ? 1 : 0);
             col_perform_ttl_move_on_insert->insert(volumes[i]->perform_ttl_move_on_insert);
             col_load_balancing->insert(static_cast<Int8>(volumes[i]->load_balancing));
@@ -105,6 +108,7 @@ Pipe StorageSystemStoragePolicies::read(
     res_columns.emplace_back(std::move(col_volume_type));
     res_columns.emplace_back(std::move(col_max_part_size));
     res_columns.emplace_back(std::move(col_move_factor));
+    res_columns.emplace_back(std::move(col_move_policy));
     res_columns.emplace_back(std::move(col_prefer_not_to_merge));
     res_columns.emplace_back(std::move(col_perform_ttl_move_on_insert));
     res_columns.emplace_back(std::move(col_load_balancing));
