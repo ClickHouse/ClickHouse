@@ -38,7 +38,7 @@ DROP TABLE table2;
 
 ## Settings
 
-You may need to adjust [parallel_with_query_max_threads](../../operations/settings/settings.md#parallel_with_query_max_threads) to specify how many threads are used.
+Setting [max_threads](../../operations/settings/settings.md#max_threads) controls how many threads are spawned.
 
 ## Comparison with UNION
 

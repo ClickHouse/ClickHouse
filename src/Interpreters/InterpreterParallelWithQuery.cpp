@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 parallel_with_query_max_threads;
+    extern const SettingsMaxThreads max_threads;
 }
 
 
@@ -37,10 +37,13 @@ InterpreterParallelWithQuery::InterpreterParallelWithQuery(const ASTPtr & query_
 
 BlockIO InterpreterParallelWithQuery::execute()
 {
-    ASTParallelWithQuery & parallel_with_query = query->as<ASTParallelWithQuery &>();
+    const auto & parallel_with_query = query->as<const ASTParallelWithQuery &>();
+    const auto & subqueries = parallel_with_query.children;
 
     const auto & settings = getContext()->getSettingsRef();
-    size_t max_threads = settings[Setting::parallel_with_query_max_threads];
+    size_t max_threads = settings[Setting::max_threads];
+
+    LOG_TRACE(log, "Executing {} subqueries in {} threads", subqueries.size(), max_threads);
 
     ThreadPoolCallbackRunnerUnsafe<void> schedule;
     std::unique_ptr<ThreadPool> thread_pool;
@@ -55,32 +58,15 @@ BlockIO InterpreterParallelWithQuery::execute()
         schedule = threadPoolCallbackRunnerUnsafe<void>(*thread_pool, "ParallelWithQry");
     }
 
-    std::vector<std::future<void>> futures_to_wait;
-
-    auto & subqueries = parallel_with_query.children;
-    checkSubqueries(subqueries);
     executeSubqueries(subqueries, schedule);
     waitFutures(/* throw_if_error = */ true);
+    waitBigPipeline();
 
     return {};
 }
 
 
-void InterpreterParallelWithQuery::checkSubqueries(ASTs & subqueries)
-{
-    for (const auto & subquery : subqueries)
-    {
-        if (subquery->getQueryKind() == IAST::QueryKind::Select)
-        {
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Select queries can't be combined using PARALLEL WITH clause. "
-                            "Use UNION ALL to combine select queries");
-        }
-    }
-}
-
-
-void InterpreterParallelWithQuery::executeSubqueries(ASTs & subqueries, ThreadPoolCallbackRunnerUnsafe<void> schedule)
+void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries, ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
     for (const auto & subquery : subqueries)
     {
@@ -124,18 +110,39 @@ void InterpreterParallelWithQuery::executeSubqueries(ASTs & subqueries, ThreadPo
 
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
-    /// TODO: Special processing for ON CLUSTER queries and also for queries related to a replicated database is required.
     auto query_io = executeQuery(queryToString(subquery), subquery_context, QueryFlags{ .internal = true }).second;
     auto & pipeline = query_io.pipeline;
-    if (pipeline.initialized())
+
+    if (!pipeline.initialized())
     {
-        CompletedPipelineExecutor executor(pipeline);
-        executor.execute();
+        /// The subquery interpreter (called by executeQuery()) has already done all the work.
+        return;
     }
-    else
+
+    if (!pipeline.completed())
     {
-        /// pipeline.initialized() == false if it's a query without input and output.
+        /// We allow only queries without input and output to be combined using PARALLEL WITH clause.
+        String reason;
+        if (pipeline.pushing() && pipeline.pulling())
+            reason = "has both input and output";
+        else if (pipeline.pushing())
+            reason = "has input";
+        else if (pipeline.pulling())
+            reason = "has output";
+        chassert(!reason.empty());
+
+        if (subquery->getQueryKind() == IAST::QueryKind::Select)
+            reason += " (Use UNION to combine select queries)";
+
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Query {} can't be combined with other queries using PARALLEL WITH clause because this query {}",
+                        subquery->formatForLogging(), reason);
     }
+
+    chassert(pipeline.completed());
+    std::lock_guard lock{mutex};
+    big_pipeline.addCompletedPipeline(std::move(pipeline));
+
+    /// TODO: Special processing for ON CLUSTER queries and also for queries related to a replicated database is required.
 }
 
 
@@ -167,6 +174,18 @@ void InterpreterParallelWithQuery::waitFutures(bool throw_if_error)
 
     futures.clear();
 }
+
+
+void InterpreterParallelWithQuery::waitBigPipeline()
+{
+    std::lock_guard lock{mutex};
+    if (!big_pipeline.initialized())
+        return; /// `big_pipeline` is empty, skipping
+
+    CompletedPipelineExecutor executor(big_pipeline);
+    executor.execute();
+}
+
 
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory)
 {
