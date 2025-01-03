@@ -1531,6 +1531,15 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     ActionsDAG::MatchColumnsMode convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Name;
 
+    /* Output headers may differ from what StorageMerge expects in some cases.
+     * When the child table engine produces a query plan for the stage after FetchColumns,
+     * execution names in the output header may be different.
+     * The same happens with StorageDistributed, even in the case of FetchColumns.
+     */
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+        && (child.stage != QueryProcessingStage::FetchColumns || dynamic_cast<const StorageDistributed *>(&snapshot->storage) != nullptr))
+        convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+
     if (row_policy_data_opt)
         row_policy_data_opt->addFilterTransform(child.plan);
 
