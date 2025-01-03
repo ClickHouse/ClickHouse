@@ -95,12 +95,8 @@ def send_cmd(node_name, command="ruok"):
 
 
 def test_allow_list(started_cluster):
-    client = None
-    try:
-        wait_nodes()
-        assert send_cmd(node1.name) == "imok"
-        assert send_cmd(node1.name, command="mntr") == ""
-        assert send_cmd(node2.name) == "imok"
-        assert send_cmd(node3.name) == "imok"
-    finally:
-        close_keeper_socket(client)
+    wait_nodes()
+    assert send_cmd(node1.name) == "imok"
+    assert send_cmd(node1.name, command="mntr") == ""
+    assert send_cmd(node2.name) == "imok"
+    assert send_cmd(node3.name) == "imok"

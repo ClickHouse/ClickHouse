@@ -70,11 +70,6 @@ def get_keeper_socket(node_name):
     return client
 
 
-def close_keeper_socket(cli):
-    if cli is not None:
-        cli.close()
-
-
 def write_buffer(bytes):
     if bytes is None:
         return int_struct.pack(-1)
