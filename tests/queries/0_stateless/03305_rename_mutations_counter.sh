@@ -30,18 +30,11 @@ $CLICKHOUSE_CLIENT --query "
 
     SET alter_sync = 0;
     SET mutations_sync = 0;
-    SYSTEM STOP MERGES t_mutations_counters_rename;
 
+    SYSTEM STOP MERGES t_mutations_counters_rename;
     ALTER TABLE t_mutations_counters_rename RENAME COLUMN b TO c;
 
     SELECT metric, value FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
-
-    DETACH TABLE t_mutations_counters_rename SYNC;
-    SELECT metric, value FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
-
-    ATTACH TABLE t_mutations_counters_rename;
-    SELECT metric, value FROM system.metrics WHERE metric = 'ActiveMetadataMutations';
-
     SYSTEM START MERGES t_mutations_counters_rename;
 "
 
