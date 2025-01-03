@@ -7,6 +7,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <base/scope_guard.h>
 
 
 namespace ProfileEvents
@@ -225,9 +226,12 @@ bool ObjectStorageQueueIFileMetadata::setProcessing()
     auto state = file_status->state.load();
     if (state == FileStatus::State::Processing
         || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed && file_status->retries >= max_loading_retries))
+        || (state == FileStatus::State::Failed
+            && file_status->retries
+            && file_status->retries >= max_loading_retries))
     {
-        LOG_TEST(log, "File {} has non-processable state `{}`", path, file_status->state.load());
+        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                 path, file_status->state.load(), file_status->retries, max_loading_retries);
         return false;
     }
 
@@ -260,13 +264,73 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     if (state != FileStatus::State::Processing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset non-processing state: {}", state);
 
-    resetProcessingImpl();
-    file_status->reset();
-}
+    SCOPE_EXIT({
+        file_status->reset();
+    });
 
-void ObjectStorageQueueIFileMetadata::resetProcessingImpl()
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "resetProcessingImpl is not implemented");
+    if (!processing_id_version.has_value())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "No processing id version set, but state is `Processing` ({})",
+            node_metadata.toString());
+    }
+
+    static constexpr size_t check_processing_id_path_idx = 0;
+    static constexpr size_t remove_processing_id_path_idx = 1;
+    static constexpr size_t remove_processing_path_idx = 2;
+
+    Coordination::Requests requests;
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+    Coordination::Responses responses;
+    const auto zk_client = getZooKeeper();
+    const auto code = zk_client->tryMulti(requests, responses);
+    if (code == Coordination::Error::ZOK)
+        return;
+
+    auto is_request_failed = [&](size_t idx)
+    {
+        chassert(idx < responses.size());
+        return responses[idx]->error != Coordination::Error::ZOK;
+    };
+
+    bool unexpected_error = false;
+    std::string failure_reason;
+
+    if (Coordination::isHardwareError(code))
+    {
+        failure_reason = "Lost connection to keeper";
+    }
+    else if (is_request_failed(check_processing_id_path_idx))
+    {
+        /// This is normal in case of expired session with keeper.
+        failure_reason = "Version of processing id node changed";
+    }
+    else if (is_request_failed(remove_processing_id_path_idx))
+    {
+        /// Remove processing_id node should not actually fail
+        /// because we just checked in a previous keeper request that it exists and has a certain version.
+        unexpected_error = true;
+        failure_reason = "Failed to remove processing id path";
+    }
+    else if (is_request_failed(remove_processing_path_idx))
+    {
+        /// This is normal in case of expired session with keeper as this node is ephemeral.
+        failure_reason = "Failed to remove processing path";
+    }
+    else
+    {
+        /// Unreachable branch.
+        chassert(false);
+        unexpected_error = true;
+    }
+
+    if (unexpected_error)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", failure_reason);
+
+    LOG_TRACE(log, "Cannot reset processing for {}. Code: {}. Reason: {}", path, code, failure_reason);
 }
 
 void ObjectStorageQueueIFileMetadata::setProcessed()
@@ -298,9 +362,6 @@ void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_me
               path, failed_node_path, reduce_retry_count, exception_message);
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
-    if (overwrite_status || file_status->state != FileStatus::State::Failed)
-        file_status->onFailed(exception_message);
-
     node_metadata.last_exception = exception_message;
 
     if (reduce_retry_count)
@@ -322,6 +383,13 @@ void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_me
             throw;
         }
     }
+    else
+    {
+        resetProcessing();
+    }
+
+    if (overwrite_status || file_status->state != FileStatus::State::Failed)
+        file_status->onFailed(exception_message);
 
     processing_id.reset();
     processing_id_version.reset();
