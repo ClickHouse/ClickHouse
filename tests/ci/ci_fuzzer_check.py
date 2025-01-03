@@ -25,11 +25,16 @@ def get_run_command(
     workspace_path: Path,
     ci_logs_args: str,
     image: DockerImage,
+    check_name: str,
 ) -> str:
+    fuzzer_name = (
+        "BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"
+    )
     envs = [
         f"-e PR_TO_TEST={pr_info.number}",
         f"-e SHA_TO_TEST={pr_info.sha}",
         f"-e BINARY_URL_TO_DOWNLOAD='{build_url}'",
+        f"-e FUZZER_TO_RUN='{fuzzer_name}'",
     ]
 
     env_str = " ".join(envs)
@@ -89,11 +94,7 @@ def main():
     )
 
     run_command = get_run_command(
-        pr_info,
-        build_url,
-        workspace_path,
-        ci_logs_args,
-        docker_image,
+        pr_info, build_url, workspace_path, ci_logs_args, docker_image, check_name
     )
     logging.info("Going to run %s", run_command)
 
@@ -137,6 +138,15 @@ def main():
         not_compressed_fuzzer_log_path = workspace_path / "fuzzer.log"
         if not_compressed_fuzzer_log_path.exists():
             paths["fuzzer.log"] = not_compressed_fuzzer_log_path
+
+    # Same idea but with the fuzzer output SQL
+    compressed_fuzzer_output_sql_path = workspace_path / "fuzzer_out.sql.zst"
+    if compressed_fuzzer_output_sql_path.exists():
+        paths["fuzzer_out.sql.zst"] = compressed_fuzzer_output_sql_path
+    else:
+        not_compressed_fuzzer_output_sql_path = workspace_path / "fuzzer_out.sql"
+        if not_compressed_fuzzer_output_sql_path.exists():
+            paths["fuzzer_out.sql"] = not_compressed_fuzzer_output_sql_path
 
     # Try to get status message saved by the fuzzer
     try:

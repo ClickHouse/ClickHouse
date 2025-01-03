@@ -601,7 +601,7 @@ try
     if (!initial_query.empty())
         processQueryText(initial_query);
 
-#if defined(FUZZING_MODE)
+#if USE_FUZZING_MODE
     runLibFuzzer();
 #else
     if (is_interactive && !delayed_interactive)
