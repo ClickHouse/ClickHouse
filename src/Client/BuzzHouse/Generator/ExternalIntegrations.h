@@ -202,7 +202,7 @@ public:
 
         if (!(mcon = mysql_init(nullptr)))
         {
-            std::cerr << "Could not initialize MySQL handle" << std::endl;
+            LOG_ERROR(fcc.log, "Could not initialize MySQL handle");
         }
         else if (!mysql_real_connect(
                      mcon,
@@ -214,7 +214,7 @@ public:
                      scc.unix_socket.empty() ? nullptr : scc.unix_socket.c_str(),
                      0))
         {
-            std::cerr << server << " connection error: " << mysql_error(mcon) << std::endl;
+            LOG_ERROR(fcc.log, "{} connection error: {}", server, mysql_error(mcon));
             mysql_close(mcon);
         }
         else
@@ -225,7 +225,7 @@ public:
                 || (mysql->performQuery("DROP DATABASE IF EXISTS " + scc.database + ";")
                     && mysql->performQuery("CREATE DATABASE " + scc.database + ";")))
             {
-                std::cout << "Connected to " << server << std::endl;
+                LOG_INFO(fcc.log, "Connected to {}", server);
                 return mysql;
             }
             else
@@ -277,13 +277,13 @@ public:
     {
         if (!mysql_connection)
         {
-            std::cerr << "Not connected to MySQL" << std::endl;
+            LOG_ERROR(fc.log, "Not connected to MySQL");
             return false;
         }
         out_file << query << std::endl;
         if (mysql_query(mysql_connection, query.c_str()))
         {
-            std::cerr << "MySQL query: " << query << std::endl << "Error: " << mysql_error(mysql_connection) << std::endl;
+            LOG_ERROR(fc.log, "MySQL query: {} Error: {}", query, mysql_error(mysql_connection));
             return false;
         }
         return true;
@@ -302,9 +302,9 @@ public:
 public:
     MySQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static MySQLIntegration * TestAndAddMySQLConnection(const FuzzConfig &, const ServerCredentials &, const bool, const std::string &)
+    static MySQLIntegration * TestAndAddMySQLConnection(const FuzzConfig & fcc, const ServerCredentials &, const bool, const std::string &)
     {
-        std::cout << "ClickHouse not compiled with MySQL connector, skipping MySQL integration" << std::endl;
+        LOG_INFO(fcc.log, "ClickHouse not compiled with MySQL connector, skipping MySQL integration");
         return nullptr;
     }
 
@@ -385,21 +385,21 @@ public:
         {
             if (!(pcon = new pqxx::connection(connection_str)))
             {
-                std::cerr << "Could not initialize PostgreSQL handle" << std::endl;
+                LOG_ERROR(fcc.log, "Could not initialize PostgreSQL handle");
             }
             else
             {
                 psql = new PostgreSQLIntegration(fcc, scc, pcon);
                 if (read_log || (psql->performQuery("DROP SCHEMA IF EXISTS test CASCADE;") && psql->performQuery("CREATE SCHEMA test;")))
                 {
-                    std::cout << "Connected to PostgreSQL" << std::endl;
+                    LOG_INFO(fcc.log, "Connected to PostgreSQL");
                     return psql;
                 }
             }
         }
         catch (std::exception const & e)
         {
-            std::cerr << "PostgreSQL connection error: " << e.what() << std::endl;
+            LOG_ERROR(fcc.log, "PostgreSQL connection error: {}", e.what());
         }
         delete psql;
         delete pcon;
@@ -433,7 +433,7 @@ public:
     {
         if (!postgres_connection)
         {
-            std::cerr << "Not connected to PostgreSQL" << std::endl;
+            LOG_ERROR(fc.log, "Not connected to PostgreSQL");
             return false;
         }
         try
@@ -447,7 +447,7 @@ public:
         }
         catch (std::exception const & e)
         {
-            std::cerr << "PostgreSQL query: " << query << std::endl << "Error: " << e.what() << std::endl;
+            LOG_ERROR(fc.log, "PostgreSQL query: {} Error: {}", query, e.what());
             return false;
         }
     }
@@ -457,9 +457,9 @@ public:
 public:
     PostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static PostgreSQLIntegration * TestAndAddPostgreSQLIntegration(const FuzzConfig &, const ServerCredentials &, const bool)
+    static PostgreSQLIntegration * TestAndAddPostgreSQLIntegration(const FuzzConfig & fcc, const ServerCredentials &, const bool)
     {
-        std::cout << "ClickHouse not compiled with PostgreSQL connector, skipping PostgreSQL integration" << std::endl;
+        LOG_INFO(fcc.log, "ClickHouse not compiled with PostgreSQL connector, skipping PostgreSQL integration");
         return nullptr;
     }
 
@@ -490,18 +490,18 @@ public:
         {
             if (scon)
             {
-                std::cerr << "SQLite connection error: " << sqlite3_errmsg(scon) << std::endl;
+                LOG_ERROR(fcc.log, "SQLite connection error: {}", sqlite3_errmsg(scon));
                 sqlite3_close(scon);
             }
             else
             {
-                std::cerr << "Could not initialize SQLite handle" << std::endl;
+                LOG_ERROR(fcc.log, "Could not initialize SQLite handle");
             }
             return nullptr;
         }
         else
         {
-            std::cout << "Connected to SQLite" << std::endl;
+            LOG_INFO(fcc.log, "Connected to SQLite");
             return new SQLiteIntegration(fcc, scc, scon, spath);
         }
     }
@@ -524,13 +524,13 @@ public:
 
         if (!sqlite_connection)
         {
-            std::cerr << "Not connected to SQLite" << std::endl;
+            LOG_ERROR(fc.log, "Not connected to SQLite");
             return false;
         }
         out_file << query << std::endl;
         if (sqlite3_exec(sqlite_connection, query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK)
         {
-            std::cerr << "SQLite query: " << query << std::endl << "Error: " << err_msg << std::endl;
+            LOG_ERROR(fc.log, "SQLite query: {} Error: {}", query, err_msg);
             sqlite3_free(err_msg);
             return false;
         }
@@ -550,9 +550,9 @@ public:
 
     SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegratedDatabase(fcc, scc) { }
 
-    static SQLiteIntegration * TestAndAddSQLiteIntegration(const FuzzConfig &, const ServerCredentials &)
+    static SQLiteIntegration * TestAndAddSQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials &)
     {
-        std::cout << "ClickHouse not compiled with SQLite connector, skipping SQLite integration" << std::endl;
+        LOG_INFO(fcc.log, "ClickHouse not compiled with SQLite connector, skipping SQLite integration");
         return nullptr;
     }
 
@@ -646,12 +646,12 @@ public:
             mongocxx::database db = client[scc.database];
             db.create_collection("test");
 
-            std::cout << "Connected to MongoDB" << std::endl;
+            LOG_INFO(fcc.log, "Connected to MongoDB");
             return new MongoDBIntegration(fcc, scc, client, db);
         }
         catch (const std::exception & e)
         {
-            std::cerr << "MongoDB connection error: " << e.what() << std::endl;
+            LOG_ERROR(fcc.log, "MongoDB connection error: {}", e.what());
             return nullptr;
         }
     }
@@ -705,7 +705,7 @@ public:
         }
         catch (const std::exception & e)
         {
-            std::cerr << "MongoDB connection error: " << e.what() << std::endl;
+            LOG_ERROR(fc.log, "MongoDB connection error: {}", e.what());
             return false;
         }
         return true;
@@ -716,9 +716,9 @@ public:
 public:
     MongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc) : ClickHouseIntegration(fcc, scc) { }
 
-    static MongoDBIntegration * TestAndAddMongoDBIntegration(const FuzzConfig &, const ServerCredentials &)
+    static MongoDBIntegration * TestAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials &)
     {
-        std::cout << "ClickHouse not compiled with MongoDB connector, skipping MongoDB integration" << std::endl;
+        LOG_INFO(fcc.log, "ClickHouse not compiled with MongoDB connector, skipping MongoDB integration");
         return nullptr;
     }
 

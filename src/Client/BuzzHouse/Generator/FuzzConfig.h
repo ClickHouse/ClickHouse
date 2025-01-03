@@ -29,6 +29,7 @@ using JSONParserImpl = DB::DummyJSONParser;
 #endif
 
 #include <Client/ClientBase.h>
+#include <Common/logger_useful.h>
 
 namespace BuzzHouse
 {
@@ -124,6 +125,7 @@ private:
     DB::ClientBase * cb = nullptr;
 
 public:
+    LoggerPtr log;
     std::vector<std::string> collations, storage_policies, timezones, disks;
     std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
                                      sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
@@ -134,9 +136,9 @@ public:
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
 
-    FuzzConfig() : cb(nullptr) { buf.reserve(512); }
+    FuzzConfig() : cb(nullptr), log(getLogger("BuzzHouse")) { buf.reserve(512); }
 
-    FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c)
+    FuzzConfig(DB::ClientBase * c, const std::string & path) : cb(c), log(getLogger("BuzzHouse"))
     {
         JSONParserImpl parser;
         JSONParserImpl::Element object;
@@ -296,7 +298,7 @@ private:
             buf.resize(0);
             found++;
         }
-        std::cout << "Found " << found << " entries from " << table << " table" << std::endl;
+        LOG_INFO(log, "Found {} entries from {} table", found, table);
     }
 
 public:

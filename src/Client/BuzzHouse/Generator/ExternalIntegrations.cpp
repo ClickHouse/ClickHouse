@@ -43,11 +43,11 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
         if (error == EAI_SYSTEM)
         {
             strerror_r(errno, buffer, sizeof(buffer));
-            std::cerr << "getaddrinfo: " << buffer << std::endl;
+            LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
         }
         else
         {
-            std::cerr << "getaddrinfo: " << gai_strerror(error) << std::endl;
+            LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
         }
         return false;
     }
@@ -57,7 +57,7 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
         if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
         {
             strerror_r(errno, buffer, sizeof(buffer));
-            std::cerr << "Could not connect: " << buffer << std::endl;
+            LOG_ERROR(fc.log, "Could not connect: {}", buffer);
             return false;
         }
         if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
@@ -67,11 +67,11 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
                 if (error == EAI_SYSTEM)
                 {
                     strerror_r(errno, buffer, sizeof(buffer));
-                    std::cerr << "getnameinfo: " << buffer << std::endl;
+                    LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
                 }
                 else
                 {
-                    std::cerr << "getnameinfo: " << gai_strerror(error) << std::endl;
+                    LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
                 }
                 return false;
             }
@@ -84,7 +84,7 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     if (sock == -1)
     {
         strerror_r(errno, buffer, sizeof(buffer));
-        std::cerr << "Could not connect: " << buffer << std::endl;
+        LOG_ERROR(fc.log, "Could not connect: {}", buffer);
         return false;
     }
     (void)gmtime_r(&time, &ttm);
@@ -100,7 +100,7 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     if (!sign_err.str().empty())
     {
         close(sock);
-        std::cerr << "Error while executing shell command: " << sign_err.str() << std::endl;
+        LOG_ERROR(fc.log, "Error while executing shell command: {}", sign_err.str());
         return false;
     }
 
@@ -115,13 +115,13 @@ bool MinIOIntegration::sendRequest(const std::string & resource)
     {
         strerror_r(errno, buffer, sizeof(buffer));
         close(sock);
-        std::cerr << "Error sending request: " << http_request.str() << std::endl << buffer << std::endl;
+        LOG_ERROR(fc.log, "Error sending request {}: {}", http_request.str(), buffer);
         return false;
     }
     if ((nbytes = read(sock, buffer, sizeof(buffer))) > 0 && nbytes < static_cast<ssize_t>(sizeof(buffer)) && nbytes > 12
         && !(created = (std::strncmp(buffer + 9, "200", 3) == 0)))
     {
-        std::cerr << "Request not successful: " << http_request.str() << std::endl << buffer << std::endl;
+        LOG_ERROR(fc.log, "Request {} not successful: {}", http_request.str(), buffer);
     }
     close(sock);
     return created;
