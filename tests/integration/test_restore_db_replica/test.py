@@ -207,7 +207,7 @@ def start_cluster():
     "changed_table, failed_change_table, change_table",
     [
         pytest.param(
-            "renamed_table",
+            "test_rename_table",
             lambda node, t1, t2: failed_rename_table(node, t1, t2),
             lambda node, t1, t2: rename_table(node, t1, t2),
             id="rename table",
@@ -288,6 +288,9 @@ def test_query_after_restore_db_replica(
     if exists_table:
         assert zk.exists(
             f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}"
+        )
+        assert expected_tables == get_tables_from_replicated(
+            node_1, exclusive_database_name
         )
         if need_fill_tables:
             check_contains_table(
