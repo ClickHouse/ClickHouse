@@ -369,6 +369,13 @@
 [submodule "contrib/numactl"]
 	path = contrib/numactl
 	url = https://github.com/ClickHouse/numactl.git
+[submodule "contrib/ggml"]
+	path = contrib/ggml
+	url = https://github.com/ggerganov/ggml
+[submodule "contrib/replxx"]
+	path = contrib/replxx
+	url = https://github.com/iyubondyrev/replxx
+	branch = fix_replxx_for_better_hints
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git

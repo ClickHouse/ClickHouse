@@ -90,6 +90,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution."},
+        {"is_generated_query", std::make_shared<DataTypeUInt8>(), "Indicates whether the query was writted by user or not. Possible values: 1 — query was not written by user, 0 — query was written by user."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},
@@ -313,6 +314,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
 {
     columns[i++]->insert(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
+    columns[i++]->insert(client_info.is_generated);
 
     columns[i++]->insert(client_info.current_user);
     columns[i++]->insert(client_info.current_query_id);
