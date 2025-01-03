@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 
+#include <Analyzer/QueryNode.h>
+#include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -7,7 +9,10 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
@@ -15,15 +20,20 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/PredicateRewriteVisitor.h>
+#include <Interpreters/JoinedTables.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
+#include "Parsers/queryToString.h"
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Functions/IFunction.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Parsers/ASTFunction.h>
 
 #include <fmt/format.h>
 
@@ -38,6 +48,8 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_mark_segment_size;
+    extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
+    extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
 }
 
 namespace ErrorCodes
@@ -124,7 +136,7 @@ ReadFromRemote::ReadFromRemote(
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     const String & cluster_name_)
-    : ISourceStep(std::move(header_))
+    : SourceStepWithFilterBase(std::move(header_))
     , shards(std::move(shards_))
     , stage(stage_)
     , main_table(std::move(main_table_))
@@ -150,6 +162,159 @@ void ReadFromRemote::enforceAggregationInOrder()
     DB::enforceAggregationInOrder(stage, *context);
 }
 
+ASTSelectQuery & getSelectQuery(ASTPtr ast)
+{
+    if (const auto * explain = ast->as<ASTExplainQuery>())
+        ast = explain->getExplainedQuery();
+
+    return ast->as<ASTSelectQuery &>();
+}
+
+static ASTPtr tryBuildAdditionalFilterAST(
+    const ActionsDAG & dag,
+    const std::unordered_set<std::string> & projection_names,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & input_to_projection)
+{
+    std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
+
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child = 0;
+    };
+    std::stack<Frame> stack;
+    stack.push({dag.getOutputs().front()});
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+        const auto * node = frame.node;
+
+        if (node_to_ast.contains(node))
+        {
+            stack.pop();
+            continue;
+        }
+
+
+        if (WhichDataType(node->result_type).isSet())
+        {
+            auto maybe_set = node->column;
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
+                maybe_set = col_const->getDataColumnPtr();
+
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+                node_to_ast[node] = col_set->getData()->getSourceAST();
+
+            continue;
+        }
+
+        if (node->column && isColumnConst(*node->column))
+        {
+            auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
+            node_to_ast[node] = std::move(literal);
+            stack.pop();
+            continue;
+        }
+
+        if (frame.next_child < node->children.size())
+        {
+            stack.push({node->children[frame.next_child]});
+            ++frame.next_child;
+            continue;
+        }
+
+        stack.pop();
+        auto & res = node_to_ast[node];
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            auto it = input_to_projection.find(node->result_name);
+            if (it != input_to_projection.end())
+                res = it->second->toAST();
+            else if (projection_names.contains(node->result_name))
+                res = std::make_shared<ASTIdentifier>(node->result_name);
+        }
+
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+            res = node_to_ast[node->children.at(0)];
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        if (!node->function_base->isDeterministic() || node->function_base->isStateful())
+            continue;
+
+        bool has_all_args = true;
+        ASTs arguments;
+        for (const auto * child : node->children)
+        {
+            auto ast = node_to_ast[child];
+            if (!ast)
+                has_all_args = false;
+            else
+                arguments.push_back(std::move(ast));
+        }
+
+        bool is_function_and = node->function_base->getName() == "and";
+        if (!has_all_args && !is_function_and)
+            continue;
+
+        if (is_function_and && arguments.empty())
+            continue;
+
+        /// and() with 1 arg is not supported.
+        if (is_function_and && arguments.size() == 1)
+            arguments.push_back(std::make_shared<ASTLiteral>(Field(1)));
+
+        auto function = makeASTFunction(node->function_base->getName(), std::move(arguments));
+        res = std::move(function);
+    }
+
+    return node_to_ast[dag.getOutputs().front()];
+}
+
+static void addFilters(
+    const ContextPtr & context,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ActionsDAG & pushed_down_filters)
+{
+    const auto & settings = context->getSettingsRef();
+    const auto * query_node = query_tree->as<QueryNode>();
+
+    if (!(query_node && planner_context))
+        return;
+
+    std::unordered_map<std::string, QueryTreeNodePtr> input_to_projection;
+    for (const auto & node : query_node->getProjection())
+        input_to_projection[calculateActionNodeName(node, *planner_context)] = node;
+
+    std::unordered_set<std::string> projection_names;
+    for (const auto & col : query_node->getProjectionColumns())
+        projection_names.insert(col.name);
+
+    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, input_to_projection);
+    if (!predicate)
+        return;
+
+    JoinedTables joined_tables(context, getSelectQuery(query_ast), false, false);
+    joined_tables.resolveTables();
+    const auto & tables_with_columns = joined_tables.tablesWithColumns();
+
+    /// Case with JOIN is not supported so far.
+    if (tables_with_columns.size() != 1)
+        return;
+
+    bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
+    bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
+
+    ASTs predicates{predicate};
+    PredicateRewriteVisitor::Data data(context, predicates, tables_with_columns.front(), optimize_final, optimize_with);
+
+    data.rewriteSubquery(getSelectQuery(query_ast), tables_with_columns.front().columns.getNames());
+}
+
 void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
@@ -165,13 +330,19 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
+    std::shared_ptr<const ActionsDAG> pushed_down_filters;
+    if (filter_actions_dag)
+        pushed_down_filters = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
+
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
             my_stage = stage, local_delay = shard.local_delay,
-            add_agg_info, add_totals, add_extremes, async_read, async_query_sending]() mutable
+            add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
+            query_tree = shard.query_tree, planner_context = shard.planner_context,
+            pushed_down_filters]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -217,6 +388,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         for (auto & try_result : try_results)
             connections.emplace_back(std::move(try_result.entry));
 
+        if (pushed_down_filters)
+            addFilters(my_context, query, query_tree, planner_context, *pushed_down_filters);
         String query_string = formattedAST(query);
 
         my_scalars["_shard_num"] = Block{
@@ -232,14 +405,6 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
     addConvertingActions(pipes.back(), out_header, shard.has_missing_objects);
-}
-
-ASTSelectQuery & getSelectQuery(ASTPtr ast)
-{
-    if (const auto * explain = ast->as<ASTExplainQuery>())
-        ast = explain->getExplainedQuery();
-
-    return ast->as<ASTSelectQuery &>();
 }
 
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
@@ -326,6 +491,25 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     }
     else
     {
+        // if (shard.query_tree)
+        // {
+        //     const auto * query_node = shard.query_tree->as<QueryNode>();
+        //     for (const auto & node : query_node->getProjection())
+        //     {
+        //         std::cerr << "\n----------------------\n";
+        //         std::cerr << node->dumpTree() << std::endl;
+        //         std::cerr << queryToString(node->toAST()) << std::endl;
+        //         std::cerr << calculateActionNodeName(node, *shard.planner_context) << std::endl;
+        //     }
+        //     std::cerr << shard.query_tree->dumpTree() << std::endl;
+        // }
+
+        // if (filter_actions_dag)
+        //     std::cerr << filter_actions_dag->dumpDAG() << std::endl;
+
+        if (filter_actions_dag)
+            addFilters(context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+
         const String query_string = formattedAST(shard.query);
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
@@ -357,6 +541,13 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header)
 {
     Pipes pipes;
+
+    // if (filter_actions_dag)
+    // {
+    //     std::cerr << filter_actions_dag->dumpDAG() << std::endl;
+    //     pushed_down_filters = tryBuildAdditionalFilterAST(*filter_actions_dag);
+    //     std::cerr << pushed_down_filters->dumpTree() << std::endl;
+    // }
 
     for (const auto & shard : used_shards)
     {

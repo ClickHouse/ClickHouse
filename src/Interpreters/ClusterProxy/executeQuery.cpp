@@ -1,6 +1,8 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Interpreters/Cluster.h>
@@ -13,6 +15,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
@@ -30,6 +33,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -295,7 +299,6 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
             query_context);
     };
 }
-
 
 void executeQuery(
     QueryPlan & query_plan,
