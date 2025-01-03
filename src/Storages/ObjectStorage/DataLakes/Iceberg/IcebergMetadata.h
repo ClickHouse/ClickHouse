@@ -25,6 +25,7 @@ namespace DB
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {
 public:
+    std::string jsons_logging;
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
@@ -43,7 +44,7 @@ public:
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls when the same data snapshot is relevant will return saved list of files (because it cannot be changed
     /// without changing metadata file). Drops on every snapshot update.
-    Strings getDataFiles() const override;
+    DataFileInfos getDataFiles() const override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
@@ -72,9 +73,14 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String & data_path) const override
     {
         auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
-        return version_if_outdated.has_value()
-            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
-            : nullptr;
+        try {
+            return version_if_outdated.has_value()
+                ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
+                : nullptr;
+        } catch (...) {
+            throw;
+            //throw std::runtime_error(jsons_logging);
+        }
     }
 
     bool supportsExternalMetadataChange() const override { return true; }
@@ -103,7 +109,7 @@ private:
     Int32 current_schema_id;
     std::optional<Iceberg::IcebergSnapshot> current_snapshot;
 
-    mutable std::optional<Strings> cached_files_for_current_snapshot;
+    mutable std::optional<DataFileInfos> cached_files_for_current_snapshot;
 
     Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 

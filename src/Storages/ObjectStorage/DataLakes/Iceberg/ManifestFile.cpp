@@ -1,3 +1,4 @@
+#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 #include <unordered_set>
 #include "config.h"
 
@@ -25,6 +26,16 @@ namespace Iceberg
 const std::vector<DataFileEntry> & ManifestFileContent::getDataFiles() const
 {
     return impl->data_files;
+}
+
+const std::vector<DataFileEntry> & ManifestFileContent::getPositionalDeleteFiles() const
+{
+    return impl->positional_delete_files;
+}
+
+const std::vector<DataFileEntry> & ManifestFileContent::getEqualityDeleteFiles() const
+{
+    return impl->equality_delete_files;
 }
 
 Int32 ManifestFileContent::getSchemaId() const
@@ -146,9 +157,6 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         if (format_version_ == 2)
         {
             content_type = DataFileContent(content_int_column->getElement(i));
-            if (content_type != DataFileContent::DATA)
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD, "Cannot read Iceberg table: positional and equality deletes are not supported");
         }
         const auto status = ManifestEntryStatus(status_int_column->getInt(i));
 
@@ -158,7 +166,21 @@ ManifestFileContentImpl::ManifestFileContentImpl(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
 
         const auto file_path = data_path.substr(pos);
-        this->data_files.push_back({file_path, status, content_type});
+        switch (content_type)
+        {
+            case Iceberg::DataFileContent::DATA: {
+                this->data_files.push_back({file_path, status, content_type});
+                break;
+            }
+            case Iceberg::DataFileContent::POSITION_DELETES: {
+                this->positional_delete_files.push_back({file_path, status, content_type});
+                break;
+            }
+            case Iceberg::DataFileContent::EQUALITY_DELETES: {
+                this->equality_delete_files.push_back({file_path, status, content_type});
+                break;
+            }
+        }
     }
 }
 

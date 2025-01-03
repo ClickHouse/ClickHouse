@@ -141,7 +141,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
         connection_url = collection.get<String>("storage_account_url");
 
     container_name = collection.get<String>("container");
-    blob_path = collection.get<String>("blob_path");
+    blob_path = Path{.filename = collection.get<String>("blob_path"), .meta = nullptr};
 
     if (collection.has("account_name"))
         account_name = collection.get<String>("account_name");
@@ -176,7 +176,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 
     String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
     String container_name = checkAndGetLiteralArgument<String>(engine_args[1], "container");
-    blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
+    blob_path = Path{.filename = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath"), .meta = nullptr};
 
     std::optional<String> account_name;
     std::optional<String> account_key;

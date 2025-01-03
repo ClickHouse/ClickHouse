@@ -52,7 +52,7 @@ StorageHDFSConfiguration::StorageHDFSConfiguration(const StorageHDFSConfiguratio
 void StorageHDFSConfiguration::check(ContextPtr context) const
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(url));
-    checkHDFSURL(fs::path(url) / path.substr(1));
+    checkHDFSURL(fs::path(url) / path.filename.substr(1));
     Configuration::check(context);
 }
 
@@ -72,11 +72,11 @@ std::string StorageHDFSConfiguration::getPathWithoutGlobs() const
     /// Unlike s3 and azure, which are object storages,
     /// hdfs is a filesystem, so it cannot list files by partual prefix,
     /// only by directory.
-    auto first_glob_pos = path.find_first_of("*?{");
-    auto end_of_path_without_globs = path.substr(0, first_glob_pos).rfind('/');
+    auto first_glob_pos = path.filename.find_first_of("*?{");
+    auto end_of_path_without_globs = path.filename.substr(0, first_glob_pos).rfind('/');
     if (end_of_path_without_globs == std::string::npos || end_of_path_without_globs == 0)
         return "/";
-    return path.substr(0, end_of_path_without_globs);
+    return path.filename.substr(0, end_of_path_without_globs);
 }
 StorageObjectStorage::QuerySettings StorageHDFSConfiguration::getQuerySettings(const ContextPtr & context) const
 {
@@ -161,14 +161,14 @@ void StorageHDFSConfiguration::setURL(const std::string & url_)
     if (pos == std::string::npos)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have the following structure 'hdfs://<host_name>:<port>/path'", url_);
 
-    path = url_.substr(pos + 1);
-    if (!path.starts_with('/'))
-        path = '/' + path;
+    path.filename = url_.substr(pos + 1);
+    if (!path.filename.starts_with('/'))
+        path.filename = '/' + path.filename;
 
     url = url_.substr(0, pos);
     paths = {path};
 
-    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path);
+    LOG_TRACE(getLogger("StorageHDFSConfiguration"), "Using URL: {}, path: {}", url, path.filename);
 }
 
 void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(

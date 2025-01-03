@@ -1,17 +1,18 @@
+#include <memory>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 
 #include <Storages/Cache/SchemaCache.h>
@@ -22,26 +23,41 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include "Columns/ColumnLowCardinality.h"
 #include "Databases/LoadingStrictnessLevel.h"
+#include "Processors/Executors/StreamingFormatExecutor.h"
+#include "Processors/ISimpleTransform.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
+#include "Storages/prepareReadingFromFormat.h"
+
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/EqualityDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/DeleteFiles/PositionalDeleteTransform.h>
+
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 
 #include <Poco/Logger.h>
+#include "Common/Exception.h"
+
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsBool optimize_count_from_files;
-    extern const SettingsBool use_hive_partitioning;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsBool optimize_count_from_files;
+extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
 {
-    extern const int DATABASE_ACCESS_DENIED;
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+extern const int DATABASE_ACCESS_DENIED;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
 }
 
 namespace StorageObjectStorageSetting
@@ -73,7 +89,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     );
 
     if (!configuration->isArchive() && !configuration->isPathWithGlobs() && !local_distributed_processing)
-        return configuration->getPath();
+        return configuration->getPath().filename;
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
@@ -181,6 +197,26 @@ void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
 
 namespace
 {
+
+#if 0
+std::string readFileToStringDirect(const std::string& filename) {
+    std::ifstream file(filename, std::ios::in | std::ios::binary);
+
+     if (!file.is_open()) {
+        throw std::runtime_error("Could not open file: " + filename);
+    }
+    
+     file.seekg(0, std::ios::end); // Позиционируемся в конец файла
+     std::streamsize size = file.tellg();  // Получаем размер файла
+     file.seekg(0, std::ios::beg); // Возвращаемся в начало
+
+    std::string content;
+    content.resize(size);
+    file.read(content.data(), size);
+    return content;
+}
+#endif
+
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
 public:
@@ -233,27 +269,139 @@ public:
         Pipes pipes;
         auto context = getContext();
         const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
-        size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
-
-        if (estimated_keys_count > 1)
-            num_streams = std::min(num_streams, estimated_keys_count);
-        else
-        {
-            /// The amount of keys (zero) was probably underestimated.
-            /// We will keep one stream for this particular case.
-            num_streams = 1;
-        }
+        num_streams = 1;
 
         const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
 
+        auto pathes = configuration->getPaths();
+        std::sort(
+            pathes.begin(),
+            pathes.end(),
+            [](const auto & path_left, const auto & path_right) -> bool
+            {
+                int left_prior = -1;
+                if (path_left.meta)
+                    left_prior = static_cast<int>(std::static_pointer_cast<DataFileMeta>(path_left.meta)->type);
+
+                int right_prior = -1;
+                if (path_right.meta)
+                    right_prior = static_cast<int>(std::static_pointer_cast<DataFileMeta>(path_right.meta)->type);
+
+                return std::tie(left_prior, path_left.filename) < std::tie(right_prior, path_right.filename);
+            });
+
         for (size_t i = 0; i < num_streams; ++i)
         {
-            auto source = std::make_shared<StorageObjectStorageSource>(
-                getName(), object_storage, configuration, info, format_settings,
-                context, max_block_size, iterator_wrapper, max_parsing_threads, need_only_count);
+            Pipes sources;
+            std::vector<std::string> sources_filenames;
+            std::vector<std::function<ProcessorPtr(const Block &)>> equality_delete_transforms;
+            std::vector<std::vector<std::shared_ptr<StorageObjectStorageSource>>> positional_delete_sources;
+            for (size_t path_iterator = 0; path_iterator < pathes.size(); ++path_iterator)
+            {
+                const auto & path = pathes[path_iterator];
+                auto single_file_configuration = configuration->clone();
+                sources_filenames.push_back(path.filename);
+                single_file_configuration->setPath(path);
+                single_file_configuration->setPaths({path});
 
-            source->setKeyCondition(filter_actions_dag, context);
-            pipes.emplace_back(std::move(source));
+                if (!single_file_configuration->getPath().meta)
+                {
+                    auto source = std::make_shared<StorageObjectStorageSource>(
+                        getName(),
+                        object_storage,
+                        single_file_configuration,
+                        info,
+                        format_settings,
+                        context,
+                        max_block_size,
+                        iterator_wrapper[path_iterator],
+                        max_parsing_threads,
+                        need_only_count);
+
+                    sources.emplace_back(std::move(source));
+                    continue;
+                }
+
+                auto data_type = std::static_pointer_cast<DataFileMeta>(single_file_configuration->getPath().meta)->type;
+                switch (data_type)
+                {
+                    case DataFileMeta::DataFileType::DATA_FILE: {
+                        auto source = std::make_shared<StorageObjectStorageSource>(
+                            getName(),
+                            object_storage,
+                            single_file_configuration,
+                            info,
+                            format_settings,
+                            context,
+                            max_block_size,
+                            iterator_wrapper[path_iterator],
+                            max_parsing_threads,
+                            need_only_count);
+                        sources.emplace_back(std::move(source));
+                        break;
+                    }
+                    case DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE: {
+                        ReadFromFormatInfo read_from_format_info;
+
+                        if (positional_delete_sources.empty())
+                            positional_delete_sources.resize(sources.size());
+
+                        for (size_t source_id = 0; source_id < sources.size(); ++source_id)
+                        {
+                            auto source = std::make_shared<StorageObjectStorageSource>(
+                                getName(),
+                                object_storage,
+                                single_file_configuration,
+                                read_from_format_info,
+                                format_settings,
+                                context,
+                                max_block_size,
+                                iterator_wrapper[path_iterator],
+                                max_parsing_threads,
+                                false);
+
+                            positional_delete_sources[source_id].push_back(source);
+                        }
+                        break;
+                    }
+                    case DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE: {
+                        auto source = std::make_shared<StorageObjectStorageSource>(
+                            getName(),
+                            object_storage,
+                            single_file_configuration,
+                            ReadFromFormatInfo{},
+                            format_settings,
+                            context,
+                            max_block_size,
+                            iterator_wrapper[path_iterator],
+                            max_parsing_threads,
+                            false);
+
+                        equality_delete_transforms.push_back(
+                            [source](const Block & in_header) -> ProcessorPtr
+                            { return std::make_shared<EqualityDeleteTransform<StorageObjectStorageSource>>(in_header, source); });
+                        break;
+                    }
+                }
+            }
+            if (!positional_delete_sources.empty())
+            {
+                for (size_t source_id = 0; source_id < sources.size(); ++source_id)
+                {
+                    sources[source_id].addSimpleTransform(
+                        [source_id, positional_delete_sources, sources_filenames](const Block & in_header) -> ProcessorPtr
+                        { return std::make_shared<PositionalDeleteTransform<StorageObjectStorageSource>>(in_header, positional_delete_sources[source_id], sources_filenames[source_id]); });
+                }
+            }
+            auto pipe = Pipe::unitePipes(std::move(sources));
+            if (pipe.empty())
+                pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+
+            for (const auto & transform : equality_delete_transforms)
+                pipe.addSimpleTransform(transform);
+
+            if (pipes.empty())
+                pipes.push_back(std::move(pipe));
         }
 
         auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -269,7 +417,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
-    std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
+    std::vector<std::shared_ptr<StorageObjectStorageSource::IIterator>> iterator_wrapper;
 
     const ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
@@ -282,12 +430,41 @@ private:
 
     void createIterator(const ActionsDAG::Node * predicate)
     {
-        if (iterator_wrapper)
+        if (!iterator_wrapper.empty())
             return;
         auto context = getContext();
-        iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-            configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
+        auto pathes = configuration->getPaths();
+        std::sort(
+            pathes.begin(),
+            pathes.end(),
+            [](const auto & path_left, const auto & path_right) -> bool
+            {
+                int left_prior = -1;
+                if (path_left.meta)
+                    left_prior = static_cast<int>(std::static_pointer_cast<DataFileMeta>(path_left.meta)->type);
+
+                int right_prior = -1;
+                if (path_right.meta)
+                    right_prior = static_cast<int>(std::static_pointer_cast<DataFileMeta>(path_right.meta)->type);
+
+                return std::tie(left_prior, path_left.filename) < std::tie(right_prior, path_right.filename);
+            });
+
+        for (const auto & path : pathes)
+        {
+            auto configuration_copy = configuration->clone();
+            configuration_copy->setPaths({path});
+            iterator_wrapper.push_back(StorageObjectStorageSource::createFileIterator(
+                configuration_copy,
+                configuration_copy->getQuerySettings(context),
+                object_storage,
+                distributed_processing,
+                context,
+                predicate,
+                virtual_columns,
+                nullptr,
+                context->getFileProgressCallback()));
+        }
     }
 };
 }
@@ -320,9 +497,7 @@ void StorageObjectStorage::read(
     configuration->update(object_storage, local_context);
     if (partition_by && configuration->withPartitionWildcard())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Reading from a partitioned {} storage is not implemented yet",
-                        getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned {} storage is not implemented yet", getName());
     }
 
     const auto read_from_format_info = configuration->prepareReadingFromFormat(
@@ -350,10 +525,7 @@ void StorageObjectStorage::read(
 }
 
 SinkToStoragePtr StorageObjectStorage::write(
-    const ASTPtr & query,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr local_context,
-    bool /* async_insert */)
+    const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /* async_insert */)
 {
     configuration->update(object_storage, local_context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
@@ -361,16 +533,18 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (configuration->isArchive())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Write into archive is not supported",
-                        configuration->getPath());
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Path '{}' contains archive. Write into archive is not supported",
+            configuration->getPath().filename);
     }
 
     if (configuration->withGlobsIgnorePartitionWildcard())
     {
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                        "Path '{}' contains globs, so the table is in readonly mode",
-                        configuration->getPath());
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path '{}' contains globs, so the table is in readonly mode",
+            configuration->getPath().filename);
     }
 
     if (configuration->withPartitionWildcard())
@@ -392,18 +566,18 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     auto paths = configuration->getPaths();
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front(), paths.size()))
+    std::vector<std::string> path_filenames;
+    path_filenames.reserve(paths.size());
+    for (const auto & path : paths)
+        path_filenames.push_back(path.filename);
+    if (auto new_key
+        = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, path_filenames.front(), path_filenames.size()))
     {
-        paths.push_back(*new_key);
+        paths.push_back(Configuration::Path{.filename = *new_key, .meta = nullptr});
     }
     configuration->setPaths(paths);
 
-    return std::make_shared<StorageObjectStorageSink>(
-        object_storage,
-        configuration->clone(),
-        format_settings,
-        sample_block,
-        local_context);
+    return std::make_shared<StorageObjectStorageSink>(object_storage, configuration->clone(), format_settings, sample_block, local_context);
 }
 
 void StorageObjectStorage::truncate(
@@ -414,9 +588,8 @@ void StorageObjectStorage::truncate(
 {
     if (configuration->isArchive())
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Path '{}' contains archive. Table cannot be truncated",
-                        configuration->getPath());
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Path '{}' contains archive. Table cannot be truncated", configuration->getPath().filename);
     }
 
     if (configuration->withGlobs())
@@ -424,12 +597,13 @@ void StorageObjectStorage::truncate(
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
             "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
-            getName(), configuration->getPath());
+            getName(),
+            configuration->getPath().filename);
     }
 
     StoredObjects objects;
     for (const auto & key : configuration->getPaths())
-        objects.emplace_back(key);
+        objects.emplace_back(key.filename);
 
     object_storage->removeObjectsIfExist(objects);
 }
@@ -445,15 +619,20 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
-        false/* distributed_processing */,
+        false /* distributed_processing */,
         context,
-        {}/* predicate */,
-        {}/* virtual_columns */,
+        {} /* predicate */,
+        {} /* virtual_columns */,
         &read_keys);
 
     return std::make_unique<ReadBufferIterator>(
-        object_storage, configuration, file_iterator,
-        format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
+        object_storage,
+        configuration,
+        file_iterator,
+        format_settings,
+        getSchemaCache(context, configuration->getTypeName()),
+        read_keys,
+        context);
 }
 
 ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
@@ -522,9 +701,7 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
     if (storage_type_name == "s3")
     {
         static SchemaCache schema_cache(
-            context->getConfigRef().getUInt(
-                "schema_inference_cache_max_elements_for_s3",
-                DEFAULT_SCHEMA_CACHE_ELEMENTS));
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_s3", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
     if (storage_type_name == "hdfs")
@@ -568,10 +745,10 @@ void StorageObjectStorage::Configuration::initialize(
         }
         else
         {
-            configuration.format
-                = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath())
-                      .value_or("auto");
+            configuration.format = FormatFactory::instance()
+                                       .tryGetFormatFromFileName(
+                                           configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath().filename)
+                                       .value_or("auto");
         }
     }
     else
@@ -599,20 +776,19 @@ StorageObjectStorage::Configuration::Configuration(const Configuration & other)
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-    return getPath().find(PARTITION_ID_WILDCARD) != String::npos
-        || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
+    return getPath().filename.find(PARTITION_ID_WILDCARD) != String::npos || getNamespace().find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
 bool StorageObjectStorage::Configuration::withGlobsIgnorePartitionWildcard() const
 {
     if (!withPartitionWildcard())
         return withGlobs();
-    return PartitionedSink::replaceWildcards(getPath(), "").find_first_of("*?{") != std::string::npos;
+    return PartitionedSink::replaceWildcards(getPath().filename, "").find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isPathWithGlobs() const
 {
-    return getPath().find_first_of("*?{") != std::string::npos;
+    return getPath().filename.find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorage::Configuration::isNamespaceWithGlobs() const
@@ -622,7 +798,7 @@ bool StorageObjectStorage::Configuration::isNamespaceWithGlobs() const
 
 std::string StorageObjectStorage::Configuration::getPathWithoutGlobs() const
 {
-    return getPath().substr(0, getPath().find_first_of("*?{"));
+    return getPath().filename.substr(0, getPath().filename.find_first_of("*?{"));
 }
 
 bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
@@ -632,7 +808,7 @@ bool StorageObjectStorage::Configuration::isPathInArchiveWithGlobs() const
 
 std::string StorageObjectStorage::Configuration::getPathInArchive() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getPath().filename);
 }
 
 void StorageObjectStorage::Configuration::assertInitialized() const

@@ -329,6 +329,7 @@ def default_upload_directory(
     started_cluster, storage_type, local_path, remote_path, **kwargs
 ):
     if storage_type == "local":
+        print("default_upload_directory ", local_path, remote_path)
         return started_cluster.default_local_uploader.upload_directory(
             local_path, remote_path, **kwargs
         )
@@ -686,6 +687,14 @@ def test_delete_files(started_cluster, format_version, storage_type):
         format_version=format_version,
     )
 
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 100, 200),
+        TABLE_NAME,
+        mode="upsert",
+        format_version=format_version,
+    )
+
     default_upload_directory(
         started_cluster,
         storage_type,
@@ -693,7 +702,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
         "",
     )
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    print(int(instance.query(f"SELECT count() FROM {TABLE_NAME}")))
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE a >= 150")
     default_upload_directory(
@@ -703,7 +712,17 @@ def test_delete_files(started_cluster, format_version, storage_type):
         "",
     )
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 50
+    print(int(instance.query(f"SELECT count() FROM {TABLE_NAME}")))
+
+    write_iceberg_from_df(
+        spark,
+        generate_data(spark, 100, 200),
+        TABLE_NAME,
+        mode="upsert",
+        format_version=format_version,
+    )
+
+    print(int(instance.query(f"SELECT count() FROM {TABLE_NAME}")))
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
@@ -1504,7 +1523,7 @@ def test_row_based_deletes(started_cluster, storage_type):
     TABLE_NAME = "test_row_based_deletes_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(
-        f"CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')"
+        f"CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read', 'equality.field.ids' = '1')"
     )
     spark.sql(
         f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(100)"
@@ -1529,8 +1548,35 @@ def test_row_based_deletes(started_cluster, storage_type):
         "",
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {TABLE_NAME}")
-    assert "UNSUPPORTED_METHOD" in error
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 90
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id >= 90")
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 54")
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 79
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        "",
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 69
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])

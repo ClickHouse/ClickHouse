@@ -41,6 +41,9 @@ public:
     explicit ManifestFileContent(std::unique_ptr<ManifestFileContentImpl> impl_);
 
     const std::vector<DataFileEntry> & getDataFiles() const;
+    const std::vector<DataFileEntry> & getPositionalDeleteFiles() const;
+    const std::vector<DataFileEntry> & getEqualityDeleteFiles() const;
+
     Int32 getSchemaId() const;
 
 private:
