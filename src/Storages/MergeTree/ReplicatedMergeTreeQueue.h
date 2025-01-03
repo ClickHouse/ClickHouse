@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <expected>
 
 #include <Common/ActionBlocker.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -14,6 +15,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
 #include <Storages/MergeTree/DropPartsRanges.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -542,22 +544,18 @@ public:
     explicit BaseMergePredicate(std::optional<PartitionIdsHint> && partition_ids_hint_) : partition_ids_hint(std::move(partition_ids_hint_)) {}
 
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
-    bool operator()(const MergeTreeData::DataPartPtr & left,
-                    const MergeTreeData::DataPartPtr & right,
-                    const MergeTreeTransaction * txn,
-                    PreformattedMessage & out_reason) const;
+    std::expected<void, PreformattedMessage> operator()(const PartProperties * left, const PartProperties * right) const;
 
     /// Can we assign a merge with these two parts?
     /// (assuming that no merge was assigned after the predicate was constructed)
     /// If we can't and out_reason is not nullptr, set it to the reason why we can't merge.
-    bool canMergeTwoParts(const MergeTreeData::DataPartPtr & left,
-                          const MergeTreeData::DataPartPtr & right,
-                          PreformattedMessage & out_reason) const;
+    std::expected<void, PreformattedMessage> canMergeTwoParts(const PartProperties * left, const PartProperties * right) const;
 
     /// Can we assign a merge this part and some other part?
     /// For example a merge of a part and itself is needed for TTL.
     /// This predicate is checked for the first part of each range.
-    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, PreformattedMessage & out_reason) const;
+    std::expected<void, PreformattedMessage> canMergeSinglePart(const PartProperties * part) const;
+    std::expected<void, PreformattedMessage> canMergeSinglePart(const std::string & name, const MergeTreePartInfo & info, const UUID & uuid) const;
 
     CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, LoggerPtr log_);
 

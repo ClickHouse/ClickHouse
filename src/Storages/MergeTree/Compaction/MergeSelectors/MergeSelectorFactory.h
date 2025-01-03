@@ -1,13 +1,14 @@
 #pragma once
 
+#include <Core/MergeSelectorAlgorithm.h>
+
+#include <boost/noncopyable.hpp>
+
 #include <unordered_map>
 #include <functional>
 #include <memory>
 #include <string>
 #include <any>
-#include <boost/noncopyable.hpp>
-
-#include <Core/MergeSelectorAlgorithm.h>
 
 namespace DB
 {

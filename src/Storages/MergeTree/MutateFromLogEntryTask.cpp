@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <cmath>
 
 namespace ProfileEvents
@@ -79,7 +80,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     /// TODO - some better heuristic?
-    size_t estimated_space_for_result = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part}, false);
+    size_t estimated_space_for_result = CompactionStatistics::estimateNeededDiskSpace({source_part}, false);
 
     if (entry.create_time + (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_time_threshold].totalSeconds() <= time(nullptr)
         && estimated_space_for_result >= (*storage_settings_ptr)[MergeTreeSetting::prefer_fetch_merged_part_size_threshold])
