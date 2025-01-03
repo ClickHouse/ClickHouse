@@ -35,28 +35,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Config Workflow" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Config Workflow" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Config Workflow" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Config Workflow" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   docker_builds:
@@ -74,28 +73,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Docker Builds" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Docker Builds" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Docker Builds" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Docker Builds" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   style_check:
@@ -113,28 +111,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Style Check" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Style Check" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Style Check" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Style Check" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   fast_test:
@@ -152,28 +149,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Fast test" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Fast test" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Fast test" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Fast test" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_debug:
@@ -191,28 +187,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_debug)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_debug)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_release:
@@ -230,28 +225,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_asan:
@@ -269,28 +263,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_asan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_asan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_tsan:
@@ -308,28 +301,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_tsan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_tsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_msan:
@@ -347,28 +339,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_msan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_msan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_ubsan:
@@ -386,28 +377,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_ubsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_ubsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_ubsan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_ubsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_amd_binary:
@@ -425,28 +415,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (amd_binary)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_binary)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (amd_binary)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (amd_binary)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_arm_release:
@@ -464,28 +453,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (arm_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   build_arm_asan:
@@ -503,28 +491,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Build (arm_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (arm_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Build (arm_asan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Build (arm_asan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateless_tests_amd_debugparallel:
@@ -542,28 +529,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (amd_debug,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (amd_debug,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (amd_debug,parallel)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (amd_debug,parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateless_tests_amd_debugnon_parallel:
@@ -581,28 +567,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (amd_debug,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (amd_debug,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (amd_debug,non-parallel)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (amd_debug,non-parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateless_tests_amd_releaseparallel:
@@ -620,28 +605,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (amd_release,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (amd_release,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (amd_release,parallel)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (amd_release,parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateless_tests_amd_releasenon_parallel:
@@ -659,28 +643,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (amd_release,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (amd_release,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (amd_release,non-parallel)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (amd_release,non-parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateless_tests_arm_asanparallel:
@@ -698,28 +681,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (arm_asan,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (arm_asan,parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (arm_asan,parallel)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (arm_asan,parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateless_tests_arm_asannon_parallel:
@@ -737,28 +719,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateless tests (arm_asan,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (arm_asan,non-parallel)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateless tests (arm_asan,non-parallel)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateless tests (arm_asan,non-parallel)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_arm_release:
@@ -776,28 +757,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (arm_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_asan:
@@ -815,28 +795,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_asan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_asan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_tsan:
@@ -854,28 +833,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_tsan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_tsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_msan:
@@ -893,28 +871,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_msan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_msan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_ubsan:
@@ -932,28 +909,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_ubsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_ubsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_ubsan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_ubsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stateful_tests_amd_debug:
@@ -971,28 +947,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stateful tests (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stateful tests (amd_debug)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stateful tests (amd_debug)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   integration_tests_amd_asan1_5:
@@ -1010,28 +985,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,1/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,1/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,1/5)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,1/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   integration_tests_amd_asan2_5:
@@ -1049,28 +1023,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,2/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,2/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,2/5)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,2/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   integration_tests_amd_asan3_5:
@@ -1088,28 +1061,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,3/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,3/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,3/5)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,3/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   integration_tests_amd_asan4_5:
@@ -1127,28 +1099,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,4/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,4/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,4/5)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,4/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   integration_tests_amd_asan5_5:
@@ -1166,28 +1137,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Integration tests (amd_asan,5/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,5/5)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Integration tests (amd_asan,5/5)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Integration tests (amd_asan,5/5)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   stress_tests_arm_release:
@@ -1205,28 +1175,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Stress tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stress tests (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Stress tests (arm_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Stress tests (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   upgrade_tests_amd_debug:
@@ -1244,28 +1213,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Upgrade tests (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Upgrade tests (amd_debug)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Upgrade tests (amd_debug)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Upgrade tests (amd_debug)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   upgrade_tests_amd_msan:
@@ -1283,28 +1251,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Upgrade tests (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Upgrade tests (amd_msan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Upgrade tests (amd_msan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Upgrade tests (amd_msan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   upgrade_tests_amd_tsan:
@@ -1322,28 +1289,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Upgrade tests (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Upgrade tests (amd_tsan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Upgrade tests (amd_tsan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Upgrade tests (amd_tsan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   upgrade_tests_arm_asan:
@@ -1361,28 +1327,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Upgrade tests (arm_asan)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   performance_comparison_amd_releasehead_master1_2:
@@ -1400,28 +1365,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Performance comparison (amd_release,head_master,1/2)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Performance comparison (amd_release,head_master,1/2)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Performance comparison (amd_release,head_master,1/2)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Performance comparison (amd_release,head_master,1/2)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   performance_comparison_amd_releasehead_master2_2:
@@ -1439,28 +1403,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Performance comparison (amd_release,head_master,2/2)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Performance comparison (amd_release,head_master,2/2)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Performance comparison (amd_release,head_master,2/2)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Performance comparison (amd_release,head_master,2/2)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   compatibility_check_amd_release:
@@ -1478,28 +1441,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Compatibility check (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Compatibility check (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Compatibility check (amd_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Compatibility check (amd_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   compatibility_check_arm_release:
@@ -1517,28 +1479,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Compatibility check (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Compatibility check (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Compatibility check (arm_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Compatibility check (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   docs_check:
@@ -1556,28 +1517,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Docs check" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Docs check" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Docs check" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Docs check" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   clickbench_amd_release:
@@ -1595,28 +1555,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "ClickBench (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "ClickBench (amd_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "ClickBench (amd_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "ClickBench (amd_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   clickbench_arm_release:
@@ -1634,28 +1593,27 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "ClickBench (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "ClickBench (arm_release)" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "ClickBench (arm_release)" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "ClickBench (arm_release)" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi
 
   finish_workflow:
@@ -1673,26 +1631,25 @@ jobs:
 
       - name: Prepare env script
         run: |
-          cat > /tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.
-          cat > /tmp/praktika/workflow_config_pr.json << 'EOF'
+          cat > ./ci/tmp/workflow_config_pr.json << 'EOF'
           ${{ needs.config_workflow.outputs.data }}
           EOF
-          cat > /tmp/praktika/workflow_status.json << 'EOF'
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
           ENV_SETUP_SCRIPT_EOF
 
-          rm -rf /tmp/praktika/input /tmp/praktika/output /tmp/praktika
-          mkdir -p /tmp/praktika /tmp/praktika/input /tmp/praktika/output
-
       - name: Run
         id: run
         run: |
-          . /tmp/praktika_setup_env.sh
+          . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "Finish Workflow" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Finish Workflow" --workflow "PR" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/praktika_run.log
           else
-            python3 -m praktika run "Finish Workflow" --workflow "PR" --ci |& tee /tmp/praktika/praktika_run.log
+            python3 -m praktika run "Finish Workflow" --workflow "PR" --ci |& tee ./ci/tmp/praktika_run.log
           fi

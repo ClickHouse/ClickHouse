@@ -5,12 +5,50 @@ from praktika.result import Result
 from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
-from ci.workflows.defs import CIFiles, ToolSet
+from ci.workflows.defs import BuildTypes, CIFiles, ToolSet
 from ci.workflows.pull_request import S3_BUILDS_BUCKET
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build/"
 temp_dir = f"{current_directory}/ci/tmp/"
+
+BUILD_TYPE_TO_CMAKE = {
+    BuildTypes.AMD_DEBUG: "    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=Debug -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_TESTS=1 -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_RELEASE: "  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_BINARY: "   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_ASAN: "     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_TESTS=1 -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_TSAN: "     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=thread    -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_TESTS=1 -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_MSAN: "     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=memory    -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_TESTS=1 -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_UBSAN: "    cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=undefined -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_TESTS=1 -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.ARM_RELEASE: "  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.ARM_ASAN: "     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_TESTS=1 -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_COVERAGE: " cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DSANITIZE_COVERAGE=1 -DBUILD_STANDALONE_KEEPER=0 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.ARM_BINARY: "   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_TIDY: "     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=Debug -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_CLANG_TIDY=1 -DENABLE_TESTS=1 -DENABLE_EXAMPLES=1 -DENABLE_UTILS=1 -DENABLE_RUST=0 -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_DARWIN: "   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.ARM_DARWIN: "   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=/build/cmake/darwin/toolchain-x86_64.cmake -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.ARM_V80COMPAT: "cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake -DNO_ARMV81_OR_HIGHER=1 -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_FREEBSD: "  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.PPC64LE: "      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_COMPAT: "   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DNO_SSE3_OR_HIGHER=1 -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.AMD_MUSL: "     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.RISCV64: "      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-riscv64.cmake -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.S390X: "        cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-s390x.cmake -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+    BuildTypes.LOONGARCH64: "  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-loongarch64.cmake -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1",
+}
+
+# TODO: for legacy packaging script - remove
+BUILD_TYPE_TO_DEB_PACKAGE_TYPE = {
+    BuildTypes.AMD_DEBUG: "debug",
+    BuildTypes.AMD_RELEASE: "release",
+    BuildTypes.AMD_ASAN: "asan",
+    BuildTypes.ARM_ASAN: "asan",
+    BuildTypes.AMD_MSAN: "msan",
+    BuildTypes.AMD_UBSAN: "ubsan",
+    BuildTypes.AMD_TSAN: "tsan",
+}
+
+build_dir = f"{Utils.cwd()}/ci/tmp/build"
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -26,7 +64,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
     parser.add_argument(
         "--build-type",
-        help="Type: <amd|arm>,<debug|release>,<asan|msan|..>",
+        help="see BuildTypes.*",
     )
     parser.add_argument(
         "--param",
@@ -34,21 +72,6 @@ def parse_args():
         default=None,
     )
     return parser.parse_args()
-
-
-CMAKE_CMD = """cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA \
--DCMAKE_BUILD_TYPE={BUILD_TYPE} \
--DSANITIZE={SANITIZER} \
--DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
--DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr \
--DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
-{AUX_DEFS} \
--DCMAKE_C_COMPILER={COMPILER} -DCMAKE_CXX_COMPILER={COMPILER_CPP} \
--DCOMPILER_CACHE={CACHE_TYPE} -DENABLE_BUILD_PROFILING=1 -DENABLE_BUZZHOUSE=1 {DIR}"""
-
-# release:          cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
-# binary release:   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
-# release coverage: cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DSANITIZE_COVERAGE=1 -DBUILD_STANDALONE_KEEPER=0 -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 ..
 
 
 def main():
@@ -69,62 +92,15 @@ def main():
             stages.pop(0)
         stages.insert(0, stage)
 
-    build_type = args.build_type
+    build_type = args.build_type.lower()
     assert (
         build_type
-    ), "build_type must be provided either as input argument or as a parameter of parametrized job in CI"
-    build_type = build_type.lower()
+    ), "--build-type must be provided either as input argument or as a parameter of parametrized job in CI"
+    assert (
+        build_type in BUILD_TYPE_TO_CMAKE
+    ), f"--build_type option is invalid [{build_type}]"
 
-    CACHE_TYPE = "sccache"
-
-    BUILD_TYPE = "RelWithDebInfo"
-    SANITIZER = ""
-    AUX_DEFS = " -DENABLE_TESTS=1 "
-    cmake_cmd = None
-
-    if "debug" in build_type:
-        print("Build type set: debug")
-        BUILD_TYPE = "Debug"
-        AUX_DEFS = " -DENABLE_TESTS=0 "
-        package_type = "debug"
-    elif "release" in build_type:
-        print("Build type set: release")
-        AUX_DEFS = (
-            " -DENABLE_TESTS=0 -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1 "
-        )
-        package_type = "release"
-    elif "asan" in build_type:
-        print("Sanitizer set: address")
-        SANITIZER = "address"
-        package_type = "asan"
-    elif "tsan" in build_type:
-        print("Sanitizer set: thread")
-        SANITIZER = "thread"
-        package_type = "tsan"
-    elif "msan" in build_type:
-        print("Sanitizer set: memory")
-        SANITIZER = "memory"
-        package_type = "msan"
-    elif "ubsan" in build_type:
-        print("Sanitizer set: undefined")
-        SANITIZER = "undefined"
-        package_type = "ubsan"
-    elif "binary" in build_type:
-        package_type = "binary"
-        cmake_cmd = f"cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None -DSANITIZE= -DENABLE_CHECK_HEAVY_BUILDS=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE=sccache -DENABLE_BUILD_PROFILING=1 {Utils.cwd()}"
-    else:
-        assert False
-
-    if not cmake_cmd:
-        cmake_cmd = CMAKE_CMD.format(
-            BUILD_TYPE=BUILD_TYPE,
-            CACHE_TYPE=CACHE_TYPE,
-            SANITIZER=SANITIZER,
-            AUX_DEFS=AUX_DEFS,
-            DIR=Utils.cwd(),
-            COMPILER=ToolSet.COMPILER_C,
-            COMPILER_CPP=ToolSet.COMPILER_CPP,
-        )
+    cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
 
     res = True
     results = []
@@ -184,12 +160,13 @@ def main():
         Shell.check("sccache --show-stats")
         Shell.check(f"ls -l {build_dir}/programs/")
         Shell.check(f"pwd")
-        Shell.check(f"find {build_dir} -name unit_tests_dbms")
-        Shell.check(f"find . -name unit_tests_dbms")
         res = results[-1].is_ok()
 
-    if res and JobStages.PACKAGE in stages and "binary" not in build_type:
-        assert package_type
+    if (
+        res
+        and JobStages.PACKAGE in stages
+        and build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE
+    ):
         if "amd" in build_type:
             deb_arch = "amd64"
         else:
@@ -203,7 +180,7 @@ def main():
                 command=[
                     f"DESTDIR={build_dir}/root ninja programs/install",
                     f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
-                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
+                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
                 ],
                 workdir=build_dir,
                 with_log=True,
@@ -211,7 +188,11 @@ def main():
         )
         res = results[-1].is_ok()
 
-    if res and JobStages.UNIT in stages and (SANITIZER or "binary" in build_type):
+    if (
+        res
+        and JobStages.UNIT in stages
+        and ("binary" in build_type or "san" in build_type)
+    ):
         # TODO: parallel execution
         results.append(
             Result.from_gtest_run(
