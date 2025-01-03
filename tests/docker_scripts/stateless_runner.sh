@@ -302,6 +302,14 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--report-coverage')
     fi
 
+    if [[ "$USE_PARALLEL_REPLICAS" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--parallel-replicas')
+#        ADDITIONAL_OPTIONS+=('--replace-log-with-mt')
+        ADDITIONAL_OPTIONS+=('--no-zookeeper')
+    else
+        ADDITIONAL_OPTIONS+=('--zookeeper')
+    fi
+
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
@@ -311,7 +319,6 @@ function run_tests()
     TEST_ARGS=(
         --testname
         --shard
-        --zookeeper
         --check-zookeeper-session
         --hung-check
         --print-time

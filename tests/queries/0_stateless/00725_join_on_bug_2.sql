@@ -3,10 +3,10 @@ set joined_subquery_requires_alias = 0;
 drop table if exists t_00725_2;
 drop table if exists s_00725_2;
 
-create table t_00725_2(a Int64, b Int64) engine = TinyLog;
+create table t_00725_2(a Int64, b Int64) engine = MergeTree ORDER BY tuple();
 insert into t_00725_2 values(1,1);
 insert into t_00725_2 values(2,2);
-create table s_00725_2(a Int64, b Int64) engine = TinyLog;
+create table s_00725_2(a Int64, b Int64) engine = MergeTree ORDER BY tuple();
 insert into s_00725_2 values(1,1);
 
 select a, b, s_a, s_b from t_00725_2 all left join (select a,b,a s_a, b s_b from s_00725_2) using (a,b);
