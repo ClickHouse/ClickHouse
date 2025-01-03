@@ -32,9 +32,9 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/VisiblePartsCollector.h>
-#include <Storages/MergeTree/Compaction/PartsFinders/InMemoryPartsFinder.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <fmt/core.h>
@@ -1055,7 +1055,14 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
-        auto future_part = InMemoryPartsFinder(*this, /*can_use_outdated_parts_=*/txn != nullptr).constructFuturePart(choice);
+        auto future_part = [&]()
+        {
+            if (txn != nullptr)
+                return constructFuturePart(*this, choice, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
+
+            return constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
+        }();
+
         if (!future_part)
         {
             return std::unexpected(SelectMergeFailure{

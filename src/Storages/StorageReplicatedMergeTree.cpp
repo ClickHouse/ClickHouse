@@ -48,9 +48,9 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/VisiblePartsCollector.h>
-#include <Storages/MergeTree/Compaction/PartsFinders/InMemoryPartsFinder.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -4097,7 +4097,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
             if (select_merge_result.has_value())
             {
-                future_merged_part = InMemoryPartsFinder(*this, /*can_use_outdated_parts_=*/false).constructFuturePart(select_merge_result.value());
+                future_merged_part = constructFuturePart(*this, select_merge_result.value(), {MergeTreeDataPartState::Active});
                 if (!future_merged_part)
                 {
                     LOG_DEBUG(log,
@@ -6178,7 +6178,7 @@ bool StorageReplicatedMergeTree::optimize(
 
             const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
             {
-                auto future_part = InMemoryPartsFinder(*this, /*can_use_outdated_parts_=*/false).constructFuturePart(choice);
+                auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
                 if (!future_part)
                     return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,

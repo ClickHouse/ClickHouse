@@ -35,13 +35,17 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
 }
 
-std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseTTLMerge(
+namespace
+{
+
+std::optional<MergeSelectorChoice> tryChooseTTLMerge(
+    const MergeSelectorApplier & applier,
     const PartsRanges & ranges,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
-    time_t current_time) const
+    time_t current_time)
 {
     /// Delete parts - 1 priority
     {
@@ -58,7 +62,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseTTLMerge(
     {
         TTLRowDeleteMergeSelector delete_ttl_selector(next_delete_times, current_time);
 
-        if (auto parts = delete_ttl_selector.select(ranges, max_total_size_to_merge); !parts.empty())
+        if (auto parts = delete_ttl_selector.select(ranges, applier.max_total_size_to_merge); !parts.empty())
             return MergeSelectorChoice{std::move(parts), MergeType::TTLDelete};
     }
 
@@ -67,16 +71,17 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseTTLMerge(
     {
         TTLRecompressMergeSelector recompress_ttl_selector(next_recompress_times, current_time, metadata_snapshot->getRecompressionTTLs());
 
-        if (auto parts = recompress_ttl_selector.select(ranges, max_total_size_to_merge); !parts.empty())
+        if (auto parts = recompress_ttl_selector.select(ranges, applier.max_total_size_to_merge); !parts.empty())
             return MergeSelectorChoice{std::move(parts), MergeType::TTLRecompress};
     }
 
     return std::nullopt;
 }
 
-std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseRegularMerge(
+std::optional<MergeSelectorChoice> tryChooseRegularMerge(
+    const MergeSelectorApplier & applier,
     const PartsRanges & ranges,
-    const MergeTreeSettingsPtr & data_settings) const
+    const MergeTreeSettingsPtr & data_settings)
 {
     const auto algorithm = (*data_settings)[MergeTreeSetting::merge_selector_algorithm];
 
@@ -94,7 +99,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseRegularMerge(
         if (!(*data_settings)[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
             simple_merge_settings.min_age_to_force_merge = (*data_settings)[MergeTreeSetting::min_age_to_force_merge_seconds];
 
-        if (aggressive)
+        if (applier.aggressive)
             simple_merge_settings.base = 1;
 
         if (algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE)
@@ -108,7 +113,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseRegularMerge(
         merge_settings = simple_merge_settings;
     }
 
-    auto parts = MergeSelectorFactory::instance().get(algorithm, merge_settings)->select(ranges, max_total_size_to_merge);
+    auto parts = MergeSelectorFactory::instance().get(algorithm, merge_settings)->select(ranges, applier.max_total_size_to_merge);
 
     /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
     if (parts.size() == 1)
@@ -120,23 +125,26 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::tryChooseRegularMerge(
     return std::nullopt;
 }
 
-std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFromImpl(
-        const PartsRanges & ranges,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeSettingsPtr & data_settings,
-        const PartitionIdToTTLs & next_delete_times,
-        const PartitionIdToTTLs & next_recompress_times,
-        bool can_use_ttl_merges,
-        time_t current_time) const
+std::optional<MergeSelectorChoice> chooseMergeFromImpl(
+    const MergeSelectorApplier & applier,
+    const PartsRanges & ranges,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettingsPtr & data_settings,
+    const PartitionIdToTTLs & next_delete_times,
+    const PartitionIdToTTLs & next_recompress_times,
+    bool can_use_ttl_merges,
+    time_t current_time)
 {
-    if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
-        if (auto choice = tryChooseTTLMerge(ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times, current_time))
+    if (metadata_snapshot->hasAnyTTL() && applier.merge_with_ttl_allowed && can_use_ttl_merges)
+        if (auto choice = tryChooseTTLMerge(applier, ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times, current_time))
             return choice;
 
-    if (auto choice = tryChooseRegularMerge(ranges, data_settings))
+    if (auto choice = tryChooseRegularMerge(applier, ranges, data_settings))
         return choice;
 
     return std::nullopt;
+}
+
 }
 
 std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
@@ -152,7 +160,7 @@ std::optional<MergeSelectorChoice> MergeSelectorApplier::chooseMergeFrom(
     Stopwatch select_parts_from_ranges_timer;
 
     auto choice = chooseMergeFromImpl(
-        ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times,
+        *this, ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times,
         can_use_ttl_merges, current_time);
 
     if (choice.has_value())

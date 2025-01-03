@@ -22,27 +22,6 @@ struct MergeSelectorChoice
 
 class MergeSelectorApplier
 {
-    std::optional<MergeSelectorChoice> tryChooseTTLMerge(
-        const PartsRanges & ranges,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeSettingsPtr & data_settings,
-        const PartitionIdToTTLs & next_delete_times,
-        const PartitionIdToTTLs & next_recompress_times,
-        time_t current_time) const;
-
-    std::optional<MergeSelectorChoice> tryChooseRegularMerge(
-        const PartsRanges & ranges,
-        const MergeTreeSettingsPtr & data_settings) const;
-
-    std::optional<MergeSelectorChoice> chooseMergeFromImpl(
-        const PartsRanges & ranges,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeSettingsPtr & data_settings,
-        const PartitionIdToTTLs & next_delete_times,
-        const PartitionIdToTTLs & next_recompress_times,
-        bool can_use_ttl_merges,
-        time_t current_time) const;
-
 public:
     const size_t max_total_size_to_merge = 0;
     const bool merge_with_ttl_allowed = false;

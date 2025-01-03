@@ -34,7 +34,10 @@ constexpr static double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 /// because between selecting parts to merge and doing merge, amount of free space could have decreased.
 constexpr static double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
-UInt64 CompactionStatistics::estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted)
+namespace CompactionStatistics
+{
+
+UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted)
 {
     size_t bytes_size = 0;
     time_t current_time = std::time(nullptr);
@@ -55,7 +58,7 @@ UInt64 CompactionStatistics::estimateNeededDiskSpace(const MergeTreeDataPartsVec
     return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
-UInt64 CompactionStatistics::estimateAtLeastAvailableSpace(const PartsRange & range)
+UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)
 {
     size_t bytes_size = 0;
 
@@ -65,7 +68,7 @@ UInt64 CompactionStatistics::estimateAtLeastAvailableSpace(const PartsRange & ra
     return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_SELECT);
 }
 
-UInt64 CompactionStatistics::getMaxSourcePartsSizeForMerge(const MergeTreeData & data)
+UInt64 getMaxSourcePartsSizeForMerge(const MergeTreeData & data)
 {
     size_t scheduled_tasks_count = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
@@ -74,7 +77,7 @@ UInt64 CompactionStatistics::getMaxSourcePartsSizeForMerge(const MergeTreeData &
 }
 
 
-UInt64 CompactionStatistics::getMaxSourcePartsSizeForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count)
+UInt64 getMaxSourcePartsSizeForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count)
 {
     if (scheduled_tasks_count > max_count)
     {
@@ -102,7 +105,7 @@ UInt64 CompactionStatistics::getMaxSourcePartsSizeForMerge(const MergeTreeData &
 }
 
 
-UInt64 CompactionStatistics::getMaxSourcePartSizeForMutation(const MergeTreeData & data)
+UInt64 getMaxSourcePartSizeForMutation(const MergeTreeData & data)
 {
     const auto data_settings = data.getSettings();
     size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
@@ -121,6 +124,8 @@ UInt64 CompactionStatistics::getMaxSourcePartSizeForMutation(const MergeTreeData
         return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     return 0;
+}
+
 }
 
 }
