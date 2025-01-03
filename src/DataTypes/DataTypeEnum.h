@@ -12,6 +12,8 @@
 namespace DB
 {
 
+bool enumValidateLiteralsInOperators(const ContextPtr & context);
+
 class IDataTypeEnum : public IDataType
 {
 public:
