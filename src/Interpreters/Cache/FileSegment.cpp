@@ -658,7 +658,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Shrinking of file segment can  be done only by the last holder: {}",
+            "Shrinking of file segment can be done only by the last holder: {}",
             getInfoForLog());
     }
 
@@ -690,9 +690,7 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
 
     if (reserved_size > result_size)
     {
-        const size_t diff = reserved_size - result_size;
-        if (diff)
-            queue_iterator->decrementSize(diff);
+        queue_iterator->decrementSize(reserved_size - result_size);
         reserved_size = result_size;
     }
 }
