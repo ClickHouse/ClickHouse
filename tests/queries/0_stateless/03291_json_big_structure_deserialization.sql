@@ -1,3 +1,5 @@
+-- Tags: long, no-tsan, no-msan, no-ubsan, no-asan
+
 set enable_json_type=1;
 
 create table test (json JSON) engine=MergeTree order by tuple() settings max_compress_block_size = 128, marks_compress_block_size=128, min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, index_granularity = 8192, replace_long_file_name_to_hash=1;
