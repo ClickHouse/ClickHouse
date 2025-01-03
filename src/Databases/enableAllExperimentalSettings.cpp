@@ -22,6 +22,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_object_type", 1);
     context->setSetting("allow_experimental_variant_type", 1);
     context->setSetting("allow_experimental_dynamic_type", 1);
+    context->setSetting("allow_experimental_drop_detached_table", 1);
     context->setSetting("allow_experimental_json_type", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
     context->setSetting("allow_experimental_window_functions", 1);

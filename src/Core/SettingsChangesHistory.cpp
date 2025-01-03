@@ -110,6 +110,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"http_response_headers", "", "", "New setting."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
             {"skip_redundant_aliases_in_udf", false, false, "New setting."},
+            {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             /// Release closed. Please use 25.1

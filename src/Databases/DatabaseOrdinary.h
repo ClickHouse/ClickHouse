@@ -73,6 +73,7 @@ public:
         return permanently_detached_tables;
     }
 
+    void removeTableFromPermanentlyDetachedTables(const String & table_name) override;
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
 protected:
