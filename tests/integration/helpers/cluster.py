@@ -2565,7 +2565,6 @@ class ClickHouseCluster:
                     "Can't connect to HDFS or preparations are not done yet " + str(ex)
                 )
                 time.sleep(1)
-
         raise Exception("Can't wait HDFS to start")
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
