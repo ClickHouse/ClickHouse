@@ -1,5 +1,9 @@
+from praktika.utils import Utils
+
 from praktika import Artifact, Docker, Job, Secret
-from praktika.settings import Settings
+
+
+TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == SettingsTEMP_DIR
 
 
 class RunnerLabels:
@@ -14,8 +18,8 @@ class RunnerLabels:
 
 
 class CIFiles:
-    UNIT_TESTS_RESULTS = "./tmp_ci/output/unit_tests_result.json"
-    UNIT_TESTS_BIN = "./tmp_ci/build/src/unit_tests_dbms"
+    UNIT_TESTS_RESULTS = f"{TEMP_DIR}/unit_tests_result.json"
+    UNIT_TESTS_BIN = f"{TEMP_DIR}/build/src/unit_tests_dbms"
 
 
 BASE_BRANCH = "master"
@@ -313,7 +317,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"./ci/tmp/build/programs/clickhouse",
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
@@ -330,7 +334,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"./ci/tmp/build/programs/clickhouse-odbc-bridge",
+        path=f"{TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
     ).parametrize(
         names=[
             ArtifactNames.CH_ODBC_B_AMD_DEBUG,
@@ -343,23 +347,10 @@ ARTIFACTS = [
             ArtifactNames.CH_ODBC_B_ARM_ASAN,
         ]
     ),
-    # *Artifact.Config(
-    #     name="...",
-    #     type=Artifact.Type.S3,
-    #     path=f"{Settings.TEMP_DIR}/build/src/unit_tests_dbms",
-    # ).parametrize(
-    #     names=[
-    #         ArtifactNames.UNITTEST_AMD_BINARY,
-    #         ArtifactNames.UNITTEST_AMD_ASAN,
-    #         ArtifactNames.UNITTEST_AMD_TSAN,
-    #         ArtifactNames.UNITTEST_AMD_MSAN,
-    #         ArtifactNames.UNITTEST_AMD_UBSAN,
-    #     ]
-    # ),
     *Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/output/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_DEBUG,
@@ -372,22 +363,22 @@ ARTIFACTS = [
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/output/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/output/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_ASAN,
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/output/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ),
     *Artifact.Config(
         name="",
         type=Artifact.Type.S3,
-        path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
+        path=f"{TEMP_DIR}/perf_wd/*.html",
     ).parametrize(
         names=[
             ArtifactNames.PERF_REPORTS_AMD_1_3,

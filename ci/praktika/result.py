@@ -545,7 +545,7 @@ class _ResultS3:
         for file in result.files:
             if not Path(file).is_file():
                 print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: Result file [{file}] was not found")
+                result.set_info(f"WARNING: File [{file}] was not found")
                 file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
             else:
                 is_text = False

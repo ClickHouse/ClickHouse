@@ -5,15 +5,18 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 
+temp_dir = f"{Utils.cwd()}/ci/tmp/"
+
+
 # TODO: generic functionality - move to separate file
 class ClickHouseBinary:
     def __init__(self):
-        self.path = "./tmp_ci/input/"
-        self.config_path = "./tmp_ci/config"
+        self.path = temp_dir
+        self.config_path = f"{temp_dir}/config"
         self.start_cmd = (
             f"{self.path}/clickhouse-server --config-file={self.config_path}/config.xml"
         )
-        self.log_file = "./tmp_ci/server.log"
+        self.log_file = f"{temp_dir}/server.log"
         self.port = 9000
 
     def install(self):

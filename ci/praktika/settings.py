@@ -37,8 +37,9 @@ class _Settings:
     #        CI workspace settings       #
     ######################################
     TEMP_DIR: str = "./ci/tmp"
-    OUTPUT_DIR: str = f"{TEMP_DIR}/output"
-    INPUT_DIR: str = f"{TEMP_DIR}/input"
+    # TODO: remove if using temp dir for in and out is ok
+    OUTPUT_DIR: str = f"{TEMP_DIR}"
+    INPUT_DIR: str = f"{TEMP_DIR}"
     PYTHON_INTERPRETER: str = "python3"
     PYTHON_PACKET_MANAGER: str = "pip3"
     PYTHON_VERSION: str = "3.9"

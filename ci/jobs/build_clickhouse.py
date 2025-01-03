@@ -195,8 +195,7 @@ def main():
         else:
             deb_arch = "arm64"
 
-        output_dir = "./tmp_ci/output/"
-        assert Shell.check(f"rm -f {output_dir}/*.deb")
+        assert Shell.check(f"rm -f {temp_dir}/*.deb")
 
         results.append(
             Result.from_commands_run(
@@ -204,7 +203,7 @@ def main():
                 command=[
                     f"DESTDIR={build_dir}/root ninja programs/install",
                     f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
-                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={output_dir} BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
+                    f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={package_type} VERSION_STRING={version} DEB_ARCH={deb_arch} ./build --deb",
                 ],
                 workdir=build_dir,
                 with_log=True,

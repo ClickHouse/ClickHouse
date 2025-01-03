@@ -96,12 +96,12 @@ jobs:
       - name: Run
         id: run
         run: |
-          . ./tmp_ci/praktika_setup_env.sh
+          . {TEMP_DIR}/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run "{JOB_NAME}" --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./tmp_ci/praktika_run.log
+            python3 -m praktika run "{JOB_NAME}" --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/praktika_run.log
           else
-            python3 -m praktika run "{JOB_NAME}" --workflow "{WORKFLOW_NAME}" --ci |& tee ./tmp_ci/praktika_run.log
+            python3 -m praktika run "{JOB_NAME}" --workflow "{WORKFLOW_NAME}" --ci |& tee {TEMP_DIR}/praktika_run.log
           fi
 {UPLOADS_GITHUB}\
 """

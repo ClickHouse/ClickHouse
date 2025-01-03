@@ -156,7 +156,7 @@ def main():
         # this is praktika based CI
         print("Copy input *.deb artifacts")
         assert Shell.check(
-            f"cp /tmp/praktika/input/*.deb {packages_path}", verbose=True
+            f"cp ./ci/tmp/*.deb {packages_path}", verbose=True
         )
     else:
         download_builds_filter(check_name, reports_path, packages_path, url_filter)
