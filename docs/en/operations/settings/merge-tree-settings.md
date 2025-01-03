@@ -1143,6 +1143,6 @@ Default value: 0.
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine
 
-If true, add an implicit constraint for the `sign` column of CollapsingMergeTree tables so only valid values (`1` and `-1`) are allowed.
+If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
 
 Default value: false
