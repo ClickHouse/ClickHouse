@@ -1,4 +1,3 @@
-import socket
 import time
 
 import pytest
@@ -65,11 +64,7 @@ def wait_nodes():
 
 
 def get_keeper_socket(nodename):
-    hosts = cluster.get_instance_ip(nodename)
-    client = socket.socket()
-    client.settimeout(10)
-    client.connect((hosts, 9181))
-    return client
+    return keeper_utils.get_keeper_socket(cluster, nodename)
 
 
 def get_fake_zk(nodename, timeout=30.0):

@@ -61,7 +61,7 @@ def get_fake_zk(nodename, timeout=30.0):
 def reset_node_stats(node=node1):
     client = None
     try:
-        client = keeper_utils.get_keeper_socket(cluster, node)
+        client = keeper_utils.get_keeper_socket(cluster, node.name)
         client.send(b"srst")
         client.recv(10)
     finally:
@@ -72,7 +72,7 @@ def reset_node_stats(node=node1):
 def reset_conn_stats(node=node1):
     client = None
     try:
-        client = keeper_utils.get_keeper_socket(cluster, node)
+        client = keeper_utils.get_keeper_socket(cluster, node.name)
         client.send(b"crst")
         client.recv(10_000)
     finally:
