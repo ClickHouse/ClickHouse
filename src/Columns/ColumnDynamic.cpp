@@ -1056,6 +1056,13 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
     /// Add variants from this dynamic column.
     add_variants(*this);
 
+    /// It might happen that current max_dynamic_types is less then global_max_dynamic_types
+    /// but the SharedVariant is empty. For example if this block was deserialized from Native format.
+    /// In this case we should set max_dynamic_types = global_max_dynamic_types, so during squashing we
+    /// will insert new types to SharedVariant only when the global limit is reached.
+    if (getSharedVariant().empty())
+        max_dynamic_types = global_max_dynamic_types;
+
     DataTypePtr result_variant_type;
     /// Check if the number of all variants exceeds the limit.
     if (!canAddNewVariants(0, all_variants.size()))
