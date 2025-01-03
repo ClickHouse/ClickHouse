@@ -39,7 +39,8 @@ enum class Source : uint8_t
     M(AZURE, "AzureBlobStorage") \
     M(KAFKA, "Kafka") \
     M(NATS, "") \
-    M(RABBITMQ, "RabbitMQ")
+    M(RABBITMQ, "RabbitMQ") \
+    M(ARROW_FLIGHT, "ArrowFlight") \
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
 
