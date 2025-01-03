@@ -300,102 +300,6 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
     };
 }
 
-static ASTPtr tryBuildAdditionalFilterAST(const ActionsDAG & dag)
-{
-    std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
-
-    struct Frame
-    {
-        const ActionsDAG::Node * node;
-        size_t next_child = 0;
-    };
-    std::stack<Frame> stack;
-    stack.push({dag.getOutputs().front()});
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-        const auto * node = frame.node;
-
-        if (node_to_ast.contains(node))
-        {
-            stack.pop();
-            continue;
-        }
-
-        if (WhichDataType(node->result_type).isSet())
-        {
-            auto maybe_set = node->column;
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
-                maybe_set = col_const->getDataColumnPtr();
-
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
-                node_to_ast[node] = col_set->getData()->getSourceAST();
-
-            continue;
-        }
-
-        if (node->column && isColumnConst(*node->column))
-        {
-            auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
-            node_to_ast[node] = std::move(literal);
-            stack.pop();
-            continue;
-        }
-
-        if (frame.next_child < node->children.size())
-        {
-            stack.push({node->children[frame.next_child]});
-            ++frame.next_child;
-            continue;
-        }
-
-        stack.pop();
-
-        if (node->type == ActionsDAG::ActionType::INPUT)
-        {
-            ASTPtr identifier = std::make_shared<ASTIdentifier>(node->result_name);
-            node_to_ast[node] = std::move(identifier);
-        }
-
-        if (node->type == ActionsDAG::ActionType::ALIAS)
-            node_to_ast[node] = node_to_ast[node->children.at(0)];
-
-        if (node->type != ActionsDAG::ActionType::FUNCTION)
-            continue;
-
-        if (!node->function_base->isDeterministic() || node->function_base->isStateful())
-            continue;
-
-        bool has_all_args = true;
-        ASTs arguments;
-        for (const auto * child : node->children)
-        {
-            auto ast = node_to_ast[child];
-            if (!ast)
-                has_all_args = false;
-            else
-                arguments.push_back(std::move(ast));
-        }
-
-        bool is_function_and = node->function_base->getName() == "and";
-        if (!has_all_args && !is_function_and)
-            continue;
-
-        if (is_function_and && arguments.empty())
-            continue;
-
-        /// and() with 1 arg is not supported.
-        if (is_function_and && arguments.size() == 1)
-            arguments.push_back(std::make_shared<ASTLiteral>(Field(1)));
-
-        auto function = makeASTFunction(node->function_base->getName(), std::move(arguments));
-        node_to_ast[node] = std::move(function);
-    }
-
-    return node_to_ast[dag.getOutputs().front()];
-}
-
-
 void executeQuery(
     QueryPlan & query_plan,
     const Block & header,
@@ -441,10 +345,6 @@ void executeQuery(
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        ASTPtr pushed_down_filters;
-        if (query_info.filter_actions_dag)
-            pushed_down_filters = tryBuildAdditionalFilterAST(*query_info.filter_actions_dag);
-
         for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
         {
             const auto & shard_info = cluster->getShardsInfo()[i];
@@ -471,7 +371,6 @@ void executeQuery(
             stream_factory.createForShard(
                 shard_info,
                 query_for_shard,
-                pushed_down_filters,
                 main_table,
                 table_func_ptr,
                 new_context,

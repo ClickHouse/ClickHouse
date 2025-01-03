@@ -337,17 +337,26 @@ Union
              ALIAS n :: 0 -> __table1.n UInt64 : 1
     Positions: 3 1
       ReadFromRemote (Read from remote replica)
-        Expression ((Project names + (Projection + Change column names to column identifiers)))
-        Actions: INPUT : 0 -> n UInt64 : 0
-                 ALIAS n :: 0 -> __table1.n UInt64 : 1
-                 ALIAS __table1.n :: 1 -> n UInt64 : 0
-        Positions: 0
-          ReadFromMergeTree (default.tab2)
-          ReadType: Default
-          Parts: 1
-          Granules: 62
-          Indexes:
-            PrimaryKey
-              Condition: true
-              Parts: 1/1
-              Granules: 62/62
+        Expression ((Project names + Projection))
+        Actions: INPUT : 0 -> __table1.n UInt64 : 0
+                 ALIAS __table1.n :: 0 -> n UInt64 : 1
+        Positions: 1
+          Filter ((WHERE + Change column names to column identifiers))
+          Filter column: equals(materialize(__table1.n), 100_UInt8) (removed)
+          Actions: INPUT : 0 -> n UInt64 : 0
+                   COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
+                   ALIAS n : 0 -> __table1.n UInt64 : 2
+                   FUNCTION materialize(n :: 0) -> materialize(__table1.n) UInt64 : 3
+                   FUNCTION equals(materialize(__table1.n) :: 3, 100_UInt8 :: 1) -> equals(materialize(__table1.n), 100_UInt8) UInt8 : 0
+          Positions: 0 2
+            ReadFromMergeTree (default.tab2)
+            ReadType: Default
+            Parts: 1
+            Granules: 1
+            Indexes:
+              PrimaryKey
+                Keys: 
+                  n
+                Condition: (materialize(n) in [100, 100])
+                Parts: 1/1
+                Granules: 1/62
