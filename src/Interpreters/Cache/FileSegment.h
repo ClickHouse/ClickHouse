@@ -33,12 +33,11 @@ struct CreateFileSegmentSettings
 {
     FileSegmentKind kind = FileSegmentKind::Regular;
     bool unbounded = false;
-    bool shrink_to_aligned_size = false;
 
     CreateFileSegmentSettings() = default;
 
-    explicit CreateFileSegmentSettings(FileSegmentKind kind_, bool shrink_to_aligned_size_ = true)
-        : kind(kind_), unbounded(kind == FileSegmentKind::Ephemeral), shrink_to_aligned_size(shrink_to_aligned_size_) {}
+    explicit CreateFileSegmentSettings(FileSegmentKind kind_)
+        : kind(kind_), unbounded(kind == FileSegmentKind::Ephemeral) {}
 };
 
 class FileSegment : private boost::noncopyable
@@ -261,7 +260,6 @@ private:
     /// can be bigger than max_file_segment_size.
     /// is_unbound == true for temporary data in cache.
     const bool is_unbound;
-    const bool shrink_to_aligned_size;
     const bool background_download_enabled;
 
     std::atomic<State> download_state;

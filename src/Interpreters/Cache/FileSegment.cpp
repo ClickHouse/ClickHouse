@@ -64,7 +64,6 @@ FileSegment::FileSegment(
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
     , is_unbound(settings.unbounded)
-    , shrink_to_aligned_size(settings.shrink_to_aligned_size)
     , background_download_enabled(background_download_enabled_)
     , download_state(download_state_)
     , key_metadata(key_metadata_)
@@ -663,13 +662,9 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     }
 
     size_t result_size = downloaded_size;
-
-    if (shrink_to_aligned_size)
-    {
-        size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
-        if (aligned_downloaded_size < range().size())
-            result_size = aligned_downloaded_size;
-    }
+    size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+    if (aligned_downloaded_size < range().size())
+        result_size = aligned_downloaded_size;
 
     chassert(result_size <= range().size());
     chassert(result_size >= downloaded_size);
