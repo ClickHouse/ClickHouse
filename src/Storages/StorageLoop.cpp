@@ -16,8 +16,11 @@ namespace DB
             : IStorage(table_id_)
             , inner_storage(std::move(inner_storage_))
     {
-        StorageInMemoryMetadata storage_metadata = inner_storage->getInMemoryMetadata();
-        setInMemoryMetadata(storage_metadata);
+        if (inner_storage)
+        {
+            StorageInMemoryMetadata storage_metadata = inner_storage->getInMemoryMetadata();
+            setInMemoryMetadata(storage_metadata);
+        }
     }
 
 
