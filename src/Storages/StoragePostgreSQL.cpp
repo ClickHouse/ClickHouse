@@ -8,6 +8,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/re2.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
 
@@ -535,6 +536,22 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
+void ensureConfigurationIsSanitized(StoragePostgreSQL::Configuration & config)
+{
+    /// We want to match either unquoted identifiers or quoted ones. Quoted identifiers support
+    /// quotes inside them that are escaped by doubling them. Unquoted identifiers must start with a
+    /// letter or an underscore.
+    /// Valid names: test, _test, "test", "1test", "te""st", """te-st"
+    /// Invalid names: 1test, "te"st", "test, "te"st
+    static auto regexp = re2::RE2(R"(^([a-z_]\w*|"([\w -]|"")*")$)");
+
+    for (const auto & param : {config.database, config.table})
+    {
+        if (!re2::RE2::FullMatch(param, regexp))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter '{}' must be compliant with PostgreSQL's naming conventions", param);
+    }
+}
+
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
@@ -566,6 +583,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
         configuration.table = named_collection.get<String>("table");
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
     configuration.on_conflict = named_collection.getOrDefault<String>("on_conflict", "");
+
+    ensureConfigurationIsSanitized(configuration);
 
     return configuration;
 }
@@ -610,6 +629,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             configuration.schema = checkAndGetLiteralArgument<String>(engine_args[5], "schema");
         if (engine_args.size() >= 7)
             configuration.on_conflict = checkAndGetLiteralArgument<String>(engine_args[6], "on_conflict");
+
+        ensureConfigurationIsSanitized(configuration);
     }
     for (const auto & address : configuration.addresses)
         context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));

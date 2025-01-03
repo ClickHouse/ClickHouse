@@ -1,0 +1,4 @@
+--Some statements that should throw argument exception because they do not have valid parameters
+--Database name should be valid
+--Table name should be valid
+--Named collections are also checked
