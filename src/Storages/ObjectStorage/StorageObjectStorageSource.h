@@ -46,6 +46,18 @@ public:
 
     String getName() const override { return name; }
 
+    const Block & getHeader() const
+    {
+        return reader->getHeader();
+    }
+
+    std::string getPath() const
+    {
+        if (configuration->getPaths().size() != 1)
+            throw std::runtime_error("incorrect configuration");
+        return configuration->getPaths().at(0).filename;
+    }
+
     void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
 
     Chunk generate() override;
@@ -97,7 +109,8 @@ protected:
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
-            std::unique_ptr<PullingPipelineExecutor> reader_);
+            std::unique_ptr<PullingPipelineExecutor> reader_,
+            Block header_);
 
         ReaderHolder() = default;
         ReaderHolder(ReaderHolder && other) noexcept { *this = std::move(other); }
@@ -110,12 +123,15 @@ protected:
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
+        const Block & getHeader() const { return header; }
+
     private:
         ObjectInfoPtr object_info;
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+        Block header;
     };
 
     ReaderHolder reader;
@@ -248,7 +264,7 @@ private:
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
-    const std::vector<String> keys;
+    const StorageObjectStorage::Configuration::Paths keys;
     std::atomic<size_t> index = 0;
     bool ignore_non_existent_files;
 };

@@ -19,10 +19,12 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
+#include "Columns/ColumnLowCardinality.h"
+#include "Core/ColumnsWithTypeAndName.h"
 #include "Disks/IO/CachedOnDiskReadBufferFromFile.h"
 #include "Interpreters/Cache/FileCache.h"
 #include "Interpreters/Cache/FileCacheKey.h"
-
+#include <Processors/Formats/ISchemaReader.h>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -151,7 +153,7 @@ std::shared_ptr<StorageObjectStorageSource::IIterator> StorageObjectStorageSourc
             std::vector<String> paths;
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(fs::path(configuration->getNamespace()) / key);
+                paths.push_back(fs::path(configuration->getNamespace()) / key.filename);
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -331,6 +333,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
+    std::unique_ptr<ReadBuffer> read_buf_schema;
 
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
@@ -355,6 +358,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::optional<size_t> num_rows_from_cache
         = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
 
+    bool read_all_columns = false;
+    Block initial_header = read_from_format_info.format_header;
     if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
@@ -373,14 +378,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
+            read_buf_schema = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
         else
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             read_buf = createReadBuffer(*object_info, object_storage, context_, log);
+            read_buf_schema = createReadBuffer(*object_info, object_storage, context_, log);
         }
-
-        Block initial_header = read_from_format_info.format_header;
 
         if (auto initial_schema = configuration->getInitialSchemaByPath(object_info->getPath()))
         {
@@ -391,7 +396,19 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             initial_header = sample_header;
         }
-
+        
+        if (initial_header.columns() == 0)
+        {
+            auto schema_reader = FormatFactory::instance().getSchemaReader(configuration->format, *read_buf_schema, context_);
+            auto columns_with_names = schema_reader->readSchema();
+            ColumnsWithTypeAndName initial_header_data;
+            for (const auto & elem : columns_with_names)
+            {
+                initial_header_data.push_back(ColumnWithTypeAndName(elem.type, elem.name));
+            }
+            initial_header = Block(initial_header_data);
+            read_all_columns = true;
+        }
 
         auto input_format = FormatFactory::instance().getInput(
             configuration->format,
@@ -438,12 +455,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         source = input_format;
     }
 
-    /// Add ExtractColumnsTransform to extract requested columns/subcolumns
-    /// from chunk read by IInputFormat.
-    builder.addSimpleTransform([&](const Block & header)
+    if (!read_all_columns)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
-    });
+        /// Add ExtractColumnsTransform to extract requested columns/subcolumns
+        /// from chunk read by IInputFormat.
+        builder.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
+        });
+    }
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -451,7 +471,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
 
     return ReaderHolder(
-        object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
+        object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader), std::move(initial_header));
 }
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
@@ -631,13 +651,13 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         const auto key_prefix = configuration->getPathWithoutGlobs();
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
+        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.filename));
         if (!matcher->ok())
         {
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs.filename, matcher->error());
         }
 
-        recursive = key_with_globs == "/**";
+        recursive = key_with_globs.filename == "/**";
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
@@ -649,7 +669,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Using glob iterator with path without globs is not allowed (used path: {})",
-            configuration->getPath());
+            configuration->getPath().filename);
     }
 }
 
@@ -674,7 +694,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
     {
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
                         "Can not match any files with path {}",
-                        configuration->getPath());
+                        configuration->getPath().filename);
     }
     first_iteration = false;
     return object_info;
@@ -763,12 +783,14 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , keys(configuration->getPaths())
     , ignore_non_existent_files(ignore_non_existent_files_)
 {
+    if (keys.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key iterator can not consist of multiple keys");
     if (read_keys_)
     {
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
         for (auto && key : keys)
         {
-            auto object_info = std::make_shared<ObjectInfo>(key);
+            auto object_info = std::make_shared<ObjectInfo>(key.filename);
             read_keys_->emplace_back(object_info);
         }
     }
@@ -787,18 +809,18 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         ObjectMetadata object_metadata{};
         if (ignore_non_existent_files)
         {
-            auto metadata = object_storage->tryGetObjectMetadata(key);
+            auto metadata = object_storage->tryGetObjectMetadata(key.filename);
             if (!metadata)
                 continue;
             object_metadata = *metadata;
         }
         else
-            object_metadata = object_storage->getObjectMetadata(key);
+            object_metadata = object_storage->getObjectMetadata(key.filename);
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
 
-        return std::make_shared<ObjectInfo>(key, object_metadata);
+        return std::make_shared<ObjectInfo>(key.filename, object_metadata);
     }
 }
 
@@ -807,12 +829,14 @@ StorageObjectStorageSource::ReaderHolder::ReaderHolder(
     std::unique_ptr<ReadBuffer> read_buf_,
     std::shared_ptr<ISource> source_,
     std::unique_ptr<QueryPipeline> pipeline_,
-    std::unique_ptr<PullingPipelineExecutor> reader_)
+    std::unique_ptr<PullingPipelineExecutor> reader_,
+    Block header_)
     : object_info(std::move(object_info_))
     , read_buf(std::move(read_buf_))
     , source(std::move(source_))
     , pipeline(std::move(pipeline_))
     , reader(std::move(reader_))
+    , header(std::move(header_))
 {
 }
 

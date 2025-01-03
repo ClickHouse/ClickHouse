@@ -67,8 +67,8 @@ public:
     std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
     size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
 
-    Path getPath() const override { return url.key; }
-    void setPath(const Path & path) override { url.key = path; }
+    Path getPath() const override { return Path{.filename = url.key, .meta = nullptr}; }
+    void setPath(const Path & path) override { url.key = path.filename; }
 
     const Paths & getPaths() const override { return keys; }
     void setPaths(const Paths & paths) override { keys = paths; }
@@ -99,7 +99,7 @@ private:
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
     S3::URI url;
-    std::vector<String> keys;
+    std::vector<Path> keys;
 
     S3::S3AuthSettings auth_settings;
     S3::S3RequestSettings request_settings;

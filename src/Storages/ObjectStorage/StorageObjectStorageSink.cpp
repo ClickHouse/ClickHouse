@@ -31,7 +31,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     , sample_block(sample_block_)
 {
     const auto & settings = context->getSettingsRef();
-    const auto path = blob_path.empty() ? configuration->getPaths().back() : blob_path;
+    const auto path = blob_path.empty() ? configuration->getPaths().back().filename : blob_path;
     const auto chosen_compression_method = chooseCompressionMethod(path, configuration->compression_method);
 
     auto buffer = object_storage->writeObject(
@@ -124,7 +124,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     auto partition_bucket = replaceWildcards(configuration->getNamespace(), partition_id);
     validateNamespace(partition_bucket);
 
-    auto partition_key = replaceWildcards(configuration->getPath(), partition_id);
+    auto partition_key = replaceWildcards(configuration->getPath().filename, partition_id);
     validateKey(partition_key);
 
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(

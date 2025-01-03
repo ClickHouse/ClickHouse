@@ -1,3 +1,4 @@
+#include "Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -181,7 +182,7 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
     if (metadata_files.empty())
     {
         throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration.getPath());
+            ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration.getPath().filename);
     }
 
     std::vector<std::pair<UInt32, String>> metadata_files_with_versions;
@@ -243,6 +244,10 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
         cached_files_for_current_snapshot = std::nullopt;
     }
     current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
+    std::stringstream os;
+    metadata_object->stringify(os);
+    jsons_logging += os.str() + "\n\n\n\n\n";
+
     return true;
 }
 
@@ -318,7 +323,7 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
 
     auto context = getContext();
     StorageObjectStorageSource::ObjectInfo object_info(
-        std::filesystem::path(configuration_ptr->getPath()) / "metadata" / manifest_list_file);
+        std::filesystem::path(configuration_ptr->getPath().filename) / "metadata" / manifest_list_file);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
     auto manifest_list_file_reader
@@ -343,7 +348,7 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
     {
         const auto file_path = col_str->getDataAt(i).toView();
         const auto filename = std::filesystem::path(file_path).filename();
-        String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
+        String manifest_file = std::filesystem::path(configuration_ptr->getPath().filename) / "metadata" / filename;
         auto manifest_file_it = manifest_files_by_name.find(manifest_file);
         if (manifest_file_it != manifest_files_by_name.end())
         {
@@ -358,14 +363,14 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
 
 ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const
 {
-    String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
+    String manifest_file = std::filesystem::path(configuration_ptr->getPath().filename) / "metadata" / filename;
 
     StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
     auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
     auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
     auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, filename);
     auto manifest_file_impl = std::make_unique<ManifestFileContentImpl>(
-        std::move(manifest_file_reader), format_version, configuration_ptr->getPath(), getFormatSettings(getContext()), schema_id);
+        std::move(manifest_file_reader), format_version, configuration_ptr->getPath().filename, getFormatSettings(getContext()), schema_id);
     auto [manifest_file_iterator, _inserted]
         = manifest_files_by_name.emplace(manifest_file, ManifestFileContent(std::move(manifest_file_impl)));
     ManifestFileEntry manifest_file_entry{manifest_file_iterator};
@@ -373,6 +378,15 @@ ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filenam
     {
         manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
     }
+    for (const auto & data_file : manifest_file_entry.getContent().getPositionalDeleteFiles())
+    {
+        manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
+    }
+    for (const auto & data_file : manifest_file_entry.getContent().getEqualityDeleteFiles())
+    {
+        manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
+    }
+
     schema_processor.addIcebergTableSchema(schema_object);
     return manifest_file_entry;
 }
@@ -387,7 +401,7 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) 
 }
 
 
-Strings IcebergMetadata::getDataFiles() const
+DataFileInfos IcebergMetadata::getDataFiles() const
 {
     if (!current_snapshot)
     {
@@ -399,16 +413,48 @@ Strings IcebergMetadata::getDataFiles() const
         return cached_files_for_current_snapshot.value();
     }
 
-    Strings data_files;
+    DataFileInfos data_files;
     for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
     {
         for (const auto & data_file : manifest_entry.getContent().getDataFiles())
         {
             if (data_file.status != ManifestEntryStatus::DELETED)
             {
-                data_files.push_back(data_file.data_file_name);
+                data_files.push_back(DataFileInfo{
+                    .filename = data_file.data_file_name,
+                    .meta = std::make_shared<DataFileMeta>(DataFileMeta{
+                        .type = DataFileMeta::DataFileType::DATA_FILE
+                    })
+                });
             }
         }
+
+        for (const auto & data_file : manifest_entry.getContent().getPositionalDeleteFiles())
+        {
+            if (data_file.status != ManifestEntryStatus::DELETED)
+            {
+                data_files.push_back(DataFileInfo{
+                    .filename = data_file.data_file_name,
+                    .meta = std::make_shared<DataFileMeta>(DataFileMeta{
+                        .type = DataFileMeta::DataFileType::ICEBERG_POSITIONAL_DELETE
+                    })
+                });
+            }
+        }
+
+        for (const auto & data_file : manifest_entry.getContent().getEqualityDeleteFiles())
+        {
+            if (data_file.status != ManifestEntryStatus::DELETED)
+            {
+                data_files.push_back(DataFileInfo{
+                    .filename = data_file.data_file_name,
+                    .meta = std::make_shared<DataFileMeta>(DataFileMeta{
+                        .type = DataFileMeta::DataFileType::ICEBERG_EQUALITY_DELETE
+                    })
+                });
+            }
+        }
+
     }
 
     cached_files_for_current_snapshot.emplace(std::move(data_files));

@@ -71,8 +71,8 @@ private:
     void setURL(const std::string & url_);
 
     String url;
-    String path;
-    std::vector<String> paths;
+    Path path;
+    Paths paths;
 };
 
 }
