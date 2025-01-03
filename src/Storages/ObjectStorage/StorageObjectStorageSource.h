@@ -40,7 +40,8 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads_,
-        bool need_only_count_);
+        bool need_only_count_,
+        bool read_all_columns_);
 
     ~StorageObjectStorageSource() override;
 
@@ -49,13 +50,6 @@ public:
     const Block & getHeader() const
     {
         return reader->getHeader();
-    }
-
-    std::string getPath() const
-    {
-        if (configuration->getPaths().size() != 1)
-            throw std::runtime_error("incorrect configuration");
-        return configuration->getPaths().at(0).filename;
     }
 
     void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
@@ -91,6 +85,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
+    const bool read_all_columns;
     const size_t max_parsing_threads;
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
@@ -152,7 +147,8 @@ protected:
         const LoggerPtr & log,
         size_t max_block_size,
         size_t max_parsing_threads,
-        bool need_only_count);
+        bool need_only_count,
+        bool read_all_columns);
 
     ReaderHolder createReader();
 

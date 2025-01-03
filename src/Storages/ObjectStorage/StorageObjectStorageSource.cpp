@@ -68,7 +68,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     UInt64 max_block_size_,
     std::shared_ptr<IIterator> file_iterator_,
     size_t max_parsing_threads_,
-    bool need_only_count_)
+    bool need_only_count_,
+    bool read_all_columns_)
     : SourceWithKeyCondition(info.source_header, false)
     , name(std::move(name_))
     , object_storage(object_storage_)
@@ -77,6 +78,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
+    , read_all_columns(read_all_columns_)
     , max_parsing_threads(max_parsing_threads_)
     , read_from_format_info(info)
     , create_reader_pool(std::make_shared<ThreadPool>(
@@ -294,7 +296,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         log,
         max_block_size,
         max_parsing_threads,
-        need_only_count);
+        need_only_count,
+        read_all_columns);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -310,7 +313,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const LoggerPtr & log,
     size_t max_block_size,
     size_t max_parsing_threads,
-    bool need_only_count)
+    bool need_only_count,
+    bool read_all_columns)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -358,7 +362,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::optional<size_t> num_rows_from_cache
         = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
 
-    bool read_all_columns = false;
     Block initial_header = read_from_format_info.format_header;
     if (num_rows_from_cache)
     {
@@ -397,7 +400,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
         }
         
-        if (initial_header.columns() == 0)
+        if (read_all_columns)
         {
             auto schema_reader = FormatFactory::instance().getSchemaReader(configuration->format, *read_buf_schema, context_);
             auto columns_with_names = schema_reader->readSchema();
@@ -407,7 +410,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 initial_header_data.push_back(ColumnWithTypeAndName(elem.type, elem.name));
             }
             initial_header = Block(initial_header_data);
-            read_all_columns = true;
         }
 
         auto input_format = FormatFactory::instance().getInput(
@@ -783,8 +785,6 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , keys(configuration->getPaths())
     , ignore_non_existent_files(ignore_non_existent_files_)
 {
-    if (keys.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key iterator can not consist of multiple keys");
     if (read_keys_)
     {
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
