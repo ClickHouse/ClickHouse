@@ -2610,9 +2610,12 @@ bool ClientBase::processQueryText(const String & text)
 }
 
 
-String ClientBase::prompt() const
+String ClientBase::getPrompt() const
 {
-    return prompt_by_server_display_name;
+    if (!prompt.empty())
+        return prompt;
+
+    return ":) ";
 }
 
 
@@ -2817,7 +2820,7 @@ void ClientBase::runInteractive()
             lr.enableBracketedPaste();
             SCOPE_EXIT({ lr.disableBracketedPaste(); });
 
-            input = lr.readLine(prompt(), ":-] ");
+            input = lr.readLine(getPrompt(), ":-] ");
         }
 
         if (input.empty())

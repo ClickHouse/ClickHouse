@@ -202,7 +202,7 @@ private:
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    String prompt() const;
+    String getPrompt() const;
 
     void resetOutput();
 
@@ -345,7 +345,7 @@ protected:
 
     UInt64 server_revision = 0;
     String server_version;
-    String prompt_by_server_display_name;
+    String prompt;
     String server_display_name;
 
     ProgressIndication progress_indication;

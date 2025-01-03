@@ -205,6 +205,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
         ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
 
         ("client_logs_file", po::value<std::string>(), "Path to a file for writing client logs. Currently we only have fatal logs (when the client crashes)")
+
+        ("prompt", po::value<std::string>(), "Custom prompt string")
     ;
 
     addOptions(options_description);
@@ -357,6 +359,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
         getClientConfiguration().setBool("interactive", true);
     if (options.count("pager"))
         getClientConfiguration().setString("pager", options["pager"].as<std::string>());
+    if (options.count("prompt"))
+        getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
