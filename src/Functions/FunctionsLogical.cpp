@@ -5,9 +5,11 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/Stopwatch.h>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -572,12 +574,21 @@ static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & nu
 }
 
 template <typename Impl, typename Name>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+template <bool with_profile>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, FunctionExecuteProfile * profile [[maybe_unused]]) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
-    executeColumnIfNeeded(arguments[0]);
+    Stopwatch watch;
+    if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
+    {
+        profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecuteProfile()));
+        executeColumnIfNeeded(arguments[0], false, &(profile->argument_profiles.back().second));
+    }
+    else
+        executeColumnIfNeeded(arguments[0]);
+
 
     /// Let's denote x_i' = maskedExecute(x_i, mask).
     /// 1) AND(x_0, x_1, x_2, ..., x_n)
@@ -623,7 +634,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
         if (!mask_info.has_ones || i == arguments.size())
             break;
 
-        maskedExecute(arguments[i], mask, mask_info);
+        if constexpr (with_profile)
+        {
+            profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+            auto & arg_profile = profile->argument_profiles.back().second;
+            maskedExecute(arguments[i], mask, mask_info, &arg_profile);
+        }
+        else
+            maskedExecute(arguments[i], mask, mask_info, nullptr);
     }
     /// For OR function we need to inverse mask to get the resulting column.
     if (inverted)
@@ -635,6 +653,18 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     auto res = ColumnUInt8::create();
     res->getData() = std::move(mask);
 
+    if constexpr (with_profile)
+    {
+        profile->executed_elapsed = watch.elapsed();
+        profile->executed_rows = res->size();
+        size_t side_elapsed = 0;
+        for (const auto & [i, arg_profile] : profile->argument_profiles)
+        {
+            side_elapsed += arg_profile.short_circuit_side_elapsed;
+        }
+        profile->short_circuit_side_elapsed = side_elapsed;
+    }
+
     if (!nulls)
         return res;
 
@@ -642,24 +672,42 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     bytemap->getData() = std::move(*nulls);
     return ColumnNullable::create(std::move(res), std::move(bytemap));
 }
-
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    return this->executeImplWithProfile(args, result_type, input_rows_count, nullptr);
+}
+
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const
 {
     ColumnsWithTypeAndName arguments = args;
 
     /// Special implementation for short-circuit arguments.
     if (checkShortCircuitArguments(arguments) != -1)
-        return executeShortCircuit(arguments, result_type);
+    {
+        if (profile)
+            return executeShortCircuit<true>(arguments, result_type, profile);
+        return executeShortCircuit<false>(arguments, result_type, profile);
+    }
 
+    Stopwatch watch;
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());
 
+    ColumnPtr result_col = nullptr;
     if (result_type->isNullable())
-        return executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+        result_col = executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
+    result_col = basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+    if (profile)
+    {
+        profile->executed_rows = input_rows_count;
+        profile->executed_elapsed = watch.elapsed();
+    }
+    return result_col;
 }
 
 template <typename Impl, typename Name>

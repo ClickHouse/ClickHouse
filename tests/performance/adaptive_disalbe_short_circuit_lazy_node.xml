@@ -1,0 +1,23 @@
+<test>
+    <query>
+        select and(greater(a , 1) ,greater(a + b, 1) , less(a + 2 * b , 4000)) from (select moduloOrZero(rand(), 1000) as a, moduloOrZero(rand(), 1000) as b from numbers(10000000)) Format null settings max_threads=8
+    </query>
+    <query>
+        select and(greater(a , 1) ,greater(a + b, 1) , less(a + 2 * b , 4000)) from (select moduloOrZero(rand(), 1000) as a, moduloOrZero(rand() , 1000) as b from numbers(10000000)) Format null settings max_threads=8, short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        select * from (select moduloOrZero(rand(), 1000) as a, moduloOrZero(rand(), 1000) as b from numbers(10000000)) where and(greater(a , 1) ,greater(a + b, 1) , less(a + 2 * b , 4000)) Format null settings max_thread=8, query_plan_merge_filters=false
+    </query>
+    <query>
+        select * from (select moduloOrZero(rand(), 1000) as a, moduloOrZero(rand(), 1000) as b from numbers(10000000)) where and(greater(a , 1) ,greater(a + b, 1) , less(a + 2 * b , 4000)) Format null settings max_thread=8, query_plan_merge_filters=false,short_circuit_function_evaluation='force_enable'
+    </query>
+
+    <query>
+        select multiIf(greater(a, 1) and less(a, 1000), a + 2, greater(a, 1000) and less(a, 2000), a * 2 , a) from(select rand() % 5000 as a from numbers(1000000)) Format null settings max_threads=8
+    </query>
+    <query>
+        select multiIf(greater(a, 1) and less(a, 1000), a + 2, greater(a, 1000) and less(a, 2000), a * 2 , a) from(select rand() % 5000 as a from numbers(1000000)) Format null settings short_circuit_function_evaluation='force_enable', max_threads=8
+    </query>
+
+</test>

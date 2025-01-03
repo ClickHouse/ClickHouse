@@ -17,6 +17,11 @@ public:
 protected:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
+    ColumnPtr executeImplWithProfile(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecuteProfile * profile) const final;
     ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
@@ -86,6 +91,8 @@ public:
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
     bool hasInformationAboutPreimage() const override { return function->hasInformationAboutPreimage(); }
+
+    bool isNoExcept() const override { return function->isNoExcept(); }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {

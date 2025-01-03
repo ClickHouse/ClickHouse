@@ -15,10 +15,13 @@ namespace DB
 template <typename T>
 void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted, T default_value = T());
 
+struct FunctionExecuteProfile;
+
 struct MaskInfo
 {
     bool has_ones;
     bool has_zeros;
+    size_t ones_count = 0;
 };
 
 /// The next functions are used to extract UInt8 mask from a column,
@@ -63,11 +66,12 @@ void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info);
 void maskedExecute(
     ColumnWithTypeAndName & column,
     const PaddedPODArray<UInt8> & mask,
-    const MaskInfo & mask_info = {true, true});
+    const MaskInfo & mask_info = {true, true},
+    FunctionExecuteProfile * profile = nullptr);
 
 /// If given column is lazy executed argument, reduce it. If empty is true,
 /// create an empty column with the execution result type.
-void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty = false);
+void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty = false, FunctionExecuteProfile * profile = nullptr);
 
 /// Check if arguments contain lazy executed argument. If contain, return index of the last one,
 /// otherwise return -1.

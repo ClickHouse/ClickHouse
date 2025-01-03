@@ -648,6 +648,7 @@ public:
     explicit FunctionComparison(bool check_decimal_overflow_)
         : check_decimal_overflow(check_decimal_overflow_) {}
 
+    bool isNoExcept() const override { return true; }
 private:
     bool check_decimal_overflow = true;
 
