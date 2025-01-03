@@ -1907,6 +1907,17 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     else
     {
+        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+        if (ASTStorage * storage_def = create_query.storage)
+        {
+            if (storage_def->engine)
+            {
+                auto table_engine_ast = storage_def->engine->ptr();
+                auto table_function = TableFunctionFactory::instance().tryGet(Poco::toLower(table_engine_ast->as<ASTFunction>()->name), getContext());
+                if (table_function && !table_function->canBeUsedToCreateTable())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} cannot be used to create a table", table_function->getName());
+            }
+        }
         res = StorageFactory::instance().get(create,
             data_path,
             getContext(),
@@ -1915,8 +1926,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             properties.constraints,
             mode);
 
-        /// If schema wes inferred while storage creation, add columns description to create query.
-        auto & create_query = query_ptr->as<ASTCreateQuery &>();
+        /// If schema was inferred while storage creation, add columns description to create query.
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
         /// Add any inferred engine args if needed. For example, data format for engines File/S3/URL/etc
         if (auto * engine_args = getEngineArgsFromCreateQuery(create_query))
