@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <type_traits>
 #include <Columns/ColumnFixedString.h>
@@ -175,12 +176,10 @@ private:
         for (size_t i = 0, size = a_strs.size(); i < size; ++i)
         {
             const auto * a_str = a_strs_data.data() + prev_a_offset + offset_a;
-            auto a_str_len = a_offsets[i] - prev_a_offset - 1;
+            size_t a_str_len = a_offsets[i] - prev_a_offset - 1;
             if (offset_a >= a_str_len && offset_b >= b_str.size()) [[unlikely]]
             {
                 result[i] = 0;
-                prev_a_offset = a_offsets[i];
-                continue;
             }
             else if (offset_b >= b_str.size()) [[unlikely]]
             {
@@ -188,8 +187,6 @@ private:
                     result[i] = 1;
                 else
                     result[i] = -1;
-                prev_a_offset = a_offsets[i];
-                continue;
             }
             else if (offset_a >= a_str_len) [[unlikely]]
             {
@@ -197,17 +194,17 @@ private:
                     result[i] = -1;
                 else
                     result[i] = 1;
-                prev_a_offset = a_offsets[i];
-                continue;
             }
-
-            auto a_n = std::min(n, a_str_len - offset_a);
-            if constexpr (positive)
-                result[i]
-                    = memcmpSmallLikeZeroPaddedAllowOverflow15(reinterpret_cast<const char *>(a_str), a_n, b_str.data() + offset_b, b_n);
             else
-                result[i]
-                    = memcmpSmallLikeZeroPaddedAllowOverflow15(b_str.data() + offset_b, b_n, reinterpret_cast<const char *>(a_str), a_n);
+            {
+                auto a_n = std::min(n, a_str_len - offset_a);
+                if constexpr (positive)
+                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
+                        reinterpret_cast<const char *>(a_str), a_n, b_str.data() + offset_b, b_n);
+                else
+                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
+                        b_str.data() + offset_b, b_n, reinterpret_cast<const char *>(a_str), a_n);
+            }
 
             prev_a_offset = a_offsets[i];
         }
@@ -218,14 +215,13 @@ private:
         const ColumnFixedString & a_strs, size_t offset_a, const String & b_str, size_t offset_b, size_t n, PaddedPODArray<Int32> & result)
         const
     {
-        auto a_str_len = a_strs.getN();
+        size_t a_str_len = a_strs.getN();
         if (a_str_len <= offset_a && b_str.size() <= offset_b) [[unlikely]]
         {
             for (size_t i = 0; i < a_strs.size(); ++i)
                 result[i] = 0;
-            return;
         }
-        else if (a_str_len <= offset_a)
+        else if (a_str_len <= offset_a) [[unlikely]]
         {
             for (size_t i = 0; i < a_strs.size(); ++i)
             {
@@ -234,9 +230,8 @@ private:
                 else
                     result[i] = 1;
             }
-            return;
         }
-        else if (b_str.size() <= offset_b)
+        else if (b_str.size() <= offset_b) [[unlikely]]
         {
             for (size_t i = 0; i < a_strs.size(); ++i)
             {
@@ -245,21 +240,22 @@ private:
                 else
                     result[i] = -1;
             }
-            return;
         }
-
-        const auto & a_strs_data = a_strs.getChars();
-        auto a_n = std::min(n, a_str_len - offset_a);
-        auto b_n = std::min(n, b_str.size() - offset_b);
-        const char * b_str_p = b_str.data() + offset_b;
-        for (size_t i = 0; i < a_strs.size(); ++i)
+        else
         {
-            const auto * a_str = a_strs_data.data() + i * a_str_len + offset_a;
+            const auto & a_strs_data = a_strs.getChars();
+            auto a_n = std::min(n, a_str_len - offset_a);
+            auto b_n = std::min(n, b_str.size() - offset_b);
+            const char * b_str_p = b_str.data() + offset_b;
+            for (size_t i = 0; i < a_strs.size(); ++i)
+            {
+                const auto * a_str = a_strs_data.data() + i * a_str_len + offset_a;
 
-            if constexpr (positive)
-                result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(reinterpret_cast<const char *>(a_str), a_n, b_str_p, b_n);
-            else
-                result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(b_str_p, b_n, reinterpret_cast<const char *>(a_str), a_n);
+                if constexpr (positive)
+                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(reinterpret_cast<const char *>(a_str), a_n, b_str_p, b_n);
+                else
+                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(b_str_p, b_n, reinterpret_cast<const char *>(a_str), a_n);
+            }
         }
     }
 
@@ -282,13 +278,10 @@ private:
             const auto * a_str = a_strs_data.data() + i * a_str_len + offset_a;
             auto a_n = std::min(n, a_str_len - offset_a);
             const auto * b_str = b_strs_data.data() + prev_b_offset + offset_b;
-            auto b_str_len = b_offsets[i] - prev_b_offset - 1;
+            size_t b_str_len = b_offsets[i] - prev_b_offset - 1;
             if (offset_a >= a_str_len && offset_b >= b_str_len) [[unlikely]]
             {
                 result[i] = 0;
-                prev_b_offset = b_offsets[i];
-
-                continue;
             }
             else if (offset_b >= b_str_len) [[unlikely]]
             {
@@ -296,9 +289,6 @@ private:
                     result[i] = 1;
                 else
                     result[i] = -1;
-                prev_b_offset = b_offsets[i];
-
-                continue;
             }
             else if (offset_a >= a_str_len) [[unlikely]]
             {
@@ -306,18 +296,17 @@ private:
                     result[i] = -1;
                 else
                     result[i] = 1;
-                prev_b_offset = b_offsets[i];
-
-                continue;
             }
-
-            auto b_n = offset_b >= b_str_len ? 0 : std::min(n, b_str_len - offset_b);
-            if constexpr (positive)
-                result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                    reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
             else
-                result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                    reinterpret_cast<const char *>(b_str), b_n, reinterpret_cast<const char *>(a_str), a_n);
+            {
+                auto b_n = offset_b >= b_str_len ? 0 : std::min(n, b_str_len - offset_b);
+                if constexpr (positive)
+                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
+                        reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
+                else
+                    result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
+                        reinterpret_cast<const char *>(b_str), b_n, reinterpret_cast<const char *>(a_str), a_n);
+            }
             prev_b_offset = b_offsets[i];
         }
     }
@@ -339,36 +328,29 @@ private:
         for (size_t i = 0, size = a_strs.size(); i < size; ++i)
         {
             const auto * a_str = a_strs_data.data() + prev_a_offset + offset_a;
-            auto a_str_len = a_offsets[i] - prev_a_offset - 1;
+            size_t a_str_len = a_offsets[i] - prev_a_offset - 1;
             const auto * b_str = b_strs_data.data() + prev_b_offset + offset_b;
-            auto b_str_len = b_offsets[i] - prev_b_offset - 1;
+            size_t b_str_len = b_offsets[i] - prev_b_offset - 1;
 
             if (offset_a >= a_str_len && offset_b >= b_str_len) [[unlikely]]
             {
                 result[i] = 0;
-                prev_a_offset = a_offsets[i];
-                prev_b_offset = b_offsets[i];
-                continue;
             }
             else if (offset_a >= a_str_len) [[unlikely]]
             {
                 result[i] = -1;
-                prev_a_offset = a_offsets[i];
-                prev_b_offset = b_offsets[i];
-                continue;
             }
             else if (offset_b >= b_str_len) [[unlikely]]
             {
                 result[i] = 1;
-                prev_a_offset = a_offsets[i];
-                prev_b_offset = b_offsets[i];
-                continue;
             }
-
-            auto a_n = std::min(n, a_str_len - offset_a);
-            auto b_n = std::min(n, b_str_len - offset_b);
-            result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
+            else
+            {
+                auto a_n = std::min(n, a_str_len - offset_a);
+                auto b_n = std::min(n, b_str_len - offset_b);
+                result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
+                    reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
+            }
 
             prev_a_offset = a_offsets[i];
             prev_b_offset = b_offsets[i];
@@ -383,70 +365,64 @@ private:
         size_t n,
         PaddedPODArray<Int32> & result) const
     {
-        auto a_str_len = a_strs.getN();
-        auto b_str_len = b_strs.getN();
-        if (offset_a >= a_str_len && offset_b >= b_str_len)
+        size_t a_str_len = a_strs.getN();
+        size_t b_str_len = b_strs.getN();
+        if (offset_a >= a_str_len && offset_b >= b_str_len) [[unlikely]]
         {
             for (size_t i = 0; i < a_strs.size(); ++i)
                 result[i] = 0;
-            return;
         }
-        else if (offset_a >= a_str_len)
+        else if (offset_a >= a_str_len) [[unlikely]]
         {
             for (size_t i = 0; i < a_strs.size(); ++i)
-            {
                 result[i] = -1;
-            }
-            return;
         }
-        else if (offset_b >= b_str_len)
+        else if (offset_b >= b_str_len) [[unlikely]]
         {
             for (size_t i = 0; i < a_strs.size(); ++i)
-            {
                 result[i] = 1;
-            }
         }
-
-        const auto & a_strs_data = a_strs.getChars();
-        const auto & b_strs_data = b_strs.getChars();
-        auto a_n = std::min(n, a_str_len - offset_a);
-        auto b_n = std::min(n, b_str_len - offset_b);
-        for (size_t i = 0, size = a_strs.size(); i < size; ++i)
+        else
         {
-            const auto * a_str = a_strs_data.data() + i * a_str_len + offset_a;
-            const auto * b_str = b_strs_data.data() + i * b_str_len + offset_b;
-            result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
-                reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
+            const auto & a_strs_data = a_strs.getChars();
+            const auto & b_strs_data = b_strs.getChars();
+            auto a_n = std::min(n, a_str_len - offset_a);
+            auto b_n = std::min(n, b_str_len - offset_b);
+            for (size_t i = 0, size = a_strs.size(); i < size; ++i)
+            {
+                const auto * a_str = a_strs_data.data() + i * a_str_len + offset_a;
+                const auto * b_str = b_strs_data.data() + i * b_str_len + offset_b;
+                result[i] = memcmpSmallLikeZeroPaddedAllowOverflow15(
+                    reinterpret_cast<const char *>(a_str), a_n, reinterpret_cast<const char *>(b_str), b_n);
+            }
         }
     }
 
     void executeConstConst(
-        const String & a_str, size_t offset_a, const String & b, size_t offset_b, size_t n, size_t rows, PaddedPODArray<Int32> & result)
+        const String & a_str, size_t offset_a, const String & b_str, size_t offset_b, size_t n, size_t rows, PaddedPODArray<Int32> & result)
         const
     {
-        auto a_str_len = a_str.size();
-        auto b_str_len = b.size();
-        if (offset_a >= a_str_len && offset_b >= b_str_len)
+        size_t a_str_len = a_str.size();
+        size_t b_str_len = b_str.size();
+        Int32 res = 0;
+        if (offset_a >= a_str_len && offset_b >= b_str_len) [[unlikely]]
         {
-            for (size_t i = 0; i < rows; ++i)
-                result[i] = 0;
-            return;
+            res = 0;
         }
-        else if (offset_a >= a_str_len)
+        else if (offset_a >= a_str_len) [[unlikely]]
         {
-            for (size_t i = 0; i < rows; ++i)
-                result[i] = -1;
+            res = -1;
         }
-        else if (offset_b >= b_str_len)
+        else if (offset_b >= b_str_len) [[unlikely]]
         {
-            for (size_t i = 0; i < rows; ++i)
-                result[i] = 1;
-            return;
+            res = 1;
         }
-
-        auto a_n = std::min(n, a_str_len - offset_a);
-        auto b_n = std::min(n, b_str_len - offset_b);
-        auto res = memcmpSmallLikeZeroPaddedAllowOverflow15(a_str.data() + offset_a, a_n, b.data() + offset_b, b_n);
+        else
+        {
+            auto a_n = std::min(n, a_str_len - offset_a);
+            auto b_n = std::min(n, b_str_len - offset_b);
+            res = memcmpSmallLikeZeroPaddedAllowOverflow15(a_str.data() + offset_a, a_n, b_str.data() + offset_b, b_n);
+        }
         for (size_t i = 0; i < rows; ++i)
             result[i] = res;
     }
@@ -454,6 +430,11 @@ private:
 
 REGISTER_FUNCTION(Strncmp)
 {
-    factory.registerFunction<FunctionStrncmp>();
+    factory.registerFunction<FunctionStrncmp>(FunctionDocumentation{
+        .description = R"(
+            This function could compare parts of two strings directly, without the need to copy the parts of the string into new columns.
+            )",
+        .examples{{"strncmp", "select strncmp(s, 0, 'abc', 0, 3)", ""}},
+        .categories{"String"}});
 }
 }
