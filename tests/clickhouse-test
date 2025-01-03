@@ -2708,16 +2708,17 @@ def do_run_tests(
             sys.stdout.flush()
             # Periodically check the server for hangs
             # and stop all processes in this case
-            try:
-                clickhouse_execute(
-                    args,
-                    query="SELECT 1 /*hung check*/",
-                    max_http_retries=20,
-                    timeout=10,
-                )
-            except Exception as e:
-                print(f"Hung check failed: {str(e)}")
-                server_died.set()
+            if args.hung_check:
+                try:
+                    clickhouse_execute(
+                        args,
+                        query="SELECT 1 /*hung check*/",
+                        max_http_retries=20,
+                        timeout=10,
+                    )
+                except Exception as e:
+                    print(f"Hung check failed: {str(e)}")
+                    server_died.set()
 
             if server_died.is_set():
                 print("Server died, terminating all processes...")
