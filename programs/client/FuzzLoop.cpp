@@ -524,9 +524,9 @@ bool Client::buzzHouse()
                 const uint32_t settings_oracle = 30;
                 const uint32_t dump_oracle = 15
                     * static_cast<uint32_t>(fc.use_dump_table_oracle
-                                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_oracle));
+                                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
                 const uint32_t peer_oracle
-                    = 15 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_oracle_with_peers));
+                    = 15 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t run_query = 910;
                 const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + run_query;
                 std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -580,7 +580,7 @@ bool Client::buzzHouse()
                 {
                     bool second_success = true;
                     const BuzzHouse::SQLTable & t
-                        = rg.pickRandomlyFromVector(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_oracle));
+                        = rg.pickRandomlyFromVector(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
 
                     //test in and out formats
                     full_query2.resize(0);

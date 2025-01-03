@@ -478,9 +478,12 @@ public:
     const std::function<bool(const SQLView &)> attached_views
         = [](const SQLView & v) { return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED; };
 
-    const std::function<bool(const SQLTable &)> attached_tables_for_oracle = [](const SQLTable & t)
-    { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine(); };
-    const std::function<bool(const SQLTable &)> attached_tables_for_oracle_with_peers = [](const SQLTable & t)
+    const std::function<bool(const SQLTable &)> attached_tables_for_dump_table_oracle = [](const SQLTable & t)
+    {
+        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine()
+            && t.teng != TableEngineValues::CollapsingMergeTree;
+    };
+    const std::function<bool(const SQLTable &)> attached_tables_for_table_peer_oracle = [](const SQLTable & t)
     {
         return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isNotTruncableEngine()
             && t.hasDatabasePeer();
