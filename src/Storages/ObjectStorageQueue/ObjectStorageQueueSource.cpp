@@ -36,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -470,11 +471,67 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
-        if (!reader)
+        if (isCancelled())
+        {
+            if (reader)
+                reader->cancel();
+
+            if (!processed_files.empty() && processed_files.back().state == FileState::Processing)
+            {
+                /// Something must have been already read.
+                chassert(processed_files.back().metadata->getFileStatus()->processed_rows > 0);
+                /// Mark file as Cancelled, such files will not be set as Failed.
+                processed_files.back().state = FileState::Cancelled;
+                /// Throw exception to avoid inserting half processed file to destination table.
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Processing was cancelled");
+            }
+            /// Stop processing.
+            break;
+        }
+
+        if (shutdown_called)
+        {
+            LOG_TEST(log, "Shutdown was called");
+
+            /// Are there any started, but not finished files?
+            if (processed_files.empty() || processed_files.back().state != FileState::Processing)
+            {
+                /// No unfinished files, just stop processing.
+                break;
+            }
+
+            auto started_file = processed_files.back().metadata;
+            if (table_is_being_dropped)
+            {
+                /// Something must have been already read.
+                chassert(started_file->getFileStatus()->processed_rows > 0);
+                /// Mark file as Cancelled, such files will not be set as Failed.
+                processed_files.back().state = FileState::Cancelled;
+                /// Throw exception to avoid inserting half processed file to destination table.
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "Table is being dropped (having unfinished file: {})", started_file->getPath());
+            }
+
+            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
+                     "Will process the file fully and then shutdown",
+                     started_file->getPath(), started_file->getFileStatus()->processed_rows);
+        }
+
+        FileMetadataPtr file_metadata;
+        if (reader)
+        {
+            chassert(processed_files.back().state == FileState::Processing);
+            chassert(processed_files.back().metadata->getPath() == reader.getObjectInfo()->getPath());
+
+            file_metadata = processed_files.back().metadata;
+        }
+        else
         {
             if (shutdown_called)
             {
                 LOG_TEST(log, "Shutdown called");
+                /// Stop processing.
                 break;
             }
 
@@ -499,73 +556,17 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 LOG_TEST(log, "No reader");
                 break;
             }
+
+            const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
+            file_metadata = object_info->file_metadata;
+            processed_files.emplace_back(file_metadata);
+            progress->processed_files += 1;
         }
 
-        const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
-        auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
         const auto & path = file_metadata->getPath();
 
         LOG_TEST(log, "Processing file: {}", path);
-
-        if (isCancelled())
-        {
-            reader->cancel();
-
-            if (file_status->processed_rows)
-            {
-                try
-                {
-                    file_metadata->setFailed("Cancelled", /* reduce_retry_count */true, /* overwrite_status */false);
-                }
-                catch (...)
-                {
-                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                             object_info->relative_path, getCurrentExceptionMessage(true));
-                }
-            }
-
-            LOG_TEST(log, "Query is cancelled");
-            break;
-        }
-
-        if (shutdown_called)
-        {
-            LOG_TEST(log, "Shutdown called");
-
-            if (file_status->processed_rows == 0)
-                break;
-
-            if (table_is_being_dropped)
-            {
-                LOG_DEBUG(
-                    log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
-                    file_status->processed_rows, path);
-
-                try
-                {
-                    file_metadata->setFailed("Table is dropped", /* reduce_retry_count */true, /* overwrite_status */false);
-                }
-                catch (...)
-                {
-                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
-                              object_info->relative_path, getCurrentExceptionMessage(true));
-                }
-
-                /// Leave the file half processed. Table is being dropped, so we do not care.
-                break;
-            }
-
-            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
-                     "Will process the file fully and then shutdown",
-                     path, file_status->processed_rows);
-        }
-
-        if (processed_files.empty() || processed_files.back().metadata->getPath() != path)
-        {
-            processed_files.emplace_back(file_metadata);
-            progress->processed_files += 1;
-        }
 
         try
         {
@@ -661,6 +662,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 file_metadata->setProcessed();
                 break;
             }
+            case FileState::Cancelled: [[fallthrough]];
             case FileState::Processing:
             {
                 if (insert_succeeded)

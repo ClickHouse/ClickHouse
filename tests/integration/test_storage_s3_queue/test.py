@@ -1208,7 +1208,7 @@ def test_drop_table(started_cluster):
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
     ) or node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Shutdown was called, stopping sync"
+        f"StorageS3Queue (default.{table_name}): Shutdown was called"
     )
 
 

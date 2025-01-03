@@ -172,6 +172,7 @@ private:
     {
         Processing,
         ErrorOnRead,
+        Cancelled,
         Processed,
     };
     struct ProcessedFile
