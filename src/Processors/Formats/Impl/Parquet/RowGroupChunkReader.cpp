@@ -2,12 +2,13 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/SharedThreadPools.h>
+#include <Interpreters/castColumn.h>
+#include <Processors/Formats/Impl/Parquet/ColumnFilterHelper.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <arrow/io/util_internal.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/Stopwatch.h>
-#include <Interpreters/castColumn.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace ProfileEvents
 {
@@ -20,7 +21,11 @@ extern const Event ParquetOutputRows;
 namespace DB
 {
 RowGroupChunkReader::RowGroupChunkReader(
-    ParquetReader * parquetReader, size_t row_group_idx, RowGroupPrefetchPtr prefetch_conditions_, RowGroupPrefetchPtr prefetch_, std::unordered_map<String, ColumnFilterPtr> filters)
+    ParquetReader * parquetReader,
+    size_t row_group_idx,
+    RowGroupPrefetchPtr prefetch_conditions_,
+    RowGroupPrefetchPtr prefetch_,
+    std::unordered_map<String, ColumnFilterPtr> filters)
     : parquet_reader(parquetReader)
     , row_group_meta(parquetReader->meta_data->RowGroup(static_cast<int>(row_group_idx)))
     , prefetch_conditions(std::move(prefetch_conditions_))
@@ -34,7 +39,8 @@ RowGroupChunkReader::RowGroupChunkReader(
     context.prefetch_conditions = prefetch_conditions;
     context.filter_columns = filter_columns;
     remain_rows = row_group_meta->num_rows();
-    builder = std::make_unique<ColumnReaderBuilder>(parquet_reader->header, context, parquet_reader->filters, parquet_reader->condition_columns);
+    builder = std::make_unique<ColumnReaderBuilder>(
+        parquet_reader->header, context, parquet_reader->filters, parquet_reader->condition_columns);
 
     for (const auto & col_with_name : parquet_reader->header)
     {
@@ -45,13 +51,38 @@ RowGroupChunkReader::RowGroupChunkReader(
         column_readers.push_back(column_reader);
         reader_data_types.push_back(column_reader->getResultType());
         reader_columns_mapping[col_with_name.name] = column_reader;
-        if (filter)
-            filter_columns.push_back(col_with_name.name);
     }
 
+    // fallback filter, for example, read number data using string type, number reader doesn't support BytesValuesFilter
+    std::call_once(
+        parquet_reader->filter_fallback_checked,
+        [&]()
+        {
+            ActionsDAG::NodeRawConstPtrs unsupported_conditions;
+            // find unsupported fast filter
+            for (auto & [col_name, reader] : reader_columns_mapping)
+            {
+                if (!filters.contains(col_name))
+                    continue;
+                if (!reader->supportedFilterKinds().contains(filters.at(col_name)->kind()))
+                {
+                    parquet_reader->filters.erase(col_name);
+                    auto nodes = parquetReader->filter_split_result->fallback_filters.at(col_name);
+                    unsupported_conditions.insert(unsupported_conditions.end(), nodes.begin(), nodes.end());
+                }
+            }
+            auto actions_dag = ActionsDAG::buildFilterActionsDAG(unsupported_conditions);
+            if (actions_dag.has_value())
+            {
+                auto expr_filter = std::make_shared<ExpressionFilter>(std::move(actions_dag.value()));
+                parquet_reader->addExpressionFilter(expr_filter);
+            }
+        });
 
-//    std::cerr << fmt::format("condition size {}, result size {}\n", prefetch_conditions ? prefetch_conditions->totalSize() : 0,
-//                             prefetch ? prefetch->totalSize() : 0);
+    for (auto & [name, filter] : parquet_reader->filters)
+    {
+        filter_columns.push_back(name);
+    }
     // try merge read condition columns and result columns;
     if (prefetch_conditions && prefetch_conditions.get() != prefetch.get()
         && prefetch_conditions->totalSize() + prefetch->totalSize() < 4_MiB)
@@ -61,7 +92,6 @@ RowGroupChunkReader::RowGroupChunkReader(
         {
             prefetch = prefetch_conditions;
             context.prefetch = prefetch;
-//            std::cerr << "merged prefetch conditions\n";
         }
     }
 
@@ -70,7 +100,8 @@ RowGroupChunkReader::RowGroupChunkReader(
         prefetch_conditions->startPrefetch();
     else
         prefetch->startPrefetch();
-    selectConditions = std::make_unique<SelectConditions>(reader_columns_mapping, filter_columns, parquet_reader->expression_filters, parquet_reader->header);
+    selectConditions = std::make_unique<SelectConditions>(
+        reader_columns_mapping, filter_columns, parquet_reader->expression_filters, parquet_reader->header);
 }
 
 Chunk RowGroupChunkReader::readChunk(size_t rows)
@@ -131,13 +162,14 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                     if (all)
                         columns.emplace_back(select_result.intermediate_columns.at(name)->assumeMutable());
                     else
-                        columns.emplace_back(
-                            select_result.intermediate_columns.at(name)->filter(select_result.intermediate_filter, select_result.valid_count)->assumeMutable());
+                        columns.emplace_back(select_result.intermediate_columns.at(name)
+                                                 ->filter(select_result.intermediate_filter, select_result.valid_count)
+                                                 ->assumeMutable());
                 }
                 else
                 {
                     // prefetch column data if needed
-//                    prefetch->startPrefetch();
+                    //                    prefetch->startPrefetch();
                     auto & reader = reader_columns_mapping.at(name);
                     auto column = reader->createColumn();
                     column->reserve(select_result.valid_count);
@@ -164,7 +196,8 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         {
             ColumnWithTypeAndName src_col = ColumnWithTypeAndName{std::move(columns[i]), reader_data_types.at(i), types.at(i).name};
             // intermediate column is already casted
-            if (removeNullableOrLowCardinalityNullable(src_col.column)->getDataType() == removeNullableOrLowCardinalityNullable(types.at(i).type)->getColumnType())
+            if (removeNullableOrLowCardinalityNullable(src_col.column)->getDataType()
+                == removeNullableOrLowCardinalityNullable(types.at(i).type)->getColumnType())
             {
                 casted_columns.emplace_back(std::move(src_col.column));
             }
@@ -197,7 +230,8 @@ arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & column_
 }
 
 
-RowGroupPrefetch::RowGroupPrefetch(SeekableReadBuffer & file_, std::mutex & mutex, const parquet::ArrowReaderProperties & arrow_properties_, ThreadPool & io_pool)
+RowGroupPrefetch::RowGroupPrefetch(
+    SeekableReadBuffer & file_, std::mutex & mutex, const parquet::ArrowReaderProperties & arrow_properties_, ThreadPool & io_pool)
     : file(file_), file_mutex(mutex), arrow_properties(arrow_properties_)
 {
     callback_runner = threadPoolCallbackRunnerUnsafe<ColumnChunkData>(io_pool, "ParquetRead");
@@ -299,7 +333,7 @@ bool RowGroupPrefetch::merge(const RowGroupPrefetchPtr other)
         return false;
     if (this == other.get())
         return false;
-    if (&this->file != &other->file || &this->file_mutex!= &other->file_mutex)
+    if (&this->file != &other->file || &this->file_mutex != &other->file_mutex)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RowGroupPrefetch: merge called with different files");
     if (fetched || other->fetched)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RowGroupPrefetch: merge called after startPrefetch");
@@ -336,7 +370,7 @@ static IColumn::Filter mergeFilters(std::vector<IColumn::Filter> & filters)
     return result;
 }
 
-static void combineRowSetAndFilter(RowSet & set, const IColumn::Filter& filter_data)
+static void combineRowSetAndFilter(RowSet & set, const IColumn::Filter & filter_data)
 {
     set.setOffset(0);
     int count = 0;
@@ -383,7 +417,7 @@ SelectResult SelectConditions::selectRows(size_t rows)
         count = total_set.has_value() ? total_set.value().count() : rows;
         // prepare condition columns
         ColumnsWithTypeAndName input;
-        for (const auto &name : expr_filter->getInputs())
+        for (const auto & name : expr_filter->getInputs())
         {
             if (!intermediate_columns.contains(name))
             {
@@ -401,7 +435,8 @@ SelectResult SelectConditions::selectRows(size_t rows)
                     // clean row set offset
                     total_set->setOffset(0);
                 }
-                auto casted = castColumn(ColumnWithTypeAndName{std::move(column), reader->getResultType(), name}, header.getByName(name).type);
+                auto casted
+                    = castColumn(ColumnWithTypeAndName{std::move(column), reader->getResultType(), name}, header.getByName(name).type);
                 intermediate_columns.emplace(name, std::move(casted));
             }
             input.emplace_back(intermediate_columns.at(name)->cloneFinalized(), header.getByName(name).type, name);
@@ -438,7 +473,8 @@ SelectConditions::SelectConditions(
     std::vector<std::shared_ptr<ExpressionFilter>> & expression_filters_,
     const Block & header_)
     : readers(readers_), fast_filter_columns(fast_filter_columns_), expression_filters(expression_filters_), header(header_)
-{    has_filter = !fast_filter_columns.empty() || !expression_filters.empty();
+{
+    has_filter = !fast_filter_columns.empty() || !expression_filters.empty();
 }
 
 }

@@ -1,4 +1,5 @@
 #include "ColumnFilterHelper.h"
+#include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Poco/String.h>
 
 namespace DB
@@ -12,15 +13,16 @@ ColumnFilterCreators ColumnFilterHelper::creators
        BytesValuesFilter::create,
        NegatedByteValuesFilter::create};
 
-FilterSplitResult ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & filter_expression, bool case_insensitive)
+FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & filter_expression, bool case_insensitive)
 {
-    if (filter_expression.getOutputs().empty())
+    FilterSplitResultPtr split_result = std::make_shared<FilterSplitResult>();
+    split_result->filter_expression = filter_expression.clone();
+    if (split_result->filter_expression.getOutputs().empty())
         return {};
-    const auto * filter_node = filter_expression.getOutputs().front();
+    const auto * filter_node = split_result->filter_expression.getOutputs().front();
     auto conditions = ActionsDAG::extractConjunctionAtoms(filter_node);
     std::vector<ColumnFilterPtr> filters;
     ActionsDAG::NodeRawConstPtrs unsupported_conditions;
-    FilterSplitResult split_result;
     for (const auto * condition : conditions)
     {
         // convert expr to column filter, and try to merge with existing filter on same column
@@ -35,29 +37,27 @@ FilterSplitResult ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & 
                         auto col_name = result.value().first;
                         if (case_insensitive)
                             col_name = Poco::toLower(col_name);
-                        if (!split_result.filters.contains(col_name))
-                            split_result.filters.emplace(col_name, result.value().second);
+                        if (!split_result->filters.contains(col_name))
+                            split_result->filters.emplace(col_name, result.value().second);
                         else
                         {
-                            auto merged = split_result.filters[col_name]->merge(result.value().second.get());
+                            auto merged = split_result->filters[col_name]->merge(result.value().second.get());
                             if (merged)
-                                split_result.filters[col_name] = merged;
+                                split_result->filters[col_name] = merged;
                             else
                                 // doesn't support merge, use common expression push down
                                 return false;
                         }
+                        split_result->fallback_filters[col_name].push_back(condition);
                     }
                     return result.has_value();
                 }))
             unsupported_conditions.push_back(condition);
     }
-    for (auto & condition : unsupported_conditions)
+    auto actions_dag = ActionsDAG::buildFilterActionsDAG(unsupported_conditions);
+    if (actions_dag.has_value())
     {
-        auto actions_dag = ActionsDAG::buildFilterActionsDAG({condition});
-        if (actions_dag.has_value())
-        {
-            split_result.expression_filters.emplace_back(std::make_shared<ExpressionFilter>(std::move(actions_dag.value())));
-        }
+        split_result->expression_filters.emplace_back(std::make_shared<ExpressionFilter>(std::move(actions_dag.value())));
     }
     return split_result;
 }
@@ -66,14 +66,7 @@ void pushFilterToParquetReader(const ActionsDAG & filter_expression, ParquetRead
 {
     if (filter_expression.getOutputs().empty())
         return;
-    auto split_result = ColumnFilterHelper::splitFilterForPushDown(std::move(filter_expression));
-    for (const auto & item : split_result.filters)
-    {
-        reader.addFilter(item.first, item.second);
-    }
-    for (auto & expression_filter : split_result.expression_filters)
-    {
-        reader.addExpressionFilter(expression_filter);
-    }
+    auto split_result = ColumnFilterHelper::splitFilterForPushDown(filter_expression);
+    reader.pushDownFilter(split_result);
 }
 }

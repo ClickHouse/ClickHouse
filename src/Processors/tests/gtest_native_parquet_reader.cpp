@@ -50,7 +50,7 @@ static void testFilterPlainFixedData(int size, double positive_rate)
     }
 }
 
-TEST(TestColumnFilterHepler, TestFilterPlainFixedData)
+TEST(TestNativeParquetReader, TestFilterPlainFixedData)
 {
     testFilterPlainFixedData<Int16, Int32>(100000, 1.0);
     testFilterPlainFixedData<Int16, Int16>(100000, 1.0);
@@ -115,7 +115,7 @@ static void testGatherDictInt()
     }
 }
 
-TEST(TestColumnFilterHepler, TestGatherDictNumberData)
+TEST(TestNativeParquetReader, TestGatherDictNumberData)
 {
     testGatherDictInt<Int16>();
     testGatherDictInt<Int32>();
@@ -141,7 +141,9 @@ static void testDecodePlainData(size_t numbers, size_t exist_nums)
     dst.reserve(exist_nums + src.size());
     size_t size = src.size();
     const auto * buffer = reinterpret_cast<const uint8_t*>(src.data());
-    PlainDecoder decoder(buffer, size);
+    ParquetData data{.buffer = buffer, .buffer_size = size * sizeof(S)};
+    PageOffsets offsets{.remain_rows = size, .levels_offset=0};
+    PlainDecoder decoder(data, offsets);
     OptionalRowSet row_set = std::nullopt;
     decoder.decodeFixedValue<T, S>(dst, row_set, size);
     ASSERT_EQ(dst.size(), exist_nums + src.size());
@@ -149,9 +151,11 @@ static void testDecodePlainData(size_t numbers, size_t exist_nums)
     {
         ASSERT_EQ(src[i], dst[exist_nums+i]);
     }
+    ASSERT_EQ(offsets.levels_offset, size);
+    ASSERT_EQ(offsets.remain_rows, 0);
 }
 
-TEST(TestPlainDecoder, testDecodeNoFilter)
+TEST(TestNativeParquetReader, testDecodeNoFilter)
 {
     testDecodePlainData<DateTime64, Int64>(1000, 100);
     testDecodePlainData<DateTime64, Int64>(1000, 0);
@@ -163,7 +167,7 @@ TEST(TestPlainDecoder, testDecodeNoFilter)
     testDecodePlainData<Int16, Int32>(1000, 0);
 }
 
-TEST(TestRowSet, TestRowSet)
+TEST(TestNativeParquetReader, TestRowSet)
 {
     RowSet rowSet(10000);
     rowSet.setAllFalse();
@@ -175,7 +179,7 @@ TEST(TestRowSet, TestRowSet)
     ASSERT_FALSE(rowSet.all());
 }
 
-TEST(TestColumnFilter, TestColumnIntFilter)
+TEST(TestNativeParquetReader, TestColumnIntFilter)
 {
     BigIntRangeFilter filter(100, 200, false);
     BigIntRangeFilter filter2(200, 200, false);
@@ -207,28 +211,28 @@ TEST(TestColumnFilter, TestColumnIntFilter)
     PaddedPODArray<Int16> int16_values = {99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28,
                                           99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28};
     RowSet set1(int16_values.size());
-    filter.testInt16Values(set1, 0, int16_values.size(), int16_values.data());
+    filter.testInt16Values(set1, int16_values.size(), int16_values.data());
     ASSERT_EQ(set1.count(), 22);
     set1.setAllTrue();
-    filter2.testInt16Values(set1, 0, int16_values.size(), int16_values.data());
+    filter2.testInt16Values(set1, int16_values.size(), int16_values.data());
     ASSERT_EQ(set1.count(), 2);
 
     PaddedPODArray<Int32> int32_values = {99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28,
                                           99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28};
     RowSet set2(int32_values.size());
-    filter.testInt32Values(set2, 0, int32_values.size(), int32_values.data());
+    filter.testInt32Values(set2, int32_values.size(), int32_values.data());
     ASSERT_EQ(set2.count(), 22);
     set2.setAllTrue();
-    filter2.testInt32Values(set2, 0, int32_values.size(), int32_values.data());
+    filter2.testInt32Values(set2, int32_values.size(), int32_values.data());
     ASSERT_EQ(set2.count(), 2);
 
     PaddedPODArray<Int64> int64_values = {99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28,
                                           99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 150, 200, 210, 211, 231, 24, 25, 26, 27, 28};
     RowSet set3(int64_values.size());
-    filter.testInt64Values(set3, 0, int64_values.size(), int64_values.data());
+    filter.testInt64Values(set3, int64_values.size(), int64_values.data());
     ASSERT_EQ(set3.count(), 22);
     set3.setAllTrue();
-    filter2.testInt64Values(set3, 0, int64_values.size(), int64_values.data());
+    filter2.testInt64Values(set3, int64_values.size(), int64_values.data());
     ASSERT_EQ(set3.count(), 2);
 
 
@@ -237,12 +241,12 @@ TEST(TestColumnFilter, TestColumnIntFilter)
     ASSERT_FALSE(negated_filter.testInt32(200));
     ASSERT_FALSE(negated_filter.testInt64(200));
     RowSet row_set4 = RowSet(int16_values.size());
-    negated_filter.testInt16Values(row_set4, 0, int16_values.size(), int16_values.data());
+    negated_filter.testInt16Values(row_set4, int16_values.size(), int16_values.data());
     ASSERT_EQ(38, row_set4.count());
     RowSet row_set5 = RowSet(int32_values.size());
-    negated_filter.testInt32Values(row_set5, 0, int32_values.size(), int32_values.data());
+    negated_filter.testInt32Values(row_set5, int32_values.size(), int32_values.data());
     ASSERT_EQ(38, row_set5.count());
     RowSet row_set6 = RowSet(int64_values.size());
-    negated_filter.testInt64Values(row_set6, 0, int64_values.size(), int64_values.data());
+    negated_filter.testInt64Values(row_set6, int64_values.size(), int64_values.data());
     ASSERT_EQ(38, row_set6.count());
 }

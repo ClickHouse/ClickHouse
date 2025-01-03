@@ -1,12 +1,11 @@
 #include "ColumnFilter.h"
 #include <format>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/FilterDescription.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Set.h>
 #include <Processors/Formats/Impl/Parquet/xsimd_wrapper.h>
-#include <base/Decimal.h>
 
 namespace DB
 {
@@ -340,9 +339,9 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const T * da
     }
 }
 
-template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const Int64 * data) const;
-template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const Int32 * data) const;
-template void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const Int16 * data) const;
+template void BigIntRangeFilter::testIntValues<Int64, true>(RowSet & row_set, size_t len, const Int64 * data) const;
+template void BigIntRangeFilter::testIntValues<Int32, true>(RowSet & row_set, size_t len, const Int32 * data) const;
+template void BigIntRangeFilter::testIntValues<Int16, true>(RowSet & row_set, size_t len, const Int16 * data) const;
 
 void BigIntRangeFilter::testInt64Values(DB::RowSet & row_set, size_t len, const Int64 * data) const
 {

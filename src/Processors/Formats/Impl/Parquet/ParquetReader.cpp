@@ -1,6 +1,7 @@
 #include "ParquetReader.h"
 #include <DataTypes/NestedUtils.h>
 #include <IO/SharedThreadPools.h>
+#include <Processors/Formats/Impl/Parquet/ColumnFilterHelper.h>
 #include <arrow/io/util_internal.h>
 #include <Poco/String.h>
 #include <Common/ThreadPool.h>
@@ -160,41 +161,20 @@ parquet::schema::NodePtr ParquetReader::getParquetColumn(const String & column_n
     auto normalized_name = case_insensitive ? Poco::toLower(column_name) : column_name;
     if (parquet_columns.contains(normalized_name))
         return parquet_columns[normalized_name];
-    //    auto parts = Nested::splitName(normalized_name);
-    //    // not nested column
-    //    if (parts.second.empty())
-    //    {
-    //        if (!parquet_columns.contains(normalized_name))
-    //            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", column_name);
-    //        return parquet_columns[normalized_name];
-    //    }
-    //    auto node = parquet_columns[parts.first];
-    //    while (!parts.second.empty())
-    //    {
-    //        auto child = parts.second;
-    //        parts = Nested::splitName(child);
-    //        chassert(node->is_group());
-    //        auto group = std::static_pointer_cast<parquet::schema::GroupNode>(node);
-    //        auto first_name = case_insensitive ? Poco::toLower(child) : child;
-    //        bool found = false;
-    //        for (int i = 0; i < group->field_count(); ++i)
-    //        {
-    //            auto child_node = group->field(i);
-    //            auto child_name = case_insensitive? Poco::toLower(child_node->name()) : child_node->name();
-    //            if (child_name == first_name)
-    //            {
-    //                node = child_node;
-    //                found = true;
-    //                break;
-    //            }
-    //        }
-    //        if (!found) break;
-    //        if (parts.second.empty())
-    //            return node;
-    //    }
     throw Exception(ErrorCodes::PARQUET_EXCEPTION, "no column with '{}' in parquet file", column_name);
 }
-
+void ParquetReader::pushDownFilter(FilterSplitResultPtr filter_split_result_)
+{
+    filter_split_result = filter_split_result_;
+    for (const auto & item : filter_split_result->filters)
+    {
+        addFilter(item.first, item.second);
+    }
+    for (auto & expression_filter : filter_split_result->expression_filters)
+    {
+        addExpressionFilter(expression_filter);
+    }
+}
 
 SubRowGroupRangeReader::SubRowGroupRangeReader(
     const std::vector<Int32> & rowGroupIndices,
@@ -226,25 +206,11 @@ bool SubRowGroupRangeReader::loadRowGroupChunkReaderIfNeeded()
         return false;
     if ((!row_group_chunk_reader || !row_group_chunk_reader->hasMoreRows()) && next_row_group_idx < row_group_indices.size())
     {
-        //        if (next_row_group_idx == 0)
-        //        {
-        //            if (row_group_condition_prefetches.empty())
-        //                row_group_prefetches.front()->startPrefetch();
-        //            else
-        //                row_group_condition_prefetches.front()->startPrefetch();
-        //        }
         row_group_chunk_reader = row_group_reader_creator(
             row_group_indices[next_row_group_idx],
             row_group_condition_prefetches.empty() ? nullptr : std::move(row_group_condition_prefetches[next_row_group_idx]),
             std::move(row_group_prefetches[next_row_group_idx]));
         next_row_group_idx++;
-        //        if (next_row_group_idx < row_group_indices.size())
-        //        {
-        //            if (row_group_condition_prefetches.empty())
-        //                row_group_prefetches[next_row_group_idx]->startPrefetch();
-        //            else
-        //                row_group_condition_prefetches[next_row_group_idx]->startPrefetch();
-        //        }
     }
     return true;
 }

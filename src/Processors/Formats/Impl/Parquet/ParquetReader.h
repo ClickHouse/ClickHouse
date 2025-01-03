@@ -2,11 +2,11 @@
 #pragma once
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Chunk.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Processors/Formats/Impl/Parquet/SelectiveColumnReader.h>
-#include <Processors/Formats/Impl/Parquet/RowGroupChunkReader.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/Chunk.h>
+#include <Processors/Formats/Impl/Parquet/RowGroupChunkReader.h>
+#include <Processors/Formats/Impl/Parquet/SelectiveColumnReader.h>
 
 #include <arrow/io/interfaces.h>
 #include <parquet/file_reader.h>
@@ -16,12 +16,17 @@
 
 namespace DB
 {
-
+struct FilterSplitResult;
+using FilterSplitResultPtr = std::shared_ptr<FilterSplitResult>;
 class SubRowGroupRangeReader
 {
 public:
     using RowGroupReaderCreator = std::function<std::unique_ptr<RowGroupChunkReader>(size_t, RowGroupPrefetchPtr, RowGroupPrefetchPtr)>;
-    SubRowGroupRangeReader(const std::vector<Int32> & rowGroupIndices, std::vector<RowGroupPrefetchPtr> && row_group_condition_prefetches_, std::vector<RowGroupPrefetchPtr> && row_group_prefetches, RowGroupReaderCreator&& creator);
+    SubRowGroupRangeReader(
+        const std::vector<Int32> & rowGroupIndices,
+        std::vector<RowGroupPrefetchPtr> && row_group_condition_prefetches_,
+        std::vector<RowGroupPrefetchPtr> && row_group_prefetches,
+        RowGroupReaderCreator && creator);
     DB::Chunk read(size_t rows);
 
 private:
@@ -41,35 +46,30 @@ public:
     friend class RowGroupChunkReader;
     ParquetReader(
         Block header_,
-        SeekableReadBuffer& file,
+        SeekableReadBuffer & file,
         parquet::ArrowReaderProperties arrow_properties_,
         parquet::ReaderProperties reader_properties_,
         std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file,
         const FormatSettings & format_settings,
         std::vector<int> row_groups_indices_ = {},
         std::shared_ptr<parquet::FileMetaData> metadata = nullptr,
-        std::shared_ptr<ThreadPool> io_pool_ = nullptr
-    );
+        std::shared_ptr<ThreadPool> io_pool_ = nullptr);
 
     Block read();
-    void addFilter(const String & column_name, ColumnFilterPtr filter);
-    void addExpressionFilter(std::shared_ptr<ExpressionFilter> filter);
-    std::unique_ptr<RowGroupChunkReader> getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr conditions_prefetch, RowGroupPrefetchPtr prefetch);
+    void pushDownFilter(FilterSplitResultPtr filter_split_result);
+    std::unique_ptr<RowGroupChunkReader>
+    getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr conditions_prefetch, RowGroupPrefetchPtr prefetch);
     std::unique_ptr<SubRowGroupRangeReader> getSubRowGroupRangeReader(std::vector<Int32> row_group_indices);
-    const parquet::FileMetaData& metaData()
-    {
-        return *meta_data;
-    }
-    const parquet::ReaderProperties& readerProperties()
-    {
-        return properties;
-    }
+    const parquet::FileMetaData & metaData() { return *meta_data; }
+    const parquet::ReaderProperties & readerProperties() { return properties; }
     parquet::schema::NodePtr getParquetColumn(const String & column_name);
 
 private:
+    void addFilter(const String & column_name, ColumnFilterPtr filter);
+    void addExpressionFilter(std::shared_ptr<ExpressionFilter> filter);
     std::unique_ptr<parquet::ParquetFileReader> file_reader;
     std::mutex file_mutex;
-    SeekableReadBuffer& file;
+    SeekableReadBuffer & file;
     parquet::ArrowReaderProperties arrow_properties;
     Block header;
     std::unique_ptr<SubRowGroupRangeReader> chunk_reader;
@@ -86,8 +86,8 @@ private:
     std::unordered_set<String> condition_columns;
     std::shared_ptr<ThreadPool> io_pool;
     bool case_insensitive = false;
+    FilterSplitResultPtr filter_split_result;
+    std::once_flag filter_fallback_checked;
 };
 
 }
-
-
