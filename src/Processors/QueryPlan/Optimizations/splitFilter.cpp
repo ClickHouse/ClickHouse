@@ -7,7 +7,7 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
-size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
     auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (!filter_step)
@@ -64,12 +64,12 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     }
 
     filter_node.step = std::make_unique<FilterStep>(
-            filter_node.children.at(0)->step->getOutputHeader(),
+            filter_node.children.at(0)->step->getOutputStream(),
             std::move(split.first),
             std::move(split_filter_name),
             remove_filter);
 
-    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));
+    node->step = std::make_unique<ExpressionStep>(filter_node.step->getOutputStream(), std::move(split.second));
 
     filter_node.step->setStepDescription("(" + description + ")[split]");
     node->step->setStepDescription(description);

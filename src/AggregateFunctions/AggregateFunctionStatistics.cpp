@@ -124,7 +124,8 @@ private:
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        return m2 / (count - 1);
+        else
+            return m2 / (count - 1);
     }
 
     static Float64 getStddevSamp(Float64 m2, UInt64 count)
@@ -136,9 +137,10 @@ private:
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        if (count == 1)
+        else if (count == 1)
             return 0.0;
-        return m2 / count;
+        else
+            return m2 / count;
     }
 
     static Float64 getStddevPop(Float64 m2, UInt64 count)
@@ -361,23 +363,26 @@ private:
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        return co_moment / (count - 1);
+        else
+            return co_moment / (count - 1);
     }
 
     static Float64 getCovarPop(Float64 co_moment, UInt64 count)
     {
         if (count == 0)
             return std::numeric_limits<Float64>::infinity();
-        if (count == 1)
+        else if (count == 1)
             return 0.0;
-        return co_moment / count;
+        else
+            return co_moment / count;
     }
 
     static Float64 getCorr(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
     {
         if (count < 2)
             return std::numeric_limits<Float64>::infinity();
-        return co_moment / sqrt(left_m2 * right_m2);
+        else
+            return co_moment / sqrt(left_m2 * right_m2);
     }
 
     Float64 getResult(ConstAggregateDataPtr __restrict place) const

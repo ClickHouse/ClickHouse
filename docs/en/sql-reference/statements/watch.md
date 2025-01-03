@@ -3,11 +3,8 @@ slug: /en/sql-reference/statements/watch
 sidebar_position: 53
 sidebar_label: WATCH
 ---
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
-# WATCH Statement
-
-<ExperimentalBadge/>
+# WATCH Statement (Experimental)
 
 :::note    
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable live views and `WATCH` query using `set allow_experimental_live_view = 1`.

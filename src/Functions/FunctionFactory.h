@@ -5,6 +5,7 @@
 #include <Common/IFactoryWithAliases.h>
 #include <Common/FunctionDocumentation.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <functional>
 #include <memory>

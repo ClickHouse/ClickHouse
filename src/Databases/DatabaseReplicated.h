@@ -87,7 +87,7 @@ public:
 
     void shutdown() override;
 
-    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const override;
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
@@ -150,9 +150,6 @@ private:
 
     void waitDatabaseStarted() const override;
     void stopLoading() override;
-
-    static BlockIO
-    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
 
     String zookeeper_path;
     String shard_name;

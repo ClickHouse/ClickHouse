@@ -15,7 +15,7 @@ do
 	echo $i >> ${logs_dir}/a.txt
 done
 
-${CLICKHOUSE_CLIENT} --query="
+${CLICKHOUSE_CLIENT} -n --query="
 DROP TABLE IF EXISTS file_log;
 DROP TABLE IF EXISTS table_to_store_data;
 DROP TABLE IF EXISTS file_log_mv;
@@ -69,7 +69,7 @@ done
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM table_to_store_data ORDER BY id;"
 
-${CLICKHOUSE_CLIENT} --query="
+${CLICKHOUSE_CLIENT} -n --query="
 DROP TABLE file_log;
 DROP TABLE table_to_store_data;
 DROP TABLE file_log_mv;

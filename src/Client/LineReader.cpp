@@ -100,13 +100,13 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
         range = std::equal_range(
             to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
-                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
             });
     else
         range = std::equal_range(
             to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
-                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
             });
 
     return replxx::Replxx::completions_t(range.first, range.second);
@@ -153,11 +153,8 @@ LineReader::LineReader(
 
 String LineReader::readLine(const String & first_prompt, const String & second_prompt)
 {
-    static const String EMPTY_LINE = " ";
-
     String line;
     bool need_next_line = false;
-    bool is_first_line = true;
 
     while (auto status = readOneLine(need_next_line ? second_prompt : first_prompt))
     {
@@ -165,38 +162,15 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         {
             line.clear();
             need_next_line = false;
-            is_first_line = true;
             continue;
         }
-
-        if (status == COMMIT_LINE)
-        {
-            bool is_empty = input.empty();
-            trim(input);
-
-            if (!input.empty())
-                line += (line.empty() ? "" : "\n") + input;
-
-            if (!line.empty())
-                break;
-
-            if (!is_first_line || !is_empty)
-            {
-                /// To prevent the client from exiting.
-                line = EMPTY_LINE;
-            }
-
-            break;
-        }
-
-        is_first_line = false;
-        trim(input);
 
         if (input.empty())
         {
             if (!line.empty() && !multiline && !hasInputData())
                 break;
-            continue;
+            else
+                continue;
         }
 
         const char * has_extender = nullptr;
@@ -255,6 +229,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
             return ABORT;
     }
 
+    trim(input);
     return INPUT_LINE;
 }
 

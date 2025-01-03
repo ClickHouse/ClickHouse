@@ -41,7 +41,6 @@ function execute_group_by()
         # this is to enable two level group by
         # (using threads to enable it makes the query use non constant amount of memory)
         "--max_bytes_before_external_group_by=$((1<<40))"
-        "--max_bytes_ratio_before_external_group_by=0"
         "--collect_hash_table_stats_during_aggregation=0"
     )
     execute_null "${opts[@]}" <<<'SELECT uniq(number) FROM numbers_mt(1e6) GROUP BY number % 5e5 LIMIT 10'

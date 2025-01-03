@@ -62,7 +62,7 @@ size_t getCompoundTypeDepth(const IDataType & type)
 }
 
 template <typename Collection>
-ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & block_types, bool transform_null_in)
+Block createBlockFromCollection(const Collection & collection, const DataTypes& value_types, const DataTypes & block_types, bool transform_null_in)
 {
     assert(collection.size() == value_types.size());
     size_t columns_size = block_types.size();
@@ -132,19 +132,16 @@ ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, 
                 columns[i]->insert(tuple_values[i]);
     }
 
-    ColumnsWithTypeAndName res(columns_size);
+    Block res;
     for (size_t i = 0; i < columns_size; ++i)
-    {
-        res[i].type = block_types[i];
-        res[i].column = std::move(columns[i]);
-    }
+        res.insert(ColumnWithTypeAndName{std::move(columns[i]), block_types[i], "argument_" + toString(i)});
 
     return res;
 }
 
 }
 
-ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in)
+Block getSetElementsForConstantValue(const DataTypePtr & expression_type, const Field & value, const DataTypePtr & value_type, bool transform_null_in)
 {
     DataTypes set_element_types = {expression_type};
     const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get());
@@ -161,7 +158,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expres
     size_t lhs_type_depth = getCompoundTypeDepth(*expression_type);
     size_t rhs_type_depth = getCompoundTypeDepth(*value_type);
 
-    ColumnsWithTypeAndName result_block;
+    Block result_block;
 
     if (lhs_type_depth == rhs_type_depth)
     {

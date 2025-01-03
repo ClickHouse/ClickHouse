@@ -25,7 +25,7 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     {
         if (uri.getPath() == "/extdict_ping")
             return std::make_unique<ExternalDictionaryLibraryBridgeExistsHandler>(getContext());
-        if (uri.getPath() == "/catboost_ping")
+        else if (uri.getPath() == "/catboost_ping")
             return std::make_unique<CatBoostLibraryBridgeExistsHandler>(getContext());
     }
 
@@ -33,7 +33,7 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     {
         if (uri.getPath() == "/extdict_request")
             return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(getContext());
-        if (uri.getPath() == "/catboost_request")
+        else if (uri.getPath() == "/catboost_request")
             return std::make_unique<CatBoostLibraryBridgeRequestHandler>(getContext());
     }
 

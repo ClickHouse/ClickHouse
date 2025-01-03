@@ -78,11 +78,6 @@ public:
         data->get(0, res);
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
-    {
-        return data->getValueNameAndType(0);
-    }
-
     StringRef getDataAt(size_t) const override
     {
         return data->getDataAt(0);
@@ -272,12 +267,6 @@ public:
     void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(data);
-    }
-
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
-    {
-        callback(*data);
-        data->forEachSubcolumnRecursively(callback);
     }
 
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override

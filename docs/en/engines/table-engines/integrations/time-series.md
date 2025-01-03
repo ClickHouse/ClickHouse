@@ -3,11 +3,8 @@ slug: /en/engines/table-engines/special/time_series
 sidebar_position: 60
 sidebar_label: TimeSeries
 ---
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
-# TimeSeries Engine
-
-<ExperimentalBadge/>
+# TimeSeries Engine [Experimental]
 
 A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels):
 

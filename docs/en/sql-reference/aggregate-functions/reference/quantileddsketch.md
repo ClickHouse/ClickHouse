@@ -9,7 +9,7 @@ Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a 
 **Syntax**
 
 ``` sql
-quantileDD(relative_accuracy, [level])(expr)
+quantileDDsketch[relative_accuracy, (level)](expr)
 ```
 
 **Arguments**

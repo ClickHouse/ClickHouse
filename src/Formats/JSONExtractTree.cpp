@@ -131,7 +131,7 @@ bool tryGetNumericValueFromJSONElement(
     switch (element.type())
     {
         case ElementType::DOUBLE:
-            if constexpr (is_floating_point<NumberType>)
+            if constexpr (std::is_floating_point_v<NumberType>)
             {
                 /// We permit inaccurate conversion of double to float.
                 /// Example: double 0.1 from JSON is not representable in float.
@@ -175,7 +175,7 @@ bool tryGetNumericValueFromJSONElement(
                 return false;
 
             auto rb = ReadBufferFromMemory{element.getString()};
-            if constexpr (is_floating_point<NumberType>)
+            if constexpr (std::is_floating_point_v<NumberType>)
             {
                 if (!tryReadFloatText(value, rb) || !rb.eof())
                 {
@@ -362,10 +362,9 @@ public:
 
             auto & col_str = assert_cast<ColumnString &>(column);
             auto & chars = col_str.getChars();
-            {
-                WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-                jsonElementToString<JSONParser>(element, buf, format_settings);
-            }
+            WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
+            jsonElementToString<JSONParser>(element, buf, format_settings);
+            buf.finalize();
             chars.push_back(0);
             col_str.getOffsets().push_back(chars.size());
         }
@@ -1086,7 +1085,7 @@ public:
         }
 
         auto & col_lc = assert_cast<ColumnLowCardinality &>(column);
-        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn()->cloneEmpty())->assumeMutable();
+        auto tmp_nested = col_lc.getDictionary().getNestedColumn()->cloneEmpty();
         if (!nested->insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
             return false;
 
@@ -1443,8 +1442,7 @@ public:
         auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
         auto insert_settings_with_no_type_conversion = insert_settings;
         insert_settings_with_no_type_conversion.allow_type_conversion = false;
-        auto order = SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants());
-        for (size_t i : order)
+        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         {
             if (i != shared_variant_discr)
             {
@@ -1639,7 +1637,7 @@ public:
         /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -1695,8 +1693,7 @@ private:
         const FormatSettings & format_settings,
         std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
         size_t current_size,
-        String & error,
-        bool is_root) const
+        String & error) const
     {
         if (shouldSkipPath(current_path))
             return true;
@@ -1706,10 +1703,10 @@ private:
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
-                if (!is_root)
+                if (!path.empty())
                     path.append(".");
                 path += key;
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error))
                     return false;
             }
 
@@ -1781,9 +1778,7 @@ private:
 
             paths_and_values_for_shared_data.emplace_back(current_path, "");
             WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
-            /// Use default format settings for binary serialization. Non-default settings may change
-            /// the binary representation of the values and break the future deserialization.
-            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, getDefaultFormatSettings());
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, format_settings);
         }
 
         return true;
@@ -1808,12 +1803,6 @@ private:
         }
 
         return false;
-    }
-
-    const FormatSettings & getDefaultFormatSettings() const
-    {
-        static const FormatSettings settings;
-        return settings;
     }
 
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;

@@ -43,7 +43,8 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                         {
                             if (left.empty())
                                 return right.first;
-                            return left + ", " + right.first;
+                            else
+                                return left + ", " + right.first;
                         })
                 );
     }
@@ -97,7 +98,8 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                     {
                         if (left.empty())
                             return right.first;
-                        return left + ", " + right.first;
+                        else
+                            return left + ", " + right.first;
                     })
             );
     }
