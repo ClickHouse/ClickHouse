@@ -1331,7 +1331,10 @@ void StorageReplicatedMergeTree::drop()
         /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
         zookeeper = getZooKeeperIfTableShutDown();
         /// Update zookeeper client, since existing may be expired, while ZooKeeper is required inside dropAllData().
-        current_zookeeper = zookeeper;
+        {
+            std::lock_guard lock(current_zookeeper_mutex);
+            current_zookeeper = zookeeper;
+        }
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
