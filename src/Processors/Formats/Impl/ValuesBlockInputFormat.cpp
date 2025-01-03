@@ -253,6 +253,29 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
     ++total_rows;
 }
 
+bool ValuesBlockInputFormat::tryReadDefaultValue(IColumn & column, size_t column_idx)
+{
+    try
+    {
+        if (!checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
+            return false;
+
+        skipWhitespaceIfAny(*buf);
+        assertDelimiterAfterValue(column_idx);
+    }
+    catch (const Exception & e)
+    {
+        if (!isParseError(e.code()))
+            throw;
+
+        buf->rollbackToCheckpoint();
+        return false;
+    }
+
+    column.insertDefault();
+    return true;
+}
+
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
     readUntilTheEndOfRowAndReTokenize(column_idx);
@@ -292,12 +315,16 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     bool rollback_on_exception = false;
     try
     {
+        /// In case of default return false to mark row as missing
+        /// and fill it with proper default expression later.
+        if (tryReadDefaultValue(column, column_idx))
+            return false;
+
         bool read = true;
-        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
-        {
-            column.insertDefault();
-            read = false;
-        }
+        const auto & type = types[column_idx];
+        const auto & serialization = serializations[column_idx];
+        if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+            read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
         else
         {
             const auto & type = types[column_idx];
@@ -413,6 +440,11 @@ namespace
 
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
+    /// In case of default return false to mark row as missing
+    /// and fill it with proper default expression later.
+    if (tryReadDefaultValue(column, column_idx))
+        return false;
+
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
     const auto & settings = context->getSettingsRef();
