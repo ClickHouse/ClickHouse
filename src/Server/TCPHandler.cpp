@@ -2637,9 +2637,9 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
 {
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = client_info.getLastForwardedFor();
-    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
-        return Poco::Net::SocketAddress(forwarded_address);
+    auto forwarded_address = client_info.getLastForwardedFor();
+    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
+        return *forwarded_address;
     return socket().peerAddress();
 }
 

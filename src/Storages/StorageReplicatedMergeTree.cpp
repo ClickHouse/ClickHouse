@@ -8365,6 +8365,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         ++idx;
     }
 
+    /// Force execution of inserted log entries, because it could be delayed at BackgroundPool.
+    background_operations_assignee.trigger();
+
     for (const auto & entry : entries)
         waitForLogEntryToBeProcessedIfNecessary(*entry, query_context);
 }
@@ -8904,6 +8907,9 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         intent_guard.reset();
         parts_holder.clear();
         cleanup_thread.wakeup();
+
+        /// Force execution of inserted log entries, because it could be delayed at BackgroundPool.
+        background_operations_assignee.trigger();
 
         waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context);
 
