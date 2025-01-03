@@ -717,7 +717,7 @@ CHECK_DESCRIPTIONS = [
     ),
     CheckDescription(
         "ClickBench",
-        "Runs [ClickBench](https://github.com/ClickHouse/ClickBench/) with instant-attach table",
+        'Runs <a href="https://github.com/ClickHouse/ClickBench/">ClickBench</a> with instant-attach table',
         lambda x: x.startswith("ClickBench"),
     ),
     CheckDescription(
