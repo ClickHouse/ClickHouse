@@ -2885,13 +2885,13 @@ void Server::createServers(
                 servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
-#if USE_SSH
+#if USE_SSH && defined(OS_LINUX)
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ false);
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
-                        "SSH pty: " + address.toString(),
+                        "SSH PTY: " + address.toString(),
                         std::make_unique<TCPServer>(
                             new SSHPtyHandlerFactory(*this, config),
                             server_pool,
@@ -2899,7 +2899,7 @@ void Server::createServers(
                             new Poco::Net::TCPServerParams));
 #else
                 UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been built without libssh");
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
 #endif
                 });
         }

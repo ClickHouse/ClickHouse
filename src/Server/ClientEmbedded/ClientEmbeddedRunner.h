@@ -1,13 +1,16 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
+#include <atomic>
+#include <memory>
 #include <stdexcept>
+
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 #include <Server/ClientEmbedded/IClientDescriptorSet.h>
 #include <Server/ClientEmbedded/PipeClientDescriptorSet.h>
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/ThreadPool.h>
-
-
 namespace DB
 {
 
@@ -40,8 +43,8 @@ public:
 private:
     void clientRoutine(NameToNameMap envs, String starting_query);
 
-    std::unique_ptr<IClientDescriptorSet>
-        client_descriptors; // This is used by server thread and client thread, be sure that server only gets them via getDescriptorsForServer
+    // This is used by server thread and client thread, be sure that server only gets them via getDescriptorsForServer.
+    std::unique_ptr<IClientDescriptorSet> client_descriptors;
     std::atomic_flag started = ATOMIC_FLAG_INIT;
     std::atomic_flag finished = ATOMIC_FLAG_INIT;
 
@@ -49,4 +52,7 @@ private:
     std::unique_ptr<Session> db_session;
     Poco::Logger * log;
 };
+
 }
+
+#endif

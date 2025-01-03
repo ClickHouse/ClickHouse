@@ -1,7 +1,8 @@
 #include <Server/SSH/SSHBind.h>
 
-#if USE_SSH
+#if USE_SSH && defined(OS_LINUX)
 
+#include <base/types.h>
 #include <stdexcept>
 #include <fmt/format.h>
 #include <Common/Exception.h>

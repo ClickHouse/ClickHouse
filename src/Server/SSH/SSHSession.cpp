@@ -1,6 +1,6 @@
 #include <Server/SSH/SSHSession.h>
 
-#if USE_SSH
+#if USE_SSH && defined(OS_LINUX)
 
 #include <fmt/format.h>
 #include <Common/Exception.h>

@@ -9,9 +9,6 @@ if (GLIBC_COMPATIBILITY)
     add_headers_and_sources(glibc_compatibility .)
     add_headers_and_sources(glibc_compatibility musl)
 
-    # There are several symbols which exist only in musl.
-    set (musl_pty_include_dir musl/pty)
-
     if (ARCH_AARCH64)
         list (APPEND glibc_compatibility_sources musl/aarch64/syscall.s musl/aarch64/longjmp.s)
         set (musl_arch_include_dir musl/aarch64)
@@ -44,7 +41,6 @@ if (GLIBC_COMPATIBILITY)
     target_no_warning(glibc-compatibility unused-but-set-variable)
     target_no_warning(glibc-compatibility builtin-requires-header)
 
-    target_include_directories(glibc-compatibility PUBLIC ${musl_pty_include_dir})
     target_include_directories(glibc-compatibility PRIVATE libcxxabi ${musl_arch_include_dir})
 
     if (ENABLE_OPENSSL_DYNAMIC)

@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -116,10 +118,12 @@ try
     is_interactive = stdin_is_a_tty;
 
     /// FIXME: We need a generic way on how to handle program options for the embedded client.
-    if (first_query.empty())
-        queries = std::vector<std::string>({getEnvOption<String>(envVars, "query", "")});
-    else
+    if (!first_query.empty())
         queries = std::vector<std::string>({first_query});
+
+    auto possible_query = getEnvOption<String>(envVars, "query", "");
+    if (!possible_query.empty())
+        queries = std::vector<std::string>({possible_query});
 
     delayed_interactive = is_interactive && !queries.empty();
     if (!is_interactive || delayed_interactive)
@@ -196,3 +200,5 @@ catch (...)
 
 
 }
+
+#endif
