@@ -268,6 +268,7 @@ std::vector<std::string> serializeKeysToRawString(
         std::string & serialized_key = result.emplace_back();
         WriteBufferFromString wb(serialized_key);
         key_column_type->getDefaultSerialization()->serializeBinary(*it, wb, {});
+        wb.finalize();
 
         ++it;
         ++rows_processed;
@@ -292,6 +293,7 @@ std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & 
         keys.column->get(i, field);
         /// TODO(@vdimir): use serializeBinaryBulk
         keys.type->getDefaultSerialization()->serializeBinary(field, wb, {});
+        wb.finalize();
     }
     return result;
 }

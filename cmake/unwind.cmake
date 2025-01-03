@@ -1,3 +1,1 @@
-set_original_launchers_if_needed()
 add_subdirectory(contrib/libunwind-cmake)
-set_dummy_launchers_if_needed()

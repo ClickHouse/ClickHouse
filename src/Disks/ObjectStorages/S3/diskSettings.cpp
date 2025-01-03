@@ -160,7 +160,6 @@ std::unique_ptr<S3::Client> getClient(
         .use_virtual_addressing = url.is_virtual_hosted_style,
         .disable_checksum = auth_settings[S3AuthSetting::disable_checksum],
         .gcs_issue_compose_request = auth_settings[S3AuthSetting::gcs_issue_compose_request],
-        .is_s3express_bucket = is_s3_express_bucket
     };
 
     auto credentials_configuration = S3::CredentialsConfiguration
@@ -178,7 +177,7 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings[S3AuthSetting::secret_access_key],
         auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
         auth_settings.server_side_encryption_kms_config,
-        auth_settings.getHeaders(),
+        auth_settings.headers,
         credentials_configuration,
         auth_settings[S3AuthSetting::session_token]);
 }

@@ -652,7 +652,7 @@ namespace ErrorCodes
             APPLY_FOR_ERROR_CODES(M)
 #undef M
         }
-    } static error_codes_names;
+    } error_codes_names;
 
     std::string_view getName(ErrorCode error_code)
     {

@@ -12,7 +12,6 @@
 #include <Common/CurrentMetrics.h>
 
 #include <condition_variable>
-#include <exception>
 #include <mutex>
 
 
@@ -34,11 +33,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int RESOURCE_ACCESS_DENIED;
-}
 
 /*
  * Scoped resource guard.
@@ -115,25 +109,12 @@ public:
             dequeued_cv.notify_one();
         }
 
-        // This function is executed inside scheduler thread and wakes thread that issued this `request`.
-        // That thread will throw an exception.
-        void failed(const std::exception_ptr & ptr) override
-        {
-            std::unique_lock lock(mutex);
-            chassert(state == Enqueued);
-            state = Dequeued;
-            exception = ptr;
-            dequeued_cv.notify_one();
-        }
-
         void wait()
         {
             CurrentMetrics::Increment scheduled(metrics->scheduled_count);
             auto timer = CurrentThread::getProfileEvents().timer(metrics->wait_microseconds);
             std::unique_lock lock(mutex);
             dequeued_cv.wait(lock, [this] { return state == Dequeued; });
-            if (exception)
-                throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
         }
 
         void finish(ResourceCost real_cost_, ResourceLink link_)
@@ -170,7 +151,6 @@ public:
         std::mutex mutex;
         std::condition_variable dequeued_cv;
         RequestState state = Finished;
-        std::exception_ptr exception;
     };
 
     /// Creates pending request for resource; blocks while resource is not available (unless `Lock::Defer`)
