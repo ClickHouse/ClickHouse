@@ -25,6 +25,7 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionMongoDBPocoLegacy(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
+void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON

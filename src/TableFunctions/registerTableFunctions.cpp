@@ -29,6 +29,7 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
         registerTableFunctionMongoDB(factory);
 #endif
     registerTableFunctionRedis(factory);
+    registerTableFunctionArrowFlight(factory);
     registerTableFunctionMergeTreeIndex(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON

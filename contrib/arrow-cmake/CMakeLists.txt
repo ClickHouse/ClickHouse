@@ -62,6 +62,7 @@ set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
 set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
+set(GRPC_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
 
 
@@ -207,10 +208,65 @@ target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_ADDITION_SOURCE_DIR}
     ${ARROW_SRC_DIR})
 
+# === arrow flight
+
+set(ARROW_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow)
+set(ARROW_PROTO_DIR ${ARROW_SOURCE_DIR}/format)
+set(ARROW_FLIGHT_SRC_DIR ${ARROW_SOURCE_DIR}/cpp/src/arrow/flight)
+set(ARROW_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/cpp/src)
+set(ARROW_FLIGHT_GENERATED_SRC_DIR ${ARROW_GENERATED_SRC_DIR}/arrow/flight)
+
+set(GRPC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc/include)
+
+find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin)
+
+add_custom_command(
+    OUTPUT 
+        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.cc"
+        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.grpc.pb.h"
+        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc"
+        "${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.h"
+    COMMAND ${PROTOBUF_EXECUTABLE}
+    -I ${ARROW_PROTO_DIR}
+    -I "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src"
+    --cpp_out="${ARROW_FLIGHT_GENERATED_SRC_DIR}"
+    --grpc_out="${ARROW_FLIGHT_GENERATED_SRC_DIR}"
+    --plugin=protoc-gen-grpc="${GRPC_EXECUTABLE}"
+    "${ARROW_PROTO_DIR}/Flight.proto"
+)
+
+# NOTE: we do not compile the ${ARROW_FLIGHT_GENERATED_SRCS} directly, instead
+# compiling then via protocol_internal.cc which contains some gRPC template
+# overrides to enable Flight-specific optimizations. See comments in
+# protobuf-internal.cc
+set(ARROW_FLIGHT_SRCS
+        ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/grpc_client.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/grpc_server.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/protocol_grpc_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/serialization_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/util_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/client.cc
+        ${ARROW_FLIGHT_SRC_DIR}/client_cookie_middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/client_tracing_middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/cookie_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/serialization_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server_auth.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server_middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server_tracing_middleware.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport_server.cc
+        ${ARROW_FLIGHT_SRC_DIR}/types.cc
+        )
 
 # === arrow
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
+
+configure_file(${LIBRARY_DIR}/util/config.h.cmake ${ARROW_GENERATED_SRC_DIR}/arrow/util/config.h)
+
 
 # arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 # find . \( -iname \*.cc -o -iname \*.cpp -o -iname \*.c \) | sort | awk '{print "\"${LIBRARY_DIR}" substr($1,2) "\"" }' | grep -v 'test.cc' | grep -v 'json' | grep -v 'flight' \|
@@ -428,6 +484,7 @@ set(ARROW_SRCS
         "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
         "${ARROW_SRC_DIR}/arrow/adapters/orc/util.cc"
         "${ARROW_SRC_DIR}/arrow/adapters/orc/options.cc"
+        ${ARROW_FLIGHT_SRCS}
         )
 
 add_definitions(-DARROW_WITH_LZ4)
@@ -447,6 +504,7 @@ SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
 
 
 add_library(_arrow ${ARROW_SRCS})
+add_library(ch_contrib::arrow ALIAS _arrow)
 
 target_link_libraries(_arrow PRIVATE
     boost::filesystem
@@ -466,9 +524,13 @@ target_link_libraries(_arrow PUBLIC _orc)
 add_dependencies(_arrow protoc)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
+target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_GENERATED_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 
-target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})
+target_include_directories(_arrow SYSTEM PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/)
+target_include_directories(_arrow SYSTEM PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp/)
+
+target_include_directories(_arrow SYSTEM PRIVATE ${GRPC_INCLUDE_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
 
 # === parquet

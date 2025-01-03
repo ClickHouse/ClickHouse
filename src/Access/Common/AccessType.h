@@ -249,6 +249,7 @@ enum class AccessType : uint8_t
     M(KAFKA, "", GLOBAL, SOURCES) \
     M(NATS, "", GLOBAL, SOURCES) \
     M(RABBITMQ, "", GLOBAL, SOURCES) \
+    M(ARROW_FLIGHT, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \
     \
     M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
