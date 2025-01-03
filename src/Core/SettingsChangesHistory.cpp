@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.1",
         {
+            {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
             {"allow_experimental_ts_to_grid_aggregate_function", false, false, "Cloud only"},
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},

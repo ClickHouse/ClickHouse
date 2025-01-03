@@ -230,7 +230,7 @@ namespace ErrorCodes
     DECLARE(Bool, cache_populated_by_fetch, false, "Only available in ClickHouse Cloud", EXPERIMENTAL) \
     DECLARE(Bool, force_read_through_cache_for_merges, false, "Force read-through filesystem cache for merges", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", 0) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
