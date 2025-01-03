@@ -38,11 +38,6 @@
 
 #include "config.h"
 
-#if USE_MYSQL
-#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#    include <Storages/StorageMaterializedMySQL.h>
-#endif
-
 #if USE_LIBPQXX
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
@@ -378,13 +373,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
 #endif
 
-#if USE_MYSQL
-        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
-        if (!context_->isInternalQuery() && db_and_table.first->getEngineName() == "MaterializedMySQL")
-        {
-            db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
-        }
-#endif
         return db_and_table;
     }
 
