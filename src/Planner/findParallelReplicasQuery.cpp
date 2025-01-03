@@ -17,6 +17,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
@@ -270,9 +271,14 @@ const QueryNode * findQueryForParallelReplicas(
             else
             {
                 const auto * join = typeid_cast<JoinStep *>(step);
+                const auto * join_logical = typeid_cast<JoinStepLogical *>(step);
+                if (join_logical && join_logical->hasPreparedJoinStorage())
+                    /// JoinStepLogical with prepared storage is converted to FilledJoinStep, not regular JoinStep.
+                    join_logical = nullptr;
+
                 /// We've checked that JOIN is INNER/LEFT/RIGHT on query tree level before.
                 /// Don't distribute UNION node.
-                if (!join)
+                if (!join && !join_logical)
                     return res;
 
                 for (const auto & child : children)
