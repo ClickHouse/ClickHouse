@@ -18,13 +18,13 @@ system stop merges test;
 insert into test select number, toJSONString(map('a', number % 2, 'b', 'str_' || number % 3, 'c', range(number % 10))), 'Hello, World!' from numbers(4);
 insert into test select number, toJSONString(map('a', number % 2, 'b', 'str_' || number % 3, 'c', range(number % 10))), 'Hello, World!' from numbers(4);
 
-select * from test final order by all;
+select * from test final order by value;
 
 system start merges test;
 optimize table test final;
 select count() from system.parts where active and table = 'test' and database = currentDatabase();
 
-select * from test final order by all;
+select * from test final order by value;
 
 drop table test;
 
