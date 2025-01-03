@@ -9,11 +9,16 @@ namespace Iceberg
 class ManifestList
 {
 public:
-    explicit ManifestList(std::vector<ManifestFileEntry> manifest_files_) : manifest_files(std::move(manifest_files_)) { }
+    explicit ManifestList(Int64 snapshot_id_, std::vector<ManifestFileEntry> manifest_files_)
+        : manifest_files(std::move(manifest_files_)), snapshot_id(snapshot_id_)
+    {
+    }
     const std::vector<ManifestFileEntry> & getManifestFiles() const { return manifest_files; }
+    Int64 getShapshotId() const { return snapshot_id; }
 
 private:
     std::vector<ManifestFileEntry> manifest_files;
+    Int64 snapshot_id;
 };
 
 using ManifestListsByName = std::map<String, ManifestList>;
