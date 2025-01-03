@@ -1,4 +1,3 @@
-import socket
 import struct
 import time
 
@@ -63,11 +62,7 @@ def get_fake_zk(nodename, timeout=30.0):
 
 
 def get_keeper_socket(node_name):
-    hosts = cluster.get_instance_ip(node_name)
-    client = socket.socket()
-    client.settimeout(10)
-    client.connect((hosts, 9181))
-    return client
+    return keeper_utils.get_keeper_socket(cluster, node_name)
 
 
 def write_buffer(bytes):
