@@ -11,7 +11,7 @@ namespace DB
 
 struct DataFileMeta : StorageObjectStorage::Configuration::PathMetadata
 {
-    enum class DataFileType : uint8_t 
+    enum class DataFileType : uint8_t
     {
         DATA_FILE,
 
