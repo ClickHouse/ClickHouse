@@ -173,7 +173,7 @@ clickhouse-client --query "INSERT INTO git.commits FORMAT TSV" < commits.tsv
 clickhouse-client --query "INSERT INTO git.file_changes FORMAT TSV" < file_changes.tsv
 clickhouse-client --query "INSERT INTO git.line_changes FORMAT TSV" < line_changes.tsv
 
-Check out this presentation: https://presentations.clickhouse.com/matemarketing_2020/
+Check out this presentation: https://presentations.clickhouse.com/2020_matemarketing/
 )";
 
 namespace po = boost::program_options;
