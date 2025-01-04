@@ -122,6 +122,8 @@ ${CLICKHOUSE_CLIENT} --query="select 'sqlite from clickhouse'"
 ${CLICKHOUSE_CLIENT} --query="SELECT tx.c0 FROM sqlite('${DB_PATH}', 't0') tx;"
 ${CLICKHOUSE_CLIENT} --query="select 'sqlite'"
 sqlite3 "${DB_PATH}" 'SELECT c0 from t0;'
+sqlite3 "${DB_PATH}" 'DROP TABLE t0;'
+${CLICKHOUSE_CLIENT} --query="DROP TABLE t0;"
 
 sqlite3 "${DB_PATH2}" 'DROP TABLE IF EXISTS table1'
 sqlite3 "${DB_PATH2}" 'CREATE TABLE table1 (col1 text, col2 smallint);'
