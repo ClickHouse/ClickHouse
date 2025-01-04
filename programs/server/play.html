@@ -468,6 +468,7 @@
             <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
             <span id="hourglass">⧗</span>
             <span id="check-mark">✔</span>
+            <span id="progress"></span>
             <span id="stats"></span>
             <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
         </div>
@@ -529,7 +530,7 @@
         document.getElementById('url').value = location.origin;
     }
 
-    /// Substitute user name if it's specified in the query string
+    /// Substitute username if it's specified in the query string
     const user_from_url = current_url.searchParams.get('user');
     if (user_from_url) {
         document.getElementById('user').value = user_from_url;
@@ -548,105 +549,126 @@
         }
     }
 
-    function postImpl(posted_request_num, query)
+    async function postImpl(posted_request_num, query)
     {
         const user = document.getElementById('user').value;
         const password = document.getElementById('password').value;
 
         const server_address = document.getElementById('url').value;
 
-        var url = server_address +
+        let url = server_address +
             (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
             'add_http_cors_header=1' +
-            '&default_format=JSONCompact' +
-            /// Safety settings to prevent results that browser cannot display.
+            '&user=' + encodeURIComponent(user) +
+            '&password=' + encodeURIComponent(password) +
+            '&default_format=JSONEachRowWithProgress' +
+            /// Safety settings to prevent results that the browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
-        // If play.html is opened locally, append username and password to the URL parameter to avoid CORS issue.
-        if (opened_locally) {
-            url += '&user=' + encodeURIComponent(user) +
-            '&password=' + encodeURIComponent(password)
-        }
-
         last_query_start = performance.now();
-
-        const xhr = new XMLHttpRequest;
-
-        xhr.open('POST', url, true);
-        // If play.html is open normally, use Basic auth to prevent username and password being exposed in URL parameters
-        if (!opened_locally) {
-            xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
-        }
-        xhr.onreadystatechange = function()
-        {
-            if (posted_request_num != request_num) {
-                return;
-            } else if (this.readyState === XMLHttpRequest.DONE) {
-                const elapsed_msec = performance.now() - last_query_start;
-                renderResponse(this.status, this.response, elapsed_msec);
-
-                /// The query is saved in browser history (in state JSON object)
-                /// as well as in URL fragment identifier.
-                if (query != previous_query) {
-                    const state = {
-                        query: query,
-                        status: this.status,
-                        response: this.response.length > 100000 ? null : this.response, /// Lower than the browser's limit.
-                        elapsed_msec: elapsed_msec,
-                    };
-                    const title = "ClickHouse Query: " + query;
-
-                    let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
-                    if (run_immediately) {
-                        history_url += "&run=1";
-                    }
-                    if (server_address != location.origin) {
-                        /// Save server's address in URL if it's not identical to the address of the play UI.
-                        history_url += '&url=' + encodeURIComponent(server_address);
-                    }
-                    history_url += '#' + window.btoa(query);
-
-                    if (previous_query == '') {
-                        history.replaceState(state, title, history_url);
-                    } else {
-                        history.pushState(state, title, history_url);
-                    }
-                    document.title = title;
-                    previous_query = query;
-                }
-            } else {
-                //console.log(this);
-            }
-        }
 
         document.getElementById('check-mark').style.display = 'none';
         document.getElementById('hourglass').style.display = 'inline-block';
 
-        xhr.send(query);
-    }
+        let stopping = false; // TODO
+        let response, reply;
+        try {
+            response = await fetch(url, { method: "POST", body: query });
 
-    function renderResponse(status, response, elapsed_msec) {
-        document.getElementById('hourglass').style.display = 'none';
+            let format = response.headers.get('X-ClickHouse-Format');
 
-        if (status === 200) {
-            let json;
-            try { json = JSON.parse(response); } catch (e) {}
+            if (format == 'JSONEachRowWithProgress') {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
 
-            if (json !== undefined && json.statistics !== undefined) {
-                renderResult(json);
-            } else if (Array.isArray(json) && json.length == 2 &&
-                Array.isArray(json[0]) && Array.isArray(json[1]) && json[0].length > 1 && json[0].length == json[1].length) {
-                /// If user requested FORMAT JSONCompactColumns, we will render it as a chart.
-                renderChart(json);
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (stopping) {
+                        stopped = true;
+                        break;
+                    }
+
+                    let new_content = decoder.decode(value, { stream: true });
+                    buffer += new_content;
+                    reply += new_content;
+
+                    let lines = buffer.split('\n');
+
+                    for (line of lines.slice(0, -1)) {
+                        if (stopping) {
+                            stopped = true;
+                            break;
+                        }
+                        const data = JSON.parse(line);
+                        update(data);
+                    };
+
+                    buffer = lines[lines.length - 1];
+                }
+            } else if (format == 'JSONCompactColumns') {
+                reply = await response.text();
+                renderChart(JSON.parse(reply));
             } else {
-                renderUnparsedResult(response);
-                stats.innerText = `Elapsed (client-side): ${(elapsed_msec / 1000).toFixed(3)} sec.`;
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (stopping) {
+                        stopped = true;
+                        break;
+                    }
+
+                    let new_content = decoder.decode(value, { stream: true });
+                    reply += new_content;
+
+                    updateRaw(new_content);
+                }
             }
-            document.getElementById('check-mark').style.display = 'inline';
-        } else {
-            /// TODO: Proper rendering of network errors.
-            renderError(response);
+        } catch (e) {
+            console.log(e);
+            reply = e.toString();
+        }
+
+        /// TODO: render error
+
+        if (posted_request_num != request_num) { return; }
+
+        const elapsed_msec = performance.now() - last_query_start;
+
+        /// The query is saved in browser history (in state JSON object)
+        /// as well as in URL fragment identifier.
+        if (query != previous_query) {
+            const state = {
+                query: query,
+                status: response.status,
+                response: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
+                elapsed_msec: elapsed_msec,
+            };
+            const title = "ClickHouse Query: " + query;
+
+            let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+            if (run_immediately) {
+                history_url += "&run=1";
+            }
+            if (server_address != location.origin) {
+                /// Save server's address in URL if it's not identical to the address of the play UI.
+                history_url += '&url=' + encodeURIComponent(server_address);
+            }
+            history_url += '#' + window.btoa(query);
+
+            if (previous_query == '') {
+                history.replaceState(state, title, history_url);
+            } else {
+                history.pushState(state, title, history_url);
+            }
+            document.title = title;
+            previous_query = query;
         }
     }
 
@@ -661,7 +683,7 @@
             clear();
             return;
         }
-        renderResponse(event.state.status, event.state.response, event.state.elapsed_msec);
+        renderResponse(event.state.status, event.state.response, event.state.elapsed_msec); // TODO
     };
 
     if (window.location.hash) {
@@ -898,6 +920,79 @@
         let table = document.getElementById('data-table');
         table.appendChild(tbody);
         table.style.display = 'table';
+    }
+
+    function update(json) {
+        if (json.progress) {
+            updateProgress(json.progress);
+        } else if (json.meta) {
+            appendHeader(json.meta);
+        } else if (json.row) {
+            appendRow(json.row);
+        }
+    }
+
+    function updateProgress(progress) {
+        console.log(progress);
+    }
+
+    let row_idx = 0;
+    function appendHeader(meta) {
+        let thead = document.createElement('thead');
+
+        let th = document.createElement('th');
+        th.className = 'row-number';
+        th.appendChild(document.createTextNode('№'));
+        thead.appendChild(th);
+
+        meta.forEach(elem => {
+            let th = document.createElement('th');
+            const name = document.createTextNode(elem.name);
+            th.appendChild(name);
+            thead.appendChild(th);
+        });
+
+        let table = document.getElementById('data-table');
+        while (table.firstChild) {
+            table.removeChild(table.lastChild);
+        }
+        let tbody = document.createElement('tbody');
+        tbody.id = 'tbody';
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        table.style.display = 'table';
+
+        row_idx = 0;
+    }
+
+    function appendRow(row) {
+        ++row_idx;
+        let tr = document.createElement('tr');
+
+        let td = document.createElement('td');
+        td.className = 'row-number';
+        td.appendChild(document.createTextNode(row_idx));
+        tr.appendChild(td);
+
+        let col_idx = 0;
+        for (let [name, value] of Object.entries(row)) {
+            const td = document.createElement('td');
+            td.innerText = value;
+            ++col_idx;
+
+            td.onclick = () => { td.classList.add('td-selected') };
+            td.onmouseenter = () => {
+                td.classList.add('td-hover-hysteresis');
+                td.onmouseleave = () => {
+                    setTimeout(() => { td && td.classList.remove('td-hover-hysteresis') }, 1000);
+                };
+            };
+
+            tr.appendChild(td);
+        }
+
+        let tbody = document.getElementById('tbody');
+        tbody.appendChild(tr);
     }
 
     function renderTable(response)
