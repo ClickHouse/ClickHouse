@@ -121,6 +121,8 @@ protected:
     /// KILL was send to the query
     std::atomic<bool> is_killed { false };
 
+    std::atomic<bool> is_timed_out { false };
+
     mutable std::mutex cancel_mutex;
     CancelReason cancel_reason { CancelReason::UNDEFINED };
     std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
@@ -250,6 +252,10 @@ public:
     CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
+
+    void setTimedOut() { is_timed_out = true; }
+
+    bool isTimedOut() const { return is_timed_out; }
 
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;

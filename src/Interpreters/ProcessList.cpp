@@ -545,10 +545,9 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
 bool QueryStatus::checkTimeLimit()
 {
-    auto elapsed_ns = watch.elapsed();
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), elapsed_ns);
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), watch.elapsed());
 
-    return limits.checkTimeLimit(elapsed_ns, overflow_mode);
+    return checkTimeLimitSoft();
 }
 
 void QueryStatus::throwQueryWasCancelled() const
@@ -564,7 +563,15 @@ bool QueryStatus::checkTimeLimitSoft()
     if (is_killed.load())
         return false;
 
-    return limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::BREAK);
+    if (is_timed_out)
+        ExecutionSpeedLimits::handleOverflowMode(
+            overflow_mode,
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Timeout exceeded: elapsed {} seconds, maximum: {} seconds",
+            static_cast<double>(watch.elapsed()) / 1000000000ULL,
+            limits.max_execution_time.totalMicroseconds() / 1000000.0);
+
+    return true;
 }
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
