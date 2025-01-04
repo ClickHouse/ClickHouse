@@ -650,7 +650,6 @@ if (TARGET ch_contrib::google_cloud_cpp)
 endif()
 
 if (ENABLE_BUZZHOUSE)
-    dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:clickhouse_buzzhouse_proto,INTERFACE_INCLUDE_DIRECTORIES>)
     dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
 endif()
 

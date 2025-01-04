@@ -7,5 +7,5 @@ set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 set (CMAKE_CXX_CLANG_TIDY "")
 
 add_library(clickhouse_buzzhouse_proto ${clickhouse_buzzhouse_proto_headers} ${clickhouse_buzzhouse_proto_sources})
-target_include_directories(clickhouse_buzzhouse_proto PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(clickhouse_buzzhouse_proto SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries (clickhouse_buzzhouse_proto PUBLIC ch_contrib::protoc)
