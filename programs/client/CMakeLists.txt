@@ -3,10 +3,6 @@ set (CLICKHOUSE_CLIENT_SOURCES
     FuzzLoop.cpp
 )
 
-if (ENABLE_BUZZHOUSE)
-    set(CLICKHOUSE_CLIENT_INCLUDE PRIVATE $<TARGET_PROPERTY:clickhouse_buzzhouse_proto,INTERFACE_INCLUDE_DIRECTORIES>)
-endif()
-
 set (CLICKHOUSE_CLIENT_LINK
     PRIVATE
         boost::program_options
@@ -16,6 +12,11 @@ set (CLICKHOUSE_CLIENT_LINK
         clickhouse_functions
         clickhouse_parsers
 )
+
+if (ENABLE_BUZZHOUSE)
+    set(CLICKHOUSE_CLIENT_INCLUDE PRIVATE $<TARGET_PROPERTY:clickhouse_buzzhouse_proto,INTERFACE_INCLUDE_DIRECTORIES>)
+    list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_buzzhouse_proto)
+endif()
 
 if (TARGET ch_rust::skim)
     list(APPEND CLICKHOUSE_CLIENT_LINK PRIVATE ch_rust::skim)
