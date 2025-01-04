@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-replicated-database
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
@@ -52,7 +52,7 @@ FROM system.query_log
 WHERE
     type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query = 'SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;'
+    AND query = 'SELECT count(*) FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
 ORDER BY
     event_time_microseconds;
 
@@ -67,7 +67,7 @@ FROM system.query_log
 WHERE
     type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query = 'SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true;'
+    AND query = 'SELECT * FROM tab WHERE b = 10000 SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;'
 ORDER BY
     event_time_microseconds;
 
