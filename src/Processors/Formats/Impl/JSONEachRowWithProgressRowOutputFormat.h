@@ -24,6 +24,7 @@ private:
     void writeMinExtreme(const Columns & columns, size_t row_num) override;
     void writeMaxExtreme(const Columns & columns, size_t row_num) override;
     void writeTotals(const Columns & columns, size_t row_num) override;
+    void finalizeImpl() override;
 
     void writeSpecialRow(const char * kind, const Columns & columns, size_t row_num);
 

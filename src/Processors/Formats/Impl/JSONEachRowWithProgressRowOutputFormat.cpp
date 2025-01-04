@@ -77,6 +77,28 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress(const Progress & valu
     ostr->next();
 }
 
+void JSONEachRowWithProgressRowOutputFormat::finalizeImpl()
+{
+    if (statistics.applied_limit)
+    {
+        writeCString("{\"rows_before_limit_at_least\":", *ostr);
+        writeIntText(statistics.rows_before_limit, out);
+        writeCString("}\n", *ostr);
+    }
+    if (statistics.applied_aggregation)
+    {
+        writeCString("{\"rows_before_aggregation\":", *ostr);
+        writeIntText(statistics.rows_before_aggregation, out);
+        writeCString("}\n", *ostr);
+    }
+    if (!exception_message.empty())
+    {
+        writeCString("{\"exception\":", *ostr);
+        writeJSONString(exception_message, out, settings);
+        writeCString("}\n", *ostr);
+    }
+}
+
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONEachRowWithProgress", [](
