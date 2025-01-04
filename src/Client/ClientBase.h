@@ -71,6 +71,7 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
+
 class InternalTextLogs;
 class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
@@ -133,6 +134,8 @@ protected:
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     virtual void setupSignalHandler() = 0;
 
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
@@ -153,8 +156,23 @@ protected:
     };
 
     virtual void updateLoggerLevel(const String &) {}
-    virtual void printHelpMessage(const OptionsDescription & options_description, bool verbose) = 0;
-    virtual void addOptions(OptionsDescription & options_description) = 0;
+
+    void printHelpOrVersionIfNeeded(const CommandLineOptions & options);
+    /// Prints the help message. The fact whether it is verbose or not depends on the contents of
+    /// the OptionsDescription object.
+    virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
+    /// Add options that are common for the embedded client, regular client or clickhouse-local.
+    void addCommonOptions(OptionsDescription & options_description);
+    /// Add user-level or MergeTree-level settings to the list of possbile command line options.
+    void addSettingsAsOptions(OptionsDescription & options_description);
+    /// Add extra options depending on the application (e.g. clickhouse-local or clickhouse-client)
+    virtual void addExtraOptions(OptionsDescription & options_description) = 0;
+    /// Move options from the boost::program_options structure to the one returned by
+    /// getClientConfiguration(). Missing options are filled in with the defaults.
+    /// NB: This happens only for options that are common for the embedded client,
+    /// regular client and clickhouse-local. For any other specific option
+    /// please use processOptions method.
+    void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments,
@@ -163,13 +181,6 @@ protected:
 
     /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
-
-    virtual void readArguments(
-        int argc,
-        char ** argv,
-        Arguments & common_arguments,
-        std::vector<Arguments> & external_tables_arguments,
-        std::vector<Arguments> & hosts_and_ports_arguments) = 0;
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
@@ -224,6 +235,7 @@ protected:
         void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
 
         /// Set value not greater then 0 to mark the query as stopped.
+
         void stop() { exit_after_signals.store(0); }
 
         /// Return true if the query was stopped.
@@ -258,11 +270,17 @@ protected:
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
-    SharedContextHolder shared_context;
+    SharedContextHolder shared_context; // maybe not initialized
     ContextMutablePtr global_context;
 
     /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
+
+    String default_database;
+    String query_id;
+    Int32 suggestion_limit;
+    bool enable_highlight = true;
+    bool multiline = false;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
@@ -312,7 +330,7 @@ protected:
     MergeTreeSettings cmd_merge_tree_settings;
 
     /// thread status should be destructed before shared context because it relies on process list.
-    std::optional<ThreadStatus> thread_status;
+    std::optional<ThreadStatus> thread_status; // may be not initialized in embedded client
 
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
@@ -333,6 +351,7 @@ protected:
     std::unique_ptr<InternalTextLogs> logs_out_stream;
 
     /// /dev/tty if accessible or std::cerr - for progress bar.
+    /// But running embedded into server, we write the progress to given tty file dexcriptor.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
