@@ -31,7 +31,6 @@
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/scope_guard.h>
 #include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
@@ -41,14 +40,9 @@
 
 #include <Poco/Net/HTTPMessage.h>
 
-#include "config.h"
-
 #include <algorithm>
-#include <chrono>
-#include <iterator>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -723,6 +717,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
