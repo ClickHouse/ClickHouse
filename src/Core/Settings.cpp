@@ -5761,7 +5761,7 @@ Build local plan for local replica
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
     \
-    DECLARE(Bool, allow_experimental_analyzer, true, R"(
+    DECLARE(Bool, allow_experimental_analyzer, false, R"(
 Allow new query analyzer.
 )", IMPORTANT) ALIAS(enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
