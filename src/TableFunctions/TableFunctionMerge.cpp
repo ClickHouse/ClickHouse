@@ -1,5 +1,6 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTFunction.h>
@@ -7,8 +8,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -21,6 +22,11 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
 }
 
 namespace
@@ -159,25 +165,35 @@ const TableFunctionMerge::DBToTableSetMap & TableFunctionMerge::getSourceDatabas
 
 ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
-    {
-        for (const auto & table : db_with_tables.second)
-        {
-            auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, table}, context);
-            if (storage)
-                return ColumnsDescription{storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical()};
-        }
-    }
+    size_t table_num = 0;
+    size_t max_tables_to_look = context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference];
 
-    throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
+    return StorageMerge::unifyColumnsDescription([&table_num, &context, max_tables_to_look, this](std::function<void(const StoragePtr &)> callback)
+    {
+        for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
+        {
+            for (const auto & table : db_with_tables.second)
+            {
+                if (table_num >= max_tables_to_look)
+                    return;
+
+                auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{db_with_tables.first, table}, context);
+                if (storage)
+                {
+                    ++table_num;
+                    callback(storage);
+                }
+            }
+        }
+    });
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context, is_insert_query),
+        ColumnsDescription{},
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
