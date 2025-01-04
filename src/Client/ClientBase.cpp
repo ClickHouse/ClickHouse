@@ -938,6 +938,21 @@ void ClientBase::initKeystrokeInterceptor()
     }
 }
 
+
+String ClientBase::appendSmileyIfNeeded(const String & prompt_)
+{
+    static constexpr String smiley = ":) ";
+
+    if (prompt_.empty())
+        return smiley;
+
+    if (prompt_.ends_with(smiley))
+        return prompt_;
+
+    return prompt_ + smiley;
+}
+
+
 void ClientBase::updateSuggest(const ASTPtr & ast)
 {
     std::vector<std::string> new_words;
@@ -2612,14 +2627,7 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::getPrompt() const
 {
-    if (!prompt.empty())
-    {
-        if (!prompt.ends_with(":) "))
-            return prompt + " :) ";
-        return prompt;
-    }
-
-    return ":) ";
+    return prompt;
 }
 
 

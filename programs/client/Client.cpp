@@ -266,6 +266,7 @@ std::vector<String> Client::loadWarningMessages()
     }
 }
 
+
 Poco::Util::LayeredConfiguration & Client::getClientConfiguration()
 {
     return config();
@@ -525,7 +526,8 @@ void Client::connect()
     load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
 
-    if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
+    server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
+    if (server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
 
     if (is_interactive)
@@ -576,6 +578,9 @@ void Client::connect()
         }
     }
 
+    /// A custom prompt can be specified
+    /// - directly (possible as CLI parameter or in client.xml as top-level <prompt>...</prompt> or within client.xml's connection credentials)
+    /// - via prompt_by_server_display_name (only possible in client.xml as top-level <prompt>...</prompt>).
     if (config().has("prompt"))
         prompt = config().getString("prompt");
     else if (config().has("prompt_by_server_display_name"))
@@ -585,9 +590,9 @@ void Client::connect()
 
         Strings keys;
         config().keys("prompt_by_server_display_name", keys);
-        for (const String & key : keys)
+        for (const auto & key : keys)
         {
-            if (key != "default" && server_display_name.find(key) != std::string::npos)
+            if (key != "default" && server_display_name.contains(key))
             {
                 prompt = config().getRawString("prompt_by_server_display_name." + key);
                 break;
@@ -603,22 +608,22 @@ void Client::connect()
         String prompt_escaped;
         ReadBufferFromString in(prompt);
         readEscapedString(prompt_escaped, in);
-        prompt = std::move(prompt_escaped);
+        prompt = prompt_escaped;
     }
 
-    /// Prompt may contain the following substitutions in a form of {name}.
-    std::map<String, String> prompt_substitutions{
+    /// Substitute placeholders in the form of {name}:
+    const std::map<String, String> prompt_substitutions{
         {"host", connection_parameters.host},
         {"port", toString(connection_parameters.port)},
         {"user", connection_parameters.user},
         {"display_name", server_display_name},
     };
 
-    /// Quite suboptimal.
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt, "{" + key + "}", value);
-}
 
+    prompt = appendSmileyIfNeeded(prompt);
+}
 
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
 void Client::printChangedSettings() const

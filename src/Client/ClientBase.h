@@ -256,6 +256,8 @@ protected:
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
 
+    String appendSmileyIfNeeded(const String & prompt);
+
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
     SharedContextHolder shared_context;
