@@ -691,6 +691,9 @@ public:
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
+    UInt64 getConcurrentThreadsSoftLimitNum() const;
+    UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
+    UInt64 setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores);
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
