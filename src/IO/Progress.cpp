@@ -31,8 +31,8 @@ bool Progress::empty() const
         && written_bytes == 0
         && total_rows_to_read == 0
         && result_rows == 0
-        && result_bytes == 0
-        && elapsed_ns == 0;
+        && result_bytes == 0;
+    /// We deliberately don't include "elapsed_ns" as a volatile value.
 }
 
 
