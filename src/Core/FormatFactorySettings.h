@@ -1273,9 +1273,9 @@ Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date3
 
 Possible values:
 
-- `ignore` — Silently ignore overflows. The result is random.
-- `throw` — Throw an exception in case of conversion overflow.
-- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+- `ignore` — Silently ignore overflows. Result are undefined.
+- `throw` — Throw an exception in case of overflow.
+- `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
 
 Default value: `ignore`.
 )", 0) \
