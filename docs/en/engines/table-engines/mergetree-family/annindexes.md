@@ -4,11 +4,14 @@ sidebar_label: Vector Similarity Indexes
 description: Approximate Nearest Neighbor Search with Vector Similarity Indexes
 keywords: [vector-similarity search, text search, ann, indices, index, nearest neighbour]
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 
 # Approximate Nearest Neighbor Search with Vector Similarity Indexes
 
 <ExperimentalBadge/>
+<PrivatePreviewBadge/>
 
 Nearest neighborhood search is the problem of finding the M closest vectors to a given vector in an N-dimensional vector space. The most
 straightforward approach to solve this problem is an exhaustive (brute-force) search which computes the distance between the reference

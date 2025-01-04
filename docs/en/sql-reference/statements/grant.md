@@ -4,6 +4,8 @@ sidebar_position: 38
 sidebar_label: GRANT
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # GRANT Statement
 
 - Grants [privileges](#privileges) to ClickHouse user accounts or roles.
@@ -602,6 +604,8 @@ Allows using a specified table engine when creating a table. Applies to [table e
 
 
 ### ALL
+
+<CloudNotSupportedBadge/>
 
 Grants all the privileges on regulated entity to a user account or a role.
 

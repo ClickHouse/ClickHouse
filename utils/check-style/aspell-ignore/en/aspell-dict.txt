@@ -827,6 +827,7 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
+PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic

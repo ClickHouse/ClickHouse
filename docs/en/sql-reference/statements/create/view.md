@@ -4,6 +4,7 @@ sidebar_position: 37
 sidebar_label: VIEW
 ---
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
 
@@ -294,6 +295,7 @@ Fun fact: the refresh query is allowed to read from the view that's being refres
 ## Window View
 
 <ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.
