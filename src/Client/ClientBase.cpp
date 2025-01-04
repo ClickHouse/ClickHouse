@@ -619,6 +619,8 @@ try
                 else
                     flags |= O_CREAT;
 
+                chassert(out_file_buf.get() == nullptr);
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
                     compression_method,
@@ -693,6 +695,10 @@ Do you want to output it anyway? [y/N] )", current_format)))
 }
 catch (...)
 {
+    if (out_file_buf)
+        out_file_buf->cancel();
+    out_file_buf.reset();
+
     throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
 
@@ -1509,6 +1515,7 @@ void ClientBase::resetOutput()
             have_error = true;
         }
     }
+
     output_format.reset();
 
     logs_out_stream.reset();
@@ -2892,7 +2899,7 @@ void ClientBase::runInteractive()
     if (isNewYearMode())
         output_stream << "Happy new year." << std::endl;
     else if (isChineseNewYearMode(local_tz))
-        output_stream << "Happy Chinese new year. 春节快乐!" << std::endl;
+        output_stream << "Happy Chinese new year. 春节快乐!" << fmt::format(" {}年快乐.", getChineseZodiac()) << std::endl;
     else
         output_stream << "Bye." << std::endl;
 }
