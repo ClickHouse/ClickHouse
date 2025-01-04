@@ -34,6 +34,7 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
+    extern const SettingsBool use_query_condition_cache;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & from)
@@ -69,6 +70,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
+
+    use_query_condition_cache = from[Setting::use_query_condition_cache];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

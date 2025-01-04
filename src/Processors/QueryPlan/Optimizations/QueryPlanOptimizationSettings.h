@@ -63,6 +63,9 @@ struct QueryPlanOptimizationSettings
     String force_projection_name;
 
     size_t max_limit_for_ann_queries;
+
+    /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.
+    bool use_query_condition_cache = false;
 };
 
 }

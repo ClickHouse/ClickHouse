@@ -409,6 +409,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
+        case Type::DROP_QUERY_CONDITION_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:

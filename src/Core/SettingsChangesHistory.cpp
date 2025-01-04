@@ -87,6 +87,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_squash_max_wait_ms", 0, 1000, "Add new setting"},
             {"output_format_pretty_max_column_name_width_cut_to", 0, 24, "A new setting"},
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
+            {"use_query_condition_cache", false, false, "New setting."},
             {"output_format_pretty_multiline_fields", false, true, "A new setting"},
             {"output_format_pretty_fallback_to_vertical", false, true, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
