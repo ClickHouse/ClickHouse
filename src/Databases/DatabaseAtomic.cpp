@@ -621,12 +621,12 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 
     /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by ClickHouse,
     /// it's needed only for convenient introspection.
-    assert(path_to_metadata_symlink != metadata_path);
+    chassert(path_to_metadata_symlink != metadata_path);
     fs::path metadata_symlink(path_to_metadata_symlink);
     if (db_disk->existsFileOrDirectory(metadata_symlink))
     {
         if (!db_disk->isSymlink(metadata_symlink))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} exists", path_to_metadata_symlink);
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} already exists", path_to_metadata_symlink);
     }
     else
     {
