@@ -1802,11 +1802,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     size_t sum_ranges = 0;
     size_t sum_rows = 0;
 
+    bool use_query_condition_cache = settings[Setting::use_query_condition_cache];
     for (const auto & part : result.parts_with_ranges)
     {
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
         sum_rows += part.getRowsCount();
+        if (use_query_condition_cache)
+        {
+            LOG_DEBUG(log, "part name: {}, mark ranges: {}, sum rows: {}", part.data_part->name, part.ranges.describe(), sum_rows);
+        }
     }
 
     result.total_parts = total_parts;
