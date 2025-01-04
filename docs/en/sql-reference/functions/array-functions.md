@@ -2162,17 +2162,20 @@ Alias: `arrayAUC`
 
 - `arr_scores` — Scores prediction model gives. [Array](../data-types/array.md) of [Integers](../data-types/int-uint.md) or [Floats](../data-types/float.md).
 - `arr_labels` — Labels of samples, usually 1 for positive sample and 0 for negative sample. [Array](../data-types/array.md) of [Integers](../data-types/int-uint.md) or [Enums](../data-types/enum.md).
-- `scale` — Decides whether to return the normalized area. If false, returns the area under the (True Positives) TP x (False Positives) FP curve instead. Default value: true. [Bool](../data-types/boolean.md). Optional.
+- `scale` — Decides whether to return the normalized area. If false, returns the area under the TP (true positives) x FP (false positives) curve instead. Default value: true. [Bool](../data-types/boolean.md). Optional.
 - `arr_partial_offsets` — An array of four non-negative integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]. [Array](../data-types/array.md) of non-negative [Integers](../data-types/int-uint.md). Optional.
     - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
     - `total_negatives`: The total number of negative samples in the entire dataset.
 
-    **Important:** When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` passed should be only a partition of the entire dataset, containing an interval of scores. The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range. For example:
-
-    - One partition could contain all scores in the range [0, 0.5).
-    - Another partition could contain scores in the range [0.5, 1.0].
+::::note
+When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
+The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
+For example:
+- One partition could contain all scores in the range [0, 0.5).
+- Another partition could contain scores in the range [0.5, 1.0].
+::::
 
 **Returned value**
 
@@ -2219,10 +2222,13 @@ Alias: `arrayPRAUC`
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
 
-    **Important:** When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` passed should be only a partition of the entire dataset, containing an interval of scores. The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range. For example:
-
-    - One partition could contain all scores in the range [0, 0.5).
-    - Another partition could contain scores in the range [0.5, 1.0].
+::::note
+When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
+The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
+For example:
+- One partition could contain all scores in the range [0, 0.5).
+- Another partition could contain scores in the range [0.5, 1.0].
+::::
 
 **Returned value**
 
