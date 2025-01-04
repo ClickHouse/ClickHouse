@@ -556,6 +556,19 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
         return true;
     };
+    auto grouping_set_contains_sharding_key = [&](const auto & grouping_set) -> bool
+    {
+        for (const auto & expr : grouping_set)
+        {
+            const auto * list = expr->template as<const ListNode>();
+            if (!list)
+                return false;
+            if (!expr_contains_sharding_key(*list))
+                return false;
+        }
+
+        return true;
+    };
 
     // GROUP BY qualifiers
     // - TODO: WITH TOTALS can be implemented
@@ -580,7 +593,11 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // GROUP BY
     if (query_info.has_aggregates || query_node.hasGroupBy())
     {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !expr_contains_sharding_key(query_node.getGroupBy()))
+        bool has_in_group_by = query_node.isGroupByWithGroupingSets()
+            ? grouping_set_contains_sharding_key(query_node.getGroupBy())
+            : expr_contains_sharding_key(query_node.getGroupBy());
+
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || !has_in_group_by)
             return {};
     }
 
@@ -634,6 +651,19 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
         return true;
     };
+    auto grouping_set_contains_sharding_key = [&](const auto & grouping_set) -> bool
+    {
+        for (const auto & expr : grouping_set)
+        {
+            auto list = expr->template as<const ASTExpressionList>();
+            if (!list)
+                return false;
+            if (!expr_contains_sharding_key(expr->children))
+                return false;
+        }
+
+        return true;
+    };
 
     // GROUP BY qualifiers
     // - TODO: WITH TOTALS can be implemented
@@ -663,7 +693,11 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
     if (has_aggregates || group_by)
     {
-        if (!optimize_sharding_key_aggregation || !group_by || !expr_contains_sharding_key(group_by->children))
+        bool has_in_group_by = select.group_by_with_grouping_sets
+            ? grouping_set_contains_sharding_key(group_by->children)
+            : expr_contains_sharding_key(group_by->children);
+
+        if (!optimize_sharding_key_aggregation || !group_by || !has_in_group_by)
             return {};
     }
 
