@@ -168,7 +168,7 @@ protected:
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
     /// Add options that are common for the embedded client, regular client or clickhouse-local.
     void addCommonOptions(OptionsDescription & options_description);
-    /// Add user-level or MergeTree-level settings to the list of possbile command line options.
+    /// Add user-level or MergeTree-level settings to the list of possible command line options.
     void addSettingsAsOptions(OptionsDescription & options_description);
     /// Add extra options depending on the application (e.g. clickhouse-local or clickhouse-client)
     virtual void addExtraOptions(OptionsDescription & options_description) = 0;
