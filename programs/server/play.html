@@ -49,6 +49,11 @@
             --link-color: #06D;
             --logo-color: #CEE;
             --logo-color-active: #BDD;
+
+            --progress-background-color: var(--background-color);
+            --progress-foreground-color: #FFC0C0;
+
+            --progress: 0%;
         }
 
         [data-theme="dark"] {
@@ -70,6 +75,8 @@
             --link-color: #4BDAF7;
             --logo-color: #222;
             --logo-color-active: #333;
+
+            --progress-foreground-color: #080;
         }
 
         *
@@ -176,10 +183,16 @@
         #run_div
         {
             margin-top: 1rem;
+            display: grid;
+            place-items: center;
+            gap: 1rem;
+            grid-template-columns: auto auto auto 1fr auto auto;
+            grid-template-areas: "run hint hourglass progress-bar progress-text theme";
         }
 
         #run
         {
+            grid-area: run;
             color: var(--button-text-color);
             background-color: var(--button-color);
             padding: 0.25rem 1rem;
@@ -194,22 +207,59 @@
             background-color: var(--button-active-color);
         }
 
+        #hint
+        {
+            text-align: center;
+            grid-area: hint;
+            color: var(--misc-text-color);
+        }
+
+        #hourglass
+        {
+            grid-area: hourglass;
+            display: none;
+            margin-left: 1rem;
+            font-size: 110%;
+            color: #888;
+            animation: hourglass-animation 2s linear infinite;
+        }
+
+        #check-mark
+        {
+            grid-area: hourglass;
+            display: none;
+            padding-left: 1rem;
+            font-size: 110%;
+            color: #080;
+        }
+
         #stats
         {
-            float: right;
+            grid-area: progress-text;
             color: var(--misc-text-color);
+        }
+
+        #progress
+        {
+            width: 100%;
+            height: 1rem;
+            margin: 0.25rem;
+
+            grid-area: progress-bar;
+            background: linear-gradient(to right,
+                var(--progress-background-color) 0%,
+                var(--progress-foreground-color) var(--progress),
+                var(--progress-background-color) var(--progress));
+        }
+
+        #theme
+        {
+            grid-area: theme;
         }
 
         #toggle-light, #toggle-dark
         {
-            float: right;
-            padding-right: 0.5rem;
             cursor: pointer;
-        }
-
-        .hint
-        {
-            color: var(--misc-text-color);
         }
 
         #data_div
@@ -338,23 +388,6 @@
             100% { transform: rotate(360deg); }
         }
 
-        #hourglass
-        {
-            display: none;
-            margin-left: 1rem;
-            font-size: 110%;
-            color: #888;
-            animation: hourglass-animation 2s linear infinite;
-        }
-
-        #check-mark
-        {
-            display: none;
-            padding-left: 1rem;
-            font-size: 110%;
-            color: #080;
-        }
-
         a, a:visited
         {
             color: var(--link-color);
@@ -465,12 +498,12 @@
         </div>
         <div id="run_div">
             <button class="shadow" id="run">Run</button>
-            <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
-            <span id="hourglass">⧗</span>
-            <span id="check-mark">✔</span>
-            <span id="progress"></span>
-            <span id="stats"></span>
-            <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
+            <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
+            <div id="hourglass">⧗</div>
+            <div id="check-mark">✔</div>
+            <div id="progress"></div>
+            <div id="stats"></div>
+            <div id="theme"><span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span></div>
         </div>
     </div>
     <div id="data_div">
@@ -562,9 +595,7 @@
             'add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password) +
-            '&default_format=JSONEachRowWithProgress' +
-            /// Safety settings to prevent results that the browser cannot display.
-            '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
+            '&default_format=JSONEachRowWithProgress';
 
         last_query_start = performance.now();
 
@@ -932,8 +963,24 @@
         }
     }
 
+    let prev_time = null;
     function updateProgress(progress) {
-        console.log(progress);
+        curr_time = new Date();
+        time_diff = prev_time ? curr_time - prev_time : 0;
+        if (prev_time && time_diff < 100) { return; }
+        prev_time = curr_time;
+
+        let stats = document.getElementById('stats');
+        const rows = progress.read_rows;
+        const bytes = progress.read_bytes;
+        const total_rows = progress.total_rows_to_read;
+        const formatted_bytes = formatReadableBytes(bytes);
+        const formatted_rows = formatReadableRows(rows);
+        stats.innerText = `${(100 * rows / total_rows).toFixed(1)}%, read ${formatted_rows} rows, ${formatted_bytes}`;
+
+        if (rows && total_rows) {
+            document.documentElement.style.setProperty('--progress', (100 * rows / total_rows) + '%');
+        }
     }
 
     let row_idx = 0;
