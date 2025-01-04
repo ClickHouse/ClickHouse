@@ -9,7 +9,6 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <IO/SharedThreadPools.h>
-#include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
@@ -19,7 +18,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
 

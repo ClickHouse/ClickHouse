@@ -1378,7 +1378,7 @@ void DatabaseCatalog::dropTableDataTask()
     rescheduleDropTableTask();
 }
 
-void DatabaseCatalog::removeDetachedTableInfo(const TableMarkedAsDropped & table)
+void DatabaseCatalog::removeDetachedTableInfo(const TableMarkedAsDropped & table) const
 {
     auto database = tryGetDatabase(table.table_id.getDatabaseName());
     if (!database)
