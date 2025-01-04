@@ -1,5 +1,6 @@
 {"progress":{}}
 {"progress":{"read_rows":"100000","read_bytes":"800000"}}
+{"meta":[{"name":"number","type":"UInt64"}]}
 {"row":{"number":"1"}}
 {"progress":{"read_rows":"200000","read_bytes":"1600000"}}
 {"progress":{"read_rows":"300000","read_bytes":"2400000"}}
@@ -7,4 +8,3 @@
 {"progress":{"read_rows":"500000","read_bytes":"4000000"}}
 {"progress":{"read_rows":"600000","read_bytes":"4800000"}}
 {"progress":{"read_rows":"700000","read_bytes":"5600000"}}
-{"progress":{"read_rows":"800000","read_bytes":"6400000"}}
