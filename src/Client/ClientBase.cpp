@@ -949,7 +949,7 @@ String ClientBase::appendSmileyIfNeeded(const String & prompt_)
     if (prompt_.ends_with(smiley))
         return prompt_;
 
-    return prompt_ + smiley;
+    return prompt_ + " " + smiley;
 }
 
 
