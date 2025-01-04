@@ -7,4 +7,3 @@
 {"progress":{"read_rows":"500000","read_bytes":"4000000"}}
 {"progress":{"read_rows":"600000","read_bytes":"4800000"}}
 {"progress":{"read_rows":"700000","read_bytes":"5600000"}}
-{"progress":{"read_rows":"800000","read_bytes":"6400000"}}
