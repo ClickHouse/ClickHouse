@@ -11,12 +11,13 @@ namespace DB
 
 struct DataFileMeta : StorageObjectStorage::Configuration::PathMetadata
 {
-    enum class DataFileType : uint8_t {
+    enum class DataFileType : uint8_t 
+    {
         DATA_FILE,
 
         // Note: this types useful only for iceberg
         ICEBERG_POSITIONAL_DELETE,
-        ICEBERG_EQUALITY_DELETE, 
+        ICEBERG_EQUALITY_DELETE,
     };
     DataFileType type;
 };

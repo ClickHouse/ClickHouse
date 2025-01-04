@@ -10,6 +10,11 @@
 #include "base/types.h"
 
 
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 

@@ -17,7 +17,6 @@ namespace DB::ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
-extern const int UNSUPPORTED_METHOD;
 }
 
 namespace Iceberg

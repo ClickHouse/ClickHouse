@@ -254,10 +254,10 @@ public:
 
         const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
 
-        auto pathes = configuration->getPaths();
+        auto paths = configuration->getPaths();
         std::sort(
-            pathes.begin(),
-            pathes.end(),
+            paths.begin(),
+            paths.end(),
             [](const auto & path_left, const auto & path_right) -> bool
             {
                 int left_prior = -1;
@@ -277,9 +277,9 @@ public:
             std::vector<std::string> sources_filenames;
             std::vector<std::function<ProcessorPtr(const Block &)>> equality_delete_transforms;
             std::vector<std::vector<std::shared_ptr<StorageObjectStorageSource>>> positional_delete_sources;
-            for (size_t path_iterator = 0; path_iterator < pathes.size(); ++path_iterator)
+            for (size_t path_iterator = 0; path_iterator < paths.size(); ++path_iterator)
             {
-                const auto & path = pathes[path_iterator];
+                const auto & path = paths[path_iterator];
                 auto single_file_configuration = configuration->clone();
                 sources_filenames.push_back(path.filename);
                 single_file_configuration->setPath(path);
@@ -418,10 +418,10 @@ private:
         if (!iterator_wrapper.empty())
             return;
         auto context = getContext();
-        auto pathes = configuration->getPaths();
+        auto paths = configuration->getPaths();
         std::sort(
-            pathes.begin(),
-            pathes.end(),
+            paths.begin(),
+            paths.end(),
             [](const auto & path_left, const auto & path_right) -> bool
             {
                 int left_prior = -1;
@@ -435,7 +435,7 @@ private:
                 return std::tie(left_prior, path_left.filename) < std::tie(right_prior, path_right.filename);
             });
 
-        for (const auto & path : pathes)
+        for (const auto & path : paths)
         {
             auto configuration_copy = configuration->clone();
             configuration_copy->setPaths({path});

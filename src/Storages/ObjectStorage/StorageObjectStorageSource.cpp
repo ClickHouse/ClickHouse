@@ -399,7 +399,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             initial_header = sample_header;
         }
-        
+
         if (read_all_columns)
         {
             auto schema_reader = FormatFactory::instance().getSchemaReader(configuration->format, *read_buf_schema, context_);

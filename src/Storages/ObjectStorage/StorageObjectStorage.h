@@ -161,7 +161,7 @@ protected:
 class StorageObjectStorage::Configuration
 {
 public:
-    struct PathMetadata 
+    struct PathMetadata
     {
     };
 
