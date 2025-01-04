@@ -585,6 +585,17 @@ void ConfigProcessor::doIncludesRecursive(
             doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
         }
     }
+
+    UInt64 mutation_version = allocateNewBlockNumber();
+    std::set<String> processed_parts;
+    for (const auto & part : source_parts)
+    {
+        if (part.block_number < mutation_version && !processed_parts.contains(part.name))
+        {
+            copyPartData(part);
+            processed_parts.insert(part.name);
+        }
+    }
 }
 
 ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & config_path)
@@ -791,6 +802,16 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     new_node = config->createComment(comment.str());
     config->insertBefore(new_node, config->firstChild());
 
+    bool is_stale = checkReplicaStaleness();
+    PartsVector source_parts = getSourceTableParts();
+    if (is_stale)
+    {
+        for (const auto & part : source_parts)
+        {
+            if (!part_exists(part.name))
+                copyPartData(part);
+        }
+    }
     return config;
 }
 
