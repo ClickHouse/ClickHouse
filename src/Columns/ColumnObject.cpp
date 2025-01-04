@@ -333,7 +333,7 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
         const auto column = decoded_type->createColumn();
         decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-        const auto & [value, type] = column->getValueNameAndType(n);
+        const auto & [value, type] = column->getValueNameAndType(0);
 
         wb << ": " << value;
     }
