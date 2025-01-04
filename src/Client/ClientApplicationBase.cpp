@@ -255,9 +255,10 @@ void ClientApplicationBase::init(int argc, char ** argv)
     }
 =======
     addCommonOptions(options_description);
-    /// Copy them to be able to print a simplified version of the help message.
-    auto options_description_non_verbose = options_description;
     addExtraOptions(options_description);
+    /// Copy them to be able to print a simplified version of the help message.
+    OptionsDescription options_description_non_verbose = options_description;
+    addSettingsAsOptions(options_description);
     addOptionsToHints(options_description);
 >>>>>>> 6651ebea891 (Pass options in a generic way)
 
@@ -281,7 +282,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     bool user_made_a_typo = options.count("host") && options["host"].as<std::string>() == "elp";
     if (options.count("help") || user_made_a_typo)
     {
-        if (getClientConfiguration().getBool("verbose", false))
+        if (options.count("verbose"))
             printHelpMessage(options_description);
         else
             printHelpMessage(options_description_non_verbose);

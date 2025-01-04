@@ -2832,6 +2832,20 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
     ;
 }
 
+void ClientBase::addSettingsAsOptions(OptionsDescription & options_description)
+{
+    if (allow_repeated_settings)
+        cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());
+    else
+        cmd_settings.addToProgramOptions(options_description.main_description.value());
+
+    if (allow_merge_tree_settings)
+    {
+        auto & main_options = options_description.main_description.value();
+        cmd_merge_tree_settings.addToProgramOptionsIfNotPresent(main_options, allow_repeated_settings);
+    }
+}
+
 void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & options)
 {
     if (options.count("verbose"))

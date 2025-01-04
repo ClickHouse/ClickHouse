@@ -165,6 +165,7 @@ try
         return 0;
     }
 
+    addSettingsAsOptions(options_description);
     addOptionsToTheClientConfiguration(options);
 
     is_interactive = stdin_is_a_tty;
