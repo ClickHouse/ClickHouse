@@ -102,7 +102,7 @@ struct DeltaLakeMetadataImpl
     struct DeltaLakeMetadata
     {
         NamesAndTypesList schema;
-        Strings data_files;
+        StorageObjectStorage::Configuration::Paths data_files;
         DataLakePartitionColumns partition_columns;
     };
     DeltaLakeMetadata processMetadataFiles()
@@ -119,7 +119,7 @@ struct DeltaLakeMetadataImpl
             while (true)
             {
                 const auto filename = withPadding(++current_version) + metadata_file_suffix;
-                const auto file_path = std::filesystem::path(configuration_ptr->getPath()) / deltalake_metadata_directory / filename;
+                const auto file_path = std::filesystem::path(configuration_ptr->getPath().filename) / deltalake_metadata_directory / filename;
 
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
@@ -138,7 +138,7 @@ struct DeltaLakeMetadataImpl
                 processMetadataFile(key, current_schema, current_partition_columns, result_files);
         }
 
-        return DeltaLakeMetadata{current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns};
+        return DeltaLakeMetadata{current_schema, StorageObjectStorage::Configuration::Paths(result_files.begin(), result_files.end()), current_partition_columns};
     }
 
     /**
@@ -252,7 +252,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
                 auto path = add_object->getValue<String>("path");
-                result.insert(fs::path(configuration_ptr->getPath()) / path);
+                result.insert(fs::path(configuration_ptr->getPath().filename) / path);
 
                 auto filename = fs::path(path).filename().string();
                 auto it = file_partition_columns.find(filename);
@@ -296,7 +296,7 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
                 auto path = remove_object->getValue<String>("path");
-                result.erase(fs::path(configuration_ptr->getPath()) / path);
+                result.erase(fs::path(configuration_ptr->getPath().filename) / path);
             }
         }
     }
@@ -489,7 +489,7 @@ struct DeltaLakeMetadataImpl
     {
         auto configuration_ptr = configuration.lock();
         const auto last_checkpoint_file
-            = std::filesystem::path(configuration_ptr->getPath()) / deltalake_metadata_directory / "_last_checkpoint";
+            = std::filesystem::path(configuration_ptr->getPath().filename) / deltalake_metadata_directory / "_last_checkpoint";
         if (!object_storage->exists(StoredObject(last_checkpoint_file)))
             return 0;
 
@@ -560,7 +560,7 @@ struct DeltaLakeMetadataImpl
         auto configuration_ptr = configuration.lock();
 
         const auto checkpoint_path
-            = std::filesystem::path(configuration_ptr->getPath()) / deltalake_metadata_directory / checkpoint_filename;
+            = std::filesystem::path(configuration_ptr->getPath().filename) / deltalake_metadata_directory / checkpoint_filename;
 
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
@@ -676,7 +676,7 @@ struct DeltaLakeMetadataImpl
             }
 
             LOG_TEST(log, "Adding {}", path);
-            const auto [_, inserted] = result.insert(std::filesystem::path(configuration_ptr->getPath()) / path);
+            const auto [_, inserted] = result.insert(std::filesystem::path(configuration_ptr->getPath().filename) / path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }

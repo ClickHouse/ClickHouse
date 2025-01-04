@@ -40,11 +40,17 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads_,
-        bool need_only_count_);
+        bool need_only_count_,
+        bool read_all_columns_);
 
     ~StorageObjectStorageSource() override;
 
     String getName() const override { return name; }
+
+    const Block & getHeader() const
+    {
+        return reader->getHeader();
+    }
 
     void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
 
@@ -79,6 +85,7 @@ protected:
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
+    const bool read_all_columns;
     const size_t max_parsing_threads;
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
@@ -97,7 +104,8 @@ protected:
             std::unique_ptr<ReadBuffer> read_buf_,
             std::shared_ptr<ISource> source_,
             std::unique_ptr<QueryPipeline> pipeline_,
-            std::unique_ptr<PullingPipelineExecutor> reader_);
+            std::unique_ptr<PullingPipelineExecutor> reader_,
+            Block header_);
 
         ReaderHolder() = default;
         ReaderHolder(ReaderHolder && other) noexcept { *this = std::move(other); }
@@ -110,12 +118,15 @@ protected:
         ObjectInfoPtr getObjectInfo() const { return object_info; }
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
 
+        const Block & getHeader() const { return header; }
+
     private:
         ObjectInfoPtr object_info;
         std::unique_ptr<ReadBuffer> read_buf;
         std::shared_ptr<ISource> source;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+        Block header;
     };
 
     ReaderHolder reader;
@@ -136,7 +147,8 @@ protected:
         const LoggerPtr & log,
         size_t max_block_size,
         size_t max_parsing_threads,
-        bool need_only_count);
+        bool need_only_count,
+        bool read_all_columns);
 
     ReaderHolder createReader();
 
@@ -248,7 +260,7 @@ private:
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
-    const std::vector<String> keys;
+    const StorageObjectStorage::Configuration::Paths keys;
     std::atomic<size_t> index = 0;
     bool ignore_non_existent_files;
 };

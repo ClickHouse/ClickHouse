@@ -83,8 +83,8 @@ protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
-    std::string blob_path;
-    std::vector<String> blobs_paths;
+    Path blob_path;
+    Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
 };
 

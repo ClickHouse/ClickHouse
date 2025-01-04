@@ -43,7 +43,7 @@ public:
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
     /// All subsequent calls when the same data snapshot is relevant will return saved list of files (because it cannot be changed
     /// without changing metadata file). Drops on every snapshot update.
-    Strings getDataFiles() const override;
+    DataFileInfos getDataFiles() const override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
@@ -103,7 +103,7 @@ private:
     Int32 current_schema_id;
     std::optional<Iceberg::IcebergSnapshot> current_snapshot;
 
-    mutable std::optional<Strings> cached_files_for_current_snapshot;
+    mutable std::optional<DataFileInfos> cached_files_for_current_snapshot;
 
     Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
 
