@@ -50,6 +50,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, SKIP_ALIAS)
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsUInt64 interactive_delay;
 }
 
 namespace ErrorCodes
@@ -599,6 +600,8 @@ OutputFormatPtr FormatFactory::getOutputFormat(
         mysql->setContext(context);
 
     addExistingProgressToOutputFormat(format, context);
+
+    format->setProgressWriteFrequencyMicroseconds(context->getSettingsRef()[Setting::interactive_delay]);
 
     return format;
 }
