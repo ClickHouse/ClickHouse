@@ -3,10 +3,14 @@
 namespace BuzzHouse
 {
 
+SQLType *size_tp = nullptr, *null_tp = nullptr;
+
 std::map<std::string, std::map<std::string, SQLType *>> systemTables;
 
 void loadSystemTables(const bool has_cloud_features)
 {
+    size_tp = new IntType(64, true);
+    null_tp = new BoolType();
     systemTables.insert(
         {{"one", {{"dummy", new IntType(8, true)}}},
          //{"numbers", {{"number", new IntType(64, true)}}},
@@ -1467,6 +1471,9 @@ void loadSystemTables(const bool has_cloud_features)
 
 void clearSystemTables()
 {
+    delete size_tp;
+    delete null_tp;
+
     for (auto & entry : systemTables)
     {
         for (auto & col : entry.second)

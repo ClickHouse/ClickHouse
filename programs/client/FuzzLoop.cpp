@@ -484,6 +484,7 @@ bool Client::buzzHouse()
         //Load server configurations for the fuzzer
         fc.loadServerConfigurations();
         loadFuzzerSettings(fc);
+        SCOPE_EXIT({ BuzzHouse::clearSystemTables(); });
         BuzzHouse::loadSystemTables(has_cloud_features);
 
         full_query2.reserve(8192);
@@ -666,7 +667,6 @@ bool Client::buzzHouse()
                 }
             }
         }
-        BuzzHouse::clearSystemTables();
     }
     return server_up;
 }
