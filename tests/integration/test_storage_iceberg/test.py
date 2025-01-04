@@ -705,6 +705,7 @@ def test_delete_files(started_cluster, format_version, storage_type):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 50
 
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 @pytest.mark.parametrize("is_table_function", [False, True])
