@@ -400,7 +400,7 @@ the configuration file like this:
         <database></database>
 
         <!-- You can use colors and macros, see clickhouse-client.xml for more documentation. -->
-        <prompt>\e[31m[PRODUCTION]\e[0m {user}@{display_name} :) </prompt>
+        <prompt>\e[31m[PRODUCTION]\e[0m {user}@{display_name}</prompt>
     </connections_credentials>
 </config>
 ```

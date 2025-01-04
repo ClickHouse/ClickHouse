@@ -36,9 +36,9 @@
 
     <!-- Custom prompt according to the display_name of the server -->
     <prompt_by_server_display_name>
-        <default>{display_name} :) </default>
-        <test>{display_name} \e[1;32m:)\e[0m </test> <!-- if it matched to the substring "test" in the server display name - -->
-        <production>{display_name} \e[1;31m:)\e[0m </production> <!-- if it matched to the substring "production" in the server display name -->
+        <default>{display_name}</default>
+        <test>\e[1;32m{display_name}\e[0m</test> <!-- if it matched to the substring "test" in the server display name - -->
+        <production>\e[1;31m{display_name}\e[0m</production> <!-- if it matched to the substring "production" in the server display name -->
     </prompt_by_server_display_name>
 
     <!-- Chunked capabilities for native protocol by client.

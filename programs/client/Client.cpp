@@ -596,7 +596,7 @@ void Client::connect()
     }
 
     if (prompt.empty())
-        prompt = "{display_name} :) ";
+        prompt = "{display_name}";
 
     /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
     {
