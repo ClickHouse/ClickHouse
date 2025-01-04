@@ -12,7 +12,7 @@ from typing import Dict, List, Tuple
 import integration_tests_runner as runner
 from build_download_helper import download_all_deb_packages
 from ci_config import CI
-from ci_utils import Utils
+from ci_utils import Utils, Shell
 from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
 from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
@@ -158,12 +158,24 @@ def main():
     ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
+    # temporary hack for praktika based CI
+    is_new_ci = False
+    job_batch, total_batches = None, None
+    if check_name.startswith("amd_") or check_name.startswith("arm_"):
+        is_new_ci = True
+        for option in check_name.split(","):
+            if '/' in option:
+                job_batch = int(option.slit('/')[0]) - 1
+                total_batches = int(option.slit('/')[1])
+                break
+
     if "RUN_BY_HASH_NUM" in os.environ:
         run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
         run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
     else:
-        run_by_hash_num = 0
-        run_by_hash_total = 0
+        if is_new_ci:
+            run_by_hash_num = job_batch or 0
+            run_by_hash_total = total_batches or 0
 
     is_flaky_check = "flaky" in check_name
 
@@ -189,7 +201,14 @@ def main():
     if validate_bugfix_check:
         download_last_release(build_path, debug=True)
     else:
-        download_all_deb_packages(check_name, reports_path, build_path)
+        if check_name.startswith("amd_") or check_name.startswith("arm_"):
+            # temporary hack for praktika based CI
+            print("Copy input *.deb artifacts")
+            assert Shell.check(
+                f"cp /tmp/praktika/input/*.deb {build_path}", verbose=True
+            )
+        else:
+            download_all_deb_packages(check_name, reports_path, build_path)
 
     my_env = get_env_for_runner(
         check_name, build_path, repo_path, result_path, work_path
