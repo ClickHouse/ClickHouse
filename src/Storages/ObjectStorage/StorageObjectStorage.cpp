@@ -295,7 +295,7 @@ public:
                 auto old_path = configuration->getPath();
                 configuration->setPaths({path});
 
-                if (!configuration->getPath().meta)
+                if (!path.meta)
                 {
                     auto source = std::make_shared<StorageObjectStorageSource>(
                         getName(),
@@ -314,7 +314,7 @@ public:
                     continue;
                 }
 
-                auto data_type = std::static_pointer_cast<DataFileMeta>(configuration->getPath().meta)->type;
+                auto data_type = std::static_pointer_cast<DataFileMeta>(path.meta)->type;
                 switch (data_type)
                 {
                     case DataFileMeta::DataFileType::DATA_FILE: {
