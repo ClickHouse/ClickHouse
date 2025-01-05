@@ -73,6 +73,11 @@ void ColumnLazy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get is not supported for {}", getName());
 }
 
+std::pair<String, DataTypePtr> ColumnLazy::getValueNameAndType(size_t) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueNameAndType is not supported for {}", getName());
+}
+
 bool ColumnLazy::isDefaultAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for {}", getName());
