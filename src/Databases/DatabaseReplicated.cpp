@@ -839,7 +839,7 @@ void DatabaseReplicated::restoreTablesMetadataInKeeper()
         const String table_name = existing_tables_it->name();
         LOG_TEST(log, "table_name={} was found to restore metadata in zookeeper", table_name);
 
-        assert(!ddl_worker->isCurrentlyActive());
+        assert(!ddl_worker || !ddl_worker->isCurrentlyActive());
 
         const String statement = getObjectDefinitionFromCreateQuery(getCreateTableQuery(table_name, local_context));
         const String table_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);

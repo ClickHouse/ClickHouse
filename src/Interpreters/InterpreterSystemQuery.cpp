@@ -896,8 +896,6 @@ void InterpreterSystemQuery::restoreReplica()
 
 void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
 {
-    LOG_TEST(log, "call restoreDatabaseReplica");
-
     const String database_name = query.getDatabase();
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
 
@@ -912,13 +910,6 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
     replicated_db->restoreDatabaseMetadataInKeeper(getContext());
 
     LOG_TRACE(log, "Replicated database {} was restored.", database_name);
-
-    /*
-    check:
-    - check_not_local_replica
-    - is_whole_drop_replica
-    - query.replica_zk_path.empty
-    */
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)

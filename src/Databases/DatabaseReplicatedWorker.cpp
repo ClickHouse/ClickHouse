@@ -3,7 +3,6 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
-#include "Common/Logger.h"
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -287,13 +286,6 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
 
     String node_path = query_path_prefix + counter_path.substr(counter_prefix.size());
 
-    LOG_DEBUG(
-        getLogger("DatabaseReplicatedDDLWorker"),
-        "[enqueueQueryImpl] counter_path={}, counter_prefix={}, node_path={}",
-        counter_path,
-        counter_prefix,
-        node_path);
-
     /// Now create task in queue
     Coordination::Requests ops;
     /// Query is not committed yet, but we have to write it into log to avoid reordering
@@ -328,10 +320,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     auto zookeeper = getAndSetZooKeeper();
     UInt32 our_log_ptr = getLogPointer();
-    LOG_DEBUG(log, "[tryEnqueueAndExecuteEntry] our_log_ptr was gotten {}", our_log_ptr);
 
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-    LOG_DEBUG(log, "[tryEnqueueAndExecuteEntry] max_log_ptr={}", max_log_ptr);
 
     if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
         throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
@@ -405,13 +395,6 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     UInt32 our_log_ptr = getLogPointer();
     UInt32 entry_num = DatabaseReplicatedTask::getLogEntryNumber(entry_name);
-
-    LOG_DEBUG(
-        log,
-        "[DatabaseReplicatedDDLWorker::initAndCheckTask] our_log_ptr={}, entry_num={}, entry_name={}",
-        our_log_ptr,
-        entry_num,
-        entry_name);
 
     if (entry_num <= our_log_ptr)
     {

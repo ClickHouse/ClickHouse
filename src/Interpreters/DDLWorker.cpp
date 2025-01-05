@@ -185,7 +185,6 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 
 DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool /*dry_run*/)
 {
-    LOG_DEBUG(log, "call DDLWorker::initAndCheckTask");
     if (entries_to_skip.contains(entry_name))
         return {};
 
@@ -294,14 +293,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             auto & task = *task_it;
 
-            LOG_DEBUG(
-                log,
-                "scheduleTasks from current_tasks: task entry_name={}, entry_path={}, execution_status={}, query={}, was_executed={}",
-                task->entry_name,
-                task->entry_path,
-                task->execution_status.serializeText(),
-                task->query_for_logging,
-                task->was_executed);
             if (task->completely_processed)
             {
                 chassert(task->was_executed);
@@ -401,7 +392,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     {
         /// We should return true if some invariants are violated.
         String reason;
-        LOG_DEBUG(log, "From DDLWorker::scheduleTasks");
         auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ true);
         bool maybe_currently_processing = current_tasks.end() != std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
@@ -434,7 +424,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         LOG_TRACE(log, "Checking task {}", entry_name);
 
         String reason;
-        LOG_DEBUG(log, "From DDLWorker::scheduleTasks");
         auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ false);
         if (task)
         {
@@ -769,7 +758,6 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     const ZooKeeperPtr & zookeeper,
     std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock)
 {
-    LOG_DEBUG(log, "DDLWorker::tryExecuteQueryOnLeaderReplica");
     StorageReplicatedMergeTree * replicated_storage = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
 
     /// If we will develop new replicated storage

@@ -357,7 +357,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::RESTORE_DATABASE_REPLICA:
         {
-            // @todo is it correct to use on cluster?
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             if (!parseDatabaseAsAST(pos, expected, res->database))
