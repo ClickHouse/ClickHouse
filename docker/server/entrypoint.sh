@@ -169,7 +169,8 @@ if [ -n "${RUN_INITDB_SCRIPTS}" ]; then
             sleep 1
         done
 
-        clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
+        TCP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tcp_port --try)"
+        clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" --port "$TCP_PORT" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
 
         echo
 
