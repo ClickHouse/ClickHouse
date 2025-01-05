@@ -250,7 +250,18 @@ public:
         Pipes pipes;
         auto context = getContext();
         const size_t max_threads = context->getSettingsRef()[Setting::max_threads];
-        num_streams = 1;
+        size_t estimated_keys_count = 0;
+        for (const auto & iter : iterator_wrapper)
+            estimated_keys_count += iter->estimatedKeysCount();
+
+        if (estimated_keys_count > 1)
+            num_streams = std::min(num_streams, estimated_keys_count);
+        else
+        {
+            /// The amount of keys (zero) was probably underestimated.
+            /// We will keep one stream for this particular case.
+            num_streams = 1;
+        }
 
         const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
 
@@ -280,17 +291,17 @@ public:
             for (size_t path_iterator = 0; path_iterator < paths.size(); ++path_iterator)
             {
                 const auto & path = paths[path_iterator];
-                auto single_file_configuration = configuration->clone();
                 sources_filenames.push_back(path.filename);
-                single_file_configuration->setPath(path);
-                single_file_configuration->setPaths({path});
+                auto old_path = configuration->getPath();
+                configuration->setPath(path);
+                configuration->setPaths({path});
 
-                if (!single_file_configuration->getPath().meta)
+                if (!configuration->getPath().meta)
                 {
                     auto source = std::make_shared<StorageObjectStorageSource>(
                         getName(),
                         object_storage,
-                        single_file_configuration,
+                        configuration,
                         info,
                         format_settings,
                         context,
@@ -304,14 +315,14 @@ public:
                     continue;
                 }
 
-                auto data_type = std::static_pointer_cast<DataFileMeta>(single_file_configuration->getPath().meta)->type;
+                auto data_type = std::static_pointer_cast<DataFileMeta>(configuration->getPath().meta)->type;
                 switch (data_type)
                 {
                     case DataFileMeta::DataFileType::DATA_FILE: {
                         auto source = std::make_shared<StorageObjectStorageSource>(
                             getName(),
                             object_storage,
-                            single_file_configuration,
+                            configuration,
                             info,
                             format_settings,
                             context,
@@ -334,7 +345,7 @@ public:
                             auto source = std::make_shared<StorageObjectStorageSource>(
                                 getName(),
                                 object_storage,
-                                single_file_configuration,
+                                configuration,
                                 read_from_format_info,
                                 format_settings,
                                 context,
@@ -352,7 +363,7 @@ public:
                         auto source = std::make_shared<StorageObjectStorageSource>(
                             getName(),
                             object_storage,
-                            single_file_configuration,
+                            configuration,
                             ReadFromFormatInfo{},
                             format_settings,
                             context,
@@ -368,6 +379,8 @@ public:
                         break;
                     }
                 }
+                configuration->setPath(old_path);
+                configuration->setPaths(paths);
             }
             if (!positional_delete_sources.empty())
             {
@@ -385,8 +398,7 @@ public:
             for (const auto & transform : equality_delete_transforms)
                 pipe.addSimpleTransform(transform);
 
-            if (pipes.empty())
-                pipes.push_back(std::move(pipe));
+            pipes.push_back(std::move(pipe));
         }
 
         auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -437,11 +449,11 @@ private:
 
         for (const auto & path : paths)
         {
-            auto configuration_copy = configuration->clone();
-            configuration_copy->setPaths({path});
+            auto old_paths = configuration->getPaths();
+            configuration->setPaths({path});
             iterator_wrapper.push_back(StorageObjectStorageSource::createFileIterator(
-                configuration_copy,
-                configuration_copy->getQuerySettings(context),
+                configuration,
+                configuration->getQuerySettings(context),
                 object_storage,
                 distributed_processing,
                 context,
@@ -449,6 +461,7 @@ private:
                 virtual_columns,
                 nullptr,
                 context->getFileProgressCallback()));
+            configuration->setPaths(old_paths);
         }
     }
 };
