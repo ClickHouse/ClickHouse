@@ -56,7 +56,7 @@ public:
     bool setProcessing();
     void setProcessed();
     void resetProcessing();
-    void setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status = true);
+    void setFailed(const std::string & exception_message, bool reduce_retry_count);
 
     virtual void setProcessedAtStartRequests(
         Coordination::Requests & requests,

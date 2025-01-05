@@ -356,7 +356,7 @@ void ObjectStorageQueueIFileMetadata::setProcessed()
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
 }
 
-void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status)
+void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_message, bool reduce_retry_count)
 {
     LOG_TRACE(log, "Setting file {} as failed (path: {}, reduce retry count: {}, exception: {})",
               path, failed_node_path, reduce_retry_count, exception_message);
@@ -388,8 +388,7 @@ void ObjectStorageQueueIFileMetadata::setFailed(const std::string & exception_me
         resetProcessing();
     }
 
-    if (overwrite_status || file_status->state != FileStatus::State::Failed)
-        file_status->onFailed(exception_message);
+    file_status->onFailed(exception_message);
 
     processing_id.reset();
     processing_id_version.reset();
@@ -408,7 +407,7 @@ void ObjectStorageQueueIFileMetadata::setFailedNonRetriable()
     const auto code = zk_client->tryMulti(requests, responses);
     if (code == Coordination::Error::ZOK)
     {
-        LOG_TRACE(log, "File `{}` failed to process and will not be retried. ", path);
+        LOG_TRACE(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
         return;
     }
 
