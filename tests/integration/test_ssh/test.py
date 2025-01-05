@@ -74,7 +74,9 @@ def test_create_table(started_cluster):
         return output
 
     execute_command_and_get_output("DROP TABLE IF EXISTS test;")
-    execute_command_and_get_output("CREATE TABLE test (a UInt64) ENGINE=MergeTree() ORDER BY a;")
+    execute_command_and_get_output(
+        "CREATE TABLE test (a UInt64) ENGINE=MergeTree() ORDER BY a;"
+    )
     execute_command_and_get_output("INSERT INTO test VALUES (1), (2), (3);")
     result = execute_command_and_get_output("SELECT * FROM test;")
     assert result.replace("\n\x00", "\n") == "1\n2\n3\n"
