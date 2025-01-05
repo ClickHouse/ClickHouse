@@ -119,9 +119,6 @@ int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_quer
 {
 try
 {
-    client_context = session->sessionContext();
-    initClientContext();
-
     setThreadName("LocalServerPty");
 
     output_stream << std::fixed << std::setprecision(3);
@@ -142,6 +139,7 @@ try
 
     OptionsDescription options_description;
     addCommonOptions(options_description);
+    addSettingsToProgramOptionsAndSubscribeToChanges(options_description);
 
     po::variables_map options;
     auto parser = po::command_line_parser(arguments)
@@ -165,14 +163,16 @@ try
         return 0;
     }
 
-    addSettingsAsOptions(options_description);
     addOptionsToTheClientConfiguration(options);
 
+    /// Apply settings specified as command line arguments (read environment variables).
+    global_context = session->sessionContext();
+    global_context->setApplicationType(Context::ApplicationType::CLIENT);
+    global_context->setSettings(cmd_settings);
+
     is_interactive = stdin_is_a_tty;
-    /**
-    * If a query is passed via SSH - just append it to the list of queries to execute:
-    * ssh -i ~/.ssh/id_rsa default@localhost -p 9022 "SELECT 1"
-    */
+    /// If a query is passed via SSH - just append it to the list of queries to execute:
+    /// ssh -i ~/.ssh/id_rsa default@localhost -p 9022 "SELECT 1"
     if (!first_query.empty())
         queries.push_back(first_query);
 
@@ -199,6 +199,9 @@ try
 
     /// TODO: Support progress table.
     initKeystrokeInterceptor();
+
+    client_context = session->sessionContext();
+    initClientContext();
 
     if (is_interactive)
     {

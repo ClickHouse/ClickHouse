@@ -24,6 +24,10 @@ public:
     {
         output_stream << std::unitbuf;
         output_stream_err << std::unitbuf;
+
+        /// The embedded client cannot get any additional data from the SSH client
+        /// in case if we are executing the request without opening PTY.
+        pipe_in.close(Poco::Pipe::CLOSE_WRITE);
     }
 
     DescriptorSet getDescriptorsForClient() override

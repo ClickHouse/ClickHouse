@@ -2832,7 +2832,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
     ;
 }
 
-void ClientBase::addSettingsAsOptions(OptionsDescription & options_description)
+void ClientBase::addSettingsToProgramOptionsAndSubscribeToChanges(OptionsDescription & options_description)
 {
     if (allow_repeated_settings)
         cmd_settings.addToProgramOptionsAsMultitokens(options_description.main_description.value());

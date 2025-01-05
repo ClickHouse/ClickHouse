@@ -169,7 +169,9 @@ protected:
     /// Add options that are common for the embedded client, regular client or clickhouse-local.
     void addCommonOptions(OptionsDescription & options_description);
     /// Add user-level or MergeTree-level settings to the list of possible command line options.
-    void addSettingsAsOptions(OptionsDescription & options_description);
+    /// In case if any of that will appear during options parsing the corresponding setting will be
+    /// changed in the cmd_settings or in cmd_merge_tree_settings object.
+    void addSettingsToProgramOptionsAndSubscribeToChanges(OptionsDescription & options_description);
     /// Add extra options depending on the application (e.g. clickhouse-local or clickhouse-client)
     virtual void addExtraOptions(OptionsDescription & options_description) = 0;
     /// Move options from the boost::program_options structure to the one returned by
@@ -277,7 +279,8 @@ protected:
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
-    SharedContextHolder shared_context; // maybe not initialized
+    /// This holder may not be initialized in case if we run the client in the embedded mode (SSH).
+    SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
     /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.

@@ -43,6 +43,48 @@ def test_simple_query_with_openssh_client(started_cluster):
     assert output.replace("\n\x00", "\n") == expected
 
 
+def test_options_and_settings_propagation(started_cluster):
+    # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
+    ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -o SetEnv="max_threads=9999 format=JSONEachRow" -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "SELECT getSetting(\'max_threads\');"'
+
+    completed_process = subprocess.run(
+        ssh_command,
+        shell=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    output = completed_process.stdout
+    assert output.replace("\n\x00", "\n") == "{\"getSetting('max_threads')\":9999}\n"
+
+
+def test_create_table(started_cluster):
+    def execute_command_and_get_output(command):
+        # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
+        ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "{command}"'
+
+        completed_process = subprocess.run(
+            ssh_command,
+            shell=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        output = completed_process.stdout
+        return output
+
+    execute_command_and_get_output("DROP TABLE IF EXISTS test;")
+    execute_command_and_get_output("CREATE TABLE test (a UInt64) ENGINE=MergeTree() ORDER BY a;")
+    execute_command_and_get_output("INSERT INTO test VALUES (1), (2), (3);")
+    result = execute_command_and_get_output("SELECT * FROM test;")
+    assert result.replace("\n\x00", "\n") == "1\n2\n3\n"
+    execute_command_and_get_output("TRUNCATE test;")
+    result = execute_command_and_get_output("SELECT * FROM test;")
+    # Output should be empty
+    assert result.replace("\x00", "\n") == "\n"
+    execute_command_and_get_output("DROP TABLE IF EXISTS test;")
+
+
 def test_simple_query_with_paramiko(started_cluster):
     pkey = paramiko.Ed25519Key.from_private_key_file(f"{SCRIPT_DIR}/keys/lucy_ed25519")
     client = paramiko.SSHClient()

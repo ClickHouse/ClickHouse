@@ -258,7 +258,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     addExtraOptions(options_description);
     /// Copy them to be able to print a simplified version of the help message.
     OptionsDescription options_description_non_verbose = options_description;
-    addSettingsAsOptions(options_description);
+    addSettingsToProgramOptionsAndSubscribeToChanges(options_description);
     addOptionsToHints(options_description);
 >>>>>>> 6651ebea891 (Pass options in a generic way)
 
