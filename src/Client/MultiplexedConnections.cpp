@@ -333,7 +333,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
 
 Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
-    OpenTelemetry::SpanHolder span{"MultiplexedConnections::receivePacketUnlocked"};
+    OpenTelemetry::SpanHolder span_holder{"MultiplexedConnections::receivePacketUnlocked"};
 
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
