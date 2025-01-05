@@ -49,6 +49,7 @@
             --link-color: #06D;
             --logo-color: #CEE;
             --logo-color-active: #BDD;
+            --border-color-selected: #F80;
 
             --progress-background-color: var(--background-color);
             --progress-foreground-color: #FFC0C0;
@@ -75,6 +76,7 @@
             --link-color: #4BDAF7;
             --logo-color: #222;
             --logo-color-active: #333;
+            --border-color-selected: #FF0;
 
             --progress-foreground-color: #080;
         }
@@ -328,21 +330,12 @@
             display: none;
         }
 
-        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
-         * We also keep it for some time on mouseout for "hysteresis" effect.
-         */
-        td.left:hover, .td-hover-hysteresis
-        {
-            white-space: pre-wrap;
-            max-width: none;
-        }
-
         .td-selected
         {
             white-space: pre-wrap;
             max-width: none;
             background-color: var(--table-hover-color);
-            border: 2px solid var(--border-color);
+            border: 2px solid var(--border-color-selected);
         }
 
         td.transposed
@@ -594,7 +587,8 @@
             'add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password) +
-            '&default_format=JSONEachRowWithProgress';
+            '&default_format=JSONEachRowWithProgress' +
+            '&extremes=1';
 
         last_query_start = performance.now();
 
@@ -664,6 +658,10 @@
         } catch (e) {
             console.log(e);
             reply = e.toString();
+        }
+
+        if (extremes['min'] && extremes['max']) {
+            renderExtremes();
         }
 
         document.getElementById('check-mark').style.display = 'inline-block';
@@ -819,6 +817,8 @@
         document.getElementById('hourglass').display = 'none';
         document.getElementById('stats').innerText = '';
         document.getElementById('logo-container').style.display = 'block';
+
+        extremes = {};
     }
 
     function formatReadable(number = 0, decimals = 2, units = []) {
@@ -861,24 +861,24 @@
         }
     }
 
-    function renderCell(cell, col_idx, settings)
+    function renderCell(name, value)
     {
         let td = document.createElement('td');
 
-        let is_null = (cell === null);
+        let is_null = (value === null);
         let is_link = false;
 
         /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
         let text;
         if (is_null) {
             text = 'ᴺᵁᴸᴸ';
-        } else if (typeof(cell) === 'object') {
-            text = JSON.stringify(cell);
+        } else if (typeof(value) === 'object') {
+            text = JSON.stringify(value);
         } else {
-            text = cell;
+            text = value;
 
             /// If it looks like URL, create a link. This is for convenience.
-            if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
+            if (typeof(value) == 'string' && value.match(/^https?:\/\/\S+$/)) {
                 is_link = true;
             }
         }
@@ -892,33 +892,49 @@
             node = link;
         }
 
-        if (settings.is_transposed) {
-            td.className = 'left transposed';
-        } else {
-            td.className = settings.column_is_number[col_idx] ? 'right' : 'left';
-        }
+        td.className = column_is_number[name] ? 'right' : 'left';
         if (is_null) {
             td.className += ' null';
-        }
-
-        /// If it's a number, render bar in background.
-        if (!settings.is_transposed && settings.column_need_render_bars[col_idx] && text > 0) {
-            const ratio = 100 * text / settings.column_maximums[col_idx];
-
-            let div = document.createElement('div');
-
-            div.style.width = '100%';
-            div.style.background = `linear-gradient(to right,
-                var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                transparent ${ratio}%, transparent 100%)`;
-
-            div.appendChild(node);
-            node = div;
         }
 
         td.appendChild(node);
         return td;
     }
+
+    document.getElementById('query').addEventListener('click', e => {
+        document.querySelector('.td-selected')?.classList.remove('td-selected');
+    });
+
+    document.addEventListener('keydown', e => {
+        let cell = document.querySelector('.td-selected');
+        if (!cell) { return; }
+
+        const row = cell.parentElement;
+        const table = row.parentElement;
+        let cell_index = cell.cellIndex;
+        let row_index = row.rowIndex;
+
+        switch(e.key) {
+            case 'ArrowUp': --row_index; break;
+            case 'ArrowDown': ++row_index; break;
+            case 'ArrowLeft': --cell_index; break;
+            case 'ArrowRight': ++cell_index; break;
+            default:
+                return;
+        }
+
+        /// The first cell in each row is the row number.
+        if (row_index < 0 || cell_index <= 0) { return; }
+
+        let new_cell = table.rows[row_index]?.cells[cell_index];
+        if (!new_cell) { return; }
+
+        e.preventDefault();
+
+        cell.classList.remove('td-selected');
+        new_cell.classList.add('td-selected');
+        new_cell.scrollIntoView({ block: 'nearest' });
+    });
 
     function renderTableTransposed(response)
     {
@@ -940,7 +956,7 @@
             }
             if (response.data.length == 0 && col_idx == 0)
             {
-                /// If result is empty, show this fact with a style.
+                /// If the result is empty, show this fact with a style.
                 let td = document.createElement('td');
                 td.rowSpan = response.meta.length;
                 td.className = 'empty-result';
@@ -957,6 +973,8 @@
         table.style.display = 'table';
     }
 
+    let extremes = {};
+
     function update(json) {
         if (json.progress) {
             updateProgress(json.progress);
@@ -964,6 +982,12 @@
             appendHeader(json.meta);
         } else if (json.row) {
             appendRow(json.row);
+        } else if (json.min) {
+            extremes['min'] = json.min;
+        } else if (json.max) {
+            extremes['max'] = json.max;
+        } else if (json.exception) {
+            renderError(json.exception);
         }
     }
 
@@ -982,7 +1006,7 @@
         const total_rows = progress.total_rows_to_read;
         const formatted_bytes = formatReadableBytes(bytes);
         const formatted_rows = formatReadableRows(rows);
-        stats.innerText = `${(100 * rows / total_rows).toFixed(1)}%, read ${formatted_rows} rows, ${formatted_bytes}`;
+        stats.innerText = `${(100 * Math.min(1.0, rows / total_rows)).toFixed(1)}%, read ${formatted_rows} rows, ${formatted_bytes}`;
 
         if (rows && total_rows) {
             document.getElementById('progress').style.display = 'block';
@@ -991,7 +1015,11 @@
     }
 
     let row_idx = 0;
+    let column_is_number = {};
+
     function appendHeader(meta) {
+        if (meta.length == 0) { return; }
+
         let thead = document.createElement('thead');
 
         let th = document.createElement('th');
@@ -1004,6 +1032,8 @@
             const name = document.createTextNode(elem.name);
             th.appendChild(name);
             thead.appendChild(th);
+
+            column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
         });
 
         let table = document.getElementById('data-table');
@@ -1030,16 +1060,14 @@
 
         let col_idx = 0;
         for (let [name, value] of Object.entries(row)) {
-            const td = document.createElement('td');
-            td.innerText = value;
+            const td = renderCell(name, value);
             ++col_idx;
 
-            td.onclick = () => { td.classList.add('td-selected') };
-            td.onmouseenter = () => {
-                td.classList.add('td-hover-hysteresis');
-                td.onmouseleave = () => {
-                    setTimeout(() => { td && td.classList.remove('td-hover-hysteresis') }, 1000);
-                };
+            td.onclick = () => {
+                [...document.getElementsByClassName('td-selected')].forEach(e => {
+                    e.classList.remove('td-selected'); });
+
+                td.classList.add('td-selected')
             };
 
             tr.appendChild(td);
@@ -1047,6 +1075,37 @@
 
         let tbody = document.getElementById('tbody');
         tbody.appendChild(tr);
+    }
+
+    function renderExtremes() {
+        let col_idx = 0;
+        for (const name of Object.keys(extremes.min)) {
+            ++col_idx;
+            if (column_is_number[name]
+                && extremes.min[name] !== undefined && extremes.max[name] !== undefined
+                && +extremes.max[name] > +extremes.min[name]) {
+                let table = document.getElementById('data-table');
+                for (let row of table.rows) {
+                    let cell = row.cells[col_idx];
+                    let value = +cell.innerText;
+                    if (value > 0) {
+                        const ratio = 100 * value / extremes.max[name];
+
+                        let contents = cell.firstChild;
+                        cell.removeChild(contents);
+                        let div = document.createElement('div');
+
+                        div.style.cssText = `width: 100%; height: 100%;
+                            background: linear-gradient(to right,
+                                var(--bar-color) 0%, var(--bar-color) ${ratio}%,
+                                transparent ${ratio}%, transparent 100%)`;
+
+                        div.appendChild(contents);
+                        cell.appendChild(div);
+                    }
+                }
+            }
+        }
     }
 
     function renderTable(response)
@@ -1133,16 +1192,8 @@
         table.style.display = 'table';
     }
 
-    function renderError(response)
+    function renderError(message)
     {
-        let message = response;
-        try {
-            let json = JSON.parse(response);
-            if (json.exception) {
-                message = json.exception;
-            }
-        } catch (e) {}
-
         document.getElementById('error').innerText = message ? message : "No response.";
         document.getElementById('error').style.display = 'block';
         document.getElementById('logo-container').style.display = 'none';
