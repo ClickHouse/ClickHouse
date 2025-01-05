@@ -44,7 +44,7 @@
             --misc-text-color: #888;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
             --table-header-color: #F8F8F8;
-            --table-hover-color: #FFF8EF;
+            --table-hover-filter: brightness(0.95);
             --null-color: #A88;
             --link-color: #06D;
             --logo-color: #CEE;
@@ -52,7 +52,7 @@
             --border-color-selected: #F80;
 
             --progress-background-color: var(--background-color);
-            --progress-foreground-color: #FFC0C0;
+            --progress-foreground-color: #080;
 
             --progress: 0%;
         }
@@ -71,7 +71,7 @@
             --misc-text-color: #888;
             --error-color: #400;
             --table-header-color: #102020;
-            --table-hover-color: #003333;
+            --table-hover-filter: brightness(1.2);
             --null-color: #A88;
             --link-color: #4BDAF7;
             --logo-color: #222;
@@ -266,13 +266,14 @@
         #data_div
         {
             margin-top: 1rem;
+            background-color: var(--element-background-color);
         }
 
         #data-table
         {
             width: 100%;
-            border-collapse: collapse;
             border-spacing: 0;
+            background-color: var(--element-background-color);
         }
 
         /* Will be displayed when user specified custom format. */
@@ -305,6 +306,8 @@
 
         th
         {
+            position: sticky;
+            top: -0.5rem;
             padding: 0.25rem 0.5rem;
             text-align: center;
             background-color: var(--table-header-color);
@@ -312,9 +315,9 @@
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
-        tr:hover, tr:hover td
+        tr:hover
         {
-            background-color: var(--table-hover-color);
+            filter: var(--table-hover-filter);
         }
 
         tr:hover
@@ -334,8 +337,8 @@
         {
             white-space: pre-wrap;
             max-width: none;
-            background-color: var(--table-hover-color);
-            border: 2px solid var(--border-color-selected);
+            filter: var(--table-hover-filter);
+            outline: 2px solid var(--border-color-selected);
         }
 
         td.transposed
@@ -599,7 +602,9 @@
         let response, reply;
         try {
             clear();
-            response = await fetch(url, { method: "POST", body: query });
+
+            const controller = new AbortController();
+            response = await fetch(url, { method: "POST", body: query, signal: controller.signal });
 
             let format = response.headers.get('X-ClickHouse-Format');
 
@@ -621,16 +626,28 @@
                     reply += new_content;
 
                     let lines = buffer.split('\n');
+                    let fragment = document.createDocumentFragment();
 
+                    let cont = true;
                     for (line of lines.slice(0, -1)) {
                         if (stopping) {
                             stopped = true;
                             break;
                         }
                         const data = JSON.parse(line);
-                        update(data);
+                        cont = update(data, fragment);
+                        if (!cont) { break; }
                     };
 
+                    if (fragment.hasChildNodes()) {
+                        document.getElementById('tbody').appendChild(fragment);
+                    }
+
+                    if (!cont)
+                    {
+                        controller.abort();
+                        break;
+                    }
                     buffer = lines[lines.length - 1];
                 }
             } else if (format == 'JSONCompactColumns') {
@@ -668,7 +685,7 @@
         document.getElementById('hourglass').style.display = 'none';
         document.getElementById('progress').style.display = 'none';
 
-        /// TODO: render error
+        /// TODO: better control over overlapping requests.
 
         if (posted_request_num != request_num) { return; }
 
@@ -735,13 +752,12 @@
         post();
     }
 
-    document.onkeydown = function(event)
-    {
+    document.addEventListener('keydown', event => {
         /// Firefox has code 13 for Enter and Chromium has code 10.
         if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
             post();
         }
-    }
+    });
 
     /// Pressing Tab in textarea will increase indentation.
     /// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
@@ -901,12 +917,13 @@
         return td;
     }
 
-    document.getElementById('query').addEventListener('click', e => {
-        document.querySelector('.td-selected')?.classList.remove('td-selected');
+    document.getElementById('query').addEventListener('focus', e => {
+        current_selected_cell?.classList.remove('td-selected');
+        current_selected_cell = null;
     });
 
     document.addEventListener('keydown', e => {
-        let cell = document.querySelector('.td-selected');
+        let cell = current_selected_cell;
         if (!cell) { return; }
 
         const row = cell.parentElement;
@@ -934,6 +951,7 @@
         cell.classList.remove('td-selected');
         new_cell.classList.add('td-selected');
         new_cell.scrollIntoView({ block: 'nearest' });
+        current_selected_cell = new_cell;
     });
 
     function renderTableTransposed(response)
@@ -975,19 +993,24 @@
 
     let extremes = {};
 
-    function update(json) {
+    function update(json, fragment) {
         if (json.progress) {
             updateProgress(json.progress);
+            return true;
         } else if (json.meta) {
             appendHeader(json.meta);
+            return true;
         } else if (json.row) {
-            appendRow(json.row);
+            return appendRow(json.row, fragment);
         } else if (json.min) {
             extremes['min'] = json.min;
+            return true;
         } else if (json.max) {
             extremes['max'] = json.max;
+            return true;
         } else if (json.exception) {
             renderError(json.exception);
+            return true;
         }
     }
 
@@ -1006,7 +1029,7 @@
         const total_rows = progress.total_rows_to_read;
         const formatted_bytes = formatReadableBytes(bytes);
         const formatted_rows = formatReadableRows(rows);
-        stats.innerText = `${(100 * Math.min(1.0, rows / total_rows)).toFixed(1)}%, read ${formatted_rows} rows, ${formatted_bytes}`;
+        stats.innerText = `${total_rows ? (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, ' : ''}Read ${formatted_rows} rows, ${formatted_bytes}`;
 
         if (rows && total_rows) {
             document.getElementById('progress').style.display = 'block';
@@ -1049,8 +1072,19 @@
         row_idx = 0;
     }
 
-    function appendRow(row) {
+    const max_rows = 10_000;
+    const max_cells = 100_000;
+
+    let num_bytes = 0;
+
+    let current_selected_cell = null;
+    function appendRow(row, fragment) {
         ++row_idx;
+
+        if (row_idx > max_rows || row_idx * Object.keys(row).length > max_cells) {
+            return false;
+        }
+
         let tr = document.createElement('tr');
 
         let td = document.createElement('td');
@@ -1064,17 +1098,17 @@
             ++col_idx;
 
             td.onclick = () => {
-                [...document.getElementsByClassName('td-selected')].forEach(e => {
-                    e.classList.remove('td-selected'); });
-
-                td.classList.add('td-selected')
+                current_selected_cell?.classList.remove('td-selected');
+                current_selected_cell = td;
+                current_selected_cell.classList.add('td-selected')
+                current_selected_cell.scrollIntoView({ block: 'nearest' });
             };
 
             tr.appendChild(td);
         }
 
-        let tbody = document.getElementById('tbody');
-        tbody.appendChild(tr);
+        fragment.appendChild(tr);
+        return true;
     }
 
     function renderExtremes() {
@@ -1091,17 +1125,13 @@
                     if (value > 0) {
                         const ratio = 100 * value / extremes.max[name];
 
-                        let contents = cell.firstChild;
-                        cell.removeChild(contents);
-                        let div = document.createElement('div');
-
-                        div.style.cssText = `width: 100%; height: 100%;
+                        cell.style.cssText = `
+                            background-size: 100% 50%;
+                            background-position: center;
+                            background-repeat: no-repeat;
                             background: linear-gradient(to right,
                                 var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                                transparent ${ratio}%, transparent 100%)`;
-
-                        div.appendChild(contents);
-                        cell.appendChild(div);
+                                var(--element-background-color) ${ratio}%, var(--element-background-color) 100%)`;
                     }
                 }
             }
