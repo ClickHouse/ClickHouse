@@ -551,18 +551,18 @@ SinkToStoragePtr StorageObjectStorage::write(
     }
 
     auto paths = configuration->getPaths();
-    std::vector<std::string> path_filenames;
-    path_filenames.reserve(paths.size());
-    for (const auto & path : paths)
-        path_filenames.push_back(path.filename);
-    if (auto new_key
-        = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, path_filenames.front(), path_filenames.size()))
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(*object_storage, *configuration, settings, paths.front().filename, paths.size()))
     {
         paths.push_back(Configuration::Path{.filename = *new_key, .meta = nullptr});
     }
     configuration->setPaths(paths);
 
-    return std::make_shared<StorageObjectStorageSink>(object_storage, configuration->clone(), format_settings, sample_block, local_context);
+    return std::make_shared<StorageObjectStorageSink>(
+        object_storage,
+        configuration->clone(),
+        format_settings,
+        sample_block,
+        local_context);
 }
 
 void StorageObjectStorage::truncate(
