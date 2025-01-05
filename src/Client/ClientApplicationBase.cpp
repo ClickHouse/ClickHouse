@@ -150,7 +150,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     /// Common options for clickhouse-client and clickhouse-local.
     options_description.main_description->add_options()
-        ("help", "Print usage summary ane exit; combine with --verbose to display all options")
+        ("help", "Print usage summary and exit; combine with --verbose to display all options")
         ("verbose", "Increase output verbosity")
         ("version,V", "Print version and exit")
         ("version-clean", "Print version in machine-readable format and exit")
@@ -194,7 +194,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
         ("highlight", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode")
 
-        ("ignore-error", "Do not stop processing after an error occured")
+        ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
         ("hardware-utilization", "Print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
