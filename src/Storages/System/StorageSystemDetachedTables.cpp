@@ -63,7 +63,6 @@ protected:
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
-        size_t database_idx = 0;
         size_t rows_count = 0;
         for (; database_idx < databases->size() && rows_count < max_block_size; ++database_idx)
         {
@@ -112,6 +111,7 @@ private:
     bool done = false;
     DatabasePtr database;
     std::string database_name;
+    size_t database_idx{};
 
     void fillResultColumnsByDetachedTableIterator(MutableColumns & result_columns) const
     {
