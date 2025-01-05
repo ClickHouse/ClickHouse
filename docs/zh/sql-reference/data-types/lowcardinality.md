@@ -56,4 +56,4 @@ ORDER BY id
 ## 参考
 
 - [使用低基数类型减少ClickHouse的存储成本 – 来自Instana工程师的分享](https://www.instana.com/blog/reducing-clickhouse-storage-cost-with-the-low-cardinality-type-lessons-from-an-instana-engineer/).
-- [字符优化 (俄语视频分享)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [英语分享](https://github.com/ClickHouse/clickhouse-presentations/raw/master/old_meetups/meetup19/string_optimization.pdf).
+- [字符优化 (俄语视频分享)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [英语分享](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf).

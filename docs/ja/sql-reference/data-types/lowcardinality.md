@@ -58,4 +58,4 @@ ORDER BY id
 
 - ブログ: [スキーマとコーデックでClickHouseを最適化する](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 - ブログ: [ClickHouseでタイムシリーズデータを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-- [文字列最適化 (ロシア語のビデオプレゼンテーション)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [英語のスライド](https://github.com/ClickHouse/clickhouse-presentations/raw/master/old_meetups/meetup19/string_optimization.pdf)
+- [文字列最適化 (ロシア語のビデオプレゼンテーション)](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [英語のスライド](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf)
