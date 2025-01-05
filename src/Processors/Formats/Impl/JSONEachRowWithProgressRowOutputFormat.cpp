@@ -82,19 +82,19 @@ void JSONEachRowWithProgressRowOutputFormat::finalizeImpl()
     if (statistics.applied_limit)
     {
         writeCString("{\"rows_before_limit_at_least\":", *ostr);
-        writeIntText(statistics.rows_before_limit, out);
+        writeIntText(statistics.rows_before_limit, *ostr);
         writeCString("}\n", *ostr);
     }
     if (statistics.applied_aggregation)
     {
         writeCString("{\"rows_before_aggregation\":", *ostr);
-        writeIntText(statistics.rows_before_aggregation, out);
+        writeIntText(statistics.rows_before_aggregation, *ostr);
         writeCString("}\n", *ostr);
     }
     if (!exception_message.empty())
     {
         writeCString("{\"exception\":", *ostr);
-        writeJSONString(exception_message, out, settings);
+        writeJSONString(exception_message, *ostr, settings);
         writeCString("}\n", *ostr);
     }
 }

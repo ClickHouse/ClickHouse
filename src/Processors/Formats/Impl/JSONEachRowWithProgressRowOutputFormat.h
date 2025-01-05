@@ -26,9 +26,18 @@ private:
     void writeTotals(const Columns & columns, size_t row_num) override;
     void finalizeImpl() override;
 
+    void setRowsBeforeLimit(size_t rows_before_limit_) override
+    {
+        statistics.applied_limit = true;
+        statistics.rows_before_limit = rows_before_limit_;
+    }
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
+    {
+        statistics.applied_aggregation = true;
+        statistics.rows_before_aggregation = rows_before_aggregation_;
+    }
+
     void writeSpecialRow(const char * kind, const Columns & columns, size_t row_num);
-
-
 };
 
 }
