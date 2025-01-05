@@ -1,1 +1,1 @@
-{"exception":"Code: 159. DB::Exception: Timeout exceeded: elapsed
+{"expected":"Code: 159. DB::Expected: Timeout exceeded: elapsed
