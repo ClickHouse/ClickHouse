@@ -218,7 +218,6 @@
         {
             grid-area: hourglass;
             display: none;
-            margin-left: 1rem;
             font-size: 110%;
             color: #888;
             animation: hourglass-animation 2s linear infinite;
@@ -228,7 +227,6 @@
         {
             grid-area: hourglass;
             display: none;
-            padding-left: 1rem;
             font-size: 110%;
             color: #080;
         }
@@ -241,6 +239,7 @@
 
         #progress
         {
+            display: none;
             width: 100%;
             height: 1rem;
             margin: 0.25rem;
@@ -605,6 +604,7 @@
         let stopping = false; // TODO
         let response, reply;
         try {
+            clear();
             response = await fetch(url, { method: "POST", body: query });
 
             let format = response.headers.get('X-ClickHouse-Format');
@@ -665,6 +665,10 @@
             console.log(e);
             reply = e.toString();
         }
+
+        document.getElementById('check-mark').style.display = 'inline-block';
+        document.getElementById('hourglass').style.display = 'none';
+        document.getElementById('progress').style.display = 'none';
 
         /// TODO: render error
 
@@ -963,13 +967,15 @@
         }
     }
 
-    let prev_time = null;
-    function updateProgress(progress) {
-        curr_time = new Date();
-        time_diff = prev_time ? curr_time - prev_time : 0;
-        if (prev_time && time_diff < 100) { return; }
-        prev_time = curr_time;
+    function updateRaw(data) {
+        const fragment = document.createTextNode(data);
+        let container = document.getElementById('data-unparsed');
+        container.appendChild(fragment);
+        /// inline-block make width adjust to the size of content.
+        container.style.display = 'inline-block';
+    }
 
+    function updateProgress(progress) {
         let stats = document.getElementById('stats');
         const rows = progress.read_rows;
         const bytes = progress.read_bytes;
@@ -979,6 +985,7 @@
         stats.innerText = `${(100 * rows / total_rows).toFixed(1)}%, read ${formatted_rows} rows, ${formatted_bytes}`;
 
         if (rows && total_rows) {
+            document.getElementById('progress').style.display = 'block';
             document.documentElement.style.setProperty('--progress', (100 * rows / total_rows) + '%');
         }
     }
@@ -1126,26 +1133,8 @@
         table.style.display = 'table';
     }
 
-    /// A function to render raw data when non-default format is specified.
-    function renderUnparsedResult(response)
-    {
-        clear();
-        let data = document.getElementById('data-unparsed')
-
-        if (response === '') {
-            /// TODO: Fade or remove previous result when new request will be performed.
-            response = 'Ok.';
-        }
-
-        data.innerText = response;
-        /// inline-block make width adjust to the size of content.
-        data.style.display = 'inline-block';
-    }
-
     function renderError(response)
     {
-        clear();
-
         let message = response;
         try {
             let json = JSON.parse(response);
