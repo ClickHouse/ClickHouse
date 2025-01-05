@@ -191,7 +191,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 data_part->name,
                                 dag->getHash(),
                                 task->getPreWhereUnmatchedMarks(),
-                                data_part->index_granularity->getMarksCount());
+                                data_part->index_granularity->getMarksCount(),
+                                data_part->index_granularity->hasFinalMark());
                             break;
                         }
                     }

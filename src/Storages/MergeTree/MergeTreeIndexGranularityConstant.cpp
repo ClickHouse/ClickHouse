@@ -1,8 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 
@@ -104,14 +101,6 @@ size_t MergeTreeIndexGranularityConstant::getRowsCountInRange(size_t begin, size
     }
 
     total_rows += constant_granularity * (end - begin);
-
-    if (total_rows > 18446744073709500000ULL)
-    {
-        LOG_DEBUG(
-               &Poco::Logger::get("QueryConditionCache"),
-               "total_rows: {}, num_marks_without_final: {}, last_mark_granularity: {}, constant_granularity: {}, begin: {}, end: {}.",
-               total_rows, num_marks_without_final, last_mark_granularity, constant_granularity, begin, end);
-    }
     return total_rows;
 }
 

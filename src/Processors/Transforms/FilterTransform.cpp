@@ -131,7 +131,8 @@ void FilterTransform::doTransform(Chunk & chunk)
                 data_part->name,
                 *condition_hash,
                 mark_info->getMarkRanges(),
-                data_part->index_granularity->getMarksCount());
+                data_part->index_granularity->getMarksCount(),
+                data_part->index_granularity->hasFinalMark());
     };
 
     {

@@ -920,21 +920,21 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
-            auto filter = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            if (!filter)
+            auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
+            if (!matching_marks_opt)
             {
                 ++it;
                 continue;
             }
 
-            auto & mark_filter = *filter;
+            auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;
             for (auto & mark_range : part_with_ranges.ranges)
             {
                 size_t begin = mark_range.begin;
                 for (size_t mark_it = begin; mark_it < mark_range.end; ++mark_it)
                 {
-                    if (!mark_filter[mark_it])
+                    if (!matching_marks[mark_it])
                     {
                         ++stat.granules_dropped;
                         if (mark_it == begin)

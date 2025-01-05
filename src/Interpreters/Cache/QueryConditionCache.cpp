@@ -32,7 +32,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     return std::nullopt;
 }
 
-void QueryConditionCache::write(const UUID & table_id, const String & part_name, size_t condition_hash, const MarkRanges & mark_ranges, size_t marks_count)
+void QueryConditionCache::write(const UUID & table_id, const String & part_name, size_t condition_hash, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
     Key key = {table_id, part_name, condition_hash};
 
@@ -46,6 +46,9 @@ void QueryConditionCache::write(const UUID & table_id, const String & part_name,
         std::lock_guard lock(entry->mutex);
         for (const auto & mark_range : mark_ranges)
             std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
+
+        if (has_final_mark)
+            entry->matching_marks[marks_count - 1] = false;
     }
 }
 
