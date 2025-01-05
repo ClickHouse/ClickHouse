@@ -25,6 +25,11 @@ void JSONEachRowWithProgressRowOutputFormat::writePrefix()
     writeCString("]}\n", *ostr);
 }
 
+void JSONEachRowWithProgressRowOutputFormat::writeSuffix()
+{
+    /// Do not write exception here like JSONEachRow does. See finalizeImpl.
+}
+
 void JSONEachRowWithProgressRowOutputFormat::writeRowStartDelimiter()
 {
     writeCString("{\"row\":{", *ostr);
