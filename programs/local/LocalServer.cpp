@@ -880,7 +880,7 @@ void LocalServer::processConfig()
         prompt = getClientConfiguration().getString("prompt");
     else if (getClientConfiguration().has("prompt_by_server_display_name.default"))
         prompt = getClientConfiguration().getRawString("prompt_by_server_display_name.default");
-    prompt = appendSmileyIfNeeded(prompt);
+    prompt = appendSmileyIfNeeded(*prompt);
 }
 
 

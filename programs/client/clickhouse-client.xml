@@ -104,7 +104,7 @@
             <database></database>
             <!-- '~' is expanded to HOME, like in any shell -->
             <history_file></history_file>
-            <prompt></prompt>
+            <!-- <prompt></prompt> -->
         </connection>
     </connections_credentials>
     ]]>

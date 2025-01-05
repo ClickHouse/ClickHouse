@@ -347,7 +347,7 @@ protected:
 
     UInt64 server_revision = 0;
     String server_version;
-    String prompt;
+    std::optional<String> prompt;
     String server_display_name;
 
     ProgressIndication progress_indication;
