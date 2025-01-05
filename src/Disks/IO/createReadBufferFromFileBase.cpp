@@ -110,7 +110,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 existing_memory,
                 buffer_alignment,
                 file_size,
-                settings.local_throttler);
+                settings.local_throttler); // 这里用的是local_thottle
 #else
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
 #endif

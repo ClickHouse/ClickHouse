@@ -50,6 +50,7 @@ public:
 };
 
 /** Similar to AsynchronousReadBufferFromFile but also transparently shares open file descriptors.
+ *  在 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase 中构造
   */
 class AsynchronousReadBufferFromFileWithDescriptorsCache : public AsynchronousReadBufferFromFileDescriptor
 {

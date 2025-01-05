@@ -74,6 +74,9 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch(Priority priority)
 }
 
 
+/**
+ * 通过 AsynchronousReadBufferFromFileWithDescriptorsCache 子类构造
+ */
 bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 {
     /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
