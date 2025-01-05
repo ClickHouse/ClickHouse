@@ -32,7 +32,7 @@ if (NOT USE_MUSL)
     option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to external dynamically loaded libraries" ${ENABLE_CLICKHOUSE_ALL})
 endif ()
 
-# https://presentations.clickhouse.com/2020_matemarketing/
+# https://presentations.clickhouse.com/matemarketing_2020/
 option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_CLICKHOUSE_ALL})

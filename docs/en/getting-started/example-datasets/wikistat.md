@@ -8,7 +8,7 @@ The dataset contains 0.5 trillion records.
 
 See the video from FOSDEM 2023: https://www.youtube.com/watch?v=JlcI2Vfz_uk
 
-And the presentation: https://presentations.clickhouse.com/2023_fosdem/
+And the presentation: https://presentations.clickhouse.com/fosdem2023/
 
 Data source: https://dumps.wikimedia.org/other/pageviews/
 

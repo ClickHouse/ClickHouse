@@ -8,7 +8,7 @@ sidebar_label: WikiStat
 
 FOSDEM 2023のビデオをご覧ください: https://www.youtube.com/watch?v=JlcI2Vfz_uk
 
-およびプレゼンテーション: https://presentations.clickhouse.com/2023_fosdem/
+およびプレゼンテーション: https://presentations.clickhouse.com/fosdem2023/
 
 データソース: https://dumps.wikimedia.org/other/pageviews/
 
