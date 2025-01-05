@@ -1,3 +1,4 @@
+#include <base/scope_guard.h>
 #include "Client.h"
 #include "Parsers/formatAST.h"
 
