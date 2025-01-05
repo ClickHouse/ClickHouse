@@ -2627,7 +2627,7 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::getPrompt() const
 {
-    return *prompt;
+    return prompt;
 }
 
 

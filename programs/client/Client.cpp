@@ -600,13 +600,13 @@ void Client::connect()
         }
     }
 
-    if (!prompt)
+    if (prompt.empty())
         prompt = "{display_name}";
 
     /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
     {
         String prompt_escaped;
-        ReadBufferFromString in(*prompt);
+        ReadBufferFromString in(prompt);
         readEscapedString(prompt_escaped, in);
         prompt = prompt_escaped;
     }
@@ -620,9 +620,9 @@ void Client::connect()
     };
 
     for (const auto & [key, value] : prompt_substitutions)
-        boost::replace_all(*prompt, "{" + key + "}", value);
+        boost::replace_all(prompt, "{" + key + "}", value);
 
-    prompt = appendSmileyIfNeeded(*prompt);
+    prompt = appendSmileyIfNeeded(prompt);
 }
 
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
