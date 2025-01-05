@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/assert_cast.h>
+#include "Columns/ColumnsNumber.h"
 
 
 namespace DB
@@ -33,6 +34,29 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
     return {};
 }
 
+const ColumnConst * checkAndGetColumnConstIntOrUInt(const IColumn * column)
+{
+    if (!isColumnConst(*column))
+        return {};
+
+    const ColumnConst * res = assert_cast<const ColumnConst *>(column);
+
+    if (checkColumn<ColumnInt8>(&res->getDataColumn())
+        || checkColumn<ColumnInt16>(&res->getDataColumn())
+        || checkColumn<ColumnInt32>(&res->getDataColumn())
+        || checkColumn<ColumnInt64>(&res->getDataColumn())
+        || checkColumn<ColumnInt128>(&res->getDataColumn())
+        || checkColumn<ColumnInt256>(&res->getDataColumn())
+        || checkColumn<ColumnUInt8>(&res->getDataColumn())
+        || checkColumn<ColumnUInt16>(&res->getDataColumn())
+        || checkColumn<ColumnUInt32>(&res->getDataColumn())
+        || checkColumn<ColumnUInt64>(&res->getDataColumn())
+        || checkColumn<ColumnUInt128>(&res->getDataColumn())
+        || checkColumn<ColumnUInt256>(&res->getDataColumn()))
+        return res;
+
+    return {};
+}
 
 Columns convertConstTupleToConstantElements(const ColumnConst & column)
 {
