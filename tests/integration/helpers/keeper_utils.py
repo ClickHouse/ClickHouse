@@ -282,7 +282,9 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
 
 
-def wait_until_connected(cluster, node, port=9181, timeout=30.0):
+def wait_until_connected(
+    cluster, node, port=9181, timeout=30.0, wait_complete_readiness=True
+):
     start = time.time()
 
     logging.debug(
@@ -299,31 +301,34 @@ def wait_until_connected(cluster, node, port=9181, timeout=30.0):
                 f"{timeout}s timeout while waiting for {node.name} to start serving requests"
             )
 
-    host = cluster.get_instance_ip(node.name)
-    logging.debug(
-        "Waiting until keeper can create sessions on %s:%d (timeout=%f)",
-        host,
-        port,
-        timeout,
-    )
-    while True:
-        zk_cli = None
-        try:
-            time_passed = min(time.time() - start, 5.0)
-            if time_passed >= timeout:
-                raise Exception(
-                    f"{timeout}s timeout while waiting for {node.name} to start serving requests"
+    if wait_complete_readiness:
+        host = cluster.get_instance_ip(node.name)
+        logging.debug(
+            "Waiting until keeper can create sessions on %s:%d (timeout=%f)",
+            host,
+            port,
+            timeout,
+        )
+        while True:
+            zk_cli = None
+            try:
+                time_passed = min(time.time() - start, 5.0)
+                if time_passed >= timeout:
+                    raise Exception(
+                        f"{timeout}s timeout while waiting for {node.name} to start serving requests"
+                    )
+                zk_cli = KazooClient(
+                    hosts=f"{host}:9181", timeout=timeout - time_passed
                 )
-            zk_cli = KazooClient(hosts=f"{host}:9181", timeout=timeout - time_passed)
-            zk_cli.start()
-            zk_cli.get("/keeper/api_version")
-            break
-        except (ConnectionLoss, OperationTimeoutError, KazooTimeoutError):
-            pass
-        finally:
-            if zk_cli:
-                zk_cli.stop()
-                zk_cli.close()
+                zk_cli.start()
+                zk_cli.get("/keeper/api_version")
+                break
+            except (ConnectionLoss, OperationTimeoutError, KazooTimeoutError):
+                pass
+            finally:
+                if zk_cli:
+                    zk_cli.stop()
+                    zk_cli.close()
 
 
 def wait_until_quorum_lost(cluster, node, port=9181):

@@ -91,7 +91,11 @@ def setup_storage(cluster, node, storage_config, cleanup_disks):
         storage_config,
     )
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
+    # complete readiness checks that the sessions can be established,
+    # but it creates sesssion for this, which will create one more record in log,
+    # but this test is very strict on number of entries in the log,
+    # so let's avoid this extra check and rely on retry policy
+    keeper_utils.wait_until_connected(cluster, node, wait_complete_readiness=False)
 
 
 def setup_local_storage(cluster, node):
