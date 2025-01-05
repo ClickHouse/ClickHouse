@@ -168,12 +168,12 @@ def start_cluster():
     "exists_table, handler_create_table",
     [
         pytest.param(
-            None,
+            False,
             None,
             id="no exists table",
         ),
         pytest.param(
-            "exists_table",
+            True,
             create_table,
             id="with exists table",
         ),
@@ -237,12 +237,14 @@ def test_query_after_restore_db_replica(
     prepare_db(exclusive_database_name)
     inserted_data = 1000
 
+    exists_table_name = "exists_table_" + generate_random_string()
+
     if exists_table:
-        handler_create_table(node_1, f"{exclusive_database_name}.{exists_table}")
+        handler_create_table(node_1, f"{exclusive_database_name}.{exists_table_name}")
 
         if need_fill_tables:
             fill_table(
-                node_1, f"{exclusive_database_name}.{exists_table}", inserted_data
+                node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
             )
 
     zk = cluster.get_kazoo_client("zoo1")
@@ -253,7 +255,7 @@ def test_query_after_restore_db_replica(
     expected_tables = []
 
     if exists_table:
-        expected_tables.append(exists_table)
+        expected_tables.append(exists_table_name)
 
     assert expected_tables == get_tables_from_replicated(
         node_1, exclusive_database_name
@@ -275,7 +277,7 @@ def test_query_after_restore_db_replica(
         node_1.restart_clickhouse()
 
     assert (
-        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}")
+        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}")
         is None
     )
     assert (
@@ -287,14 +289,14 @@ def test_query_after_restore_db_replica(
 
     if exists_table:
         assert zk.exists(
-            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}"
+            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}"
         )
         assert expected_tables == get_tables_from_replicated(
             node_1, exclusive_database_name
         )
         if need_fill_tables:
             check_contains_table(
-                node_1, f"{exclusive_database_name}.{exists_table}", inserted_data
+                node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
             )
 
     assert (
@@ -312,18 +314,18 @@ def test_query_after_restore_db_replica(
     assert zk.exists(f"/clickhouse/{exclusive_database_name}/replicas/shard1|replica2")
 
     if exists_table:
-        assert [exists_table] == get_tables_from_replicated(
+        assert [exists_table_name] == get_tables_from_replicated(
             node_1, exclusive_database_name
         )
-        assert [exists_table] == get_tables_from_replicated(
+        assert [exists_table_name] == get_tables_from_replicated(
             node_2, exclusive_database_name
         )
         if need_fill_tables:
             check_contains_table(
-                node_1, f"{exclusive_database_name}.{exists_table}", inserted_data
+                node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
             )
             check_contains_table(
-                node_2, f"{exclusive_database_name}.{exists_table}", inserted_data
+                node_2, f"{exclusive_database_name}.{exists_table_name}", inserted_data
             )
 
     action_with_table(node_1, f"{exclusive_database_name}.{process_table}")
@@ -332,7 +334,7 @@ def test_query_after_restore_db_replica(
 
     expected_tables = [process_table]
     if exists_table:
-        expected_tables.append(exists_table)
+        expected_tables.append(exists_table_name)
 
     expected_tables.sort()
 
@@ -353,7 +355,7 @@ def test_query_after_restore_db_replica(
 
     if exists_table:
         assert zk.exists(
-            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}"
+            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}"
         )
 
     assert zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
@@ -371,7 +373,7 @@ def test_query_after_restore_db_replica(
         node_1.restart_clickhouse()
 
     assert (
-        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}")
+        zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}")
         is None
     )
     assert (
@@ -384,7 +386,7 @@ def test_query_after_restore_db_replica(
 
     if exists_table:
         assert zk.exists(
-            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table}"
+            f"/clickhouse/{exclusive_database_name}/metadata/{exists_table_name}"
         )
     assert zk.exists(f"/clickhouse/{exclusive_database_name}/metadata/{process_table}")
 
@@ -403,7 +405,7 @@ def test_query_after_restore_db_replica(
 
     expected_tables = [changed_table]
     if exists_table:
-        expected_tables.append(exists_table)
+        expected_tables.append(exists_table_name)
     expected_tables.sort()
 
     assert expected_tables == get_tables_from_replicated(
@@ -416,14 +418,14 @@ def test_query_after_restore_db_replica(
     if need_fill_tables:
         if exists_table:
             check_contains_table(
-                node_1, f"{exclusive_database_name}.{exists_table}", inserted_data
+                node_1, f"{exclusive_database_name}.{exists_table_name}", inserted_data
             )
         check_contains_table(
             node_2, f"{exclusive_database_name}.{changed_table}", inserted_data
         )
 
     if exists_table:
-        node_1.query(f"DROP TABLE {exclusive_database_name}.{exists_table} SYNC")
+        node_1.query(f"DROP TABLE {exclusive_database_name}.{exists_table_name} SYNC")
     node_1.query(f"DROP TABLE {exclusive_database_name}.{changed_table} SYNC")
 
     assert ["0"] == node_1.query(
