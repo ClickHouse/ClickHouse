@@ -252,6 +252,7 @@ DeliveryTag
 DeltaLake
 Deltalake
 Denormalize
+DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
