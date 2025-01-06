@@ -567,7 +567,7 @@
     const pass_from_url = current_url.searchParams.get('password');
     if (pass_from_url) {
         document.getElementById('password').value = pass_from_url;
-	/// Browsers don't allow manipulating history for the 'file:' protocol.
+        /// Browsers don't allow manipulating history for the 'file:' protocol.
         if (!opened_locally) {
             let replaced_pass = current_url.searchParams;
             replaced_pass.delete('password');
@@ -577,6 +577,7 @@
         }
     }
 
+    let controller = null;
     async function postImpl(posted_request_num, query)
     {
         const user = document.getElementById('user').value;
@@ -591,6 +592,7 @@
             '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password) +
             '&default_format=JSONEachRowWithProgress' +
+            '&enable_http_compression=1' +
             '&extremes=1';
 
         last_query_start = performance.now();
@@ -598,12 +600,12 @@
         document.getElementById('check-mark').style.display = 'none';
         document.getElementById('hourglass').style.display = 'inline-block';
 
+        clear();
+
         let stopping = false; // TODO
         let response, reply;
         try {
-            clear();
-
-            const controller = new AbortController();
+            controller = new AbortController();
             response = await fetch(url, { method: "POST", body: query, signal: controller.signal });
 
             let format = response.headers.get('X-ClickHouse-Format');
@@ -615,6 +617,7 @@
                 let buffer = '';
                 while (true) {
                     const { done, value } = await reader.read();
+                    if (posted_request_num != request_num) { return; }
                     if (done) break;
                     if (stopping) {
                         stopped = true;
@@ -652,6 +655,7 @@
                 }
             } else if (format == 'JSONCompactColumns') {
                 reply = await response.text();
+                if (posted_request_num != request_num) { return; }
                 renderChart(JSON.parse(reply));
             } else {
                 const reader = response.body.getReader();
@@ -669,12 +673,24 @@
                     let new_content = decoder.decode(value, { stream: true });
                     reply += new_content;
 
+                    if (posted_request_num != request_num) { return; }
                     updateRaw(new_content);
                 }
             }
         } catch (e) {
+            if (posted_request_num != request_num) { return; }
             console.log(e);
-            reply = e.toString();
+            if (e instanceof TypeError) {
+                reply = "Network error";
+            } else if (e.name === 'AbortError') {
+                reply = "Query was cancelled";
+            } else {
+                reply = e.toString();
+            }
+            renderError(reply);
+            document.getElementById('hourglass').style.display = 'none';
+            document.getElementById('progress').style.display = 'none';
+            return;
         }
 
         if (extremes['min'] && extremes['max']) {
@@ -684,8 +700,6 @@
         document.getElementById('check-mark').style.display = 'inline-block';
         document.getElementById('hourglass').style.display = 'none';
         document.getElementById('progress').style.display = 'none';
-
-        /// TODO: better control over overlapping requests.
 
         if (posted_request_num != request_num) { return; }
 
@@ -740,16 +754,31 @@
         query_area.value = window.atob(window.location.hash.substr(1));
     }
 
-    function post()
+    let in_flight = false;
+    async function post()
     {
         ++request_num;
         let query = query_area.value;
-        postImpl(request_num, query);
+        in_flight = true;
+        document.getElementById('run').innerText = 'Stop';
+        await postImpl(request_num, query);
+        document.getElementById('run').innerText = 'Run';
+        in_flight = false;
     }
 
-    document.getElementById('run').onclick = function()
+    async function cancel()
     {
-        post();
+        controller.abort();
+        document.getElementById('run').innerText = 'Run';
+    }
+
+    document.getElementById('run').onclick = function(e)
+    {
+        if (in_flight) {
+            cancel();
+        } else {
+            post();
+        }
     }
 
     document.addEventListener('keydown', event => {
@@ -1020,6 +1049,7 @@
         container.appendChild(fragment);
         /// inline-block make width adjust to the size of content.
         container.style.display = 'inline-block';
+        /// TODO: no extremes when the format is unknown
     }
 
     function updateProgress(progress) {
@@ -1074,8 +1104,6 @@
 
     const max_rows = 10_000;
     const max_cells = 100_000;
-
-    let num_bytes = 0;
 
     let current_selected_cell = null;
     function appendRow(row, fragment) {
@@ -1140,86 +1168,13 @@
 
     function renderTable(response)
     {
+        // TODO
         if (response.data.length <= 1 && response.meta.length >= 5) {
             renderTableTransposed(response)
             return;
         }
 
-        const should_display_row_numbers = response.data.length > 3;
-
-        let thead = document.createElement('thead');
-
-        if (should_display_row_numbers) {
-            let th = document.createElement('th');
-            th.className = 'row-number';
-            th.appendChild(document.createTextNode('№'));
-            thead.appendChild(th);
-        }
-
-        for (let idx in response.meta) {
-            let th = document.createElement('th');
-            const name = document.createTextNode(response.meta[idx].name);
-            th.appendChild(name);
-            thead.appendChild(th);
-        }
-
-        /// To prevent hanging the browser, limit the number of cells in a table.
-        /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
-        /// Also we permit rendering of more records but only if elapsed time is not large.
-        const max_rows = 10000 / response.meta.length;
-        const max_render_ms = 200;
-        let row_num = 0;
-
-        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/));
-        const column_maximums = column_is_number.map((elem, idx) => elem ? Math.max(...response.data.map(row => row[idx])) : 0);
-        const column_minimums = column_is_number.map((elem, idx) => elem ? Math.min(...response.data.map(row => Math.max(0, row[idx]))) : 0);
-        const column_need_render_bars = column_is_number.map((elem, idx) => column_maximums[idx] > 0 && column_maximums[idx] > column_minimums[idx]);
-
-        const settings = {
-            is_transposed: false,
-            column_is_number: column_is_number,
-            column_maximums: column_maximums,
-            column_minimums: column_minimums,
-            column_need_render_bars: column_need_render_bars,
-        };
-
-        const start_time = performance.now();
-
-        let tbody = document.createElement('tbody');
-        for (let row_idx in response.data) {
-            let tr = document.createElement('tr');
-            if (should_display_row_numbers) {
-                let td = document.createElement('td');
-                td.className = 'row-number';
-                td.appendChild(document.createTextNode(1 + +row_idx));
-                tr.appendChild(td);
-            }
-            for (let col_idx in response.data[row_idx]) {
-                let cell = response.data[row_idx][col_idx];
-                const td = renderCell(cell, col_idx, settings);
-
-                td.onclick = () => { td.classList.add('td-selected') };
-                td.onmouseenter = () => {
-                    td.classList.add('td-hover-hysteresis');
-                    td.onmouseleave = () => {
-                        setTimeout(() => { td && td.classList.remove('td-hover-hysteresis') }, 1000);
-                    };
-                };
-
-                tr.appendChild(td);
-            }
-            tbody.appendChild(tr);
-
-            ++row_num;
-            if (row_num >= max_rows && performance.now() - start_time >= max_render_ms) {
-                break;
-            }
-        }
-
-        let table = document.getElementById('data-table');
-        table.appendChild(thead);
-        table.appendChild(tbody);
-        table.style.display = 'table';
+        // TODO display timings
     }
 
     function renderError(message)
@@ -1313,10 +1268,10 @@
             scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
             axes: [ { stroke: axes_color,
                       grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-					  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-					{ stroke: axes_color,
-					  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-					  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+                      ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+                    { stroke: axes_color,
+                        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                        ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
             series: [ { label: "x" },
                       { label: "y", stroke: line_color, fill: fill_color,
                         drawStyle: 0, lineInterpolation: 1, paths } ],
