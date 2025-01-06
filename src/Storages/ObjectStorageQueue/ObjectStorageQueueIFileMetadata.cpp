@@ -438,6 +438,9 @@ void ObjectStorageQueueIFileMetadata::setFailedRetriable()
 
     if (responses[1]->error == Coordination::Error::ZNONODE)
     {
+        /// TODO: Retry only keeper operation,
+        /// on condition that attempt to set new processing node will give
+        /// the next processing_id value from current one.
         LOG_WARNING(
             log, "Processing node no longer exists ({}) while setting file as failed. "
             "This could be as a result of expired keeper session. "
