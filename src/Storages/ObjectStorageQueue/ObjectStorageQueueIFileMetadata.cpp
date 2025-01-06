@@ -333,8 +333,9 @@ void ObjectStorageQueueIFileMetadata::setFailedNonRetriable()
 {
     auto zk_client = getZooKeeper();
     Coordination::Requests requests;
-    requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+    requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
 
     Coordination::Responses responses;
     const auto code = zk_client->tryMulti(requests, responses);
@@ -344,20 +345,25 @@ void ObjectStorageQueueIFileMetadata::setFailedNonRetriable()
         return;
     }
 
-    if (Coordination::isHardwareError(responses[0]->error))
+    if (Coordination::isHardwareError(code))
+        throw zkutil::KeeperMultiException(code, requests, responses);
+
+    if (responses[1]->error == Coordination::Error::ZNONODE)
     {
-        LOG_WARNING(log, "Cannot set file as failed: lost connection to keeper");
+        LOG_WARNING(
+            log, "Processing node no longer exists ({}) "
+            "while setting file as non-retriable failed. "
+            "This could be as a result of expired keeper session. "
+            "Cannot set file as failed, will retry.",
+            processing_node_path);
         return;
     }
 
-    if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
-    {
-        LOG_WARNING(log, "Cannot create a persistent node in /failed since it already exists");
-        chassert(false);
-        return;
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error while setting file as failed: {}", code);
+    auto exception = zkutil::KeeperMultiException(code, requests, responses);
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Failed to set file {} as failed (code: {}, path: {})",
+        path, code, exception.getPathForFirstFailedOp());
 }
 
 void ObjectStorageQueueIFileMetadata::setFailedRetriable()
@@ -371,19 +377,26 @@ void ObjectStorageQueueIFileMetadata::setFailedRetriable()
     auto zk_client = getZooKeeper();
 
     /// Extract the number of already done retries from node_hash.retriable node if it exists.
-    Coordination::Requests requests;
-    Coordination::Stat stat;
+    Coordination::Stat retriable_failed_node_stat;
     std::string res;
-    bool has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &stat);
-    if (has_failed_before)
+    bool has_retriable_failed_node = zk_client->tryGet(retrieable_failed_node_path, res, &retriable_failed_node_stat);
+    if (has_retriable_failed_node)
     {
         auto failed_node_metadata = NodeMetadata::fromString(res);
         node_metadata.retries = failed_node_metadata.retries + 1;
         file_status->retries = node_metadata.retries;
     }
+    else
+        chassert(!node_metadata.retries);
 
-    LOG_TRACE(log, "File `{}` failed to process, try {}/{}, retries node exists: {} (failed node path: {})",
-              path, node_metadata.retries, max_loading_retries, has_failed_before, failed_node_path);
+    LOG_TRACE(
+        log, "File `{}` failed to process, "
+        "try {}/{}, retries node exists: {} (failed node path: {})",
+        path, node_metadata.retries, max_loading_retries, has_retriable_failed_node, failed_node_path);
+
+    Coordination::Requests requests;
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 
     if (node_metadata.retries >= max_loading_retries)
     {
@@ -391,8 +404,7 @@ void ObjectStorageQueueIFileMetadata::setFailedRetriable()
         /// Make a persistent node /failed/node_hash,
         /// remove /failed/node_hash.retriable node and node in /processing.
 
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-        requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, stat.version));
+        requests.push_back(zkutil::makeRemoveRequest(retrieable_failed_node_path, retriable_failed_node_stat.version));
         requests.push_back(
             zkutil::makeCreateRequest(
                 failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
@@ -402,8 +414,6 @@ void ObjectStorageQueueIFileMetadata::setFailedRetriable()
     {
         /// File is still retriable,
         /// update retries count and remove node from /processing.
-
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         if (node_metadata.retries == 0)
         {
             requests.push_back(
@@ -414,7 +424,7 @@ void ObjectStorageQueueIFileMetadata::setFailedRetriable()
         {
             requests.push_back(
                 zkutil::makeSetRequest(
-                    retrieable_failed_node_path, node_metadata.toString(), stat.version));
+                    retrieable_failed_node_path, node_metadata.toString(), retriable_failed_node_stat.version));
         }
     }
 
@@ -423,8 +433,25 @@ void ObjectStorageQueueIFileMetadata::setFailedRetriable()
     if (code == Coordination::Error::ZOK)
         return;
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Failed to set file {} as failed (code: {})", path, code);
+    if (Coordination::isHardwareError(code))
+        throw zkutil::KeeperMultiException(code, requests, responses);
+
+    if (responses[1]->error == Coordination::Error::ZNONODE)
+    {
+        LOG_WARNING(
+            log, "Processing node no longer exists ({}) while setting file as failed. "
+            "This could be as a result of expired keeper session. "
+            "Cannot set file as failed, will retry.",
+            processing_node_path);
+        return;
+    }
+
+    auto exception = zkutil::KeeperMultiException(code, requests, responses);
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Failed to set file {} as failed at try {}/{} (code: {}, path: {})",
+        path, node_metadata.retries, max_loading_retries,
+        code, exception.getPathForFirstFailedOp());
 }
 
 }
