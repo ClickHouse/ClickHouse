@@ -1670,8 +1670,8 @@ void executeQuery(
 
     /// Set the result details in case of any exception raised during query execution
     SCOPE_EXIT({
-        if (set_result_details == nullptr)
-            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+        /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+        if (!set_result_details)
             return;
 
         try
@@ -1706,9 +1706,10 @@ void executeQuery(
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
 
-                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
+                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
+                    {
                         // it will throw std::bad_function_call
-                        set_result_details = nullptr;
+                        set_result_details = {};
                         set_result_details(result_details);
                     });
 
@@ -1716,7 +1717,7 @@ void executeQuery(
                     {
                         /// reset set_result_details func to avoid calling in SCOPE_EXIT()
                         auto set_result_details_copy = set_result_details;
-                        set_result_details = nullptr;
+                        set_result_details = {};
                         set_result_details_copy(result_details);
                     }
                 }
