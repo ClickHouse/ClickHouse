@@ -76,7 +76,7 @@ public:
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context);
     static std::variant<StorageAzureBlob::Configuration, String> getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool allow_missing_named_collection);
     
-    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container = true);
+    static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container = false);
 
     static AzureObjectStorage::SettingsPtr createSettings(const ContextPtr & local_context);
 
