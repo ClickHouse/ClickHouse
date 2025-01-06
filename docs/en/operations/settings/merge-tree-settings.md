@@ -1140,3 +1140,9 @@ When `cache_populated_by_fetch` is disabled (the default setting), new data part
 If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action. 
 
 Default value: 0.
+
+## add_implicit_sign_column_constraint_for_collapsing_engine
+
+If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
+
+Default value: false
