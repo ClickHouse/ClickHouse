@@ -37,11 +37,10 @@ The client can be used in interactive and non-interactive (batch) mode.
 
 ### Interactive
 
-To connect to your ClickHouse Cloud service, or any ClickHouse server using TLS and passwords, interactively use `--secure`, port 9440, and provide your username and password:
+To connect to your ClickHouse Cloud service or any ClickHouse server using TLS and passwords, specify port `9440` (or `--secure`) and provide your username and password:
 
 ```bash
 clickhouse-client --host <HOSTNAME> \
-                  --secure \
                   --port 9440 \
                   --user <USERNAME> \
                   --password <PASSWORD>
@@ -62,7 +61,6 @@ This example is appropriate for ClickHouse Cloud, or any ClickHouse server using
 
 ```bash
 clickhouse-client --host HOSTNAME.clickhouse.cloud \
-  --secure \
   --port 9440 \
   --user default \
   --password PASSWORD \
@@ -188,7 +186,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--memory-usage` – If specified, print memory usage to ‘stderr’ in non-interactive mode]. Possible values: 'none' - do not print memory usage, 'default' - print number of bytes, 'readable' - print memory usage in human-readable format.
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `--config-file` – The name of the configuration file.
-- `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl).
+- `--secure` – If specified, will connect to server over secure connection (TLS). Enabled automatically when connecting to port 9440 (the default secure port) or ClickHouse Cloud. You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl).
 - `--history_file` — Path to a file containing command history.
 - `--history_max_entries` — Maximum number of entries in the history file. Default value: 1 000 000.
 - `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
@@ -199,6 +197,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--progress` – Print progress of query execution. Possible values: 'tty|on|1|true|yes' - outputs to TTY in interactive mode; 'err' - outputs to STDERR non-interactive mode; 'off|0|false|no' - disables the progress printing. Default: TTY in interactive mode, disabled in non-interactive.
 - `--progress-table` – Print a progress table with changing metrics during query execution. Possible values: 'tty|on|1|true|yes' - outputs to TTY in interactive mode; 'err' - outputs to STDERR non-interactive mode; 'off|0|false|no' - disables the progress table. Default: TTY in interactive mode, disabled in non-interactive.
 - `--enable-progress-table-toggle` – Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table printing enabled. Default: 'true'.
+- `--prompt` - Specify a custom prompt. Default value: The `display_name` of the server.
 
 Instead of `--host`, `--port`, `--user` and `--password` options, ClickHouse client also supports connection strings (see next section).
 
@@ -380,6 +379,28 @@ secure: true
 openSSL:
   client:
     caConfig: '/etc/ssl/cert.pem'
+```
+
+### Connection credentials {#connection-credentials}
+
+If you frequently connect to the same ClickHouse server, you can save the connection details including credentials in
+the configuration file like this:
+
+```xml
+<config>
+    <connections_credentials>
+        <name>production</name>
+        <hostname>127.0.0.1</hostname>
+        <port>9000</port>
+        <secure>1</secure>
+        <user>default</user>
+        <password></password>
+        <database></database>
+
+        <!-- You can use colors and macros, see clickhouse-client.xml for more documentation. -->
+        <prompt>\e[31m[PRODUCTION]\e[0m {user}@{display_name}</prompt>
+    </connections_credentials>
+</config>
 ```
 
 ### Query ID Format {#query-id-format}

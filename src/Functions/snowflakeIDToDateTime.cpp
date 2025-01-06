@@ -187,9 +187,9 @@ REGISTER_FUNCTION(SnowflakeIDToDateTime)
         };
         FunctionDocumentation::ReturnedValue returned_value = "The timestamp component of `value` as a [DateTime](../data-types/datetime.md) value.";
         FunctionDocumentation::Examples examples = {{"simple", "SELECT snowflakeIDToDateTime(7204436857747984384)", "2024-06-06 10:59:58"}};
-        FunctionDocumentation::Categories categories = {"Snowflake ID"};
+        FunctionDocumentation::Category category = {"UUIDs"};
 
-        factory.registerFunction<FunctionSnowflakeIDToDateTime>({description, syntax, arguments, returned_value, examples, categories});
+        factory.registerFunction<FunctionSnowflakeIDToDateTime>({description, syntax, arguments, returned_value, examples, category});
     }
 
     {
@@ -202,9 +202,9 @@ REGISTER_FUNCTION(SnowflakeIDToDateTime)
         };
         FunctionDocumentation::ReturnedValue returned_value = "The timestamp component of `value` as a [DateTime64](../data-types/datetime64.md) with scale = 3, i.e. millisecond precision.";
         FunctionDocumentation::Examples examples = {{"simple", "SELECT snowflakeIDToDateTime64(7204436857747984384)", "2024-06-06 10:59:58"}};
-        FunctionDocumentation::Categories categories = {"Snowflake ID"};
+        FunctionDocumentation::Category category = {"UUIDs"};
 
-        factory.registerFunction<FunctionSnowflakeIDToDateTime64>({description, syntax, arguments, returned_value, examples, categories});
+        factory.registerFunction<FunctionSnowflakeIDToDateTime64>({description, syntax, arguments, returned_value, examples, category});
     }
 }
 
