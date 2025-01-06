@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-replicated-database
+-- Tags: no-parallel
 
 SYSTEM DROP QUERY CONDITION CACHE;
 

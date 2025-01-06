@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & from)
@@ -71,7 +72,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
 
-    use_query_condition_cache = from[Setting::use_query_condition_cache];
+    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

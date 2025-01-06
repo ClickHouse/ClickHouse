@@ -81,6 +81,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
 }
@@ -898,7 +899,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     LoggerPtr log)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::use_query_condition_cache] || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag))
+    if (!settings[Setting::use_query_condition_cache] || !settings[Setting::allow_experimental_analyzer] ||
+        (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag))
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
