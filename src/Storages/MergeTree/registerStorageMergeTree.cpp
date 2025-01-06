@@ -740,6 +740,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     auto index_ast = std::make_shared<ASTIndexDeclaration>(
                             std::make_shared<ASTIdentifier>(column.name), index_type,
                             IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
+                    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
                     metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, columns, context));
                 }
             }

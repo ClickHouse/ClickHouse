@@ -549,6 +549,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 auto index_type = makeASTFunction("minmax");
                 auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type, IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
+                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
             }
         }
@@ -966,6 +967,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 auto index_type = makeASTFunction("minmax");
                 index.definition_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(rename_to), index_type,
                                                                              IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to);
+                index.definition_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
             }
             else
                 rename_visitor.visit(index.definition_ast);
