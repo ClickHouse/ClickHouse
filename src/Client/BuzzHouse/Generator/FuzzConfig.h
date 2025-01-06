@@ -180,7 +180,7 @@ public:
             }
             else if (key == "max_insert_rows")
             {
-                max_insert_rows = value.getUInt64();
+                max_insert_rows = std::max(UINT64_C(1), value.getUInt64());
             }
             else if (key == "max_nested_rows")
             {
@@ -188,11 +188,11 @@ public:
             }
             else if (key == "max_depth")
             {
-                max_depth = static_cast<uint32_t>(value.getUInt64());
+                max_depth = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64()));
             }
             else if (key == "max_width")
             {
-                max_width = static_cast<uint32_t>(value.getUInt64());
+                max_width = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64()));
             }
             else if (key == "max_databases")
             {
