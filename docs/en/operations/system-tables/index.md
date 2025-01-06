@@ -6,7 +6,7 @@ pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
 ---
 
 import TableOfContentsJSON from './table_of_contents.json'
-import { TableOfContents } from '/src/components/TableOfContents'
+<!-- import { TableOfContents } from '/src/components/TableOfContents' -->
 
 # System Tables
 
@@ -89,7 +89,8 @@ You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `
 
 ## List of System Tables
 
-<TableOfContents items={TableOfContentsJSON} />
+<!-- <TableOfContents items={TableOfContentsJSON} /> -->
+Coming soon...
 
 ## System tables in ClickHouse Cloud
 
