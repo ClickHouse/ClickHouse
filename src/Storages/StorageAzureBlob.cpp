@@ -1,3 +1,6 @@
+#include <memory>
+#include <optional>
+#include <variant>
 #include <Storages/StorageAzureBlob.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -129,112 +132,122 @@ void StorageAzureBlob::processNamedCollectionResult(StorageAzureBlob::Configurat
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
     configuration.format = collection.getOrDefault<String>("format", configuration.format);
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+
+    configuration.named_collection_name = collection.getName();
+}
+
+StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine_args, const ContextPtr & local_context) {
+    return std::get<StorageAzureBlob::Configuration>(getConfiguration(engine_args, local_context, false));
 }
 
 
-StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine_args, const ContextPtr & local_context)
+std::variant<StorageAzureBlob::Configuration, String> StorageAzureBlob::getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool allow_missing_named_collection)
 {
     StorageAzureBlob::Configuration configuration;
+    std::optional<String> collection_name = getCollectionName(engine_args);
+    
 
-    /// Supported signatures:
-    ///
-    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
-    ///
-
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    if(collection_name.has_value())
     {
-        processNamedCollectionResult(configuration, *named_collection);
-
-        configuration.blobs_paths = {configuration.blob_path};
-
-        if (configuration.format == "auto")
-            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
-
-        return configuration;
-    }
-
-    if (engine_args.size() < 3 || engine_args.size() > 7)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Storage AzureBlobStorage requires 3 to 7 arguments: "
-                        "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])");
-
-    for (auto & engine_arg : engine_args)
-        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
-
-    std::unordered_map<std::string_view, size_t> engine_args_to_idx;
-
-    configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
-    configuration.is_connection_string = isConnectionString(configuration.connection_url);
-
-    configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
-    configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
-
-    auto is_format_arg = [] (const std::string & s) -> bool
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(*collection_name, engine_args, local_context, false)) {
+            processNamedCollectionResult(configuration, *named_collection);
+            configuration.blobs_paths = {configuration.blob_path};
+            if (configuration.format == "auto")
+                configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
+        } else {
+            if (!allow_missing_named_collection)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection `{}` doesn't exist", *collection_name);
+            return *collection_name;
+        }
+    } else 
     {
-        return s == "auto" || FormatFactory::instance().exists(s);
-    };
+        /// Supported signatures:
+        ///
+        /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+        ///
+        if (engine_args.size() < 3 || engine_args.size() > 7)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage AzureBlobStorage requires 3 to 7 arguments: "
+                            "AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])");
 
-    if (engine_args.size() == 4)
-    {
-        //'c1 UInt64, c2 UInt64
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (is_format_arg(fourth_arg))
-        {
-            configuration.format = fourth_arg;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format or account name specified without account key");
-        }
-    }
-    else if (engine_args.size() == 5)
-    {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (is_format_arg(fourth_arg))
-        {
-            configuration.format = fourth_arg;
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
-        }
-        else
-        {
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-        }
-    }
-    else if (engine_args.size() == 6)
-    {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
-        }
-        else
-        {
-            configuration.account_name = fourth_arg;
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-            if (!is_format_arg(sixth_arg))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-            configuration.format = sixth_arg;
-        }
-    }
-    else if (engine_args.size() == 7)
-    {
-        auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
-        if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+        std::unordered_map<std::string_view, size_t> engine_args_to_idx;
+
+        configuration.connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+        configuration.is_connection_string = isConnectionString(configuration.connection_url);
+
+        configuration.container = checkAndGetLiteralArgument<String>(engine_args[1], "container");
+        configuration.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
+
+        auto is_format_arg = [] (const std::string & s) -> bool
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
-        }
-        else
+            return s == "auto" || FormatFactory::instance().exists(s);
+        };
+
+        if (engine_args.size() == 4)
         {
-            configuration.account_name = fourth_arg;
-            configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
-            auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
-            if (!is_format_arg(sixth_arg))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-            configuration.format = sixth_arg;
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+            //'c1 UInt64, c2 UInt64
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+            if (is_format_arg(fourth_arg))
+            {
+                configuration.format = fourth_arg;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format or account name specified without account key");
+            }
+        }
+        else if (engine_args.size() == 5)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+            if (is_format_arg(fourth_arg))
+            {
+                configuration.format = fourth_arg;
+                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            }
+            else
+            {
+                configuration.account_name = fourth_arg;
+                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+            }
+        }
+        else if (engine_args.size() == 6)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+            }
+            else
+            {
+                configuration.account_name = fourth_arg;
+
+                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+                if (!is_format_arg(sixth_arg))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+                configuration.format = sixth_arg;
+            }
+        }
+        else if (engine_args.size() == 7)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
+            if (fourth_arg == "auto" || FormatFactory::instance().exists(fourth_arg))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Format and compression must be last arguments");
+            }
+            else
+            {
+                configuration.account_name = fourth_arg;
+                configuration.account_key = checkAndGetLiteralArgument<String>(engine_args[4], "account_key");
+                auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
+                if (!is_format_arg(sixth_arg))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
+                configuration.format = sixth_arg;
+                configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+            }
         }
     }
 
@@ -266,8 +279,12 @@ void registerStorageAzureBlob(StorageFactory & factory)
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
-        auto configuration = StorageAzureBlob::getConfiguration(engine_args, args.getLocalContext());
-        auto client = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
+        ContextPtr context = args.getLocalContext();
+        auto configuration_or_collection_name = StorageAzureBlob::getConfiguration(
+            engine_args,
+            context,
+            args.allow_missing_named_collection || context->getSettingsRef().allow_missing_named_collections);
+
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
         // session and user are ignored.
@@ -298,19 +315,38 @@ void registerStorageAzureBlob(StorageFactory & factory)
         if (args.storage_def->partition_by)
             partition_by = args.storage_def->partition_by->clone();
 
-        auto settings = StorageAzureBlob::createSettings(args.getContext());
-
-        return std::make_shared<StorageAzureBlob>(
-            std::move(configuration),
-            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings),configuration.container),
-            args.getContext(),
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            format_settings,
-            /* distributed_processing */ false,
-            partition_by);
+        if (std::holds_alternative<StorageAzureBlob::Configuration>(configuration_or_collection_name)) 
+        {
+            auto configuration = std::get<StorageAzureBlob::Configuration>(configuration_or_collection_name);
+            auto client = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
+            auto settings = StorageAzureBlob::createSettings(args.getContext());
+            auto object_storage  = std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings), configuration.container);
+            return std::make_shared<StorageAzureBlob>(
+                configuration,
+                std::move(object_storage),
+                args.getContext(),
+                args.table_id,
+                args.columns,
+                args.constraints,
+                args.comment,
+                format_settings,
+                false,
+                partition_by,
+                configuration.named_collection_name);
+        } else {
+            return std::make_shared<StorageAzureBlob>(
+                std::nullopt,
+                nullptr,
+                args.getContext(),
+                args.table_id,
+                args.columns,
+                args.constraints,
+                args.comment,
+                format_settings,
+                /* distributed_processing */ false,
+                partition_by,
+                std::get<String>(configuration_or_collection_name));
+        }
     },
     {
         .supports_settings = true,
@@ -464,7 +500,7 @@ Poco::URI StorageAzureBlob::Configuration::getConnectionURL() const
 
 
 StorageAzureBlob::StorageAzureBlob(
-    const Configuration & configuration_,
+    const std::optional<Configuration> & configuration_,
     std::unique_ptr<AzureObjectStorage> && object_storage_,
     const ContextPtr & context,
     const StorageID & table_id_,
@@ -473,33 +509,46 @@ StorageAzureBlob::StorageAzureBlob(
     const String & comment,
     std::optional<FormatSettings> format_settings_,
     bool distributed_processing_,
-    ASTPtr partition_by_)
+    ASTPtr partition_by_,
+    const std::optional<String> named_collection_name_)
     : IStorage(table_id_)
+    , named_collection_name(named_collection_name_)
+    , format_settings(format_settings_)
     , name("AzureBlobStorage")
     , configuration(configuration_)
     , object_storage(std::move(object_storage_))
     , distributed_processing(distributed_processing_)
-    , format_settings(format_settings_)
     , partition_by(partition_by_)
 {
-    if (configuration.format != "auto")
-        FormatFactory::instance().checkFormatName(configuration.format);
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration.getConnectionURL());
+
+    if(configuration.has_value()) {
+        if (configuration->format != "auto") {
+            FormatFactory::instance().checkFormatName(configuration->format);
+            context->getGlobalContext()->getRemoteHostFilter().checkURL(configuration->getConnectionURL());
+        }
+    } else {
+        namedCollectionDeleted();
+    }
 
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        ColumnsDescription columns;
-        if (configuration.format == "auto")
-            std::tie(columns, configuration.format) = getTableStructureAndFormatFromData(object_storage.get(), configuration, format_settings, context);
-        else
-            columns = getTableStructureFromData(object_storage.get(), configuration, format_settings, context);
-        storage_metadata.setColumns(columns);
+        if (configuration.has_value())
+        {
+            ColumnsDescription columns;
+            if (configuration->format == "auto")
+                std::tie(columns, configuration->format) = getTableStructureAndFormatFromData(object_storage.get(), *configuration, format_settings, context);
+            else
+                columns = getTableStructureFromData(object_storage.get(), *configuration, format_settings, context);
+            storage_metadata.setColumns(columns);
+        }
     }
     else
     {
-        if (configuration.format == "auto")
-            configuration.format = getTableStructureAndFormatFromData(object_storage.get(), configuration, format_settings, context).second;
+        if (configuration.has_value()) {
+            if (configuration->format == "auto")
+                configuration->format = getTableStructureAndFormatFromData(object_storage.get(), *configuration, format_settings, context).second;
+        }
 
         /// We don't allow special columns in File storage.
         if (!columns_.hasOnlyOrdinary())
@@ -512,27 +561,56 @@ StorageAzureBlob::StorageAzureBlob(
     setInMemoryMetadata(storage_metadata);
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 
-    StoredObjects objects;
-    for (const auto & key : configuration.blobs_paths)
-        objects.emplace_back(key);
+    if (configuration.has_value()) {
+        StoredObjects objects;
+        for (const auto & key : configuration->blobs_paths)
+            objects.emplace_back(key);
+    }
 }
 
 void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (configuration.withGlobs())
+    auto configuration_copy = getConfiguration();
+    
+    if (configuration_copy.withGlobs())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
             "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode",
-            configuration.blob_path);
+            configuration_copy.blob_path);
     }
 
     StoredObjects objects;
-    for (const auto & key : configuration.blobs_paths)
+    for (const auto & key : configuration_copy.blobs_paths)
         objects.emplace_back(key);
 
     object_storage->removeObjectsIfExist(objects);
+    
 }
+
+void StorageAzureBlob::setConfiguration(const Configuration & new_configuration){
+    std::lock_guard<std::recursive_mutex> lock(configuration_update_mutex);
+    configuration = new_configuration;
+ }
+
+StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration() const {
+    std::lock_guard<std::recursive_mutex> lock(configuration_update_mutex);
+    assertNamedCollectionExists();
+    return *configuration;
+}
+
+void StorageAzureBlob::reload(ContextPtr context_, ASTs engine_args) {
+    auto new_configuration = StorageAzureBlob::getConfiguration(engine_args, context_);
+    if (new_configuration.format == "auto") {
+        new_configuration.format = getTableStructureAndFormatFromData(object_storage.get(), new_configuration, format_settings, context_).second;
+    }
+    FormatFactory::instance().checkFormatName(new_configuration.format);
+    setConfiguration(new_configuration);
+    context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration->getConnectionURL());
+    object_storage = std::make_unique<AzureObjectStorage>("AzureBlobStorage", createClient(*configuration, false), createSettings(context_), configuration->container);
+    namedCollectionRestored();
+}
+
 
 namespace
 {
@@ -749,7 +827,7 @@ void StorageAzureBlob::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (partition_by && configuration.withWildcard())
+    if (partition_by && getConfiguration().withWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned Azure storage is not implemented yet");
 
     auto this_ptr = std::static_pointer_cast<StorageAzureBlob>(shared_from_this());
@@ -785,17 +863,17 @@ void ReadFromAzureBlob::createIterator(const ActionsDAG::Node * predicate)
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::ReadIterator>(context,
             context->getReadTaskCallback());
     }
-    else if (configuration.withGlobs())
+    else if (configuration->withGlobs())
     {
         /// Iterate through disclosed globs and make a source for each file
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::GlobIterator>(
-            storage->object_storage.get(), configuration.container, configuration.blob_path,
+            storage->object_storage.get(), configuration->container, configuration->blob_path,
             predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
     }
     else
     {
         iterator_wrapper = std::make_shared<StorageAzureBlobSource::KeysIterator>(
-            storage->object_storage.get(), configuration.container, configuration.blobs_paths,
+            storage->object_storage.get(), configuration->container, configuration->blobs_paths,
             predicate, storage->getVirtualsList(), context, nullptr, context->getFileProgressCallback());
     }
 }
@@ -804,7 +882,7 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
 {
     createIterator(nullptr);
 
-    const auto & configuration = storage->configuration;
+    const auto & configuration = storage->getConfiguration();
     Pipes pipes;
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -837,39 +915,40 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
 SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto sample_block = metadata_snapshot->getSampleBlock();
-    auto chosen_compression_method = chooseCompressionMethod(configuration.blobs_paths.back(), configuration.compression_method);
+    auto new_configuration = getConfiguration();
+    auto chosen_compression_method = chooseCompressionMethod(new_configuration.blobs_paths.back(), new_configuration.compression_method);
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && configuration.withWildcard();
+    bool is_partitioned_implementation = partition_by_ast && new_configuration.withWildcard();
 
     if (is_partitioned_implementation)
     {
         return std::make_shared<PartitionedStorageAzureBlobSink>(
             partition_by_ast,
-            configuration.format,
+            new_configuration.format,
             sample_block,
             local_context,
             format_settings,
             chosen_compression_method,
             object_storage.get(),
-            configuration.blobs_paths.back());
+            new_configuration.blobs_paths.back());
     }
     else
     {
-        if (configuration.withGlobs())
+        if (new_configuration.withGlobs())
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", configuration.blob_path);
+                            "AzureBlobStorage key '{}' contains globs, so the table is in readonly mode", new_configuration.blob_path);
 
         bool truncate_in_insert = local_context->getSettingsRef().azure_truncate_on_insert;
 
-        if (!truncate_in_insert && object_storage->exists(StoredObject(configuration.blob_path)))
+        if (!truncate_in_insert && object_storage->exists(StoredObject(new_configuration.blob_path)))
         {
 
             if (local_context->getSettingsRef().azure_create_new_file_on_insert)
             {
-                size_t index = configuration.blobs_paths.size();
-                const auto & first_key = configuration.blobs_paths[0];
+                size_t index = new_configuration.blobs_paths.size();
+                const auto & first_key = new_configuration.blobs_paths[0];
                 auto pos = first_key.find_first_of('.');
                 String new_key;
 
@@ -880,7 +959,7 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
                 }
                 while (object_storage->exists(StoredObject(new_key)));
 
-                configuration.blobs_paths.push_back(new_key);
+                new_configuration.blobs_paths.push_back(new_key);
             }
             else
             {
@@ -889,19 +968,26 @@ SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMeta
                     "Object in bucket {} with key {} already exists. "
                     "If you want to overwrite it, enable setting azure_truncate_on_insert, if you "
                     "want to create a new file on each insert, enable setting azure_create_new_file_on_insert",
-                    configuration.container, configuration.blobs_paths.back());
+                    new_configuration.container, new_configuration.blobs_paths.back());
             }
         }
 
         return std::make_shared<StorageAzureBlobSink>(
-            configuration.format,
+            new_configuration.format,
             sample_block,
             local_context,
             format_settings,
             chosen_compression_method,
             object_storage.get(),
-            configuration.blobs_paths.back());
+            new_configuration.blobs_paths.back());
     }
+}
+
+String StorageAzureBlob::getFormat() const
+{
+    std::lock_guard<std::recursive_mutex> lock(configuration_update_mutex);
+    assertNamedCollectionExists();
+    return configuration->format;
 }
 
 bool StorageAzureBlob::supportsPartitionBy() const
@@ -911,17 +997,17 @@ bool StorageAzureBlob::supportsPartitionBy() const
 
 bool StorageAzureBlob::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getFormat(), context, format_settings);
 }
 
 bool StorageAzureBlob::prefersLargeBlocks() const
 {
-    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(configuration.format);
+    return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(getFormat());
 }
 
 bool StorageAzureBlob::parallelizeOutputAfterReading(ContextPtr context) const
 {
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration.format, context);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(getFormat(), context);
 }
 
 StorageAzureBlobSource::GlobIterator::GlobIterator(

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <memory>
+#include <optional>
+#include <variant>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -54,10 +57,11 @@ public:
         std::string container;
         std::string blob_path;
         std::vector<String> blobs_paths;
+        std::optional<String> named_collection_name;
     };
 
     StorageAzureBlob(
-        const Configuration & configuration_,
+        const std::optional<Configuration> & configuration_,
         std::unique_ptr<AzureObjectStorage> && object_storage_,
         const ContextPtr & context_,
         const StorageID & table_id_,
@@ -66,9 +70,12 @@ public:
         const String & comment,
         std::optional<FormatSettings> format_settings_,
         bool distributed_processing_,
-        ASTPtr partition_by_);
+        ASTPtr partition_by_,
+        std::optional<String> named_collection_name_ = {});
 
     static StorageAzureBlob::Configuration getConfiguration(ASTs & engine_args, const ContextPtr & local_context);
+    static std::variant<StorageAzureBlob::Configuration, String> getConfiguration(ASTs & engine_args, const ContextPtr & local_context, bool allow_missing_named_collection);
+    
     static AzureClientPtr createClient(StorageAzureBlob::Configuration configuration, bool is_read_only, bool attempt_to_create_container = true);
 
     static AzureObjectStorage::SettingsPtr createSettings(const ContextPtr & local_context);
@@ -106,6 +113,10 @@ public:
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
+    std::optional<String> getNamedCollectionName() const override { return named_collection_name; }
+    
+    void reload(ContextPtr context_, ASTs engine_args) override;
+
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
     static ColumnsDescription getTableStructureFromData(
@@ -120,6 +131,12 @@ public:
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
 
+protected:
+    std::optional<String> named_collection_name;
+    std::optional<FormatSettings> format_settings;
+    void setConfiguration(const Configuration & new_configuration);
+    Configuration getConfiguration() const;
+
 private:
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromDataImpl(
         std::optional<String> format,
@@ -128,14 +145,16 @@ private:
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
 
+    String getFormat() const;
+
     friend class ReadFromAzureBlob;
 
     std::string name;
-    Configuration configuration;
+    std::optional<Configuration> configuration;
+    mutable std::recursive_mutex configuration_update_mutex;
     std::unique_ptr<AzureObjectStorage> object_storage;
 
     const bool distributed_processing;
-    std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
 };
 
